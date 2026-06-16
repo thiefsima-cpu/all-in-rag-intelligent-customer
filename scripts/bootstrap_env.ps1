@@ -14,17 +14,10 @@ switch ($Profile) {
     }
     "agent" {
         if (-not $VenvPath) { $VenvPath = Join-Path $RepositoryRoot ".venv-agent" }
-        # Discover the legacy agent directory to keep this script safe for
-        # Windows PowerShell 5.1 ANSI source decoding.
-        $AgentRequirements = @(
-            Get-ChildItem -LiteralPath $RepositoryRoot -Directory -Filter "agent(*)" |
-                ForEach-Object { Join-Path $_.FullName "requirements.txt" } |
-                Where-Object { Test-Path -LiteralPath $_ }
-        )
-        if ($AgentRequirements.Count -ne 1) {
-            throw "Expected exactly one agent requirements file matching agent(*)\requirements.txt under $RepositoryRoot; found $($AgentRequirements.Count)."
+        $RequirementsPath = Join-Path $RepositoryRoot "agent\requirements.txt"
+        if (-not (Test-Path -LiteralPath $RequirementsPath)) {
+            throw "Expected agent requirements file at $RequirementsPath."
         }
-        $RequirementsPath = $AgentRequirements[0]
     }
     default {
         if (-not $VenvPath) { $VenvPath = Join-Path $RepositoryRoot ".venv" }
