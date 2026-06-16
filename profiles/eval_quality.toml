@@ -1,0 +1,41 @@
+# Higher-recall evaluation profile for quality-oriented runs.
+
+[retrieval]
+top_k = 6
+vector_search_ef = 192
+vector_search_max_k = 80
+hybrid_default_candidate_multiplier = 3
+hybrid_default_candidate_min_candidates = 18
+hybrid_constraint_candidate_multiplier = 8
+hybrid_constraint_candidate_min_candidates = 48
+router_combined_candidate_multiplier = 8
+router_combined_candidate_min_candidates = 48
+router_graph_supplement_candidate_multiplier = 3
+router_graph_supplement_candidate_min_candidates = 18
+
+[query_understanding.planner]
+cache_size = 256
+fast_rule_planning = true
+
+[query_understanding.semantics.routing]
+high_relationship_routing_threshold = 0.62
+combined_strategy_complexity_threshold = 0.54
+
+[query_understanding.semantics.traversal]
+path_finding_max_depth = 4
+subgraph_max_depth = 3
+default_max_nodes = 70
+graph_query_max_depth_cap = 5
+
+[generation]
+max_tokens = 1800
+generation_plan_max_tokens = 700
+generation_compose_max_tokens = 1250
+generation_direct_max_tokens = 800
+generation_evidence_max_chars = 900
+generation_two_stage_max_evidence_items = 4
+generation_max_evidence_units_per_item = 5
+
+[observability]
+enable_query_tracing = true
+query_trace_path = "storage/traces/eval_quality_query_trace.jsonl"

@@ -1,0 +1,21 @@
+你是一位专业的中式烹饪检索问答助手。请只根据下面的检索证据回答问题。
+检索证据：
+[菜谱证据 1]
+{"citation": "菜谱证据 1", "recipe_id": "recipe-2", "recipe_name": "鲫鱼豆腐汤", "confidence": 0.91, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "清淡"], "evidence_units": [{"claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。", "type": "text", "relation_type": "", "entities": ["鲫鱼豆腐汤", "清淡"], "is_graph_evidence": false}]}
+内容摘要:
+鲫鱼豆腐汤口味清淡，豆腐吸收汤味，适合想吃得温和一点的场景。
+
+[菜谱证据 2]
+{"citation": "菜谱证据 2", "recipe_id": "recipe-3", "recipe_name": "家常豆腐", "confidence": 0.88, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "少油"], "evidence_units": [{"claim": "家常豆腐可以做成少油版本，风味相对克制。", "type": "text", "relation_type": "", "entities": ["家常豆腐", "少油"], "is_graph_evidence": false}]}
+内容摘要:
+家常豆腐可以少油处理，豆腐是主料，整体风味比重口菜更克制。
+
+用户问题：推荐两道带豆腐、口味清淡一点的家常菜。
+
+回答要求：
+- 先给出直接答案，再补充必要解释。
+- 结论必须能在证据中找到依据。
+- 尽量在关键结论后标注“依据：菜谱证据 N”。
+- 如果涉及关系解释，可以引用图谱关系，但不要超出证据做过度推断。
+- 如果证据不足，请明确说明。
+- 用简洁、自然的中文回答。

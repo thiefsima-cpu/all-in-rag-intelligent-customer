@@ -1,0 +1,29 @@
+# Fast regression profile for frequent retrieval checks.
+
+[retrieval]
+top_k = 3
+vector_search_ef = 64
+hybrid_default_candidate_multiplier = 1
+hybrid_default_candidate_min_candidates = 6
+hybrid_constraint_candidate_min_candidates = 12
+router_combined_candidate_min_candidates = 12
+router_graph_supplement_candidate_min_candidates = 6
+
+[query_understanding.planner]
+cache_size = 64
+fast_rule_planning = true
+
+[generation]
+max_tokens = 900
+generation_plan_max_tokens = 320
+generation_compose_max_tokens = 650
+generation_direct_max_tokens = 420
+generation_max_retries = 1
+generation_request_retries = 0
+generation_stream_retries = 1
+generation_evidence_max_chars = 500
+
+[observability]
+enable_query_tracing = true
+query_trace_path = "storage/traces/eval_fast_query_trace.jsonl"
+

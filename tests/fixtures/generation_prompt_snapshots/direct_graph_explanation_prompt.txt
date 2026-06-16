@@ -1,0 +1,16 @@
+你是一位专业的中式烹饪检索问答助手。请只根据下面的检索证据回答问题。
+检索证据：
+[菜谱证据 1]
+{"citation": "菜谱证据 1", "recipe_id": "recipe-1", "recipe_name": "水煮肉片", "confidence": 0.96, "retrieval_sources": ["unknown"], "matched_terms": ["麻辣鲜香", "豆瓣酱", "花椒", "辣椒", "上浆", "垫底蔬菜", "层次感"], "graph_paths": [{"evidence_unit": {"unit_id": "unit::490585b5edeee48e", "evidence_type": "graph_relation", "claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。", "source": "unknown", "score": 0.96, "recipe_id": "recipe-1", "recipe_name": "水煮肉片", "relation_type": "CONTRIBUTES_TO", "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"], "is_graph_evidence": true, "metadata": {}}}], "evidence_units": [{"claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。", "type": "graph_relation", "relation_type": "CONTRIBUTES_TO", "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"], "is_graph_evidence": true}, {"claim": "上浆提升肉片的滑嫩口感。", "type": "graph_relation", "relation_type": "IMPROVES_TEXTURE", "entities": ["上浆", "肉片", "滑嫩"], "is_graph_evidence": true}, {"claim": "垫底蔬菜吸收汤汁后补充层次感。", "type": "text", "relation_type": "", "entities": ["垫底蔬菜", "层次感"], "is_graph_evidence": false}]}
+内容摘要:
+水煮肉片的麻辣鲜香主要来自豆瓣酱、花椒和辣椒的共同作用，上浆能让肉片更滑嫩，垫底蔬菜吸收汤汁后补充层次感。
+
+用户问题：为什么水煮肉片能形成麻辣鲜香的口味？豆瓣酱、花椒、辣椒、上浆和垫底蔬菜之间分别起什么作用？
+
+回答要求：
+- 先给出直接答案，再补充必要解释。
+- 结论必须能在证据中找到依据。
+- 尽量在关键结论后标注“依据：菜谱证据 N”。
+- 如果涉及关系解释，可以引用图谱关系，但不要超出证据做过度推断。
+- 如果证据不足，请明确说明。
+- 用简洁、自然的中文回答。

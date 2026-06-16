@@ -1,0 +1,21 @@
+# Baseline profile.
+#
+# Keep this profile behavior-neutral. Its main purpose is to make the active
+# configuration profile explicit in build manifests and eval reports.
+
+[api]
+auth_enabled = true
+max_request_body_bytes = 16384
+serving_hot_refresh_enabled = true
+serving_hot_refresh_interval_seconds = 2.0
+
+[models]
+llm_input_cost_per_million_tokens = 0.0
+llm_output_cost_per_million_tokens = 0.0
+
+[observability]
+enable_opentelemetry = false
+otel_service_name = "graphrag"
+otel_exporter_otlp_endpoint = ""
+otel_trace_sample_ratio = 1.0
+enable_prometheus = true

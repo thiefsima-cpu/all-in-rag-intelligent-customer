@@ -1,0 +1,201 @@
+[
+  {
+    "name": "graph_explanation_real_route",
+    "question": "为什么水煮肉片里的豆瓣酱、花椒、辣椒和垫底蔬菜会共同形成麻辣鲜香？它们之间分别是什么关系？",
+    "answer_text": "离线两阶段答案：豆瓣酱、花椒和辣椒共同贡献麻辣鲜香，垫底蔬菜负责吸收汤汁并补足层次。",
+    "expected_route_strategy": "graph_rag",
+    "expected_generation_mode": "two_stage",
+    "expected_stage_names": ["plan", "graph_rag", "post_process"],
+    "expected_graph_event_names": ["plan", "execute", "postprocess"],
+    "expected_graph_query_type": "multi_hop",
+    "expected_graph_doc_count": 2,
+    "expected_graph_snapshot_doc_count": 2,
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7,
+    "top_k": 2,
+    "hybrid_documents": [],
+    "graph_documents": [
+      {
+        "content": "豆瓣酱、花椒和辣椒在水煮肉片中共同贡献麻辣鲜香。",
+        "recipe_id": "recipe-1",
+        "recipe_name": "水煮肉片",
+        "source": "graph_rag",
+        "score": 0.97,
+        "matched_terms": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"],
+        "graph_evidence": {
+          "description": "多种调味料共同作用形成目标风味。"
+        },
+        "evidence_units": [
+          {
+            "claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。",
+            "evidence_type": "graph_relation",
+            "relation_type": "CONTRIBUTES_TO",
+            "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"],
+            "is_graph_evidence": true
+          }
+        ]
+      },
+      {
+        "content": "垫底蔬菜吸收汤汁和油香，补足整体层次感。",
+        "recipe_id": "recipe-1",
+        "recipe_name": "水煮肉片",
+        "source": "graph_rag",
+        "score": 0.91,
+        "matched_terms": ["垫底蔬菜", "层次感"],
+        "graph_evidence": {
+          "description": "配菜通过吸收汤汁增强口感层次。"
+        },
+        "evidence_units": [
+          {
+            "claim": "垫底蔬菜吸收汤汁后补足层次感。",
+            "evidence_type": "graph_relation",
+            "relation_type": "ABSORBS_FLAVOR",
+            "entities": ["垫底蔬菜", "汤汁", "层次感"],
+            "is_graph_evidence": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "combined_tofu_real_route",
+    "question": "推荐两道带豆腐、口味清淡一点的家常菜，并解释它们为什么适合减脂，这些约束和食材风味之间有什么关系？",
+    "answer_text": "离线两阶段答案：鲫鱼豆腐汤和家常豆腐都能满足清淡、带豆腐的约束，前者偏汤鲜，后者可以少油处理，更适合减脂场景。",
+    "expected_route_strategy": "combined",
+    "expected_generation_mode": "two_stage",
+    "expected_stage_names": ["plan", "combined", "post_process"],
+    "expected_graph_event_names": ["plan", "execute", "postprocess"],
+    "expected_graph_query_type": "multi_hop",
+    "expected_graph_doc_count": 2,
+    "expected_graph_snapshot_doc_count": 2,
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7,
+    "top_k": 2,
+    "hybrid_documents": [
+      {
+        "content": "鲫鱼豆腐汤口味清淡，豆腐吸收汤鲜，适合想吃得温和一点的场景。",
+        "recipe_id": "recipe-2",
+        "recipe_name": "鲫鱼豆腐汤",
+        "source": "hybrid",
+        "score": 0.92,
+        "matched_terms": ["豆腐", "清淡"],
+        "evidence_units": [
+          {
+            "claim": "鲫鱼豆腐汤口味清淡，适合偏清淡需求。",
+            "evidence_type": "text",
+            "entities": ["鲫鱼豆腐汤", "清淡"],
+            "is_graph_evidence": false
+          }
+        ]
+      },
+      {
+        "content": "家常豆腐可以少油处理，保留豆腐主体，整体风味更克制。",
+        "recipe_id": "recipe-3",
+        "recipe_name": "家常豆腐",
+        "source": "hybrid",
+        "score": 0.89,
+        "matched_terms": ["豆腐", "少油"],
+        "evidence_units": [
+          {
+            "claim": "家常豆腐可以通过少油处理满足减脂偏好。",
+            "evidence_type": "text",
+            "entities": ["家常豆腐", "少油", "减脂"],
+            "is_graph_evidence": false
+          }
+        ]
+      }
+    ],
+    "graph_documents": [
+      {
+        "content": "清淡约束通常关联少油、汤鲜或调味克制的烹饪关系。",
+        "recipe_id": "recipe-2",
+        "recipe_name": "鲫鱼豆腐汤",
+        "source": "graph_rag",
+        "score": 0.9,
+        "matched_terms": ["清淡", "减脂"],
+        "graph_evidence": {
+          "description": "约束与烹饪属性之间存在风味和健康关系。"
+        },
+        "evidence_units": [
+          {
+            "claim": "清淡和减脂偏好通常通过少油、汤鲜等关系得到满足。",
+            "evidence_type": "graph_relation",
+            "relation_type": "SUPPORTS_CONSTRAINT",
+            "entities": ["清淡", "减脂", "少油", "汤鲜"],
+            "is_graph_evidence": true
+          }
+        ]
+      },
+      {
+        "content": "豆腐与汤鲜、少油这类风味属性结合时，更容易匹配减脂和清淡场景。",
+        "recipe_id": "recipe-3",
+        "recipe_name": "家常豆腐",
+        "source": "graph_rag",
+        "score": 0.87,
+        "matched_terms": ["豆腐", "汤鲜", "少油"],
+        "graph_evidence": {
+          "description": "食材属性和约束之间可以形成多跳关系。"
+        },
+        "evidence_units": [
+          {
+            "claim": "豆腐与汤鲜、少油属性的组合更容易匹配清淡减脂场景。",
+            "evidence_type": "graph_relation",
+            "relation_type": "COMBINES_WITH",
+            "entities": ["豆腐", "汤鲜", "少油", "减脂"],
+            "is_graph_evidence": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "hybrid_recipe_real_route",
+    "question": "宫保鸡丁怎么做？",
+    "answer_text": "离线直接答案：先处理鸡丁，再炒香干辣椒和花生，最后回锅调味收汁。",
+    "expected_route_strategy": "hybrid_traditional",
+    "expected_generation_mode": "direct",
+    "expected_stage_names": ["plan", "hybrid", "post_process"],
+    "expected_graph_event_names": [],
+    "expected_graph_query_type": "",
+    "expected_graph_doc_count": 0,
+    "expected_graph_snapshot_doc_count": 0,
+    "min_complexity": 0.0,
+    "min_relationship_intensity": 0.0,
+    "top_k": 2,
+    "hybrid_documents": [
+      {
+        "content": "宫保鸡丁通常先把鸡丁腌制，再下锅滑散备用。",
+        "recipe_id": "recipe-4",
+        "recipe_name": "宫保鸡丁",
+        "source": "hybrid",
+        "score": 0.92,
+        "matched_terms": ["宫保鸡丁", "鸡丁"],
+        "evidence_units": [
+          {
+            "claim": "宫保鸡丁先处理鸡丁是常见做法。",
+            "evidence_type": "text",
+            "entities": ["宫保鸡丁", "鸡丁"],
+            "is_graph_evidence": false
+          }
+        ]
+      },
+      {
+        "content": "随后炒香干辣椒和花生，再把鸡丁回锅并调味收汁。",
+        "recipe_id": "recipe-4",
+        "recipe_name": "宫保鸡丁",
+        "source": "hybrid",
+        "score": 0.89,
+        "matched_terms": ["干辣椒", "花生", "收汁"],
+        "evidence_units": [
+          {
+            "claim": "宫保鸡丁常见步骤包括炒香配料并回锅收汁。",
+            "evidence_type": "text",
+            "entities": ["宫保鸡丁", "干辣椒", "花生", "收汁"],
+            "is_graph_evidence": false
+          }
+        ]
+      }
+    ],
+    "graph_documents": []
+  }
+]

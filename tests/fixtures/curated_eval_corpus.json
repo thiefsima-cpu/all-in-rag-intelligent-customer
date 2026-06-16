@@ -1,0 +1,44 @@
+[
+  {
+    "query": "为什么水煮肉片能形成麻辣鲜香的口味？它和豆瓣酱、花椒、辣椒、垫底蔬菜、肉片上浆这些食材和步骤之间有什么关系？",
+    "category": "complex_relation",
+    "expected_strategy": "graph_rag",
+    "expected_recipe_names": ["水煮肉片"],
+    "expected_answer_terms": ["麻辣", "花椒"]
+  },
+  {
+    "query": "麻辣口味通常和哪些食材、技法或步骤关系更紧密？请用图谱关系解释。",
+    "category": "semantic_flavor",
+    "expected_strategy": "graph_rag",
+    "expected_recipe_names": [],
+    "expected_answer_terms": ["麻辣"]
+  },
+  {
+    "query": "宫保鸡丁怎么做？",
+    "category": "single_recipe",
+    "expected_strategy": "hybrid_traditional",
+    "expected_recipe_names": ["宫保鸡丁"],
+    "expected_answer_terms": []
+  },
+  {
+    "query": "鱼香肉丝的主要做法是什么？",
+    "category": "single_recipe",
+    "expected_strategy": "hybrid_traditional",
+    "expected_recipe_names": ["鱼香肉丝"],
+    "expected_answer_terms": []
+  },
+  {
+    "query": "20分钟内少油的鸡肉菜有哪些？",
+    "category": "constrained_recommendation",
+    "expected_strategy": null,
+    "expected_recipe_names": [],
+    "expected_answer_terms": []
+  },
+  {
+    "query": "推荐几道带豆腐、口味清淡一点的家常菜。",
+    "category": "recommendation",
+    "expected_strategy": null,
+    "expected_recipe_names": [],
+    "expected_answer_terms": []
+  }
+]

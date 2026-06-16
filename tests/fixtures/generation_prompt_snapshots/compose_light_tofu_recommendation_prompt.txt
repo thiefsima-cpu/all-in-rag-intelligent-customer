@@ -1,0 +1,47 @@
+你是一位专业的中式烹饪检索问答助手。请根据“回答计划”和“检索证据”生成最终答案。
+用户问题：推荐两道带豆腐、口味清淡一点的家常菜。
+
+回答计划：{
+  "answer_type": "recommendation",
+  "reasoning_mode": "grounded",
+  "outline": [
+    "先给出直接答案",
+    "再说明关键证据与关系",
+    "最后交代证据边界"
+  ],
+  "key_points": [
+    {
+      "title": "鲫鱼豆腐汤",
+      "claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。",
+      "citations": [
+        "菜谱证据 1"
+      ],
+      "use_graph_evidence": false
+    },
+    {
+      "title": "家常豆腐",
+      "claim": "家常豆腐可以做成少油版本，风味相对克制。",
+      "citations": [
+        "菜谱证据 2"
+      ],
+      "use_graph_evidence": false
+    }
+  ],
+  "cautions": [],
+  "missing_information": []
+}
+
+检索证据：
+[菜谱证据 1]
+{"citation": "菜谱证据 1", "recipe_id": "recipe-2", "recipe_name": "鲫鱼豆腐汤", "confidence": 0.91, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "清淡"], "evidence_units": [{"claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。", "type": "text", "relation_type": "", "entities": ["鲫鱼豆腐汤", "清淡"], "is_graph_evidence": false}]}
+
+[菜谱证据 2]
+{"citation": "菜谱证据 2", "recipe_id": "recipe-3", "recipe_name": "家常豆腐", "confidence": 0.88, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "少油"], "evidence_units": [{"claim": "家常豆腐可以做成少油版本，风味相对克制。", "type": "text", "relation_type": "", "entities": ["家常豆腐", "少油"], "is_graph_evidence": false}]}
+
+回答要求：
+- 先直接回答用户问题，再展开解释。
+- 只能根据证据作答，不要编造证据中不存在的事实。
+- 如果结论依赖图谱关系，请明确说明这是“图谱关系支持的有限推断”。
+- 每个关键结论后尽量标注依据，例如“依据：菜谱证据 1”或“依据：菜谱证据 1 的图谱关系”。
+- 如果证据不足，明确指出不足，不要强行补齐。
+- 用自然、清晰、专业的中文作答。

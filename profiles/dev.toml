@@ -1,0 +1,18 @@
+# Local development profile.
+
+[retrieval]
+top_k = 4
+vector_search_ef = 96
+hybrid_default_candidate_min_candidates = 8
+router_combined_candidate_min_candidates = 20
+
+[generation]
+max_tokens = 1200
+generation_compose_max_tokens = 900
+generation_direct_max_tokens = 500
+generation_evidence_max_chars = 600
+
+[observability]
+enable_query_tracing = true
+query_trace_path = "storage/traces/dev_query_trace.jsonl"
+

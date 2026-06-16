@@ -1,0 +1,164 @@
+[
+  {
+    "name": "graph explanation uses two-stage plan",
+    "question": "为什么水煮肉片能形成麻辣鲜香的口味？豆瓣酱、花椒、辣椒、上浆和垫底蔬菜之间分别起什么作用？",
+    "analysis": {
+      "query_complexity": 0.88,
+      "relationship_intensity": 0.86,
+      "reasoning_required": true,
+      "entity_count": 6,
+      "recommended_strategy": "graph_rag",
+      "confidence": 0.93
+    },
+    "expected_mode": "two_stage",
+    "expected_answer_type": "explanation",
+    "expected_reasoning_mode": "grounded_with_limited_inference",
+    "expected_package_items": 1,
+    "expected_min_key_points": 1,
+    "require_graph_key_point": true,
+    "required_citations": ["菜谱证据 1"],
+    "evidence_documents": [
+      {
+        "content": "水煮肉片的麻辣鲜香主要来自豆瓣酱、花椒和辣椒的共同作用，上浆能让肉片更滑嫩，垫底蔬菜吸收汤汁后补充层次感。",
+        "recipe_id": "recipe-1",
+        "recipe_name": "水煮肉片",
+        "source": "graph_rag",
+        "score": 0.96,
+        "matched_terms": ["麻辣鲜香", "豆瓣酱", "花椒", "辣椒", "上浆"],
+        "evidence_units": [
+          {
+            "claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。",
+            "evidence_type": "graph_relation",
+            "relation_type": "CONTRIBUTES_TO",
+            "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"],
+            "is_graph_evidence": true
+          },
+          {
+            "claim": "上浆提升肉片的滑嫩口感。",
+            "evidence_type": "graph_relation",
+            "relation_type": "IMPROVES_TEXTURE",
+            "entities": ["上浆", "肉片", "滑嫩"],
+            "is_graph_evidence": true
+          }
+        ]
+      },
+      {
+        "content": "垫底蔬菜吸收汤汁和油香，能承接辣味与香味，让整体口感更有层次。",
+        "recipe_id": "recipe-1",
+        "recipe_name": "水煮肉片",
+        "source": "graph_rag",
+        "score": 0.89,
+        "matched_terms": ["垫底蔬菜", "层次感"],
+        "evidence_units": [
+          {
+            "claim": "垫底蔬菜吸收汤汁后补充层次感。",
+            "evidence_type": "text",
+            "entities": ["垫底蔬菜", "层次感"],
+            "is_graph_evidence": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "light tofu recommendation stays grounded",
+    "question": "推荐两道带豆腐、口味清淡一点的家常菜。",
+    "analysis": {
+      "query_complexity": 0.42,
+      "relationship_intensity": 0.18,
+      "reasoning_required": false,
+      "entity_count": 2,
+      "recommended_strategy": "hybrid_traditional",
+      "confidence": 0.87
+    },
+    "expected_mode": "direct",
+    "expected_answer_type": "recommendation",
+    "expected_reasoning_mode": "grounded",
+    "expected_package_items": 2,
+    "expected_min_key_points": 2,
+    "required_citations": ["菜谱证据 1", "菜谱证据 2"],
+    "evidence_documents": [
+      {
+        "content": "鲫鱼豆腐汤口味清淡，豆腐吸收汤味，适合想吃得温和一点的场景。",
+        "recipe_id": "recipe-2",
+        "recipe_name": "鲫鱼豆腐汤",
+        "source": "hybrid",
+        "score": 0.91,
+        "matched_terms": ["豆腐", "清淡"],
+        "constraint_evidence": {
+          "reasons": ["口味偏清淡"]
+        },
+        "evidence_units": [
+          {
+            "claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。",
+            "evidence_type": "text",
+            "entities": ["鲫鱼豆腐汤", "清淡"],
+            "is_graph_evidence": false
+          }
+        ]
+      },
+      {
+        "content": "家常豆腐可以少油处理，豆腐是主料，整体风味比重口菜更克制。",
+        "recipe_id": "recipe-3",
+        "recipe_name": "家常豆腐",
+        "source": "hybrid",
+        "score": 0.88,
+        "matched_terms": ["豆腐", "少油"],
+        "constraint_evidence": {
+          "reasons": ["可做少油版本"]
+        },
+        "evidence_units": [
+          {
+            "claim": "家常豆腐可以做成少油版本，风味相对克制。",
+            "evidence_type": "text",
+            "entities": ["家常豆腐", "少油"],
+            "is_graph_evidence": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "relation question without graph evidence exposes boundary",
+    "question": "为什么宫保鸡丁里的花生和辣椒会影响整体风味，它们之间是什么关系？",
+    "analysis": {
+      "query_complexity": 0.81,
+      "relationship_intensity": 0.78,
+      "reasoning_required": true,
+      "entity_count": 3,
+      "recommended_strategy": "combined",
+      "confidence": 0.84
+    },
+    "expected_mode": "two_stage",
+    "expected_answer_type": "explanation",
+    "expected_reasoning_mode": "grounded",
+    "expected_package_items": 1,
+    "expected_min_key_points": 1,
+    "require_missing_information": true,
+    "required_citations": ["菜谱证据 1"],
+    "evidence_documents": [
+      {
+        "content": "宫保鸡丁常用花生补充香脆口感，辣椒提供辣味和香气，但当前证据没有直接给出两者之间的图谱关系链。",
+        "recipe_id": "recipe-4",
+        "recipe_name": "宫保鸡丁",
+        "source": "combined",
+        "score": 0.9,
+        "matched_terms": ["花生", "辣椒", "风味"],
+        "evidence_units": [
+          {
+            "claim": "花生补充香脆口感。",
+            "evidence_type": "text",
+            "entities": ["花生", "香脆口感"],
+            "is_graph_evidence": false
+          },
+          {
+            "claim": "辣椒提供辣味和香气。",
+            "evidence_type": "text",
+            "entities": ["辣椒", "辣味", "香气"],
+            "is_graph_evidence": false
+          }
+        ]
+      }
+    ]
+  }
+]

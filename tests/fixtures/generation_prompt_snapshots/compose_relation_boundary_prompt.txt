@@ -1,0 +1,40 @@
+你是一位专业的中式烹饪检索问答助手。请根据“回答计划”和“检索证据”生成最终答案。
+用户问题：为什么宫保鸡丁里的花生和辣椒会影响整体风味，它们之间是什么关系？
+
+回答计划：{
+  "answer_type": "explanation",
+  "reasoning_mode": "grounded",
+  "outline": [
+    "先给出直接答案",
+    "再说明关键证据与关系",
+    "最后交代证据边界"
+  ],
+  "key_points": [
+    {
+      "title": "宫保鸡丁",
+      "claim": "花生补充香脆口感。",
+      "citations": [
+        "菜谱证据 1"
+      ],
+      "use_graph_evidence": false
+    }
+  ],
+  "cautions": [
+    "证据不足的部分需要显式说明，不要补充未检索到的事实。"
+  ],
+  "missing_information": [
+    "当前证据缺少足够的图谱关系来完整解释关系链。"
+  ]
+}
+
+检索证据：
+[菜谱证据 1]
+{"citation": "菜谱证据 1", "recipe_id": "recipe-4", "recipe_name": "宫保鸡丁", "confidence": 0.9, "retrieval_sources": ["unknown"], "matched_terms": ["花生", "辣椒", "风味"], "evidence_units": [{"claim": "花生补充香脆口感。", "type": "text", "relation_type": "", "entities": ["花生", "香脆口感"], "is_graph_evidence": false}, {"claim": "辣椒提供辣味和香气。", "type": "text", "relation_type": "", "entities": ["辣椒", "辣味", "香气"], "is_graph_evidence": false}]}
+
+回答要求：
+- 先直接回答用户问题，再展开解释。
+- 只能根据证据作答，不要编造证据中不存在的事实。
+- 如果结论依赖图谱关系，请明确说明这是“图谱关系支持的有限推断”。
+- 每个关键结论后尽量标注依据，例如“依据：菜谱证据 1”或“依据：菜谱证据 1 的图谱关系”。
+- 如果证据不足，明确指出不足，不要强行补齐。
+- 用自然、清晰、专业的中文作答。

@@ -1,0 +1,36 @@
+"""Aggregate retrieval runtime profile."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
+from .candidate_settings import RetrievalCandidateSizingSettings
+from .planner_settings import QueryPlannerRuntimeSettings
+from .postprocess_settings import RetrievalPostProcessSettings
+from .semantic_settings import QuerySemanticRuntimeSettings
+
+
+@dataclass
+class RetrievalRuntimeProfile:
+    planner: QueryPlannerRuntimeSettings = field(default_factory=QueryPlannerRuntimeSettings)
+    semantics: QuerySemanticRuntimeSettings = field(default_factory=QuerySemanticRuntimeSettings)
+    candidates: RetrievalCandidateSizingSettings = field(default_factory=RetrievalCandidateSizingSettings)
+    postprocess: RetrievalPostProcessSettings = field(default_factory=RetrievalPostProcessSettings)
+
+    @classmethod
+    def from_config(cls, config) -> "RetrievalRuntimeProfile":
+        from .factory import RetrievalRuntimeProfileFactory
+
+        return RetrievalRuntimeProfileFactory().build(config)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "planner": self.planner.to_dict(),
+            "semantics": self.semantics.to_dict(),
+            "candidates": self.candidates.to_dict(),
+            "postprocess": self.postprocess.to_dict(),
+        }
+
+
+__all__ = ["RetrievalRuntimeProfile"]

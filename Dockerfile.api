@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN python -m pip install --upgrade pip==26.1.1 wheel==0.47.0 \
+    && python -m pip install -r requirements.txt
+
+COPY pyproject.toml ./
+COPY config.py main.py main_build_service.py ./
+COPY rag_modules ./rag_modules
+COPY scripts ./scripts
+COPY profiles ./profiles
+RUN python -m pip install -e . --no-deps --no-build-isolation
+
+EXPOSE 8000
+
+CMD ["graph-rag-api"]

@@ -1,0 +1,14 @@
+**
+!Dockerfile.api
+!docker-compose.yml
+!pyproject.toml
+!requirements.txt
+!config.py
+!main.py
+!main_build_service.py
+!rag_modules/
+!rag_modules/**
+!scripts/
+!scripts/**
+!profiles/
+!profiles/**

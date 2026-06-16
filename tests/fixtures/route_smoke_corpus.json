@@ -1,0 +1,379 @@
+[
+  {
+    "name": "single_recipe_gongbao",
+    "category": "single_recipe",
+    "query": "宫保鸡丁怎么做？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "qa",
+    "expected_reasoning_required": false,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["CONTAINS_STEP"]
+  },
+  {
+    "name": "single_recipe_tomato_egg",
+    "category": "single_recipe",
+    "query": "番茄炒蛋的做法是什么？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "qa",
+    "expected_reasoning_required": false,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["CONTAINS_STEP"]
+  },
+  {
+    "name": "single_recipe_braised_ribs",
+    "category": "single_recipe",
+    "query": "红烧排骨怎么做？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "qa",
+    "expected_reasoning_required": false,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["CONTAINS_STEP"]
+  },
+  {
+    "name": "keyword_only_recipe",
+    "category": "single_recipe",
+    "query": "蛋炒饭",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "qa",
+    "expected_reasoning_required": false,
+    "expected_needs_recipe_recommendation": false
+  },
+  {
+    "name": "light_home_style_recommendation",
+    "category": "recommendation",
+    "query": "推荐两道清淡一点的家常菜。",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "recommendation",
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": ["HAS_FLAVOR", "HAS_HEALTH_TAG", "HAS_CUISINE_STYLE"],
+    "expected_constraints": {
+      "include_terms": ["家常菜"],
+      "cuisine_terms": ["家常菜"],
+      "health_terms": ["清淡"],
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "time_and_health_constraint",
+    "category": "constrained_recommendation",
+    "query": "20分钟以内有哪些少油鸡肉菜？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "recommendation",
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": ["HAS_TIME_PROFILE", "HAS_HEALTH_TAG"],
+    "expected_constraints": {
+      "health_terms": ["少油"],
+      "time": {
+        "max_total_minutes": 20
+      },
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "excluded_ingredient_recommendation",
+    "category": "constrained_recommendation",
+    "query": "推荐不吃花生，想要下饭菜。",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "recommendation",
+    "expected_needs_recipe_recommendation": true,
+    "expected_constraints": {
+      "exclude_terms": ["花生"],
+      "excluded_ingredients": ["花生"],
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "beginner_vegetarian_time_constraint",
+    "category": "constrained_recommendation",
+    "query": "推荐30分钟内适合新手的素菜。",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "recommendation",
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": [
+      "HAS_DIET_TAG",
+      "HAS_TIME_PROFILE",
+      "HAS_DIFFICULTY_LEVEL"
+    ],
+    "expected_constraints": {
+      "include_terms": ["素菜"],
+      "cuisine_terms": ["素菜"],
+      "preference_terms": ["新手"],
+      "time": {
+        "max_total_minutes": 30
+      },
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "hypertension_low_salt_recommendation",
+    "category": "constrained_recommendation",
+    "query": "高血压适合哪些低盐家常菜？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "recommendation",
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": ["HAS_HEALTH_TAG", "HAS_CUISINE_STYLE"],
+    "expected_constraints": {
+      "cuisine_terms": ["家常菜"],
+      "health_terms": ["高血压", "低盐"],
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "recipe_cuisine_classification",
+    "category": "classification",
+    "query": "回锅肉属于什么菜系？",
+    "expected_strategy": "hybrid_traditional",
+    "expected_graph_query_type": "entity_relation",
+    "expected_intent": "qa",
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["HAS_CUISINE_STYLE"]
+  },
+  {
+    "name": "water_boiled_pork_complex_relation",
+    "category": "multi_hop_relation",
+    "query": "为什么水煮肉片能形成麻辣鲜香的口味？它和豆瓣酱、花椒、辣椒、垫底蔬菜、肉片上浆这些食材和步骤之间有什么关系？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "CONTAINS_STEP",
+      "HAS_FLAVOR",
+      "USES_TECHNIQUE",
+      "CONTRIBUTES_TO",
+      "INGREDIENT_CONTRIBUTES_TO"
+    ],
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "spicy_flavor_semantics",
+    "category": "multi_hop_relation",
+    "query": "麻辣口味通常和哪些食材、技法或步骤关系更紧密？请用图谱关系解释。",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "CONTAINS_STEP",
+      "HAS_FLAVOR",
+      "USES_TECHNIQUE",
+      "INGREDIENT_CONTRIBUTES_TO",
+      "TECHNIQUE_MODIFIES_TEXTURE"
+    ],
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "starching_changes_texture",
+    "category": "multi_hop_relation",
+    "query": "为什么上浆能让肉片更滑嫩？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "USES_TECHNIQUE",
+      "CONTRIBUTES_TO",
+      "TECHNIQUE_MODIFIES_TEXTURE"
+    ],
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "seasoning_affects_flavor",
+    "category": "path_finding",
+    "query": "豆瓣酱和花椒对麻辣风味有什么影响？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "path_finding",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "HAS_FLAVOR",
+      "CONTRIBUTES_TO",
+      "INGREDIENT_CONTRIBUTES_TO"
+    ],
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "ingredient_to_flavor_path",
+    "category": "path_finding",
+    "query": "从豆瓣酱到麻辣风味之间的关系路径是什么？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "path_finding",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
+    "min_complexity": 0.5,
+    "min_relationship_intensity": 0.5
+  },
+  {
+    "name": "technique_to_texture_path",
+    "category": "path_finding",
+    "query": "从上浆到滑嫩口感的关键路径是什么？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "path_finding",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "USES_TECHNIQUE",
+      "TECHNIQUE_MODIFIES_TEXTURE"
+    ],
+    "min_complexity": 0.5,
+    "min_relationship_intensity": 0.5
+  },
+  {
+    "name": "flavor_path_with_intermediate_nodes",
+    "category": "path_finding",
+    "query": "花椒与麻辣风味之间的关系路径有哪些中间节点？",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "path_finding",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
+    "min_complexity": 0.5,
+    "min_relationship_intensity": 0.5
+  },
+  {
+    "name": "recipe_knowledge_graph_overview",
+    "category": "subgraph",
+    "query": "展示水煮肉片相关食材和技法的知识图谱全貌。",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "subgraph",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": [
+      "USES_TECHNIQUE",
+      "INGREDIENT_CONTRIBUTES_TO",
+      "TECHNIQUE_MODIFIES_TEXTURE"
+    ],
+    "min_relationship_intensity": 0.5
+  },
+  {
+    "name": "cuisine_flavor_network",
+    "category": "subgraph",
+    "query": "分析川菜麻辣风味的关系网络。",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "subgraph",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false,
+    "required_relation_types": ["HAS_FLAVOR", "HAS_CUISINE_STYLE"],
+    "min_relationship_intensity": 0.5
+  },
+  {
+    "name": "same_flavor_recipe_cluster",
+    "category": "clustering",
+    "query": "有哪些和宫保鸡丁同风味的菜？",
+    "expected_strategy": "combined",
+    "expected_graph_query_type": "clustering",
+    "expected_intent": "recommendation",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
+    "expected_constraints": {
+      "needs_recipe_recommendation": true
+    }
+  },
+  {
+    "name": "similar_recipe_cluster",
+    "category": "clustering",
+    "query": "找出与鱼香肉丝类似的菜谱。",
+    "expected_strategy": "graph_rag",
+    "expected_graph_query_type": "clustering",
+    "expected_intent": "qa",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": false
+  },
+  {
+    "name": "tofu_health_relation_recommendation",
+    "category": "combined",
+    "query": "推荐几道带豆腐、口味清淡一点的家常菜，并解释它们为什么适合减脂、这些约束和食材风味之间有什么关系？",
+    "expected_strategy": "combined",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "recommendation",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": [
+      "HAS_FLAVOR",
+      "HAS_HEALTH_TAG",
+      "HAS_CUISINE_STYLE",
+      "CONTRIBUTES_TO",
+      "INGREDIENT_CONTRIBUTES_TO"
+    ],
+    "expected_constraints": {
+      "cuisine_terms": ["家常菜"],
+      "health_terms": ["清淡", "减脂"],
+      "needs_recipe_recommendation": true
+    },
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "time_health_texture_relation_recommendation",
+    "category": "combined",
+    "query": "推荐20分钟内少油的鸡肉菜，并解释时间和烹饪方式如何影响口感。",
+    "expected_strategy": "combined",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "recommendation",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": [
+      "USES_TECHNIQUE",
+      "HAS_HEALTH_TAG",
+      "HAS_TIME_PROFILE",
+      "CONTRIBUTES_TO",
+      "INGREDIENT_CONTRIBUTES_TO",
+      "TECHNIQUE_MODIFIES_TEXTURE"
+    ],
+    "expected_constraints": {
+      "health_terms": ["少油"],
+      "time": {
+        "max_total_minutes": 20
+      },
+      "needs_recipe_recommendation": true
+    },
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7
+  },
+  {
+    "name": "cuisine_exclusion_relation_recommendation",
+    "category": "combined",
+    "query": "推荐不吃花生，并说明川菜的菜系、食材如何影响风味，以及它们之间的关系。",
+    "expected_strategy": "combined",
+    "expected_graph_query_type": "multi_hop",
+    "expected_intent": "recommendation",
+    "expected_reasoning_required": true,
+    "expected_needs_recipe_recommendation": true,
+    "required_relation_types": [
+      "HAS_FLAVOR",
+      "HAS_CUISINE_STYLE",
+      "CONTRIBUTES_TO",
+      "INGREDIENT_CONTRIBUTES_TO"
+    ],
+    "expected_constraints": {
+      "exclude_terms": ["花生"],
+      "excluded_ingredients": ["花生"],
+      "cuisine_terms": ["川菜"],
+      "needs_recipe_recommendation": true
+    },
+    "min_complexity": 0.7,
+    "min_relationship_intensity": 0.7
+  }
+]

@@ -1,0 +1,38 @@
+你是一位专业的中式烹饪检索问答助手。请根据“回答计划”和“检索证据”生成最终答案。
+用户问题：为什么水煮肉片能形成麻辣鲜香的口味？豆瓣酱、花椒、辣椒、上浆和垫底蔬菜之间分别起什么作用？
+
+回答计划：{
+  "answer_type": "explanation",
+  "reasoning_mode": "grounded_with_limited_inference",
+  "outline": [
+    "先给出直接答案",
+    "再说明关键证据与关系",
+    "最后交代证据边界"
+  ],
+  "key_points": [
+    {
+      "title": "水煮肉片",
+      "claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。",
+      "citations": [
+        "菜谱证据 1"
+      ],
+      "use_graph_evidence": true
+    }
+  ],
+  "cautions": [
+    "涉及图谱关系的结论应表述为有限推断，避免过度外延。"
+  ],
+  "missing_information": []
+}
+
+检索证据：
+[菜谱证据 1]
+{"citation": "菜谱证据 1", "recipe_id": "recipe-1", "recipe_name": "水煮肉片", "confidence": 0.96, "retrieval_sources": ["unknown"], "matched_terms": ["麻辣鲜香", "豆瓣酱", "花椒", "辣椒", "上浆", "垫底蔬菜", "层次感"], "graph_paths": [{"evidence_unit": {"unit_id": "unit::490585b5edeee48e", "evidence_type": "graph_relation", "claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。", "source": "unknown", "score": 0.96, "recipe_id": "recipe-1", "recipe_name": "水煮肉片", "relation_type": "CONTRIBUTES_TO", "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"], "is_graph_evidence": true, "metadata": {}}}], "evidence_units": [{"claim": "豆瓣酱、花椒和辣椒共同贡献水煮肉片的麻辣鲜香。", "type": "graph_relation", "relation_type": "CONTRIBUTES_TO", "entities": ["豆瓣酱", "花椒", "辣椒", "麻辣鲜香"], "is_graph_evidence": true}, {"claim": "上浆提升肉片的滑嫩口感。", "type": "graph_relation", "relation_type": "IMPROVES_TEXTURE", "entities": ["上浆", "肉片", "滑嫩"], "is_graph_evidence": true}, {"claim": "垫底蔬菜吸收汤汁后补充层次感。", "type": "text", "relation_type": "", "entities": ["垫底蔬菜", "层次感"], "is_graph_evidence": false}]}
+
+回答要求：
+- 先直接回答用户问题，再展开解释。
+- 只能根据证据作答，不要编造证据中不存在的事实。
+- 如果结论依赖图谱关系，请明确说明这是“图谱关系支持的有限推断”。
+- 每个关键结论后尽量标注依据，例如“依据：菜谱证据 1”或“依据：菜谱证据 1 的图谱关系”。
+- 如果证据不足，明确指出不足，不要强行补齐。
+- 用自然、清晰、专业的中文作答。

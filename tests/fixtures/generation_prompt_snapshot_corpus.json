@@ -1,0 +1,68 @@
+[
+  {
+    "name": "direct_graph_explanation_prompt",
+    "plan_case": "graph explanation uses two-stage plan",
+    "prompt_type": "direct",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/direct_graph_explanation_prompt.txt",
+    "required_substrings": [
+      "图谱关系",
+      "内容摘要:",
+      "菜谱证据 1"
+    ]
+  },
+  {
+    "name": "compose_graph_explanation_prompt",
+    "plan_case": "graph explanation uses two-stage plan",
+    "prompt_type": "compose",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/compose_graph_explanation_prompt.txt",
+    "required_substrings": [
+      "回答计划：{",
+      "grounded_with_limited_inference",
+      "图谱关系支持的有限推断"
+    ]
+  },
+  {
+    "name": "direct_light_tofu_recommendation_prompt",
+    "plan_case": "light tofu recommendation stays grounded",
+    "prompt_type": "direct",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/direct_light_tofu_recommendation_prompt.txt",
+    "required_substrings": [
+      "菜谱证据 1",
+      "菜谱证据 2",
+      "推荐两道带豆腐、口味清淡一点的家常菜。"
+    ]
+  },
+  {
+    "name": "compose_light_tofu_recommendation_prompt",
+    "plan_case": "light tofu recommendation stays grounded",
+    "prompt_type": "compose",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/compose_light_tofu_recommendation_prompt.txt",
+    "required_substrings": [
+      "\"answer_type\": \"recommendation\"",
+      "鲫鱼豆腐汤",
+      "家常豆腐"
+    ]
+  },
+  {
+    "name": "direct_relation_boundary_prompt",
+    "plan_case": "relation question without graph evidence exposes boundary",
+    "prompt_type": "direct",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/direct_relation_boundary_prompt.txt",
+    "required_substrings": [
+      "宫保鸡丁",
+      "花生补充香脆口感。",
+      "辣椒提供辣味和香气。"
+    ]
+  },
+  {
+    "name": "compose_relation_boundary_prompt",
+    "plan_case": "relation question without graph evidence exposes boundary",
+    "prompt_type": "compose",
+    "snapshot_path": "tests/fixtures/generation_prompt_snapshots/compose_relation_boundary_prompt.txt",
+    "required_substrings": [
+      "当前证据缺少足够的图谱关系来完整解释关系链。",
+      "证据不足的部分需要显式说明",
+      "\"reasoning_mode\": \"grounded\""
+    ]
+  }
+]
