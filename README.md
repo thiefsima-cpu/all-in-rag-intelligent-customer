@@ -11,17 +11,16 @@ Use the repository bootstrap script on Windows:
 .\scripts\bootstrap_env.ps1 -Profile dev
 ```
 
-The dependency workflow stays split between:
-
-- `requirements.in` and `requirements.txt`
-- `requirements-dev.in` and `requirements-dev.txt`
-- `scripts/verify_environment.py`
+`pyproject.toml` is the dependency source of truth. Runtime direct dependencies
+live in `[project.dependencies]`; development tools live in the `dev` optional
+dependency group. `requirements.txt` and `requirements-dev.txt` are generated
+lock files consumed by Docker and the bootstrap script.
 
 Regenerate locks with Python 3.11:
 
 ```powershell
-python -m piptools compile requirements.in --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
-python -m piptools compile requirements-dev.in --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
 ```
 
 ## Engineering Entry

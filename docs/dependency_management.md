@@ -1,14 +1,19 @@
 # Dependency management
 
-Runtime and development dependencies are declared in `requirements.in` and
-`requirements-dev.in`. The corresponding `requirements.txt` files are
-resolver-generated lock files and must not be edited by hand.
+Runtime and development dependencies are declared in `pyproject.toml`.
+`[project.dependencies]` is the runtime direct dependency list. The
+`[project.optional-dependencies].dev` group contains test and local engineering
+tools such as `pytest`, `pip-tools`, `ruff`, `mypy`, and `pre-commit`.
 
-Regenerate the locks with Python 3.11:
+`requirements.txt` and `requirements-dev.txt` are resolver-generated lock files
+and must not be edited by hand. `requirements.in` and `requirements-dev.in` are
+retired; do not recreate them.
+
+After changing `pyproject.toml`, regenerate the locks with Python 3.11:
 
 ```powershell
-python -m piptools compile requirements.in --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
-python -m piptools compile requirements-dev.in --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
 ```
 
 Create an isolated development environment:
@@ -18,8 +23,8 @@ Create an isolated development environment:
 ```
 
 The script creates `.venv`, installs `requirements-dev.txt`, rejects a global
-interpreter, checks that the runtime lock contains no development-only tools,
-and runs `pip check`.
+interpreter, checks that the runtime lock contains no development-only tools
+declared by `pyproject.toml`, and runs `pip check`.
 
 Create a production-parity runtime environment or isolate the legacy agent:
 
@@ -37,7 +42,7 @@ Verify an existing development environment:
 .\.venv\Scripts\python scripts\verify_environment.py
 ```
 
-Dependency updates must change the relevant `.in` file, regenerate both locks,
+Dependency updates must change `pyproject.toml`, regenerate both locks,
 bootstrap a clean environment, and run the complete test suite. Direct global
 `pip install` commands are not a supported project setup.
 
@@ -49,8 +54,8 @@ upgrade cycles:
 
 - `jieba==0.42.1` imports `pkg_resources`, which setuptools has deprecated and
   scheduled for removal. Evaluate a maintained jieba release, an alternative
-  tokenizer, or a temporary setuptools compatibility pin before raising
-  setuptools beyond the current lock.
+  tokenizer, or a temporary setuptools compatibility pin before raising the
+  runtime lock or bootstrap `setuptools` pin.
 - `fastapi.testclient` emits Starlette's `httpx2` migration warning. Upgrade
   FastAPI, Starlette, and `httpx` together, then rerun the API test suite before
   removing the warning from the accepted list.

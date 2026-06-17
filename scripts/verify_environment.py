@@ -7,14 +7,16 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Iterable
 
-DEVELOPMENT_ONLY_PACKAGES = frozenset(
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ENVIRONMENT_ONLY_PACKAGES = frozenset(
     {
         "build",
+        "pip",
         "pip-tools",
-        "pytest",
         "pygments",
         "pyproject-hooks",
         "wheel",
@@ -41,7 +43,12 @@ def _requirement_names(lines: Iterable[str]) -> set[str]:
 
 def find_runtime_lock_violations(lock_path: Path) -> list[str]:
     names = _requirement_names(lock_path.read_text(encoding="utf-8").splitlines())
-    return sorted(names.intersection(DEVELOPMENT_ONLY_PACKAGES))
+    pyproject_path = REPOSITORY_ROOT / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dev_dependencies = _requirement_names(
+        pyproject["project"]["optional-dependencies"]["dev"]
+    )
+    return sorted(names.intersection(ENVIRONMENT_ONLY_PACKAGES | dev_dependencies))
 
 
 def validate_environment(

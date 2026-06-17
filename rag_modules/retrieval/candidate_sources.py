@@ -79,14 +79,10 @@ class VectorCandidateSource:
     )
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        try:
-            return self.runtime.vector_candidates(
-                request.query,
-                top_k=request.effective_candidate_k,
-            )
-        except Exception as exc:
-            logger.error("Vector retrieval failed: %s", exc)
-            return []
+        return self.runtime.vector_candidates(
+            request.query,
+            top_k=request.effective_candidate_k,
+        )
 
 
 @dataclass(frozen=True, slots=True)

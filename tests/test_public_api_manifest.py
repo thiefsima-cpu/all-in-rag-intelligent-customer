@@ -10,6 +10,8 @@ from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     INTERNAL_ONLY_SURFACE,
     LEGACY_PUBLIC_SURFACE,
+    LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+    LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     PUBLIC_API_SURFACE,
     ROOT_PUBLIC_SURFACE,
     SERVICE_API_SURFACE,
@@ -69,10 +71,12 @@ class PublicApiManifestTests(unittest.TestCase):
             self.assertEqual({kind}, {entry.kind for entry in entries})
             self.assertEqual(modules_for(entries), modules_for(grouped[kind]))
 
-    def test_legacy_surface_entries_name_canonical_targets(self) -> None:
+    def test_legacy_surface_entries_have_explicit_removal_policy(self) -> None:
         for entry in LEGACY_PUBLIC_SURFACE:
             self.assertNotEqual(entry.module_name, entry.canonical_module)
-            self.assertNotEqual("canonical", entry.retirement_phase)
+            self.assertEqual(entry.retirement_phase, "external_migration_window")
+            self.assertEqual(entry.removal_version, LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
+            self.assertEqual(entry.scan_rules, LEGACY_PUBLIC_SURFACE_SCAN_RULES)
 
         self.assertEqual(
             legacy_surface_by_module()["intelligent_query_router"].canonical_module,

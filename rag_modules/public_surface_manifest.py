@@ -13,6 +13,15 @@ class PublicSurfaceEntry:
     canonical_module: str
     retirement_phase: str
     notes: str = ""
+    removal_version: str = ""
+    scan_rules: tuple[str, ...] = ()
+
+
+LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION = "0.2.0"
+LEGACY_PUBLIC_SURFACE_SCAN_RULES = (
+    "internal_dependency_guard",
+    "thin_wrapper_guard",
+)
 
 
 PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
@@ -128,18 +137,24 @@ ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "root_facade",
         "rag_modules.routing.intelligent_query_router",
         "external_migration_window",
+        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ),
     PublicSurfaceEntry(
         "graph_data_preparation",
         "root_facade",
         "rag_modules.graph.data_preparation",
         "external_migration_window",
+        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ),
     PublicSurfaceEntry(
         "graph_indexing",
         "root_facade",
         "rag_modules.graph.indexing",
         "external_migration_window",
+        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ),
 )
 
@@ -149,6 +164,8 @@ EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "repo_root_facade",
         "rag_modules.configuration",
         "external_migration_window",
+        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ),
 )
 
@@ -208,6 +225,8 @@ __all__ = [
     "EXTERNAL_PUBLIC_SURFACE",
     "INTERNAL_ONLY_SURFACE",
     "LEGACY_PUBLIC_SURFACE",
+    "LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION",
+    "LEGACY_PUBLIC_SURFACE_SCAN_RULES",
     "PUBLIC_API_SURFACE",
     "ROOT_PUBLIC_SURFACE",
     "SERVICE_API_SURFACE",

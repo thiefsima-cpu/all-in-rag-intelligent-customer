@@ -4,8 +4,9 @@
 
 The repository uses canonical packages for all internal implementation,
 scripts, and ordinary tests. Legacy facades remain only as registered external
-compatibility bridges during the migration window. New code should use
-canonical imports; compatibility modules are not an alternate architecture.
+compatibility bridges during the migration window, and that window closes at
+removal version `0.2.0`. New code should use canonical imports; compatibility
+modules are not an alternate architecture.
 
 The machine-readable source of truth is
 [`rag_modules/public_surface_manifest.py`](../rag_modules/public_surface_manifest.py).
@@ -25,15 +26,25 @@ The machine-readable source of truth is
 
 ## Remaining Legacy Bridges
 
-| Legacy module | Canonical module | Phase |
-| --- | --- | --- |
-| `config.py` | `rag_modules.configuration` | external migration window |
-| `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | external migration window |
-| `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | external migration window |
-| `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | external migration window |
+| Legacy module | Canonical module | Phase | Removal version | Scan rules |
+| --- | --- | --- | --- | --- |
+| `config.py` | `rag_modules.configuration` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
+| `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
+| `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
+| `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
 
 These bridges are for external callers that have not migrated yet. Repository
 code should import the canonical module directly.
+
+## Scan Rules
+
+- `internal_dependency_guard`: AST scans cover `rag_modules/`, `scripts/`, and
+  ordinary `tests/` files so internal code, scripts, and non-compatibility
+  tests cannot import remaining legacy facades.
+- `thin_wrapper_guard`: AST scans cover every registered legacy bridge file and
+  allow only the docstring, `__future__` import, canonical target import, and
+  `__all__` assignment. A bridge that gains business logic, state, fallback
+  policy, or extra dependencies fails the public-surface boundary tests.
 
 ## Internal Freeze Rule
 
@@ -77,8 +88,10 @@ Canonical code should use `system.infrastructure`, `system.retrieval`,
 
 ## Final Retirement Criteria
 
-The remaining bridges can be deleted after known repository entrypoints,
-documentation, examples, scripts, eval tooling, and downstream consumers
-covered by the declared migration window use canonical imports for one release cycle.
-Deletion must update `public_surface_manifest.py`, remove the wrapper file, and
-keep a compatibility note in release documentation.
+The remaining bridges are scheduled for deletion in `0.2.0`. They can be
+deleted at that version after known repository entrypoints, documentation,
+examples, scripts, eval tooling, and downstream consumers covered by the
+declared migration window use canonical imports for one release cycle, with
+`internal_dependency_guard` and `thin_wrapper_guard` both passing. Deletion must
+update `public_surface_manifest.py`, remove the wrapper file, and keep a
+compatibility note in release documentation.

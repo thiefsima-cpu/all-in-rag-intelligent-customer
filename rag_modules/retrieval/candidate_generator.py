@@ -6,10 +6,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Sequence, Tuple
 
+from ..infra.resilience import CircuitBreaker, CircuitOpenError
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
 from .contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
+
+SKIP_CANDIDATE_SOURCES_METADATA_KEY = "skip_candidate_sources"
 
 
 @dataclass
@@ -20,11 +23,35 @@ class CandidateSourceResult:
     documents: List[EvidenceDocument] = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateSourceDegradation:
+    """Traceable degraded decision for one candidate source."""
+
+    spec: CandidateSourceSpec
+    reason: str
+    error_type: str = ""
+    message: str = ""
+    circuit_state: str = ""
+    failure_count: int = 0
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "source": self.spec.name,
+            "rank_name": self.spec.rank_name,
+            "reason": self.reason,
+            "error_type": self.error_type,
+            "message": self.message,
+            "circuit_state": self.circuit_state,
+            "failure_count": self.failure_count,
+        }
+
+
 @dataclass
 class CandidateSet:
     """Normalized candidate documents across all configured sources."""
 
     source_results: List[CandidateSourceResult] = field(default_factory=list)
+    degraded: List[CandidateSourceDegradation] = field(default_factory=list)
 
     @property
     def dual_docs(self) -> List[EvidenceDocument]:
@@ -57,11 +84,26 @@ class CandidateSet:
             for result in sorted(self.source_results, key=lambda item: item.spec.rank_order)
         }
 
+    @property
+    def degraded_sources(self) -> List[str]:
+        return [item.spec.name for item in self.degraded]
+
+    @property
+    def degraded_details(self) -> List[Dict[str, object]]:
+        return [item.to_dict() for item in self.degraded]
+
     def documents_for(self, source_name: str) -> List[EvidenceDocument]:
         for result in self.source_results:
             if result.spec.name == source_name:
                 return list(result.documents)
         return []
+
+    def to_stage_details(self) -> Dict[str, object]:
+        return {
+            "candidate_counts": self.stats,
+            "degraded_sources": self.degraded_sources,
+            "degraded_candidates": self.degraded_details,
+        }
 
 
 class RetrievalCandidateGenerator:
@@ -71,24 +113,38 @@ class RetrievalCandidateGenerator:
         self,
         *,
         sources: Sequence[RetrievalCandidateSource],
+        source_failure_threshold: int = 1,
+        source_recovery_timeout_seconds: float = 30.0,
     ):
         self.sources = tuple(sources)
+        self._source_breakers = {
+            source.spec.name: CircuitBreaker(
+                failure_threshold=source_failure_threshold,
+                recovery_timeout_seconds=source_recovery_timeout_seconds,
+            )
+            for source in self.sources
+        }
 
     def generate(self, request: RetrievalRequest) -> CandidateSet:
         effective_request = self._calibrate_request(request)
         results: List[CandidateSourceResult] = []
+        degraded: List[CandidateSourceDegradation] = []
+        skipped_sources = self._request_skipped_sources(effective_request)
         for source in self.sources:
-            documents = self._normalize_source_documents(
-                source.retrieve(effective_request),
-                spec=source.spec,
+            documents, degradation = self._retrieve_source(
+                source,
+                effective_request,
+                skipped_sources=skipped_sources,
             )
+            if degradation:
+                degraded.append(degradation)
             results.append(
                 CandidateSourceResult(
                     spec=source.spec,
                     documents=documents,
                 )
             )
-        candidate_set = CandidateSet(source_results=results)
+        candidate_set = CandidateSet(source_results=results, degraded=degraded)
         logger.debug("Hybrid candidate generation stats: %s", candidate_set.stats)
         return candidate_set
 
@@ -114,6 +170,75 @@ class RetrievalCandidateGenerator:
         return effective_request
 
     @staticmethod
+    def _request_skipped_sources(request: RetrievalRequest) -> set[str]:
+        raw_sources = request.metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
+        if isinstance(raw_sources, str):
+            raw_sources = [raw_sources]
+        return {
+            str(item).strip()
+            for item in (raw_sources or [])
+            if str(item).strip()
+        }
+
+    def _retrieve_source(
+        self,
+        source: RetrievalCandidateSource,
+        request: RetrievalRequest,
+        *,
+        skipped_sources: set[str],
+    ) -> tuple[List[EvidenceDocument], CandidateSourceDegradation | None]:
+        breaker = self._source_breakers[source.spec.name]
+        if source.spec.name in skipped_sources:
+            return [], self._degradation(
+                source.spec,
+                reason="request_skip",
+                breaker=breaker,
+            )
+        try:
+            breaker.before_call()
+        except CircuitOpenError as exc:
+            return [], self._degradation(
+                source.spec,
+                reason="circuit_open",
+                breaker=breaker,
+                error=exc,
+            )
+        try:
+            documents = self._normalize_source_documents(
+                source.retrieve(request),
+                spec=source.spec,
+            )
+        except Exception as exc:
+            breaker.record_failure()
+            logger.warning("Candidate source %s degraded: %s", source.spec.name, exc)
+            return [], self._degradation(
+                source.spec,
+                reason="exception",
+                breaker=breaker,
+                error=exc,
+            )
+        breaker.record_success()
+        return documents, None
+
+    @staticmethod
+    def _degradation(
+        spec: CandidateSourceSpec,
+        *,
+        reason: str,
+        breaker: CircuitBreaker,
+        error: Exception | None = None,
+    ) -> CandidateSourceDegradation:
+        snapshot = breaker.snapshot()
+        return CandidateSourceDegradation(
+            spec=spec,
+            reason=reason,
+            error_type=type(error).__name__ if error else "",
+            message=str(error or ""),
+            circuit_state=snapshot.state,
+            failure_count=snapshot.failure_count,
+        )
+
+    @staticmethod
     def _normalize_source_documents(
         documents: List[EvidenceDocument],
         *,
@@ -136,6 +261,8 @@ class RetrievalCandidateGenerator:
 
 __all__ = [
     "CandidateSet",
+    "CandidateSourceDegradation",
     "CandidateSourceResult",
     "RetrievalCandidateGenerator",
+    "SKIP_CANDIDATE_SOURCES_METADATA_KEY",
 ]

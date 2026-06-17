@@ -9,6 +9,8 @@ from rag_modules.app.legacy_surface import GROUPED_LEGACY_ATTRIBUTE_MAP
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
+    LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+    LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ROOT_PUBLIC_SURFACE,
     repo_root_facade_module_names,
     root_facade_module_names,
@@ -247,6 +249,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "## Current Policy",
             "## Canonical Packages",
             "## Remaining Legacy Bridges",
+            "## Scan Rules",
             "## Internal Freeze Rule",
             "## Thin Wrapper Rule",
             "## Retired Facade History",
@@ -256,6 +259,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertNotIn("E:/ai-project/all-in-rag/code/C9/", content)
         self.assertIn("public_surface_manifest.py", content)
         self.assertIn("canonical imports", content)
+        self.assertIn(LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION, content)
+        self.assertIn("internal_dependency_guard", content)
+        self.assertIn("thin_wrapper_guard", content)
         for expected in (
             "config.py",
             "rag_modules.graph_data_preparation",
@@ -286,10 +292,14 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         }
         manifest_root = {entry.module_name for entry in ROOT_PUBLIC_SURFACE}
         manifest_external = {entry.module_name for entry in EXTERNAL_PUBLIC_SURFACE}
+        manifest_removal_versions = {entry.removal_version for entry in LEGACY_PUBLIC_SURFACE}
+        manifest_scan_rules = {entry.scan_rules for entry in LEGACY_PUBLIC_SURFACE}
 
         self.assertEqual(root_files, manifest_root)
         self.assertFalse((RAG_MODULES_DIR / "compat").exists())
         self.assertEqual({"config"}, manifest_external)
+        self.assertEqual({LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}, manifest_removal_versions)
+        self.assertEqual({LEGACY_PUBLIC_SURFACE_SCAN_RULES}, manifest_scan_rules)
 
     def test_remaining_legacy_facades_are_thin_registered_wrappers(self) -> None:
         violations: list[str] = []
