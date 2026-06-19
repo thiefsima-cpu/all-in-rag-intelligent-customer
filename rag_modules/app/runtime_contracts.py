@@ -7,6 +7,7 @@ from ..runtime_contracts import (
     HybridCandidateRuntimePort,
     Neo4jDriverPort,
     Neo4jManagerPort,
+    Neo4jSessionPort,
     QueryTracerPort,
     VectorIndexModulePort,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "HybridCandidateRuntimePort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",
+    "Neo4jSessionPort",
     "QueryTracerPort",
     "VectorIndexModulePort",
 ]

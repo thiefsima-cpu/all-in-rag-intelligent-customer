@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 from rag_modules.app.runtime_contracts import (
     GraphDataModulePort,
+    Neo4jDriverPort,
     Neo4jManagerPort,
+    Neo4jSessionPort,
     VectorIndexModulePort,
 )
 from rag_modules.runtime import QueryAnalysis, ensure_optional_query_analysis
@@ -88,6 +90,23 @@ class _Neo4jManagerFake:
         self.closed = True
 
 
+class _Neo4jSessionFake:
+    def __enter__(self) -> _Neo4jSessionFake:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        del exc_type, exc, tb
+
+    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> object:
+        return {"query": query, "parameters": parameters, "kwargs": kwargs}
+
+
+class _Neo4jDriverFake:
+    def session(self, **kwargs: object) -> _Neo4jSessionFake:
+        del kwargs
+        return _Neo4jSessionFake()
+
+
 def _uses_graph_data_port(port: GraphDataModulePort) -> dict[str, object]:
     return port.get_statistics()
 
@@ -100,11 +119,23 @@ def _uses_neo4j_port(port: Neo4jManagerPort) -> object:
     return port.driver
 
 
+def _runs_neo4j_session(driver: Neo4jDriverPort) -> object:
+    with driver.session(database="neo4j") as session:
+        session_port: Neo4jSessionPort = session
+        return session_port.run("RETURN 1")
+
+
 class RuntimeTypeContractTests(unittest.TestCase):
     def test_runtime_protocols_accept_existing_structural_shapes(self) -> None:
         self.assertEqual(_uses_graph_data_port(_GraphDataFake()), {"total_chunks": 1})
         self.assertEqual(_uses_vector_index_port(_VectorIndexFake())[0]["text"], "tofu")
         self.assertEqual(getattr(_uses_neo4j_port(_Neo4jManagerFake()), "name"), "driver")
+
+    def test_neo4j_driver_port_exposes_session_context_run(self) -> None:
+        self.assertEqual(
+            _runs_neo4j_session(_Neo4jDriverFake()),
+            {"query": "RETURN 1", "parameters": None, "kwargs": {}},
+        )
 
     def test_optional_analysis_normalizer_preserves_none(self) -> None:
         self.assertIsNone(ensure_optional_query_analysis(None))

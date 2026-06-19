@@ -17,10 +17,20 @@ if TYPE_CHECKING:
     from .text_document import TextDocument
 
 
+class Neo4jSessionPort(Protocol):
+    """Neo4j session behavior used by retrieval adapters."""
+
+    def __enter__(self) -> Neo4jSessionPort: ...
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
+
+    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> object: ...
+
+
 class Neo4jDriverPort(Protocol):
     """Neo4j driver behavior used by retrieval adapters."""
 
-    def session(self, **kwargs: object) -> object: ...
+    def session(self, **kwargs: object) -> Neo4jSessionPort: ...
 
 
 class Neo4jManagerPort(Protocol):
@@ -121,6 +131,7 @@ __all__ = [
     "HybridCandidateRuntimePort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",
+    "Neo4jSessionPort",
     "QueryTracerPort",
     "VectorIndexModulePort",
 ]
