@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ..answer_evidence_builder import AnswerEvidencePackage
-from ..runtime import analysis_strategy_name, analysis_value
+from ..runtime import AnalysisInput, analysis_strategy_name, analysis_value
 from .models import GenerationDecision, GenerationSettings
 
 
@@ -13,7 +11,7 @@ def decide_generation_mode(
     *,
     package: AnswerEvidencePackage,
     settings: GenerationSettings,
-    analysis: Any = None,
+    analysis: AnalysisInput = None,
 ) -> GenerationDecision:
     if not settings.enable_two_stage:
         return GenerationDecision(

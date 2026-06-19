@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
 from ..answer_evidence_builder import AnswerEvidencePackage
-from ..runtime import AnswerContext, analysis_strategy_name
+from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
 from .client import GenerationClientAdapter
 from .models import AnswerPlan, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
@@ -43,7 +43,7 @@ class GenerationPlanner:
         self,
         question: str,
         package: AnswerEvidencePackage,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         *,
         timeout_seconds: float | None = None,
     ) -> AnswerPlan:
@@ -78,7 +78,7 @@ class GenerationPlanner:
     def _can_use_rule_plan(
         self,
         package: AnswerEvidencePackage,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
     ) -> bool:
         strategy = analysis_strategy_name(analysis)
         if strategy in {"graph_rag", "hybrid_traditional"}:

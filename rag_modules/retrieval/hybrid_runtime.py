@@ -7,8 +7,12 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 
+from ..app.runtime_contracts import Neo4jManagerPort, VectorIndexModulePort
+from ..configuration.models import GraphRAGConfig
+from ..graph_index import GraphIndexingModule
+from ..parent_doc_enricher import ParentDocumentEnricher
 from ..query_constraints import RecipeConstraintMatcher
-from .adapters import GraphKVRetriever, VectorRetriever
+from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .contracts import EvidenceDocument
 from .dual_level_retriever import DualLevelRetriever
 from .hybrid_driver_service import HybridDriverService
@@ -30,16 +34,16 @@ class HybridRetrievalRuntime:
     def __init__(
         self,
         *,
-        config,
-        milvus_module,
-        neo4j_manager,
+        config: GraphRAGConfig,
+        milvus_module: VectorIndexModulePort,
+        neo4j_manager: Neo4jManagerPort,
         database: str,
-        graph_indexing,
+        graph_indexing: GraphIndexingModule,
         graph_kv_retriever: GraphKVRetriever,
         keyword_extractor: QueryKeywordExtractor,
         index_service: HybridIndexService,
-        bm25_retriever,
-        parent_enricher,
+        bm25_retriever: BM25Retriever,
+        parent_enricher: ParentDocumentEnricher,
         adapter_factory: Optional[HybridRuntimeAdapterFactory] = None,
         driver_service: Optional[HybridDriverService] = None,
         parent_document_service: Optional[HybridParentDocumentService] = None,
@@ -66,7 +70,7 @@ class HybridRetrievalRuntime:
         self.state = HybridRetrievalState()
 
     @property
-    def driver(self):
+    def driver(self) -> object | None:
         return self.state.driver
 
     @property
@@ -90,11 +94,11 @@ class HybridRetrievalRuntime:
         return self.state.recipe_matcher
 
     @property
-    def vector_retriever(self):
+    def vector_retriever(self) -> VectorRetriever | None:
         return self.state.vector_retriever
 
     @property
-    def dual_level_service(self):
+    def dual_level_service(self) -> DualLevelRetriever | None:
         return self.state.dual_level_service
 
     def initialize(self, chunks: List[Document]) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
@@ -17,7 +17,7 @@ from .dual_level_retriever import DualLevelRetriever
 class HybridRetrievalState:
     """Mutable runtime state for hybrid retrieval resources and indexes."""
 
-    driver: Any = None
+    driver: object | None = None
     owns_driver: bool = False
     bm25: Optional[BM25Okapi] = None
     bm25_corpus_docs: List[Document] = field(default_factory=list)

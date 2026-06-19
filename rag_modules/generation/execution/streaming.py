@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator
 import logging
 import time
-from typing import Any
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import AnswerContext, GenerationSnapshot
+from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
 from ..client import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
@@ -22,9 +22,9 @@ class _StreamingGenerationMixin:
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         max_retries: int | None = None,
-    ):
+    ) -> Generator[str, None, GenerationSnapshot]:
         self._consume_token_usage()
         answer_context, package = self._resolve_answer_context(
             answer_context=answer_context,
@@ -157,9 +157,9 @@ class _StreamingGenerationMixin:
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         max_retries: int | None = None,
-        chunk_callback=None,
+        chunk_callback: Callable[[str], None] | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         chunks: list[str] = []
         generator = self.stream(
