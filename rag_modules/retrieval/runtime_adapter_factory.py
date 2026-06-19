@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..app.runtime_contracts import VectorIndexModulePort
+from ..runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
 from .adapters import GraphKVRetriever, VectorRetriever
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 from .dual_level_evidence_service import DualLevelEvidenceService
@@ -19,7 +19,7 @@ class HybridRuntimeAdapterFactory(Protocol):
         self,
         *,
         milvus_module: VectorIndexModulePort,
-        driver: object | None,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> VectorRetriever: ...
 
@@ -29,7 +29,7 @@ class HybridRuntimeAdapterFactory(Protocol):
         graph_indexing: object,
         graph_kv_retriever: GraphKVRetriever,
         keyword_extractor: QueryKeywordExtractor,
-        driver: object | None,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> DualLevelRetriever: ...
 
@@ -41,7 +41,7 @@ class DefaultHybridRuntimeAdapterFactory:
     def create_vector_retriever(
         *,
         milvus_module: VectorIndexModulePort,
-        driver: object | None,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> VectorRetriever:
         return VectorRetriever(
@@ -56,7 +56,7 @@ class DefaultHybridRuntimeAdapterFactory:
         graph_indexing: object,
         graph_kv_retriever: GraphKVRetriever,
         keyword_extractor: QueryKeywordExtractor,
-        driver: object | None,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> DualLevelRetriever:
         return DualLevelRetriever(

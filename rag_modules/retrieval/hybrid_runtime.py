@@ -7,11 +7,11 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 
-from ..app.runtime_contracts import Neo4jManagerPort, VectorIndexModulePort
 from ..configuration.models import GraphRAGConfig
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..query_constraints import RecipeConstraintMatcher
+from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .contracts import EvidenceDocument
 from .dual_level_retriever import DualLevelRetriever
@@ -70,7 +70,7 @@ class HybridRetrievalRuntime:
         self.state = HybridRetrievalState()
 
     @property
-    def driver(self) -> object | None:
+    def driver(self) -> Neo4jDriverPort | None:
         return self.state.driver
 
     @property

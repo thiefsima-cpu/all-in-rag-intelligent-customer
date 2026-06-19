@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
 from ..query_constraints import RecipeConstraintMatcher
+from ..runtime_contracts import Neo4jDriverPort
 from .adapters import VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
 
@@ -17,7 +18,7 @@ from .dual_level_retriever import DualLevelRetriever
 class HybridRetrievalState:
     """Mutable runtime state for hybrid retrieval resources and indexes."""
 
-    driver: object | None = None
+    driver: Neo4jDriverPort | None = None
     owns_driver: bool = False
     bm25: Optional[BM25Okapi] = None
     bm25_corpus_docs: List[Document] = field(default_factory=list)

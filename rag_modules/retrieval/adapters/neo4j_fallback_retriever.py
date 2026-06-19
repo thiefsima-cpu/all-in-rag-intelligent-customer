@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
+from ...runtime_contracts import Neo4jDriverPort
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class Neo4jFallbackRetriever:
     """Run direct Neo4j fallback queries when in-memory graph indexes are sparse."""
 
-    def __init__(self, *, driver, database: str) -> None:
+    def __init__(self, *, driver: Neo4jDriverPort | None, database: str) -> None:
         self.driver = driver
         self.database = database
 

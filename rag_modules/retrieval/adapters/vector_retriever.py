@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from neo4j import Driver
-
+from ...runtime_contracts import Neo4jDriverPort
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
@@ -15,7 +14,12 @@ logger = logging.getLogger(__name__)
 class VectorRetriever:
     """Wrap Milvus similarity search with graph neighbor enrichment."""
 
-    def __init__(self, milvus_module, driver: Optional[Driver] = None, database: str = "neo4j"):
+    def __init__(
+        self,
+        milvus_module,
+        driver: Neo4jDriverPort | None = None,
+        database: str = "neo4j",
+    ):
         self.milvus_module = milvus_module
         self.driver = driver
         self.database = database
