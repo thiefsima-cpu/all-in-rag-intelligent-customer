@@ -99,23 +99,69 @@ class DependencyIsolationTests(unittest.TestCase):
             prefix="C:/Python311",
             base_prefix="C:/Python311",
             executable="C:/Python311/python.exe",
-            expected_venv=Path("E:/repo/.venv"),
+            expected_conda_env="graphrag-c9-dev",
+            conda_default_env="base",
         )
 
         self.assertTrue(any("virtual environment" in error for error in errors))
 
-    def test_environment_verifier_accepts_repository_venv(self) -> None:
+    def test_environment_verifier_accepts_expected_conda_environment(self) -> None:
         from scripts.verify_environment import validate_environment
 
-        expected = Path("E:/repo/.venv")
+        expected = Path("C:/Users/dev/miniconda3/envs/graphrag-c9-dev")
         errors = validate_environment(
             prefix=str(expected),
-            base_prefix="C:/Python311",
-            executable=str(expected / "Scripts" / "python.exe"),
-            expected_venv=expected,
+            base_prefix="C:/Users/dev/miniconda3",
+            executable=str(expected / "python.exe"),
+            expected_conda_env="graphrag-c9-dev",
+            conda_default_env="graphrag-c9-dev",
         )
 
         self.assertEqual(errors, [])
+
+    def test_environment_verifier_accepts_conda_environment_with_matching_base_prefix(
+        self,
+    ) -> None:
+        from scripts.verify_environment import validate_environment
+
+        expected = Path("C:/Users/dev/miniconda3/envs/graphrag-c9-dev")
+        errors = validate_environment(
+            prefix=str(expected),
+            base_prefix=str(expected),
+            executable=str(expected / "python.exe"),
+            expected_conda_env="graphrag-c9-dev",
+            conda_default_env="graphrag-c9-dev",
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_environment_verifier_rejects_wrong_conda_environment(self) -> None:
+        from scripts.verify_environment import validate_environment
+
+        active = Path("C:/Users/dev/miniconda3/envs/other-project")
+        errors = validate_environment(
+            prefix=str(active),
+            base_prefix="C:/Users/dev/miniconda3",
+            executable=str(active / "python.exe"),
+            expected_conda_env="graphrag-c9-dev",
+            conda_default_env="other-project",
+        )
+
+        self.assertTrue(
+            any("graphrag-c9-dev" in error and "other-project" in error for error in errors)
+        )
+
+    def test_bootstrap_uses_named_conda_environments(self) -> None:
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("graphrag-c9-dev", script)
+        self.assertIn("graphrag-c9-runtime", script)
+        self.assertIn("graphrag-c9-agent", script)
+        self.assertIn('"create" "--yes" "--name"', script)
+        self.assertIn('"run" "--name"', script)
+        self.assertIn("--expected-conda-env", script)
+        self.assertNotIn('"-m" "venv"', script)
 
     def test_bootstrap_agent_path_is_windows_powershell_safe(self) -> None:
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"

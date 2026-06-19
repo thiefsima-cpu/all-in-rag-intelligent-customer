@@ -16,15 +16,22 @@ python -m piptools compile pyproject.toml --output-file requirements.txt --strip
 python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
 ```
 
-Create an isolated development environment:
+Create an isolated Miniconda-backed development environment:
 
 ```powershell
 .\scripts\bootstrap_env.ps1 -Profile dev
 ```
 
-The script creates `.venv`, installs `requirements-dev.txt`, rejects a global
-interpreter, checks that the runtime lock contains no development-only tools
-declared by `pyproject.toml`, and runs `pip check`.
+The script creates or reuses the global conda environment `graphrag-c9-dev`,
+installs `requirements-dev.txt`, rejects the base/global interpreter, checks
+that the runtime lock contains no development-only tools declared by
+`pyproject.toml`, and runs `pip check`.
+
+Activate the development environment before running local commands:
+
+```powershell
+conda activate graphrag-c9-dev
+```
 
 Create a production-parity runtime environment or isolate the legacy agent:
 
@@ -33,18 +40,26 @@ Create a production-parity runtime environment or isolate the legacy agent:
 .\scripts\bootstrap_env.ps1 -Profile agent
 ```
 
-These profiles use `.venv-runtime` and `.venv-agent` respectively. Do not
-install the legacy agent requirements into the main environment.
+These profiles use the global conda environments `graphrag-c9-runtime` and
+`graphrag-c9-agent` respectively. Do not install the legacy agent requirements
+into the main environment.
+
+Override the default environment name when needed:
+
+```powershell
+.\scripts\bootstrap_env.ps1 -Profile dev -CondaEnvName my-graphrag-dev
+```
 
 Verify an existing development environment:
 
 ```powershell
-.\.venv\Scripts\python scripts\verify_environment.py
+conda run --name graphrag-c9-dev python scripts\verify_environment.py --expected-conda-env graphrag-c9-dev
 ```
 
 Dependency updates must change `pyproject.toml`, regenerate both locks,
-bootstrap a clean environment, and run the complete test suite. Direct global
-`pip install` commands are not a supported project setup.
+bootstrap a clean conda environment, and run the complete test suite. Direct
+global `pip install` commands outside the selected conda environment are not a
+supported project setup.
 
 ## Known lifecycle tasks
 

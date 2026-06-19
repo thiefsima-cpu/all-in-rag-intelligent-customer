@@ -5,11 +5,30 @@ pressure tooling in one place.
 
 ## Setup
 
-Use the repository bootstrap script on Windows:
+Install Miniconda or Anaconda, make sure `conda` is available in PowerShell,
+then use the repository bootstrap script on Windows:
 
 ```powershell
 .\scripts\bootstrap_env.ps1 -Profile dev
 ```
+
+The script creates or reuses the global conda environment `graphrag-c9-dev`.
+Activate it before running local engineering commands:
+
+```powershell
+conda activate graphrag-c9-dev
+```
+
+Copy the committed environment template to your private local `.env` file before
+running services:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Keep real API keys, tokens, and customer-specific values in `.env`. The
+committed `.env.example` file is documentation for required variables and should
+only contain placeholders or safe defaults.
 
 `pyproject.toml` is the dependency source of truth. Runtime direct dependencies
 live in `[project.dependencies]`; development tools live in the `dev` optional
