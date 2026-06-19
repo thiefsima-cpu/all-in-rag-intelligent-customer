@@ -3,10 +3,10 @@
 ## Current Policy
 
 The repository uses canonical packages for all internal implementation,
-scripts, and ordinary tests. Legacy facades remain only as registered external
-compatibility bridges during the migration window, and that window closes at
-removal version `0.2.0`. New code should use canonical imports; compatibility
-modules are not an alternate architecture.
+scripts, and ordinary tests. The final legacy facade migration window closes at
+removal version `0.2.0`: no legacy bridge remains registered, and retired
+import paths now fail instead of forwarding. New code must use canonical imports;
+compatibility modules are not an alternate architecture.
 
 The machine-readable source of truth is
 [`rag_modules/public_surface_manifest.py`](../rag_modules/public_surface_manifest.py).
@@ -24,43 +24,42 @@ The machine-readable source of truth is
 - Build/document artifacts: `rag_modules.build_pipeline.document_artifacts.*`
 - Infra adapters: `rag_modules.infra.*`
 
-## Remaining Legacy Bridges
+## Legacy Bridge Status
 
-| Legacy module | Canonical module | Phase | Removal version | Scan rules |
-| --- | --- | --- | --- | --- |
-| `config.py` | `rag_modules.configuration` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
-| `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
-| `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
-| `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | external migration window | `0.2.0` | `internal_dependency_guard`, `thin_wrapper_guard` |
+No legacy bridge remains registered in `public_surface_manifest.py`.
 
-These bridges are for external callers that have not migrated yet. Repository
-code should import the canonical module directly.
+| Retired module | Canonical replacement | Status | Removal version |
+| --- | --- | --- | --- |
+| `config.py` | `rag_modules.configuration` | retired in favor of canonical configuration imports | `0.2.0` |
+| `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | retired in favor of canonical routing imports | `0.2.0` |
+| `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | retired in favor of canonical graph data-preparation imports | `0.2.0` |
+| `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | retired in favor of canonical graph indexing imports | `0.2.0` |
 
 ## Scan Rules
 
 - `internal_dependency_guard`: AST scans cover `rag_modules/`, `scripts/`, and
-  ordinary `tests/` files so internal code, scripts, and non-compatibility
-  tests cannot import remaining legacy facades.
-- `thin_wrapper_guard`: AST scans cover every registered legacy bridge file and
-  allow only the docstring, `__future__` import, canonical target import, and
-  `__all__` assignment. A bridge that gains business logic, state, fallback
-  policy, or extra dependencies fails the public-surface boundary tests.
+  ordinary `tests/` files so internal code, scripts, and tests cannot import
+  retired facade modules or `rag_modules.compat.*`.
+- `thin_wrapper_guard`: the manifest still records the wrapper rule for any
+  explicitly approved future migration bridge. With the `0.2.0` retirement
+  complete, the active legacy surface is empty, so this guard also confirms
+  that no unregistered root wrapper is present.
 
 ## Internal Freeze Rule
 
 - No internal module, script, or ordinary test may import repo-root `config.py`,
-  `rag_modules.compat.*`, or root graph facade modules.
+  `rag_modules.compat.*`, `rag_modules.intelligent_query_router`, or root graph
+  facade modules.
 - New implementation lands in canonical packages only.
-- Compatibility tests may import legacy facades only to prove external import
-  behavior still works.
+- Compatibility tests should assert retirement and canonical replacements, not
+  legacy import behavior.
 
-## Thin Wrapper Rule
+## Retired Facade Rule
 
-Remaining legacy facades may re-export or delegate to their canonical target.
-They may not own business logic, lifecycle orchestration, state, fallback
-policy, or new dependencies. Wrapper files must be registered in
-`public_surface_manifest.py`, and boundary tests must fail if an unregistered
-wrapper appears.
+Retired facades must not recreate wrapper files, import aliases, serialization
+metadata, or package attributes that point at the old module names. The removed
+paths will fail instead of forwarding; callers must import the canonical module
+directly.
 
 Flat runtime and system attributes such as `system.query_router` and
 `runtime.data_module` are served by the grouped mapping in
@@ -76,8 +75,7 @@ Canonical code should use `system.infrastructure`, `system.retrieval`,
   `rag_modules.app.services.*`.
 - `generation_integration` and `hybrid_retrieval` facades retired in favor of
   `rag_modules.generation.integration` and `rag_modules.retrieval.hybrid_facade`.
-- Most `graph_*` root wrappers retired; only `graph_data_preparation` and
-  `graph_indexing` remain for external import compatibility.
+- Root `graph_*` wrappers retired in favor of `rag_modules.graph.*`.
 - `indexing_pipeline` facades retired in favor of
   `rag_modules.build_pipeline.document_artifacts`.
 - `milvus_index_construction` facades retired in favor of
@@ -85,13 +83,20 @@ Canonical code should use `system.infrastructure`, `system.retrieval`,
 - `query_plan`, `query_semantics`, and `runtime_models` facades retired in
   favor of `rag_modules.query_understanding` and `rag_modules.runtime`.
 - `rag_modules.compat` namespace retired.
+- `config.py` retired in favor of `rag_modules.configuration`.
+- `rag_modules.intelligent_query_router` retired in favor of
+  `rag_modules.routing.intelligent_query_router`.
+- `rag_modules.graph_data_preparation` retired in favor of
+  `rag_modules.graph.data_preparation`.
+- `rag_modules.graph_indexing` retired in favor of
+  `rag_modules.graph.indexing`.
 
-## Final Retirement Criteria
+## 0.2.0 Compatibility Note
 
-The remaining bridges are scheduled for deletion in `0.2.0`. They can be
-deleted at that version after known repository entrypoints, documentation,
-examples, scripts, eval tooling, and downstream consumers covered by the
-declared migration window use canonical imports for one release cycle, with
-`internal_dependency_guard` and `thin_wrapper_guard` both passing. Deletion must
-update `public_surface_manifest.py`, remove the wrapper file, and keep a
-compatibility note in release documentation.
+The final public-surface retirement removes `config.py`,
+`rag_modules.intelligent_query_router`, `rag_modules.graph_data_preparation`,
+and `rag_modules.graph_indexing`. External callers that still import those
+paths must migrate to the canonical replacements listed above. The boundary
+tests keep this final state in place by checking the empty legacy manifest,
+removed files, retired import paths, and metadata that must not recreate old
+facade names.

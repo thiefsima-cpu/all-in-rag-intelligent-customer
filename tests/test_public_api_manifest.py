@@ -61,8 +61,6 @@ class PublicApiManifestTests(unittest.TestCase):
             "public_api": PUBLIC_API_SURFACE,
             "service_api": SERVICE_API_SURFACE,
             "internal_only": INTERNAL_ONLY_SURFACE,
-            "root_facade": ROOT_PUBLIC_SURFACE,
-            "repo_root_facade": EXTERNAL_PUBLIC_SURFACE,
         }
         grouped = surface_by_kind()
 
@@ -71,22 +69,18 @@ class PublicApiManifestTests(unittest.TestCase):
             self.assertEqual({kind}, {entry.kind for entry in entries})
             self.assertEqual(modules_for(entries), modules_for(grouped[kind]))
 
-    def test_legacy_surface_entries_have_explicit_removal_policy(self) -> None:
-        for entry in LEGACY_PUBLIC_SURFACE:
-            self.assertNotEqual(entry.module_name, entry.canonical_module)
-            self.assertEqual(entry.retirement_phase, "external_migration_window")
-            self.assertEqual(entry.removal_version, LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
-            self.assertEqual(entry.scan_rules, LEGACY_PUBLIC_SURFACE_SCAN_RULES)
-
+    def test_legacy_surface_is_empty_after_final_retirement(self) -> None:
+        self.assertEqual((), LEGACY_PUBLIC_SURFACE)
+        self.assertEqual((), ROOT_PUBLIC_SURFACE)
+        self.assertEqual((), EXTERNAL_PUBLIC_SURFACE)
+        self.assertEqual({}, legacy_surface_by_module())
+        self.assertEqual(frozenset(), root_facade_module_names())
+        self.assertEqual(frozenset(), repo_root_facade_module_names())
+        self.assertEqual("0.2.0", LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
         self.assertEqual(
-            legacy_surface_by_module()["intelligent_query_router"].canonical_module,
-            "rag_modules.routing.intelligent_query_router",
+            ("internal_dependency_guard", "thin_wrapper_guard"),
+            LEGACY_PUBLIC_SURFACE_SCAN_RULES,
         )
-        self.assertEqual(
-            root_facade_module_names(),
-            frozenset(f"rag_modules.{entry.module_name}" for entry in ROOT_PUBLIC_SURFACE),
-        )
-        self.assertEqual(repo_root_facade_module_names(), modules_for(EXTERNAL_PUBLIC_SURFACE))
 
     def test_internal_only_packages_declare_internal_contract(self) -> None:
         import rag_modules.app.composition as composition

@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.intelligent_query_router import (
-    IntelligentQueryRouter as LegacyIntelligentQueryRouter,
-)
 from rag_modules.routing import IntelligentQueryRouter
 from rag_modules.runtime import QueryAnalysis, RetrievalOutcome, RouteResolution, RouteSnapshot
 
@@ -38,9 +35,6 @@ class _StubWorkflow:
 
 
 class IntelligentQueryRouterTests(unittest.TestCase):
-    def test_legacy_facade_reexports_canonical_router(self) -> None:
-        self.assertIs(LegacyIntelligentQueryRouter, IntelligentQueryRouter)
-
     def test_facade_delegates_to_workflow_service(self) -> None:
         workflow = _StubWorkflow()
         router = IntelligentQueryRouter(

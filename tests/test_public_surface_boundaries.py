@@ -26,6 +26,15 @@ ALLOWED_ROOT_WRAPPERS = {
 PROHIBITED_ROOT_MODULES = root_facade_module_names()
 PROHIBITED_REPO_ROOT_MODULES = repo_root_facade_module_names()
 LEGACY_FACADE_MODULES = PROHIBITED_ROOT_MODULES | PROHIBITED_REPO_ROOT_MODULES
+RETIRED_LEGACY_FACADE_MODULES = frozenset(
+    {
+        "config",
+        "rag_modules.graph_data_preparation",
+        "rag_modules.graph_indexing",
+        "rag_modules.intelligent_query_router",
+    }
+)
+PROHIBITED_LEGACY_FACADE_MODULES = LEGACY_FACADE_MODULES | RETIRED_LEGACY_FACADE_MODULES
 
 
 class PublicSurfaceBoundaryTests(unittest.TestCase):
@@ -84,9 +93,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             rel = path.relative_to(RAG_MODULES_DIR)
             if "__pycache__" in rel.parts:
                 continue
-            if len(rel.parts) == 1 and (
-                rel.name in ALLOWED_ROOT_WRAPPERS or rel.stem.startswith("graph_")
-            ):
+            if len(rel.parts) == 1 and rel.name in ALLOWED_ROOT_WRAPPERS:
                 continue
 
             source = path.read_text(encoding="utf-8-sig")
@@ -96,15 +103,23 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name == "config" or alias.name.startswith("rag_modules.compat"):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                        if alias.name in PROHIBITED_ROOT_MODULES:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                        if alias.name in PROHIBITED_LEGACY_FACADE_MODULES or alias.name.startswith(
+                            "rag_modules.compat"
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
                 elif isinstance(node, ast.ImportFrom):
                     module_name = self._resolve_import_from(path, node)
-                    if module_name == "config" or module_name.startswith("rag_modules.compat"):
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                    if module_name in PROHIBITED_ROOT_MODULES:
+                    imported_names = {module_name}
+                    imported_names.update(
+                        f"{module_name}.{alias.name}"
+                        for alias in node.names
+                        if alias.name != "*"
+                    )
+                    if module_name.startswith("rag_modules.compat") or (
+                        imported_names & PROHIBITED_LEGACY_FACADE_MODULES
+                    ):
                         violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
 
         self.assertFalse(
@@ -123,11 +138,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             lines = source.splitlines()
 
             for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module in PROHIBITED_REPO_ROOT_MODULES:
+                if isinstance(node, ast.ImportFrom) and node.module == "config":
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name in PROHIBITED_REPO_ROOT_MODULES:
+                        if alias.name == "config":
                             violations.append(
                                 f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
                             )
@@ -141,7 +156,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
     def test_scripts_and_non_compat_tests_do_not_import_remaining_legacy_facades(self) -> None:
         violations: list[str] = []
         allowed_test_files = {
-            ROOT / "tests" / "test_intelligent_query_router.py",
             ROOT / "tests" / "test_public_surface_boundaries.py",
         }
 
@@ -157,11 +171,19 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
                         module_name = self._resolve_import_from(path, node)
-                        if module_name in LEGACY_FACADE_MODULES:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                        imported_names = {module_name}
+                        imported_names.update(
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        )
+                        if imported_names & PROHIBITED_LEGACY_FACADE_MODULES:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
                     elif isinstance(node, ast.Import):
                         for alias in node.names:
-                            if alias.name in LEGACY_FACADE_MODULES:
+                            if alias.name in PROHIBITED_LEGACY_FACADE_MODULES:
                                 violations.append(
                                     f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
                                 )
@@ -248,12 +270,12 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         for heading in (
             "## Current Policy",
             "## Canonical Packages",
-            "## Remaining Legacy Bridges",
+            "## Legacy Bridge Status",
             "## Scan Rules",
             "## Internal Freeze Rule",
-            "## Thin Wrapper Rule",
+            "## Retired Facade Rule",
             "## Retired Facade History",
-            "## Final Retirement Criteria",
+            "## 0.2.0 Compatibility Note",
         ):
             self.assertIn(heading, content)
         self.assertNotIn("E:/ai-project/all-in-rag/code/C9/", content)
@@ -262,6 +284,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertIn(LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION, content)
         self.assertIn("internal_dependency_guard", content)
         self.assertIn("thin_wrapper_guard", content)
+        self.assertIn("No legacy bridge remains registered", content)
         for expected in (
             "config.py",
             "rag_modules.graph_data_preparation",
@@ -271,16 +294,14 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.graph.data_preparation",
             "rag_modules.graph.indexing",
             "rag_modules.routing.intelligent_query_router",
-            "external callers",
-            "canonical module directly",
+            "retired in favor of",
             "rag_modules.compat.*",
-            "may not own business logic",
-            "new dependencies",
-            "one release cycle",
+            "must not recreate",
+            "will fail instead of forwarding",
         ):
             self.assertIn(expected, content)
 
-    def test_manifest_covers_remaining_legacy_public_surface(self) -> None:
+    def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {
             path.stem
             for path in RAG_MODULES_DIR.glob("*.py")
@@ -292,14 +313,17 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         }
         manifest_root = {entry.module_name for entry in ROOT_PUBLIC_SURFACE}
         manifest_external = {entry.module_name for entry in EXTERNAL_PUBLIC_SURFACE}
-        manifest_removal_versions = {entry.removal_version for entry in LEGACY_PUBLIC_SURFACE}
-        manifest_scan_rules = {entry.scan_rules for entry in LEGACY_PUBLIC_SURFACE}
 
-        self.assertEqual(root_files, manifest_root)
+        self.assertEqual(set(), root_files)
+        self.assertEqual(set(), manifest_root)
         self.assertFalse((RAG_MODULES_DIR / "compat").exists())
-        self.assertEqual({"config"}, manifest_external)
-        self.assertEqual({LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}, manifest_removal_versions)
-        self.assertEqual({LEGACY_PUBLIC_SURFACE_SCAN_RULES}, manifest_scan_rules)
+        self.assertEqual(set(), manifest_external)
+        self.assertEqual((), LEGACY_PUBLIC_SURFACE)
+        self.assertEqual("0.2.0", LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
+        self.assertEqual(
+            ("internal_dependency_guard", "thin_wrapper_guard"),
+            LEGACY_PUBLIC_SURFACE_SCAN_RULES,
+        )
 
     def test_remaining_legacy_facades_are_thin_registered_wrappers(self) -> None:
         violations: list[str] = []
@@ -348,6 +372,50 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertFalse(
             violations,
             "Found legacy facades with local logic or unregistered dependencies:\n"
+            + "\n".join(violations),
+        )
+
+    def test_retired_legacy_facade_files_are_removed(self) -> None:
+        retired_paths = {
+            ROOT / "config.py",
+            RAG_MODULES_DIR / "graph_data_preparation.py",
+            RAG_MODULES_DIR / "graph_indexing.py",
+            RAG_MODULES_DIR / "intelligent_query_router.py",
+        }
+
+        self.assertEqual(
+            set(),
+            {path.relative_to(ROOT) for path in retired_paths if path.exists()},
+        )
+
+    def test_runtime_metadata_does_not_advertise_retired_facade_modules(self) -> None:
+        violations: list[str] = []
+
+        for path in RAG_MODULES_DIR.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+            lines = source.splitlines()
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign):
+                    continue
+                if not any(
+                    isinstance(target, ast.Attribute) and target.attr == "__module__"
+                    for target in node.targets
+                ):
+                    continue
+                if (
+                    isinstance(node.value, ast.Constant)
+                    and node.value.value in RETIRED_LEGACY_FACADE_MODULES
+                ):
+                    violations.append(
+                        f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                    )
+
+        self.assertFalse(
+            violations,
+            "Found runtime metadata still pointing at retired facade modules:\n"
             + "\n".join(violations),
         )
 

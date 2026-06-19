@@ -131,43 +131,9 @@ INTERNAL_ONLY_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     ),
 )
 
-ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
-    PublicSurfaceEntry(
-        "intelligent_query_router",
-        "root_facade",
-        "rag_modules.routing.intelligent_query_router",
-        "external_migration_window",
-        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
-        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
-    ),
-    PublicSurfaceEntry(
-        "graph_data_preparation",
-        "root_facade",
-        "rag_modules.graph.data_preparation",
-        "external_migration_window",
-        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
-        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
-    ),
-    PublicSurfaceEntry(
-        "graph_indexing",
-        "root_facade",
-        "rag_modules.graph.indexing",
-        "external_migration_window",
-        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
-        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
-    ),
-)
+ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
 
-EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
-    PublicSurfaceEntry(
-        "config",
-        "repo_root_facade",
-        "rag_modules.configuration",
-        "external_migration_window",
-        removal_version=LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
-        scan_rules=LEGACY_PUBLIC_SURFACE_SCAN_RULES,
-    ),
-)
+EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
 
 LEGACY_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     *ROOT_PUBLIC_SURFACE,
