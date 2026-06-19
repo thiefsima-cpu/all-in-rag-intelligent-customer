@@ -54,7 +54,7 @@ class QueryAnalysis:
         return self.recommended_strategy.value
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "QueryAnalysis":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryAnalysis":
         payload = dict(data or {})
         return cls(
             query_complexity=payload.get("query_complexity", 0.0),
