@@ -9,11 +9,14 @@ from .artifact_adapters import DefaultRuntimeArtifactAccess
 from .stats_ports import RuntimeStatsAccessPort
 from .stats_adapters import DefaultRuntimeStatsAccess
 from .analysis_models import (
+    AnalysisInput,
+    AnalysisMapping,
     QueryAnalysis,
     SearchStrategy,
     analysis_payload,
     analysis_strategy_name,
     analysis_value,
+    ensure_optional_query_analysis,
     ensure_query_analysis,
 )
 from .generation_models import GenerationSnapshot
@@ -35,6 +38,8 @@ from .workflow_models import AnswerContext, QueryUnderstandingSnapshot, RouteRes
 __all__ = [
     "AnswerContext",
     "AnswerTraceSnapshot",
+    "AnalysisInput",
+    "AnalysisMapping",
     "ArtifactManifestStorePort",
     "DocumentArtifactCachePort",
     "DefaultRuntimeArtifactAccess",
@@ -59,5 +64,6 @@ __all__ = [
     "analysis_payload",
     "analysis_strategy_name",
     "analysis_value",
+    "ensure_optional_query_analysis",
     "ensure_query_analysis",
 ]

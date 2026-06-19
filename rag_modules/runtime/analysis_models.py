@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict
@@ -82,10 +83,14 @@ class QueryAnalysis:
         }
 
 
+AnalysisMapping = Mapping[str, object]
+AnalysisInput = QueryAnalysis | AnalysisMapping | None
+
+
 def analysis_payload(analysis: Any) -> Dict[str, Any]:
     if isinstance(analysis, QueryAnalysis):
         payload = analysis.to_dict()
-    elif isinstance(analysis, dict):
+    elif isinstance(analysis, Mapping):
         payload = dict(analysis)
     elif analysis is None:
         payload = {}
@@ -120,9 +125,15 @@ def ensure_query_analysis(analysis: Any) -> QueryAnalysis:
         return analysis
     if analysis is None:
         return QueryAnalysis()
-    if isinstance(analysis, dict):
+    if isinstance(analysis, Mapping):
         return QueryAnalysis.from_dict(analysis)
     return QueryAnalysis.from_dict(analysis_payload(analysis))
+
+
+def ensure_optional_query_analysis(analysis: AnalysisInput) -> QueryAnalysis | None:
+    if analysis is None:
+        return None
+    return ensure_query_analysis(analysis)
 
 
 def analysis_value(analysis: Any, key: str, default: Any = None) -> Any:
