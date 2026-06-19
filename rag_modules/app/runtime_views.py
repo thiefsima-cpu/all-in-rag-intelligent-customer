@@ -3,38 +3,56 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
+
+from ..graph.retrieval import GraphRAGRetrieval
+from ..retrieval import HybridRetrievalModule
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..routing import RoutingWorkflowProtocol
+from .runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
+
+if TYPE_CHECKING:
+    from ..generation.service import GenerationWorkflowService
+    from ..query_understanding.service import QueryUnderstandingService
+    from .services import QuestionAnswerService
+    from .services.answer_workflow import AnswerWorkflow
+    from .services.knowledge_base_service import KnowledgeBaseService
 
 
 @dataclass(frozen=True)
 class SystemInfrastructureView:
     """Infrastructure-facing runtime dependencies."""
 
-    query_tracer: Any = None
-    neo4j_manager: Any = None
-    data_module: Any = None
-    index_module: Any = None
+    query_tracer: QueryTracerPort | None = None
+    neo4j_manager: Neo4jManagerPort | None = None
+    data_module: GraphDataModulePort | None = None
+    index_module: VectorIndexModulePort | None = None
 
 
 @dataclass(frozen=True)
 class SystemRetrievalView:
     """Retrieval and routing-facing runtime dependencies."""
 
-    retrieval_runtime_profile: Any = None
-    query_understanding_service: Any = None
-    traditional_retrieval: Any = None
-    graph_rag_retrieval: Any = None
-    routing_workflow: Any = None
+    retrieval_runtime_profile: RetrievalRuntimeProfile | None = None
+    query_understanding_service: QueryUnderstandingService | None = None
+    traditional_retrieval: HybridRetrievalModule | None = None
+    graph_rag_retrieval: GraphRAGRetrieval | None = None
+    routing_workflow: RoutingWorkflowProtocol | None = None
 
 
 @dataclass(frozen=True)
 class SystemServicesView:
     """Application service-facing runtime dependencies."""
 
-    generation_service: Any = None
-    answer_workflow: Any = None
-    question_answer_service: Any = None
-    knowledge_base_service: Any = None
+    generation_service: GenerationWorkflowService | None = None
+    answer_workflow: AnswerWorkflow | None = None
+    question_answer_service: QuestionAnswerService | None = None
+    knowledge_base_service: KnowledgeBaseService | None = None
 
 
 __all__ = [

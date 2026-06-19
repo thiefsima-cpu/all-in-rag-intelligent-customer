@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...artifacts import ArtifactManifestStore
 from ...build_pipeline.document_artifacts import DocumentIndexCache
 from ...configuration.models import GraphRAGConfig
@@ -12,7 +10,11 @@ from ...build_pipeline.graph_preparation import GraphDataPreparationModule
 from ...infra.milvus import MilvusIndexConstructionModule
 from ...neo4j_pool import Neo4jConnectionManager
 from ...runtime.artifact_adapters import DefaultRuntimeArtifactAccess
-from ...runtime.artifact_ports import RuntimeArtifactAccessPort
+from ...runtime.artifact_ports import (
+    ArtifactManifestStorePort,
+    DocumentArtifactCachePort,
+    RuntimeArtifactAccessPort,
+)
 from ...tracing import QueryTracer
 from ...tracing_sinks import (
     JsonlQueryTraceSinkFactory,
@@ -20,6 +22,14 @@ from ...tracing_sinks import (
     QueryTraceSink,
     QueryTraceSinkFactory,
 )
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
+
+
 class DefaultInfrastructureComponentProvider:
     """Default infrastructure adapters for storage, graph access, and tracing."""
 
@@ -30,7 +40,11 @@ class DefaultInfrastructureComponentProvider:
     ) -> None:
         self.query_trace_sink_factory = query_trace_sink_factory
 
-    def provide_neo4j_manager(self, config: GraphRAGConfig, existing: Any = None) -> Any:
+    def provide_neo4j_manager(
+        self,
+        config: GraphRAGConfig,
+        existing: Neo4jManagerPort | None = None,
+    ) -> Neo4jManagerPort:
         if existing is not None:
             return existing
         storage = config.storage
@@ -52,9 +66,9 @@ class DefaultInfrastructureComponentProvider:
     def provide_data_module(
         self,
         config: GraphRAGConfig,
-        neo4j_manager: Any,
-        existing: Any = None,
-    ) -> Any:
+        neo4j_manager: Neo4jManagerPort,
+        existing: GraphDataModulePort | None = None,
+    ) -> GraphDataModulePort:
         if existing is not None:
             return existing
         storage = config.storage
@@ -66,7 +80,11 @@ class DefaultInfrastructureComponentProvider:
             driver=neo4j_manager.driver,
         )
 
-    def provide_index_module(self, config: GraphRAGConfig, existing: Any = None) -> Any:
+    def provide_index_module(
+        self,
+        config: GraphRAGConfig,
+        existing: VectorIndexModulePort | None = None,
+    ) -> VectorIndexModulePort:
         if existing is not None:
             return existing
         storage = config.storage
@@ -118,8 +136,8 @@ class DefaultInfrastructureComponentProvider:
     def provide_artifact_manifest_store(
         self,
         config: GraphRAGConfig,
-        existing=None,
-    ):
+        existing: ArtifactManifestStorePort | None = None,
+    ) -> ArtifactManifestStorePort:
         if existing is not None:
             return existing
         return ArtifactManifestStore(config)
@@ -127,10 +145,10 @@ class DefaultInfrastructureComponentProvider:
     def provide_document_artifact_cache(
         self,
         config: GraphRAGConfig,
-        existing=None,
+        existing: DocumentArtifactCachePort | None = None,
         *,
-        manifest_store=None,
-    ):
+        manifest_store: ArtifactManifestStorePort | None = None,
+    ) -> DocumentArtifactCachePort:
         if existing is not None:
             return existing
         return DocumentIndexCache(
@@ -151,10 +169,10 @@ class DefaultInfrastructureComponentProvider:
     def provide_query_tracer(
         self,
         config: GraphRAGConfig,
-        existing: Any = None,
+        existing: QueryTracerPort | None = None,
         *,
         sink: QueryTraceSink | None = None,
-    ) -> Any:
+    ) -> QueryTracerPort:
         if existing is not None:
             return existing
         return QueryTracer(

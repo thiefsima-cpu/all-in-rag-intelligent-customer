@@ -11,6 +11,7 @@ from ...retrieval import HybridRetrievalModule
 from ...query_understanding.service import QueryUnderstandingService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
+from ..runtime_contracts import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
 
 
 class DefaultRetrievalComponentProvider:
@@ -20,10 +21,10 @@ class DefaultRetrievalComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        milvus_module: Any,
-        data_module: Any,
+        milvus_module: VectorIndexModulePort,
+        data_module: GraphDataModulePort,
         llm_client: Any,
-        neo4j_manager: Any,
+        neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> HybridRetrievalModule:
         return HybridRetrievalModule(
@@ -40,7 +41,7 @@ class DefaultRetrievalComponentProvider:
         *,
         config: GraphRAGConfig,
         llm_client: Any,
-        neo4j_manager: Any,
+        neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> GraphRAGRetrieval:
         return GraphRAGRetrieval(
@@ -54,8 +55,8 @@ class DefaultRetrievalComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: Any,
-        graph_rag_retrieval: Any,
+        traditional_retrieval: HybridRetrievalModule,
+        graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: Any,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
@@ -73,8 +74,8 @@ class DefaultRetrievalComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: Any,
-        graph_rag_retrieval: Any,
+        traditional_retrieval: HybridRetrievalModule,
+        graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: Any,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,

@@ -13,6 +13,13 @@ from ...runtime.artifact_ports import (
     RuntimeArtifactAccessPort,
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
+from ...routing import RoutingWorkflowProtocol
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 from ..services.answer_workflow import AnswerWorkflow
 from ..services.knowledge_base_service import KnowledgeBaseService
 from ..services import QuestionAnswerService
@@ -25,9 +32,9 @@ class DefaultApplicationServiceComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        neo4j_manager,
-        data_module,
-        index_module,
+        neo4j_manager: Neo4jManagerPort,
+        data_module: GraphDataModulePort,
+        index_module: VectorIndexModulePort,
         manifest_store: ArtifactManifestStorePort | None = None,
         runtime_artifact_access: RuntimeArtifactAccessPort | None = None,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
@@ -50,9 +57,9 @@ class DefaultApplicationServiceComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        query_router,
+        query_router: RoutingWorkflowProtocol,
         generation_module: GenerationWorkflowService,
-        query_tracer,
+        query_tracer: QueryTracerPort,
     ) -> AnswerWorkflow:
         return AnswerWorkflow(
             config=config,
@@ -65,9 +72,9 @@ class DefaultApplicationServiceComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        query_router,
+        query_router: RoutingWorkflowProtocol,
         generation_module: GenerationWorkflowService,
-        query_tracer,
+        query_tracer: QueryTracerPort,
         answer_workflow: AnswerWorkflow,
     ) -> QuestionAnswerService:
         return QuestionAnswerService(

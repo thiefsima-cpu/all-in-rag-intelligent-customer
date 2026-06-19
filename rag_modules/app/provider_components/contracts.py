@@ -27,21 +27,35 @@ from ..services.knowledge_base_service import KnowledgeBaseService
 from ..services import QuestionAnswerService
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from ..services.runtime_shutdown_service import RuntimeShutdownService
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 
 
 class InfrastructureComponentProvider(Protocol):
     """Concrete infrastructure adapters such as graph, vector, and tracing."""
 
-    def provide_neo4j_manager(self, config: GraphRAGConfig, existing: Any = None) -> Any: ...
+    def provide_neo4j_manager(
+        self,
+        config: GraphRAGConfig,
+        existing: Neo4jManagerPort | None = None,
+    ) -> Neo4jManagerPort: ...
 
     def provide_data_module(
         self,
         config: GraphRAGConfig,
-        neo4j_manager: Any,
-        existing: Any = None,
-    ) -> Any: ...
+        neo4j_manager: Neo4jManagerPort,
+        existing: GraphDataModulePort | None = None,
+    ) -> GraphDataModulePort: ...
 
-    def provide_index_module(self, config: GraphRAGConfig, existing: Any = None) -> Any: ...
+    def provide_index_module(
+        self,
+        config: GraphRAGConfig,
+        existing: VectorIndexModulePort | None = None,
+    ) -> VectorIndexModulePort: ...
 
     def provide_query_trace_sink(
         self,
@@ -72,10 +86,10 @@ class InfrastructureComponentProvider(Protocol):
     def provide_query_tracer(
         self,
         config: GraphRAGConfig,
-        existing: Any = None,
+        existing: QueryTracerPort | None = None,
         *,
         sink: QueryTraceSink | None = None,
-    ) -> Any: ...
+    ) -> QueryTracerPort: ...
 
 
 class GenerationComponentProvider(Protocol):
@@ -130,7 +144,7 @@ class BuildPipelineComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        neo4j_manager: Any,
+        neo4j_manager: Neo4jManagerPort,
         existing: SemanticGraphSchemaSyncPort | None = None,
     ) -> SemanticGraphSchemaSyncPort: ...
 
@@ -159,10 +173,10 @@ class RetrievalComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        milvus_module: Any,
-        data_module: Any,
+        milvus_module: VectorIndexModulePort,
+        data_module: GraphDataModulePort,
         llm_client: Any,
-        neo4j_manager: Any,
+        neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> HybridRetrievalModule: ...
 
@@ -171,7 +185,7 @@ class RetrievalComponentProvider(Protocol):
         *,
         config: GraphRAGConfig,
         llm_client: Any,
-        neo4j_manager: Any,
+        neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> GraphRAGRetrieval: ...
 
@@ -179,8 +193,8 @@ class RetrievalComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: Any,
-        graph_rag_retrieval: Any,
+        traditional_retrieval: HybridRetrievalModule,
+        graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: Any,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
@@ -190,8 +204,8 @@ class RetrievalComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: Any,
-        graph_rag_retrieval: Any,
+        traditional_retrieval: HybridRetrievalModule,
+        graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: Any,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
@@ -205,9 +219,9 @@ class ApplicationServiceComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        neo4j_manager: Any,
-        data_module: Any,
-        index_module: Any,
+        neo4j_manager: Neo4jManagerPort,
+        data_module: GraphDataModulePort,
+        index_module: VectorIndexModulePort,
         manifest_store: ArtifactManifestStorePort | None = None,
         runtime_artifact_access: RuntimeArtifactAccessPort | None = None,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
@@ -219,18 +233,18 @@ class ApplicationServiceComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        query_router: Any,
+        query_router: RoutingWorkflowProtocol,
         generation_module: GenerationWorkflowService,
-        query_tracer: Any,
+        query_tracer: QueryTracerPort,
     ) -> AnswerWorkflow: ...
 
     def provide_question_answer_service(
         self,
         *,
         config: GraphRAGConfig,
-        query_router: Any,
+        query_router: RoutingWorkflowProtocol,
         generation_module: GenerationWorkflowService,
-        query_tracer: Any,
+        query_tracer: QueryTracerPort,
         answer_workflow: AnswerWorkflow,
     ) -> QuestionAnswerService: ...
 

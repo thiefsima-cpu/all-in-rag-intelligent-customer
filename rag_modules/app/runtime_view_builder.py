@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .runtime_contracts import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_views import (
     SystemInfrastructureView,
@@ -78,7 +79,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> Neo4jManagerPort | None:
         if serving_runtime:
             return serving_runtime.neo4j_manager
         if build_runtime:
@@ -90,7 +91,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> GraphDataModulePort | None:
         if serving_runtime and serving_runtime.data_module:
             return serving_runtime.data_module
         if build_runtime:
@@ -102,7 +103,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> VectorIndexModulePort | None:
         if serving_runtime and serving_runtime.index_module:
             return serving_runtime.index_module
         if build_runtime:
