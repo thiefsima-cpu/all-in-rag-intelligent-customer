@@ -107,6 +107,8 @@ module = [
   "rag_modules.app.provider_components.retrieval",
   "rag_modules.app.provider_components.services",
   "rag_modules.retrieval.candidate_sources",
+  "rag_modules.retrieval.adapters.neo4j_fallback_retriever",
+  "rag_modules.retrieval.adapters.vector_retriever",
   "rag_modules.retrieval.hybrid_components",
   "rag_modules.retrieval.hybrid_runtime",
   "rag_modules.retrieval.hybrid_runtime_state",

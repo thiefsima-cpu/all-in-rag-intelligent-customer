@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
+from rank_bm25 import BM25Okapi
 
 from ..configuration.models import GraphRAGConfig
 from ..graph_index import GraphIndexingModule
@@ -13,7 +14,7 @@ from ..parent_doc_enricher import ParentDocumentEnricher
 from ..query_constraints import RecipeConstraintMatcher
 from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
-from .contracts import EvidenceDocument
+from .contracts import EvidenceDocument, RetrievalRequest
 from .dual_level_retriever import DualLevelRetriever
 from .hybrid_driver_service import HybridDriverService
 from .hybrid_index_service import HybridIndexArtifacts, HybridIndexService
@@ -74,7 +75,7 @@ class HybridRetrievalRuntime:
         return self.state.driver
 
     @property
-    def bm25(self):
+    def bm25(self) -> BM25Okapi | None:
         return self.state.bm25
 
     @property
@@ -221,7 +222,7 @@ class HybridRetrievalRuntime:
             top_k=top_k,
         )
 
-    def dual_level_candidates(self, request) -> List[EvidenceDocument]:
+    def dual_level_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self.ensure_dual_level_service().search(request)
 
     def vector_candidates(
