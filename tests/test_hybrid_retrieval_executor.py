@@ -5,6 +5,7 @@ import unittest
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_executor import HybridRetrievalExecutor
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 
 
 class _FakeDualLevelService:
@@ -114,7 +115,10 @@ class _FakeSearchService:
 
     def hybrid_evidence_search(self, request_or_query, **kwargs):
         self.calls.append(("hybrid_evidence_search", request_or_query, dict(kwargs)))
-        return [EvidenceDocument(content="hybrid", recipe_name="hybrid")]
+        return HybridRetrievalOutcome(
+            documents=[EvidenceDocument(content="hybrid", recipe_name="hybrid")],
+            candidate_counts={"vector": 1},
+        )
 
 
 class _FakeKeywordExtractor:
@@ -145,9 +149,9 @@ class HybridRetrievalExecutorTests(unittest.TestCase):
         )
 
     def test_hybrid_evidence_search_delegates_to_search_service(self) -> None:
-        results = self.executor.hybrid_evidence_search("mapo tofu", top_k=3)
+        outcome = self.executor.hybrid_evidence_search("mapo tofu", top_k=3)
 
-        self.assertEqual([doc.recipe_name for doc in results], ["hybrid"])
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["hybrid"])
         self.assertEqual(self.search_service.calls[-1][0], "hybrid_evidence_search")
 
     def test_entity_and_topic_results_use_runtime_contract(self) -> None:

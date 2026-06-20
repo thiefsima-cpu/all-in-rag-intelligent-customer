@@ -8,6 +8,7 @@ from rag_modules.graph.retrieval import GraphRAGRetrieval, GraphRetrievalCompone
 from rag_modules.retrieval import HybridRetrievalModule
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 
 
 class _FakeHybridExecutor:
@@ -24,7 +25,10 @@ class _FakeHybridExecutor:
 
     def hybrid_evidence_search(self, request_or_query, **kwargs):
         self.calls.append(("hybrid_evidence_search", request_or_query, dict(kwargs)))
-        return [EvidenceDocument(content="hybrid", recipe_name="HybridRecipe")]
+        return HybridRetrievalOutcome(
+            documents=[EvidenceDocument(content="hybrid", recipe_name="HybridRecipe")],
+            candidate_counts={"vector": 1},
+        )
 
     @staticmethod
     def extract_query_keywords(query):
@@ -241,9 +245,9 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             adapter_factory=adapter_factory,
         )
 
-        results = module.hybrid_evidence_search("mapo tofu", top_k=2)
+        outcome = module.hybrid_evidence_search("mapo tofu", top_k=2)
 
-        self.assertEqual(results[0].recipe_name, "HybridRecipe")
+        self.assertEqual(outcome.documents[0].recipe_name, "HybridRecipe")
         self.assertEqual(module.driver, "driver")
         self.assertEqual(
             module.extract_query_keywords("mapo tofu"),

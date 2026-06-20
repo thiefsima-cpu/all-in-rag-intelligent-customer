@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.query_constraints import QueryConstraints
-from rag_modules.retrieval.candidate_generator import CandidateSet, CandidateSourceResult
+from rag_modules.retrieval.candidate_generator import (
+    CandidateSet,
+    CandidateSourceDegradation,
+    CandidateSourceResult,
+)
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
@@ -44,11 +48,31 @@ class _FakeRuntime:
 
 
 class _StubCandidateGenerator:
-    def __init__(self) -> None:
+    def __init__(self, *, degrade_vector: bool = False) -> None:
         self.requests = []
+        self.degrade_vector = degrade_vector
 
     def generate(self, request):
         self.requests.append(request)
+        vector_spec = CandidateSourceSpec(
+            name="vector",
+            rank_name="vector",
+            search_method="vector",
+            search_type="vector_enhanced",
+            rank_order=2,
+        )
+        degraded = []
+        if self.degrade_vector:
+            degraded.append(
+                CandidateSourceDegradation(
+                    spec=vector_spec,
+                    reason="circuit_open",
+                    error_type="CircuitOpenError",
+                    message="Circuit breaker open",
+                    circuit_state="open",
+                    failure_count=2,
+                )
+            )
         return CandidateSet(
             source_results=[
                 CandidateSourceResult(
@@ -62,16 +86,11 @@ class _StubCandidateGenerator:
                     documents=[EvidenceDocument(content="c", recipe_name="C")],
                 ),
                 CandidateSourceResult(
-                    spec=CandidateSourceSpec(
-                        name="vector",
-                        rank_name="vector",
-                        search_method="vector",
-                        search_type="vector_enhanced",
-                        rank_order=2,
-                    ),
+                    spec=vector_spec,
                     documents=[EvidenceDocument(content="v", recipe_name="V")],
                 ),
-            ]
+            ],
+            degraded=degraded,
         )
 
 
@@ -104,19 +123,41 @@ class HybridSearchServiceTests(unittest.TestCase):
             candidate_generator=generator,
         )
 
-        results = service.hybrid_evidence_search(
+        outcome = service.hybrid_evidence_search(
             "recommend tofu dishes",
             top_k=2,
             constraints=QueryConstraints(max_cook_minutes=30),
         )
 
-        self.assertEqual([doc.recipe_name for doc in results], ["C", "V"])
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
         self.assertEqual(generator.requests[0].candidate_k, 4)
         self.assertEqual(runtime.attach_calls[0]["top_n"], 2)
         self.assertEqual(
             [name for name, _ in fusion_ranker.calls[0]["ranked_lists"]],
             ["constraints", "vector"],
         )
+        self.assertFalse(outcome.retrieval_degraded)
+
+    def test_hybrid_evidence_search_returns_degradation_observability(self) -> None:
+        config = build_test_config({"retrieval": {"enable_parent_doc_retrieval": False}})
+        service = HybridSearchService(
+            config=config,
+            retrieval_profile=_FakeRetrievalProfile(),
+            runtime=_FakeRuntime(),
+            fusion_ranker=_FakeFusionRanker(),
+            constraint_retriever=SimpleNamespace(),
+            candidate_generator=_StubCandidateGenerator(degrade_vector=True),
+        )
+
+        outcome = service.hybrid_evidence_search("recommend tofu dishes", top_k=2)
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
+        self.assertTrue(outcome.retrieval_degraded)
+        self.assertEqual(outcome.degraded_sources, ["vector"])
+        self.assertTrue(outcome.circuit_breaker_triggered)
+        self.assertFalse(outcome.answer_impacted)
+        self.assertEqual(outcome.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertEqual(outcome.to_stage_details()["candidate_counts"]["vector"], 1)
 
     def test_candidate_source_factory_is_used_when_generator_not_injected(self) -> None:
         config = build_test_config()

@@ -5,7 +5,10 @@ import unittest
 from rag_modules.query_understanding import QueryPlan, QuerySemanticProfile
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.routing import RouteTraceRecorder
-from rag_modules.routing.execution_strategies import RouteExecutionOutcome, RouteExecutionStageResult
+from rag_modules.routing.execution_strategies import (
+    RouteExecutionOutcome,
+    RouteExecutionStageResult,
+)
 
 
 class RouteTraceRecorderTests(unittest.TestCase):
@@ -50,13 +53,14 @@ class RouteTraceRecorderTests(unittest.TestCase):
 
     def test_record_execution_outcome_applies_fallbacks_and_latency_snapshots(self) -> None:
         recorder = RouteTraceRecorder(query="recommend tofu dishes", requested_top_k=2)
+        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
-            documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")],
+            documents=[document],
             fallbacks=["graph_empty_to_hybrid"],
             stages=[
                 RouteExecutionStageResult(
                     name="hybrid_fallback",
-                    documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")],
+                    documents=[document],
                     latency_ms=15.5,
                     details={"candidate_k": 3},
                 )
@@ -70,6 +74,46 @@ class RouteTraceRecorderTests(unittest.TestCase):
         self.assertIn("hybrid_fallback", clone.stages)
         self.assertEqual(clone.stages["hybrid_fallback"].latency_ms, 15.5)
         self.assertEqual(clone.stages["hybrid_fallback"].details["candidate_k"], 3)
+
+    def test_route_diagnostics_summarize_retrieval_degradation(self) -> None:
+        recorder = RouteTraceRecorder(query="recommend tofu dishes", requested_top_k=2)
+        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
+        outcome = RouteExecutionOutcome(
+            documents=[document],
+            stages=[
+                RouteExecutionStageResult(
+                    name="hybrid",
+                    documents=[document],
+                    latency_ms=10.0,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "rank_name": "vector",
+                                "reason": "circuit_open",
+                                "error_type": "CircuitOpenError",
+                                "message": "Circuit breaker open",
+                                "circuit_state": "open",
+                                "failure_count": 2,
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+
+        recorder.record_execution_outcome(outcome)
+        snapshot = recorder.finalize(total_start_time=0.0, final_doc_count=1)
+
+        self.assertTrue(snapshot.diagnostics.retrieval_degraded)
+        self.assertEqual(snapshot.diagnostics.degraded_sources, ["vector"])
+        self.assertTrue(snapshot.diagnostics.circuit_breaker_triggered)
+        self.assertFalse(snapshot.diagnostics.answer_impacted)
+        self.assertEqual(snapshot.diagnostics.degraded_candidates[0]["reason"], "circuit_open")
 
 
 if __name__ == "__main__":

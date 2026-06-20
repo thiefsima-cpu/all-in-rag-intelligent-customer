@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from ..query_constraints import QueryConstraints, RecipeConstraintMatcher
 from ..query_understanding import QueryPlan
 from .contracts import EvidenceDocument, RetrievalRequest
+from .hybrid_outcome import HybridRetrievalOutcome
 from .keyword_service import QueryKeywordExtractor
 
 
@@ -175,7 +176,7 @@ class HybridRetrievalExecutor:
         constraints: Optional[QueryConstraints] = None,
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
+    ) -> HybridRetrievalOutcome:
         return self.search_service.hybrid_evidence_search(
             request_or_query,
             top_k=top_k,

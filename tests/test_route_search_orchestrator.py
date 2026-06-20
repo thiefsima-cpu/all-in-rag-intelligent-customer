@@ -6,8 +6,16 @@ from types import SimpleNamespace
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.routing import RouteExecutionRequest, RouteSearchOrchestrator, RouteTraceRecorder
-from rag_modules.routing.execution_strategies import RouteExecutionOutcome, RouteExecutionStageResult
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
+from rag_modules.routing import (
+    RouteExecutionRequest,
+    RouteSearchOrchestrator,
+    RouteTraceRecorder,
+)
+from rag_modules.routing.execution_strategies import (
+    RouteExecutionOutcome,
+    RouteExecutionStageResult,
+)
 from rag_modules.runtime import QueryAnalysis, SearchStrategy
 
 
@@ -17,7 +25,10 @@ class _FakeTraditionalRetrieval:
 
     def hybrid_evidence_search(self, request):
         del request
-        return list(self.hybrid_docs)
+        return HybridRetrievalOutcome(
+            documents=list(self.hybrid_docs),
+            candidate_counts={"vector": len(self.hybrid_docs)},
+        )
 
     def enrich_to_parent_evidence_documents(self, docs, top_n=None):
         del top_n

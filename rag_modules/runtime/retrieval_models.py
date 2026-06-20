@@ -32,6 +32,7 @@ class RetrievalOutcome:
     strategy: str = ""
     evidence_documents: List[EvidenceDocument] = field(default_factory=list)
     route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
+    degradation_summary: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     documents_input: InitVar[Iterable[Document] | None] = None
 
@@ -44,6 +45,10 @@ class RetrievalOutcome:
             self.route_trace = RouteSnapshot.from_dict(self.route_trace)
         elif not isinstance(self.route_trace, RouteSnapshot):
             self.route_trace = RouteSnapshot()
+        if self.degradation_summary:
+            self.degradation_summary = _normalize_degradation_summary(self.degradation_summary)
+        else:
+            self.degradation_summary = _route_degradation_summary(self.route_trace)
         self.metadata = dict(self.metadata or {})
 
     @classmethod
@@ -60,6 +65,7 @@ class RetrievalOutcome:
                 for item in raw_evidence
             ],
             route_trace=payload.get("route_trace") or {},
+            degradation_summary=payload.get("degradation_summary") or {},
             metadata=payload.get("metadata") or {},
             documents_input=payload.get("documents") or [],
         )
@@ -79,7 +85,38 @@ class RetrievalOutcome:
             "doc_count": self.doc_count,
             "evidence_documents": [doc.to_dict() for doc in self.evidence_documents],
             "route_trace": self.route_trace.to_dict(),
+            "degradation_summary": dict(self.degradation_summary or {}),
             "metadata": dict(self.metadata or {}),
         }
+
+
+def _route_degradation_summary(route_trace: RouteSnapshot) -> Dict[str, Any]:
+    diagnostics = route_trace.diagnostics
+    return {
+        "retrieval_degraded": diagnostics.retrieval_degraded,
+        "degraded_sources": list(diagnostics.degraded_sources or []),
+        "degraded_candidates": [dict(item) for item in diagnostics.degraded_candidates],
+        "circuit_breaker_triggered": diagnostics.circuit_breaker_triggered,
+        "answer_impacted": diagnostics.answer_impacted,
+    }
+
+
+def _normalize_degradation_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(summary or {})
+    return {
+        "retrieval_degraded": bool(payload.get("retrieval_degraded", False)),
+        "degraded_sources": [
+            str(item).strip()
+            for item in (payload.get("degraded_sources") or [])
+            if str(item).strip()
+        ],
+        "degraded_candidates": [
+            dict(item)
+            for item in (payload.get("degraded_candidates") or [])
+            if isinstance(item, dict)
+        ],
+        "circuit_breaker_triggered": bool(payload.get("circuit_breaker_triggered", False)),
+        "answer_impacted": bool(payload.get("answer_impacted", False)),
+    }
 
 __all__ = ["RetrievalOutcome"]

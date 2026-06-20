@@ -178,7 +178,9 @@ class QueryTracer:
         return {}
 
     @staticmethod
-    def _normalize_route_snapshot(route_trace: Optional[Dict[str, Any] | RouteSnapshot]) -> RouteSnapshot:
+    def _normalize_route_snapshot(
+        route_trace: Optional[Dict[str, Any] | RouteSnapshot],
+    ) -> RouteSnapshot:
         return clone_route_snapshot(route_trace)
 
     @staticmethod
@@ -205,10 +207,27 @@ class QueryTracer:
         failure_reasons = self._failure_reasons(documents, error, route_trace)
         if generation_trace.failure_code:
             failure_reasons.append(generation_trace.failure_code)
+        route_diagnostics = route_trace.diagnostics
         return QueryDiagnostics(
             retrieval_bucket=retrieval_bucket,
             generation_bucket=generation_bucket,
-            overall_bucket=self._combine_buckets(retrieval_bucket, generation_bucket, error),
+            overall_bucket=self._combine_buckets(
+                retrieval_bucket,
+                generation_bucket,
+                error,
+            ),
+            retrieval_degraded=route_diagnostics.retrieval_degraded,
+            degraded_sources=list(route_diagnostics.degraded_sources or []),
+            degraded_candidates=[
+                dict(item) for item in route_diagnostics.degraded_candidates
+            ],
+            circuit_breaker_triggered=route_diagnostics.circuit_breaker_triggered,
+            answer_impacted=self._answer_impacted(
+                documents,
+                error,
+                route_trace,
+                generation_trace,
+            ),
             failure_reasons=failure_reasons,
         )
 
@@ -231,7 +250,11 @@ class QueryTracer:
         graph_stage = stages.get("graph_rag")
         if graph_stage and graph_stage.doc_count == 0:
             reasons.append("graph_empty")
-        hybrid_stage = stages.get("hybrid") or stages.get("hybrid_fallback") or stages.get("combined")
+        hybrid_stage = (
+            stages.get("hybrid")
+            or stages.get("hybrid_fallback")
+            or stages.get("combined")
+        )
         if hybrid_stage and hybrid_stage.doc_count == 0:
             reasons.append("hybrid_empty")
         return list(dict.fromkeys(reasons))
@@ -248,17 +271,31 @@ class QueryTracer:
             return "retrieval_empty"
         if route_trace.fallbacks:
             return "retrieval_used_fallback"
+        if route_trace.diagnostics.retrieval_degraded:
+            return "retrieval_degraded"
         stages = route_trace.stages or {}
         graph_stage = stages.get("graph_rag")
-        hybrid_stage = stages.get("hybrid") or stages.get("hybrid_fallback") or stages.get("combined")
-        if graph_stage and hybrid_stage and graph_stage.doc_count == 0 and hybrid_stage.doc_count > 0:
+        hybrid_stage = (
+            stages.get("hybrid")
+            or stages.get("hybrid_fallback")
+            or stages.get("combined")
+        )
+        if (
+            graph_stage
+            and hybrid_stage
+            and graph_stage.doc_count == 0
+            and hybrid_stage.doc_count > 0
+        ):
             return "graph_sparse_hybrid_supported"
         if graph_stage and graph_stage.doc_count > 0 and len(documents) <= 1:
             return "graph_narrow"
         return "retrieval_ok"
 
     @staticmethod
-    def _classify_generation_state(generation_trace: GenerationSnapshot, error: Optional[str]) -> str:
+    def _classify_generation_state(
+        generation_trace: GenerationSnapshot,
+        error: Optional[str],
+    ) -> str:
         if not generation_trace.is_recorded():
             return "generation_not_recorded"
         if error:
@@ -280,7 +317,28 @@ class QueryTracer:
         return "generation_unknown"
 
     @staticmethod
-    def _combine_buckets(retrieval_bucket: str, generation_bucket: str, error: Optional[str]) -> str:
+    def _answer_impacted(
+        documents: List[EvidenceDocument],
+        error: Optional[str],
+        route_trace: RouteSnapshot,
+        generation_trace: GenerationSnapshot,
+    ) -> bool:
+        if error:
+            return True
+        if route_trace.diagnostics.answer_impacted:
+            return True
+        if not documents:
+            return True
+        if generation_trace.status == "failed":
+            return True
+        return generation_trace.failure_code == "no_evidence"
+
+    @staticmethod
+    def _combine_buckets(
+        retrieval_bucket: str,
+        generation_bucket: str,
+        error: Optional[str],
+    ) -> str:
         if error:
             return "query_failed"
         if generation_bucket == "generation_timeout_fallback":
@@ -291,7 +349,10 @@ class QueryTracer:
             return "query_failed"
         if retrieval_bucket in {"retrieval_empty", "retrieval_and_generation_failed"}:
             return "no_answerable_evidence"
-        if retrieval_bucket == "retrieval_used_fallback" and generation_bucket == "generation_two_stage":
+        if (
+            retrieval_bucket == "retrieval_used_fallback"
+            and generation_bucket == "generation_two_stage"
+        ):
             return "graph_grounded_response"
         if generation_bucket == "generation_direct":
             return "simple_grounded_response"

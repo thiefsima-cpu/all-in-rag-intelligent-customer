@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.routing.execution_strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
@@ -25,7 +26,10 @@ class _FakeTraditionalRetrieval:
 
     def hybrid_evidence_search(self, request):
         self.hybrid_calls.append(request)
-        return list(self.hybrid_docs)
+        return HybridRetrievalOutcome(
+            documents=list(self.hybrid_docs),
+            candidate_counts={"vector": len(self.hybrid_docs)},
+        )
 
     def enrich_to_parent_evidence_documents(self, docs, top_n=None):
         self.enrich_calls.append({"docs": list(docs), "top_n": top_n})
@@ -94,6 +98,26 @@ class _ParallelTraditionalRetrieval(_FakeTraditionalRetrieval):
         return super().hybrid_evidence_search(request)
 
 
+class _DegradedTraditionalRetrieval(_FakeTraditionalRetrieval):
+    def hybrid_evidence_search(self, request):
+        self.hybrid_calls.append(request)
+        return HybridRetrievalOutcome(
+            documents=list(self.hybrid_docs),
+            candidate_counts={"vector": len(self.hybrid_docs), "bm25": 0},
+            degraded_candidates=[
+                {
+                    "source": "bm25",
+                    "rank_name": "bm25",
+                    "reason": "circuit_open",
+                    "error_type": "CircuitOpenError",
+                    "message": "Circuit breaker open",
+                    "circuit_state": "open",
+                    "failure_count": 3,
+                }
+            ],
+        )
+
+
 class _ParallelGraphRetrieval(_FakeGraphRetrieval):
     def __init__(self, graph_docs=None, *, own_started, other_started, trace=None) -> None:
         super().__init__(graph_docs, trace=trace)
@@ -152,6 +176,30 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.stages[0].name, "hybrid")
         self.assertEqual(outcome.fallbacks, [])
 
+    def test_hybrid_strategy_records_degradation_details_on_stage(self) -> None:
+        services = RouteRetrievalServices(
+            traditional_retrieval=_DegradedTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        outcome = HybridRouteStrategy().execute(
+            _request(
+                query="recommend tofu dishes",
+                top_k=2,
+                strategy=SearchStrategy.HYBRID_TRADITIONAL,
+            ),
+            services=services,
+        )
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Mapo Tofu"])
+        self.assertTrue(outcome.stages[0].details["retrieval_degraded"])
+        self.assertEqual(outcome.stages[0].details["degraded_sources"], ["bm25"])
+        self.assertTrue(outcome.stages[0].details["circuit_breaker_triggered"])
+        self.assertFalse(outcome.stages[0].details["answer_impacted"])
+
     def test_graph_strategy_falls_back_to_hybrid_when_graph_is_empty(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
@@ -204,6 +252,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.stages[0].name, "combined")
         self.assertEqual(outcome.stages[0].details["traditional_doc_count"], 2)
         self.assertEqual(outcome.stages[0].details["graph_doc_count"], 2)
+        self.assertEqual(outcome.stages[0].details["degraded_sources"], [])
         self.assertEqual(outcome.stages[0].details["candidate_k"], 4)
 
     def test_graph_strategy_uses_request_scoped_trace_when_available(self) -> None:

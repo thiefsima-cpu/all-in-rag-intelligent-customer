@@ -22,6 +22,7 @@ from rag_modules.runtime import (
     RouteStageSnapshot,
     SearchStrategy,
 )
+from rag_modules.tracing import QueryTracer
 
 
 def _build_resolution(
@@ -124,7 +125,10 @@ class _FakeGenerationService:
         for chunk in self.stream_chunks:
             if chunk_callback:
                 chunk_callback(chunk)
-        return "".join(self.stream_chunks).strip() or "Streaming output completed", self.stream_trace
+        return (
+            "".join(self.stream_chunks).strip() or "Streaming output completed",
+            self.stream_trace,
+        )
 
 
 class _FakeQueryRouter:
@@ -275,7 +279,9 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["answer"], response.answer)
         self.assertEqual(payload["summary"]["strategy"], "combined")
         self.assertEqual(
-            payload["grounding"]["route_resolution"]["understanding"]["analysis"]["recommended_strategy"],
+            payload["grounding"]["route_resolution"]["understanding"]["analysis"][
+                "recommended_strategy"
+            ],
             "combined",
         )
         self.assertEqual(payload["grounding"]["evidence_documents"][0]["recipe_name"], "mapo tofu")
@@ -328,6 +334,65 @@ class QuestionAnswerServiceTests(unittest.TestCase):
             "generation_provider_empty_choices",
         )
         self.assertEqual(response.summary.provider_latency_ms, 123.0)
+
+    def test_retrieval_degradation_is_exposed_in_response_diagnostics(self) -> None:
+        question = "Explain with a degraded vector source."
+        documents = [
+            EvidenceDocument(
+                content="grounded evidence",
+                recipe_name="fallback recipe",
+                search_type="hybrid",
+                score=0.9,
+            )
+        ]
+        route_trace = RouteSnapshot(
+            query=question,
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "rank_name": "vector",
+                                "reason": "circuit_open",
+                                "error_type": "CircuitOpenError",
+                                "message": "Circuit breaker open",
+                                "circuit_state": "open",
+                                "failure_count": 2,
+                            }
+                        ],
+                    },
+                )
+            },
+            final_doc_count=1,
+        )
+        service = QuestionAnswerService(
+            self.config,
+            _FakeQueryRouter(
+                resolution=_build_resolution(question, documents=documents),
+                route_trace=route_trace,
+            ),
+            _FakeGenerationService(
+                answer="grounded degraded-source answer",
+                trace=GenerationSnapshot(status="success", mode="direct"),
+            ),
+            QueryTracer(self.config),
+        )
+
+        response = service.answer_question_response(question)
+        diagnostics = response.diagnostic_payload
+
+        self.assertTrue(diagnostics["retrieval_degraded"])
+        self.assertEqual(diagnostics["degraded_sources"], ["vector"])
+        self.assertTrue(diagnostics["circuit_breaker_triggered"])
+        self.assertFalse(diagnostics["answer_impacted"])
+        self.assertEqual(diagnostics["degraded_candidates"][0]["reason"], "circuit_open")
 
     def test_result_uses_request_scoped_route_trace_over_router_last_trace(self) -> None:
         question = "Explain the active route trace."

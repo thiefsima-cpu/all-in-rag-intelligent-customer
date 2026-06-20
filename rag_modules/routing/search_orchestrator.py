@@ -70,7 +70,12 @@ class RouteSearchOrchestrator:
             for strategy in strategy_list
         }
 
-    def execute(self, request: RouteExecutionRequest, *, trace: RouteTraceRecorder) -> List[EvidenceDocument]:
+    def execute(
+        self,
+        request: RouteExecutionRequest,
+        *,
+        trace: RouteTraceRecorder,
+    ) -> List[EvidenceDocument]:
         strategy = self.strategy_registry.get(request.analysis.recommended_strategy)
         if strategy is None:
             logger.warning(
@@ -160,17 +165,19 @@ class RouteSearchOrchestrator:
         request: RouteExecutionRequest,
     ) -> RouteExecutionOutcome:
         start = time.perf_counter()
-        evidence_documents = self.traditional_retrieval.hybrid_evidence_search(
+        hybrid_outcome = self.traditional_retrieval.hybrid_evidence_search(
             request.retrieval_request
         )
+        documents = list(hybrid_outcome.documents)
         return RouteExecutionOutcome(
-            documents=list(evidence_documents),
+            documents=documents,
             fallbacks=["router_exception_to_hybrid"],
             stages=[
                 RouteExecutionStageResult(
                     name="hybrid_exception_fallback",
-                    documents=list(evidence_documents),
+                    documents=documents,
                     latency_ms=round((time.perf_counter() - start) * 1000, 2),
+                    details=hybrid_outcome.to_stage_details(),
                 )
             ],
         )

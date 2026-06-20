@@ -189,8 +189,14 @@ class GraphEvidenceBuilder:
             relationships=subgraph.relationships,
             reasoning_chains=reasoning_chains,
         )
-        recipe_name = recipe_names[0] if recipe_names else (
-            subgraph.central_nodes[0].get("name", "鐭ヨ瘑瀛愬浘") if subgraph.central_nodes else "鐭ヨ瘑瀛愬浘"
+        recipe_name = (
+            recipe_names[0]
+            if recipe_names
+            else (
+                subgraph.central_nodes[0].get("name", "知识子图")
+                if subgraph.central_nodes
+                else "知识子图"
+            )
         )
         metadata = {
             "search_type": "knowledge_subgraph",

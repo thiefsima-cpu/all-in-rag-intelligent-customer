@@ -18,6 +18,7 @@ from rag_modules.routing import IntelligentQueryRouter
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.retrieval.runtime_profile import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
@@ -171,11 +172,15 @@ class _StaticHybridRetrieval:
         constraints: QueryConstraints | None = None,
         candidate_k: int | None = None,
         query_plan: QueryPlan | None = None,
-    ) -> List[EvidenceDocument]:
+    ) -> HybridRetrievalOutcome:
         del top_k, constraints, candidate_k, query_plan
         request = self._normalize_request(request_or_query)
         limit = request.effective_candidate_k
-        return list(self.case.hybrid_documents[:limit])
+        documents = list(self.case.hybrid_documents[:limit])
+        return HybridRetrievalOutcome(
+            documents=documents,
+            candidate_counts={"static_hybrid": len(documents)},
+        )
 
     @staticmethod
     def enrich_to_parent_evidence_documents(

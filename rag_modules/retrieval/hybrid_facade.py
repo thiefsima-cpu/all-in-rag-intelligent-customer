@@ -20,6 +20,7 @@ from .hybrid_components import (
 )
 from .hybrid_executor import HybridRetrievalExecutor
 from .hybrid_index_service import HybridIndexArtifacts
+from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_adapter_factory import HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 
@@ -272,7 +273,11 @@ class HybridRetrievalModule:
     ) -> List[EvidenceDocument]:
         return FusionRanker(rrf_k=k).rrf_merge(ranked_lists=ranked_lists, top_k=top_k)
 
-    def _attach_parent_documents(self, docs: List[Document], top_n: Optional[int] = None) -> List[Document]:
+    def _attach_parent_documents(
+        self,
+        docs: List[Document],
+        top_n: Optional[int] = None,
+    ) -> List[Document]:
         return self._executor.attach_parent_documents(docs, top_n=top_n)
 
     def enrich_to_parent_documents(
@@ -319,7 +324,7 @@ class HybridRetrievalModule:
         constraints: Optional[QueryConstraints] = None,
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
+    ) -> HybridRetrievalOutcome:
         return self._executor.hybrid_evidence_search(
             request_or_query,
             top_k=top_k,
@@ -336,14 +341,15 @@ class HybridRetrievalModule:
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
     ) -> List[Document]:
+        outcome = self.hybrid_evidence_search(
+            request_or_query,
+            top_k=top_k,
+            constraints=constraints,
+            candidate_k=candidate_k,
+            query_plan=query_plan,
+        )
         return to_langchain_documents(
-            self.hybrid_evidence_search(
-                request_or_query,
-                top_k=top_k,
-                constraints=constraints,
-                candidate_k=candidate_k,
-                query_plan=query_plan,
-            )
+            outcome.documents,
         )
 
     def close(self):

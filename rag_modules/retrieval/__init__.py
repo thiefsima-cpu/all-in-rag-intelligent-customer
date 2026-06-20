@@ -17,6 +17,7 @@ _EXPORTS: Dict[str, str] = {
     "HybridIndexArtifacts": ".hybrid_index_service",
     "HybridIndexService": ".hybrid_index_service",
     "HybridLegacyResultTranslator": ".hybrid_facade",
+    "HybridRetrievalOutcome": ".hybrid_outcome",
     "HybridRetrievalModule": ".hybrid_facade",
     "QueryKeywordExtractor": ".keyword_service",
     "QueryPlannerRuntimeSettings": ".runtime_profile",

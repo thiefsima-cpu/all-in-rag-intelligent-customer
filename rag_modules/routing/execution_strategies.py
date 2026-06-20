@@ -134,16 +134,18 @@ class HybridRouteStrategy:
 
     def execute(self, request, *, services: RouteRetrievalServices) -> RouteExecutionOutcome:
         start = time.perf_counter()
-        documents = services.traditional_retrieval.hybrid_evidence_search(
+        outcome = services.traditional_retrieval.hybrid_evidence_search(
             request.retrieval_request
         )
+        documents = list(outcome.documents)
         return RouteExecutionOutcome(
-            documents=list(documents),
+            documents=documents,
             stages=[
                 RouteExecutionStageResult(
                     name="hybrid",
-                    documents=list(documents),
+                    documents=documents,
                     latency_ms=_elapsed_ms(start),
+                    details=outcome.to_stage_details(),
                 )
             ],
         )
@@ -198,19 +200,21 @@ class GraphRouteStrategy:
 
         if not documents:
             fallback_start = time.perf_counter()
-            fallback_documents = services.traditional_retrieval.hybrid_evidence_search(
+            fallback_outcome = services.traditional_retrieval.hybrid_evidence_search(
                 request.retrieval_request
             )
+            fallback_documents = list(fallback_outcome.documents)
             fallbacks.append("graph_empty_to_hybrid")
             stages.append(
                 RouteExecutionStageResult(
                     name="hybrid_fallback",
-                    documents=list(fallback_documents),
+                    documents=fallback_documents,
                     latency_ms=_elapsed_ms(fallback_start),
+                    details=fallback_outcome.to_stage_details(),
                 )
             )
             return RouteExecutionOutcome(
-                documents=list(fallback_documents),
+                documents=fallback_documents,
                 stages=stages,
                 fallbacks=fallbacks,
             )
@@ -220,7 +224,7 @@ class GraphRouteStrategy:
                 request.top_k
             )
             supplement_start = time.perf_counter()
-            supplement_docs = services.traditional_retrieval.hybrid_evidence_search(
+            supplement_outcome = services.traditional_retrieval.hybrid_evidence_search(
                 build_route_retrieval_request(
                     query=request.query,
                     top_k=supplement_k,
@@ -229,12 +233,14 @@ class GraphRouteStrategy:
                     query_plan=request.query_plan,
                 )
             )
+            supplement_docs = list(supplement_outcome.documents)
             fallbacks.append("graph_insufficient_hybrid_supplement")
             stages.append(
                 RouteExecutionStageResult(
                     name="hybrid_supplement",
-                    documents=list(supplement_docs),
+                    documents=supplement_docs,
                     latency_ms=_elapsed_ms(supplement_start),
+                    details=supplement_outcome.to_stage_details(),
                 )
             )
             documents = merge_route_documents(
@@ -273,10 +279,10 @@ class CombinedRouteStrategy:
             None,
         )
 
-        def load_traditional() -> tuple[List[EvidenceDocument], float]:
+        def load_traditional() -> tuple[Any, float]:
             traditional_start = time.perf_counter()
-            docs = services.traditional_retrieval.hybrid_evidence_search(traditional_request)
-            return list(docs), _elapsed_ms(traditional_start)
+            outcome = services.traditional_retrieval.hybrid_evidence_search(traditional_request)
+            return outcome, _elapsed_ms(traditional_start)
 
         def load_graph() -> tuple[List[EvidenceDocument], Any, float]:
             graph_start = time.perf_counter()
@@ -304,9 +310,10 @@ class CombinedRouteStrategy:
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="combined-route") as executor:
             traditional_future = executor.submit(load_traditional)
             graph_future = executor.submit(load_graph)
-            traditional_docs, traditional_latency_ms = traditional_future.result()
+            traditional_outcome, traditional_latency_ms = traditional_future.result()
             graph_docs, graph_trace, graph_latency_ms = graph_future.result()
 
+        traditional_docs = list(traditional_outcome.documents)
         graph_docs = services.traditional_retrieval.enrich_to_parent_evidence_documents(
             graph_docs,
             top_n=candidate_k,
@@ -325,6 +332,7 @@ class CombinedRouteStrategy:
             "graph_latency_ms": graph_latency_ms,
             "parallel_execution": True,
         }
+        details.update(traditional_outcome.to_stage_details())
         if graph_trace:
             if hasattr(graph_trace, "to_stage_details"):
                 details.update(graph_trace.to_stage_details())

@@ -15,6 +15,11 @@ class QueryDiagnostics:
     retrieval_bucket: str = ""
     generation_bucket: str = ""
     overall_bucket: str = ""
+    retrieval_degraded: bool = False
+    degraded_sources: List[str] = field(default_factory=list)
+    degraded_candidates: List[Dict[str, Any]] = field(default_factory=list)
+    circuit_breaker_triggered: bool = False
+    answer_impacted: bool = False
     failure_reasons: List[str] = field(default_factory=list)
 
     @classmethod
@@ -24,6 +29,11 @@ class QueryDiagnostics:
             retrieval_bucket=payload.get("retrieval_bucket", ""),
             generation_bucket=payload.get("generation_bucket", ""),
             overall_bucket=payload.get("overall_bucket", ""),
+            retrieval_degraded=payload.get("retrieval_degraded", False),
+            degraded_sources=payload.get("degraded_sources") or [],
+            degraded_candidates=payload.get("degraded_candidates") or [],
+            circuit_breaker_triggered=payload.get("circuit_breaker_triggered", False),
+            answer_impacted=payload.get("answer_impacted", False),
             failure_reasons=payload.get("failure_reasons") or [],
         )
 
@@ -32,6 +42,19 @@ class QueryDiagnostics:
             "retrieval_bucket": self.retrieval_bucket,
             "generation_bucket": self.generation_bucket,
             "overall_bucket": self.overall_bucket,
+            "retrieval_degraded": bool(self.retrieval_degraded),
+            "degraded_sources": [
+                str(item).strip()
+                for item in (self.degraded_sources or [])
+                if str(item).strip()
+            ],
+            "degraded_candidates": [
+                dict(item)
+                for item in (self.degraded_candidates or [])
+                if isinstance(item, dict)
+            ],
+            "circuit_breaker_triggered": bool(self.circuit_breaker_triggered),
+            "answer_impacted": bool(self.answer_impacted),
             "failure_reasons": list(self.failure_reasons or []),
         }
 

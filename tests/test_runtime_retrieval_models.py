@@ -5,6 +5,7 @@ import unittest
 from langchain_core.documents import Document
 
 from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.runtime import RouteSnapshot, RouteStageSnapshot
 from rag_modules.runtime.retrieval_models import RetrievalOutcome
 from rag_modules.runtime.workflow_models import AnswerContext
 
@@ -40,6 +41,50 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(len(outcome.evidence_documents), 1)
         self.assertEqual(outcome.evidence_documents[0].recipe_name, "水煮肉片")
+
+    def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
+        route_trace = RouteSnapshot(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "rank_name": "vector",
+                                "reason": "circuit_open",
+                                "error_type": "CircuitOpenError",
+                                "message": "Circuit breaker open",
+                                "circuit_state": "open",
+                                "failure_count": 2,
+                            }
+                        ],
+                    },
+                )
+            },
+            final_doc_count=1,
+        )
+        outcome = RetrievalOutcome(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            evidence_documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu")],
+            route_trace=route_trace,
+        )
+
+        self.assertTrue(outcome.degradation_summary["retrieval_degraded"])
+        self.assertEqual(outcome.degradation_summary["degraded_sources"], ["vector"])
+        self.assertTrue(outcome.degradation_summary["circuit_breaker_triggered"])
+        self.assertFalse(outcome.degradation_summary["answer_impacted"])
+        self.assertEqual(
+            outcome.to_dict()["degradation_summary"]["degraded_candidates"][0]["reason"],
+            "circuit_open",
+        )
 
     def test_answer_context_round_trips_from_dict_payload(self) -> None:
         context = AnswerContext(

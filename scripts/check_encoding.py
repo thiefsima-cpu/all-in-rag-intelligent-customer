@@ -55,6 +55,7 @@ MOJIBAKE_TOKENS = [
     "椋庡懗",
     "鎺ㄨ崘",
     "鍥捐氨",
+    "鐭ヨ瘑瀛愬浘",
 ]
 
 ALLOWLISTED_MOJIBAKE_PATHS = {

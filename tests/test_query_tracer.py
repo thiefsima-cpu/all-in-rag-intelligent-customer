@@ -244,6 +244,53 @@ class QueryTracerTests(unittest.TestCase):
             event.diagnostics.failure_reasons,
         )
 
+    def test_retrieval_source_degradation_is_exposed_in_query_diagnostics(self) -> None:
+        tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
+        route_trace = RouteSnapshot(
+            query="degraded retrieval query",
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "rank_name": "vector",
+                                "reason": "circuit_open",
+                                "error_type": "CircuitOpenError",
+                                "message": "Circuit breaker open",
+                                "circuit_state": "open",
+                                "failure_count": 2,
+                            }
+                        ],
+                    },
+                )
+            },
+            final_doc_count=1,
+        )
+
+        event = tracer.record(
+            query="degraded retrieval query",
+            analysis=None,
+            documents=[EvidenceDocument(content="evidence")],
+            latency_ms=20.0,
+            route_trace=route_trace,
+            generation_trace=GenerationSnapshot(status="success", mode="direct"),
+        )
+
+        self.assertEqual(event.diagnostics.retrieval_bucket, "retrieval_degraded")
+        self.assertTrue(event.diagnostics.retrieval_degraded)
+        self.assertEqual(event.diagnostics.degraded_sources, ["vector"])
+        self.assertTrue(event.diagnostics.circuit_breaker_triggered)
+        self.assertFalse(event.diagnostics.answer_impacted)
+        self.assertEqual(event.diagnostics.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertIn("retrieval_degraded", event.diagnostics.failure_reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

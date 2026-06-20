@@ -15,6 +15,7 @@ from .candidate_sources import (
 )
 from .adapters import ConstraintRetriever
 from .contracts import EvidenceDocument, RetrievalRequest
+from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_settings import RetrievalRuntimeProfile
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class HybridSearchService:
         constraints: Optional[QueryConstraints] = None,
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
+    ) -> HybridRetrievalOutcome:
         request = self.prepare_hybrid_request(
             request_or_query,
             top_k=top_k,
@@ -150,4 +151,7 @@ class HybridSearchService:
             stats.get("bm25", 0),
             len(final_docs),
         )
-        return final_docs
+        return HybridRetrievalOutcome.from_candidate_set(
+            documents=final_docs,
+            candidates=candidates,
+        )

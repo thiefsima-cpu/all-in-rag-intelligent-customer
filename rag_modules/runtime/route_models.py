@@ -53,6 +53,11 @@ class RouteDiagnostics:
     graph_doc_count: int = 0
     hybrid_doc_count: int = 0
     post_process_doc_count: int = 0
+    retrieval_degraded: bool = False
+    degraded_sources: List[str] = field(default_factory=list)
+    degraded_candidates: List[Dict[str, Any]] = field(default_factory=list)
+    circuit_breaker_triggered: bool = False
+    answer_impacted: bool = False
     failure_reasons: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -61,6 +66,15 @@ class RouteDiagnostics:
         self.graph_doc_count = max(0, int(self.graph_doc_count or 0))
         self.hybrid_doc_count = max(0, int(self.hybrid_doc_count or 0))
         self.post_process_doc_count = max(0, int(self.post_process_doc_count or 0))
+        self.retrieval_degraded = bool(self.retrieval_degraded)
+        self.degraded_sources = _unique_strings(self.degraded_sources)
+        self.degraded_candidates = [
+            dict(item)
+            for item in (self.degraded_candidates or [])
+            if isinstance(item, dict)
+        ]
+        self.circuit_breaker_triggered = bool(self.circuit_breaker_triggered)
+        self.answer_impacted = bool(self.answer_impacted)
         self.failure_reasons = [
             str(item).strip() for item in (self.failure_reasons or []) if str(item).strip()
         ]
@@ -75,6 +89,11 @@ class RouteDiagnostics:
             graph_doc_count=payload.get("graph_doc_count", 0),
             hybrid_doc_count=payload.get("hybrid_doc_count", 0),
             post_process_doc_count=payload.get("post_process_doc_count", 0),
+            retrieval_degraded=payload.get("retrieval_degraded", False),
+            degraded_sources=payload.get("degraded_sources") or [],
+            degraded_candidates=payload.get("degraded_candidates") or [],
+            circuit_breaker_triggered=payload.get("circuit_breaker_triggered", False),
+            answer_impacted=payload.get("answer_impacted", False),
             failure_reasons=payload.get("failure_reasons") or [],
         )
 
@@ -86,6 +105,11 @@ class RouteDiagnostics:
             "graph_doc_count": self.graph_doc_count,
             "hybrid_doc_count": self.hybrid_doc_count,
             "post_process_doc_count": self.post_process_doc_count,
+            "retrieval_degraded": self.retrieval_degraded,
+            "degraded_sources": list(self.degraded_sources or []),
+            "degraded_candidates": [dict(item) for item in self.degraded_candidates],
+            "circuit_breaker_triggered": self.circuit_breaker_triggered,
+            "answer_impacted": self.answer_impacted,
             "failure_reasons": list(self.failure_reasons or []),
         }
 
@@ -112,10 +136,16 @@ class RouteSnapshot:
         elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
             self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
         self.stages = {
-            str(name): stage if isinstance(stage, RouteStageSnapshot) else RouteStageSnapshot.from_dict(stage)
+            str(name): (
+                stage
+                if isinstance(stage, RouteStageSnapshot)
+                else RouteStageSnapshot.from_dict(stage)
+            )
             for name, stage in dict(self.stages or {}).items()
         }
-        self.fallbacks = [str(item).strip() for item in (self.fallbacks or []) if str(item).strip()]
+        self.fallbacks = [
+            str(item).strip() for item in (self.fallbacks or []) if str(item).strip()
+        ]
         if isinstance(self.diagnostics, dict):
             self.diagnostics = RouteDiagnostics.from_dict(self.diagnostics)
         elif not isinstance(self.diagnostics, RouteDiagnostics):
@@ -195,6 +225,14 @@ class RouteSnapshot:
             failure_reasons.append("hybrid_empty")
         if self.final_doc_count == 0 and (self.stages or self.error):
             failure_reasons.append("no_final_documents")
+        degradation = _summarize_stage_degradation(self.stages)
+        if degradation["retrieval_degraded"]:
+            failure_reasons.append("retrieval_degraded")
+        if degradation["circuit_breaker_triggered"]:
+            failure_reasons.append("circuit_breaker_open")
+        answer_impacted = bool(self.error) or (
+            self.final_doc_count == 0 and bool(self.stages or self.error)
+        )
 
         self.diagnostics = RouteDiagnostics(
             used_fallback=bool(self.fallbacks),
@@ -203,6 +241,11 @@ class RouteSnapshot:
             graph_doc_count=graph_doc_count,
             hybrid_doc_count=hybrid_doc_count,
             post_process_doc_count=post_stage.doc_count if post_stage else 0,
+            retrieval_degraded=bool(degradation["retrieval_degraded"]),
+            degraded_sources=degradation["degraded_sources"],
+            degraded_candidates=degradation["degraded_candidates"],
+            circuit_breaker_triggered=bool(degradation["circuit_breaker_triggered"]),
+            answer_impacted=answer_impacted,
             failure_reasons=list(dict.fromkeys(failure_reasons)),
         )
         return self.diagnostics
@@ -233,3 +276,44 @@ class RouteSnapshot:
                 bool(self.error),
             )
         )
+
+
+def _unique_strings(values: List[Any]) -> List[str]:
+    normalized: List[str] = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def _summarize_stage_degradation(
+    stages: Dict[str, RouteStageSnapshot],
+) -> Dict[str, Any]:
+    degraded_candidates: List[Dict[str, Any]] = []
+    degraded_sources: List[str] = []
+    retrieval_degraded = False
+    circuit_breaker_triggered = False
+    for stage in (stages or {}).values():
+        details = dict(stage.details or {})
+        if details.get("retrieval_degraded"):
+            retrieval_degraded = True
+        degraded_sources.extend(details.get("degraded_sources") or [])
+        for candidate in details.get("degraded_candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            item = dict(candidate)
+            degraded_candidates.append(item)
+            degraded_sources.append(item.get("source", ""))
+            if item.get("reason") == "circuit_open" or item.get("circuit_state") == "open":
+                circuit_breaker_triggered = True
+        if details.get("circuit_breaker_triggered"):
+            circuit_breaker_triggered = True
+    if degraded_candidates or degraded_sources:
+        retrieval_degraded = True
+    return {
+        "retrieval_degraded": retrieval_degraded,
+        "degraded_sources": _unique_strings(degraded_sources),
+        "degraded_candidates": degraded_candidates,
+        "circuit_breaker_triggered": circuit_breaker_triggered,
+    }
