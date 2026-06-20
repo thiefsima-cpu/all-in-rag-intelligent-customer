@@ -7,6 +7,12 @@ from typing import Any, List, Optional, Union
 
 from langchain_core.documents import Document
 
+from ..query_constraints import QueryConstraints
+from ..query_understanding import QueryPlan
+from ..retrieval.contracts import EvidenceDocument, RetrievalRequest, to_langchain_documents
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..runtime import GraphRetrievalSnapshot
+from ..runtime_contracts import Neo4jManagerPort
 from .query_intent import GraphQueryIntent
 from .retrieval_components import (
     DefaultGraphRetrievalComponentFactory,
@@ -15,12 +21,6 @@ from .retrieval_components import (
 )
 from .retrieval_plan import GraphRetrievalPlan
 from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
-from ..neo4j_pool import Neo4jConnectionManager
-from ..query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest, to_langchain_documents
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime import GraphRetrievalSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class GraphRAGRetrieval:
         self,
         config,
         llm_client,
-        neo4j_manager: Optional[Neo4jConnectionManager] = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
         component_factory: Optional[GraphRetrievalComponentFactory] = None,
     ):
@@ -108,7 +108,9 @@ class GraphRAGRetrieval:
     def adaptive_query_planning(self, query: str) -> List[GraphQuery]:
         return self._components.query_factory.adaptive_query_planning(query)
 
-    def graph_retrieval_plan(self, graph_query: GraphQuery, evidence_goals: List[str]) -> GraphRetrievalPlan:
+    def graph_retrieval_plan(
+        self, graph_query: GraphQuery, evidence_goals: List[str]
+    ) -> GraphRetrievalPlan:
         return self._components.orchestrator.build_retrieval_plan(
             graph_query,
             evidence_goals=evidence_goals,
@@ -203,7 +205,9 @@ class GraphRAGRetrieval:
             query_plan=query_plan,
         )
 
-    def _paths_to_evidence_documents(self, paths: List[GraphPath], query: str) -> List[EvidenceDocument]:
+    def _paths_to_evidence_documents(
+        self, paths: List[GraphPath], query: str
+    ) -> List[EvidenceDocument]:
         return self._components.orchestrator.paths_to_evidence_documents(paths, query)
 
     def _subgraph_to_evidence_documents(

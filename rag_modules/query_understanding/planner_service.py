@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import OrderedDict
 from concurrent.futures import Future
 from copy import deepcopy
-import threading
 
 from ..query_constraints import QueryConstraints, loads_json_object
 from ..query_policy import get_planner_prompt_template
 from ..retrieval.runtime_profile import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from ..runtime_contracts import LLMClientPort
 from .features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from .graph_intent import infer_graph_max_depth, infer_query_semantic_profile
 from .planner_models import QueryPlan
@@ -35,7 +36,7 @@ _VALID_GRAPH_QUERY_TYPES = set(GRAPH_QUERY_TYPES)
 class QueryPlanner:
     def __init__(
         self,
-        llm_client,
+        llm_client: LLMClientPort | None,
         model_name: str | None = None,
         cache_size: int | None = None,
         timeout_seconds: int | None = None,
@@ -93,6 +94,8 @@ class QueryPlanner:
             return plan
 
         try:
+            if self.llm_client is None:
+                raise RuntimeError("No LLM client configured for query planning.")
             response = self.llm_client.chat.completions.create(
                 model=self.settings.model_name,
                 messages=[{"role": "user", "content": self._build_planning_prompt(query)}],
@@ -100,9 +103,10 @@ class QueryPlanner:
                 max_tokens=self.settings.llm_max_tokens,
                 timeout=self.settings.timeout_seconds,
             )
+            response_content = response.choices[0].message.content or "{}"
             plan = QueryPlan.from_dict(
                 query,
-                loads_json_object(response.choices[0].message.content),
+                loads_json_object(response_content),
                 semantic_settings=self.semantic_settings,
             )
             self._calibrate_plan(plan)
@@ -210,7 +214,8 @@ class QueryPlanner:
         return bool(
             len(profile.relation_hits or []) >= 2
             or len(profile.structural_hits or []) >= 2
-            or profile.relationship_intensity >= self.semantic_settings.multi_hop_hint_relationship_threshold
+            or profile.relationship_intensity
+            >= self.semantic_settings.multi_hop_hint_relationship_threshold
         )
 
     def _resolve_strategy(
@@ -250,7 +255,8 @@ class QueryPlanner:
         if (
             profile.query_type == "multi_hop"
             and current_type == "subgraph"
-            and profile.relationship_intensity >= self.semantic_settings.multi_hop_hint_relationship_threshold
+            and profile.relationship_intensity
+            >= self.semantic_settings.multi_hop_hint_relationship_threshold
         ):
             return "multi_hop"
         if current_type in _VALID_GRAPH_QUERY_TYPES:
@@ -264,7 +270,9 @@ class QueryPlanner:
         settings = self.semantic_settings
 
         plan.complexity = max(plan.complexity, profile.complexity)
-        plan.relationship_intensity = max(plan.relationship_intensity, profile.relationship_intensity)
+        plan.relationship_intensity = max(
+            plan.relationship_intensity, profile.relationship_intensity
+        )
         plan.reasoning_required = bool(
             plan.reasoning_required
             or profile.reasoning_required
@@ -283,7 +291,9 @@ class QueryPlanner:
             relationship_intensity=plan.relationship_intensity,
         )
         if resolved_strategy != plan.strategy:
-            plan.validation_errors.append(f"calibrated_strategy:{plan.strategy}->{resolved_strategy}")
+            plan.validation_errors.append(
+                f"calibrated_strategy:{plan.strategy}->{resolved_strategy}"
+            )
             plan.strategy = resolved_strategy
 
         resolved_query_type = self._resolve_graph_query_type(plan.graph_query_type, profile)
@@ -362,7 +372,9 @@ class QueryPlanner:
             strategy != "hybrid_traditional"
             or relationship_intensity >= settings.source_entity_backfill_relationship_threshold
         ):
-            source_candidates = profile.source_entities or profile.entity_keywords or fallback_keywords(query)
+            source_candidates = (
+                profile.source_entities or profile.entity_keywords or fallback_keywords(query)
+            )
         source_entities = normalize_graph_sources(source_candidates[: settings.source_entity_limit])
         if (
             strategy == "hybrid_traditional"
@@ -402,4 +414,3 @@ class QueryPlanner:
 
 
 __all__ = ["QueryPlanner"]
-

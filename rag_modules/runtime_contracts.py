@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from .graph.retrieval_types import GraphQuery
+    from .query_constraints import QueryConstraints
+    from .query_understanding import QueryPlan
     from .retrieval.contracts import EvidenceDocument, RetrievalRequest
+    from .retrieval.hybrid_outcome import HybridRetrievalOutcome
     from .runtime import (
         AnswerContext,
         GenerationSnapshot,
@@ -126,9 +131,102 @@ class HybridCandidateRuntimePort(Protocol):
     def bm25_candidates(self, query: str, *, top_k: int) -> list[EvidenceDocument]: ...
 
 
+class LLMCompletionMessagePort(Protocol):
+    """OpenAI-compatible completion message shape used by query planning."""
+
+    content: str | None
+
+
+class LLMCompletionChoicePort(Protocol):
+    """OpenAI-compatible completion choice shape used by query planning."""
+
+    message: LLMCompletionMessagePort
+
+
+class LLMCompletionResponsePort(Protocol):
+    """OpenAI-compatible completion response shape used by query planning."""
+
+    choices: Sequence[LLMCompletionChoicePort]
+
+
+class LLMCompletionsPort(Protocol):
+    """Minimal chat completions surface required by query planning."""
+
+    def create(
+        self,
+        *,
+        model: str,
+        messages: Sequence[Mapping[str, str]],
+        temperature: float,
+        max_tokens: int,
+        timeout: int | float,
+    ) -> LLMCompletionResponsePort: ...
+
+
+class LLMChatPort(Protocol):
+    """Minimal chat namespace required by query planning."""
+
+    completions: LLMCompletionsPort
+
+
+class LLMClientPort(Protocol):
+    """Minimal OpenAI-compatible LLM client surface used outside generation."""
+
+    chat: LLMChatPort
+
+
+class HybridRetrievalPort(Protocol):
+    """Hybrid retrieval behavior consumed by routing."""
+
+    def hybrid_evidence_search(
+        self,
+        request_or_query: str | RetrievalRequest,
+        top_k: int = 5,
+        constraints: QueryConstraints | None = None,
+        candidate_k: int | None = None,
+        query_plan: QueryPlan | None = None,
+    ) -> HybridRetrievalOutcome: ...
+
+    def enrich_to_parent_evidence_documents(
+        self,
+        docs: list[EvidenceDocument],
+        top_n: int | None = None,
+    ) -> list[EvidenceDocument]: ...
+
+
+class GraphRAGRetrievalPort(Protocol):
+    """Graph retrieval behavior consumed by routing."""
+
+    def graph_rag_evidence_search(
+        self,
+        request_or_query: str | RetrievalRequest,
+        top_k: int = 5,
+        constraints: QueryConstraints | None = None,
+        query_plan: QueryPlan | None = None,
+    ) -> list[EvidenceDocument]: ...
+
+    def graph_rag_evidence_search_with_trace(
+        self,
+        request_or_query: str | RetrievalRequest,
+        top_k: int = 5,
+        constraints: QueryConstraints | None = None,
+        query_plan: QueryPlan | None = None,
+    ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]: ...
+
+    def graph_query_from_plan(self, plan: QueryPlan) -> GraphQuery: ...
+
+
 __all__ = [
     "GraphDataModulePort",
+    "GraphRAGRetrievalPort",
     "HybridCandidateRuntimePort",
+    "HybridRetrievalPort",
+    "LLMChatPort",
+    "LLMClientPort",
+    "LLMCompletionChoicePort",
+    "LLMCompletionMessagePort",
+    "LLMCompletionResponsePort",
+    "LLMCompletionsPort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",
     "Neo4jSessionPort",

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...configuration.models import GraphRAGConfig
-
 from ...graph.retrieval import GraphRAGRetrieval
-from ...retrieval import HybridRetrievalModule
 from ...query_understanding.service import QueryUnderstandingService
+from ...retrieval import HybridRetrievalModule
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
-from ..runtime_contracts import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    LLMClientPort,
+    Neo4jManagerPort,
+    VectorIndexModulePort,
+)
 
 
 class DefaultRetrievalComponentProvider:
@@ -23,7 +25,7 @@ class DefaultRetrievalComponentProvider:
         config: GraphRAGConfig,
         milvus_module: VectorIndexModulePort,
         data_module: GraphDataModulePort,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> HybridRetrievalModule:
@@ -40,7 +42,7 @@ class DefaultRetrievalComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> GraphRAGRetrieval:
@@ -57,7 +59,7 @@ class DefaultRetrievalComponentProvider:
         config: GraphRAGConfig,
         traditional_retrieval: HybridRetrievalModule,
         graph_rag_retrieval: GraphRAGRetrieval,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
     ) -> RoutingWorkflowProtocol:

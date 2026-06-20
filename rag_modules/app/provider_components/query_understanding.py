@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...configuration.models import GraphRAGConfig
 from ...query_understanding.service import QueryUnderstandingService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile, RetrievalRuntimeProfileFactory
+from ..runtime_contracts import LLMClientPort
 
 
 class DefaultQueryUnderstandingComponentProvider:
@@ -29,7 +28,7 @@ class DefaultQueryUnderstandingComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> QueryUnderstandingService:
         return QueryUnderstandingService(

@@ -93,7 +93,7 @@ pretty = true
 ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
-files = ["rag_modules", "main.py", "main_build_service.py", "config.py", "tests/typecheck"]
+files = ["rag_modules", "main.py", "main_build_service.py", "tests/typecheck"]
 
 [[tool.mypy.overrides]]
 module = [

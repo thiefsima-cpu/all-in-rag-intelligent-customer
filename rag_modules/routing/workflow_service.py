@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from ..query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
 from ..query_understanding.service import QueryUnderstandingService
 from ..retrieval.contracts import EvidenceDocument
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
@@ -19,6 +18,7 @@ from ..runtime import (
     RouteResolution,
     RouteSnapshot,
 )
+from ..runtime.json_types import JsonObject
 from .search_orchestrator import RouteExecutionRequest, RouteSearchOrchestrator
 from .statistics import RouteStatisticsTracker
 from .trace_recorder import RouteTraceRecorder
@@ -140,7 +140,7 @@ class RoutingWorkflowService:
             )
             return resolution, RouteSnapshot.from_dict(route_trace.to_dict())
 
-    def get_route_statistics(self) -> dict[str, Any]:
+    def get_route_statistics(self) -> JsonObject:
         return self.route_stats.summary()
 
     def _build_execution_request(
@@ -182,7 +182,7 @@ class RoutingWorkflowService:
         strategy: str,
         evidence_documents: List[EvidenceDocument],
         route_trace: RouteSnapshot,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: JsonObject | None = None,
     ) -> RouteResolution:
         return RouteResolution(
             understanding=understanding,

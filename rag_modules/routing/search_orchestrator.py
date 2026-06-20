@@ -13,6 +13,8 @@ from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..retrieval_post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..runtime import QueryAnalysis, SearchStrategy
+from ..runtime.json_types import JsonObject
+from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
 from .execution_strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
@@ -45,8 +47,8 @@ class RouteSearchOrchestrator:
     def __init__(
         self,
         *,
-        traditional_retrieval,
-        graph_rag_retrieval,
+        traditional_retrieval: HybridRetrievalPort,
+        graph_rag_retrieval: GraphRAGRetrievalPort,
         retrieval_profile: RetrievalRuntimeProfile,
         post_processor: RetrievalPostProcessor,
         strategies: Optional[List[RouteRetrievalStrategy]] = None,
@@ -65,10 +67,7 @@ class RouteSearchOrchestrator:
             GraphRouteStrategy(),
             CombinedRouteStrategy(),
         ]
-        self.strategy_registry = {
-            strategy.strategy: strategy
-            for strategy in strategy_list
-        }
+        self.strategy_registry = {strategy.strategy: strategy for strategy in strategy_list}
 
     def execute(
         self,
@@ -98,7 +97,7 @@ class RouteSearchOrchestrator:
         evidence_documents: List[EvidenceDocument],
         *,
         trace: RouteTraceRecorder,
-        query_plan_payload: Optional[dict] = None,
+        query_plan_payload: JsonObject | None = None,
     ) -> List[EvidenceDocument]:
         post_start = time.perf_counter()
         processed_documents = self.post_processor.post_process(

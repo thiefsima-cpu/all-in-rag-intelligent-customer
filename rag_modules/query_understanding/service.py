@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
+from ..runtime_contracts import LLMClientPort
 from .planner_service import QueryPlanner
 
 QueryUnderstandingResult = QueryUnderstandingSnapshot
@@ -12,7 +13,13 @@ QueryUnderstandingResult = QueryUnderstandingSnapshot
 class QueryUnderstandingService:
     """Own the query-planning and query-analysis policy for retrieval routing."""
 
-    def __init__(self, *, llm_client, config, retrieval_profile: RetrievalRuntimeProfile | None = None):
+    def __init__(
+        self,
+        *,
+        llm_client: LLMClientPort | None,
+        config,
+        retrieval_profile: RetrievalRuntimeProfile | None = None,
+    ) -> None:
         self.config = config
         self.llm_client = llm_client
         self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)

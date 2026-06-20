@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol
+from typing import List, Optional, Protocol
 
 from ..query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
-from ..runtime import GraphRetrievalSnapshot, SearchStrategy
+from ..retrieval.hybrid_outcome import HybridRetrievalOutcome
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..runtime import GraphRetrievalSnapshot, QueryAnalysis, SearchStrategy
+from ..runtime.json_types import JsonObject, coerce_json_object, coerce_json_value
+from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,8 +24,8 @@ class RouteExecutionStageResult:
     name: str
     documents: List[EvidenceDocument] = field(default_factory=list)
     latency_ms: float = 0.0
-    extra: Optional[Any] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    extra: object | None = None
+    details: JsonObject = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +41,20 @@ class RouteExecutionOutcome:
 class RouteRetrievalServices:
     """Shared retrieval collaborators needed by route execution strategies."""
 
-    traditional_retrieval: Any
-    graph_rag_retrieval: Any
-    retrieval_profile: Any
+    traditional_retrieval: HybridRetrievalPort
+    graph_rag_retrieval: GraphRAGRetrievalPort
+    retrieval_profile: RetrievalRuntimeProfile
+
+
+class RouteExecutionRequestPort(Protocol):
+    """Route execution request shape consumed by strategy implementations."""
+
+    query: str
+    top_k: int
+    analysis: QueryAnalysis
+    retrieval_request: RetrievalRequest
+    constraints: QueryConstraints
+    query_plan: QueryPlan | None
 
 
 class RouteRetrievalStrategy(Protocol):
@@ -49,7 +64,7 @@ class RouteRetrievalStrategy(Protocol):
 
     def execute(
         self,
-        request,
+        request: RouteExecutionRequestPort,
         *,
         services: RouteRetrievalServices,
     ) -> RouteExecutionOutcome: ...
@@ -132,11 +147,14 @@ class HybridRouteStrategy:
 
     strategy = SearchStrategy.HYBRID_TRADITIONAL
 
-    def execute(self, request, *, services: RouteRetrievalServices) -> RouteExecutionOutcome:
+    def execute(
+        self,
+        request: RouteExecutionRequestPort,
+        *,
+        services: RouteRetrievalServices,
+    ) -> RouteExecutionOutcome:
         start = time.perf_counter()
-        outcome = services.traditional_retrieval.hybrid_evidence_search(
-            request.retrieval_request
-        )
+        outcome = services.traditional_retrieval.hybrid_evidence_search(request.retrieval_request)
         documents = list(outcome.documents)
         return RouteExecutionOutcome(
             documents=documents,
@@ -145,7 +163,7 @@ class HybridRouteStrategy:
                     name="hybrid",
                     documents=documents,
                     latency_ms=_elapsed_ms(start),
-                    details=outcome.to_stage_details(),
+                    details=coerce_json_object(outcome.to_stage_details()),
                 )
             ],
         )
@@ -156,22 +174,24 @@ class GraphRouteStrategy:
 
     strategy = SearchStrategy.GRAPH_RAG
 
-    def execute(self, request, *, services: RouteRetrievalServices) -> RouteExecutionOutcome:
+    def execute(
+        self,
+        request: RouteExecutionRequestPort,
+        *,
+        services: RouteRetrievalServices,
+    ) -> RouteExecutionOutcome:
         stages: List[RouteExecutionStageResult] = []
         fallbacks: List[str] = []
 
         graph_start = time.perf_counter()
-        graph_search_with_trace = getattr(
-            services.graph_rag_retrieval,
-            "graph_rag_evidence_search_with_trace",
-            None,
-        )
-        if callable(graph_search_with_trace):
-            graph_documents, graph_trace = graph_search_with_trace(
-                request.query,
-                request.top_k,
-                constraints=request.constraints,
-                query_plan=request.query_plan,
+        if hasattr(services.graph_rag_retrieval, "graph_rag_evidence_search_with_trace"):
+            graph_documents, graph_trace = (
+                services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
+                    request.query,
+                    request.top_k,
+                    constraints=request.constraints,
+                    query_plan=request.query_plan,
+                )
             )
         else:
             graph_documents = services.graph_rag_retrieval.graph_rag_evidence_search(
@@ -210,7 +230,7 @@ class GraphRouteStrategy:
                     name="hybrid_fallback",
                     documents=fallback_documents,
                     latency_ms=_elapsed_ms(fallback_start),
-                    details=fallback_outcome.to_stage_details(),
+                    details=coerce_json_object(fallback_outcome.to_stage_details()),
                 )
             )
             return RouteExecutionOutcome(
@@ -240,7 +260,7 @@ class GraphRouteStrategy:
                     name="hybrid_supplement",
                     documents=supplement_docs,
                     latency_ms=_elapsed_ms(supplement_start),
-                    details=supplement_outcome.to_stage_details(),
+                    details=coerce_json_object(supplement_outcome.to_stage_details()),
                 )
             )
             documents = merge_route_documents(
@@ -261,7 +281,12 @@ class CombinedRouteStrategy:
 
     strategy = SearchStrategy.COMBINED
 
-    def execute(self, request, *, services: RouteRetrievalServices) -> RouteExecutionOutcome:
+    def execute(
+        self,
+        request: RouteExecutionRequestPort,
+        *,
+        services: RouteRetrievalServices,
+    ) -> RouteExecutionOutcome:
         start = time.perf_counter()
         candidate_k = services.retrieval_profile.candidates.combined_candidate_k(request.top_k)
         traditional_request = build_route_retrieval_request(
@@ -273,21 +298,15 @@ class CombinedRouteStrategy:
             strategy=SearchStrategy.COMBINED.value,
         )
 
-        graph_search_with_trace = getattr(
-            services.graph_rag_retrieval,
-            "graph_rag_evidence_search_with_trace",
-            None,
-        )
-
-        def load_traditional() -> tuple[Any, float]:
+        def load_traditional() -> tuple[HybridRetrievalOutcome, float]:
             traditional_start = time.perf_counter()
             outcome = services.traditional_retrieval.hybrid_evidence_search(traditional_request)
             return outcome, _elapsed_ms(traditional_start)
 
-        def load_graph() -> tuple[List[EvidenceDocument], Any, float]:
+        def load_graph() -> tuple[List[EvidenceDocument], object, float]:
             graph_start = time.perf_counter()
-            if callable(graph_search_with_trace):
-                docs, trace = graph_search_with_trace(
+            if hasattr(services.graph_rag_retrieval, "graph_rag_evidence_search_with_trace"):
+                docs, trace = services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
                     request.query,
                     candidate_k,
                     constraints=request.constraints,
@@ -324,22 +343,19 @@ class CombinedRouteStrategy:
             limit=candidate_k,
         )
 
-        details = {
-            "candidate_k": candidate_k,
-            "traditional_doc_count": len(traditional_docs),
-            "graph_doc_count": len(graph_docs),
-            "traditional_latency_ms": traditional_latency_ms,
-            "graph_latency_ms": graph_latency_ms,
-            "parallel_execution": True,
-        }
-        details.update(traditional_outcome.to_stage_details())
+        details = coerce_json_object(
+            {
+                "candidate_k": candidate_k,
+                "traditional_doc_count": len(traditional_docs),
+                "graph_doc_count": len(graph_docs),
+                "traditional_latency_ms": traditional_latency_ms,
+                "graph_latency_ms": graph_latency_ms,
+                "parallel_execution": True,
+            }
+        )
+        details.update(coerce_json_object(traditional_outcome.to_stage_details()))
         if graph_trace:
-            if hasattr(graph_trace, "to_stage_details"):
-                details.update(graph_trace.to_stage_details())
-            elif hasattr(graph_trace, "to_dict"):
-                details["graph_trace"] = graph_trace.to_dict()
-            else:
-                details["graph_trace"] = dict(graph_trace)
+            details.update(_trace_stage_details(graph_trace))
 
         return RouteExecutionOutcome(
             documents=list(combined_docs),
@@ -358,11 +374,22 @@ def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 2)
 
 
+def _trace_stage_details(trace: object) -> JsonObject:
+    to_stage_details = getattr(trace, "to_stage_details", None)
+    if callable(to_stage_details):
+        return coerce_json_object(to_stage_details())
+    to_dict = getattr(trace, "to_dict", None)
+    if callable(to_dict):
+        return {"graph_trace": coerce_json_value(to_dict())}
+    return {"graph_trace": coerce_json_value(trace)}
+
+
 __all__ = [
     "CombinedRouteStrategy",
     "GraphRouteStrategy",
     "HybridRouteStrategy",
     "RouteExecutionOutcome",
+    "RouteExecutionRequestPort",
     "RouteExecutionStageResult",
     "RouteRetrievalServices",
     "RouteRetrievalStrategy",

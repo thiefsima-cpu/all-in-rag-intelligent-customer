@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
 from ...build_pipeline.contracts import (
     DocumentArtifactBuilderPort,
@@ -11,8 +11,8 @@ from ...build_pipeline.contracts import (
 from ...configuration.models import GraphRAGConfig
 from ...generation.service import GenerationWorkflowService
 from ...graph.retrieval import GraphRAGRetrieval
-from ...retrieval import HybridRetrievalModule
 from ...query_understanding.service import QueryUnderstandingService
+from ...retrieval import HybridRetrievalModule
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import (
@@ -22,17 +22,18 @@ from ...runtime.artifact_ports import (
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ...tracing_sinks import QueryTraceSink
-from ..services.answer_workflow import AnswerWorkflow
-from ..services.knowledge_base_service import KnowledgeBaseService
-from ..services import QuestionAnswerService
-from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from ..services.runtime_shutdown_service import RuntimeShutdownService
 from ..runtime_contracts import (
     GraphDataModulePort,
+    LLMClientPort,
     Neo4jManagerPort,
     QueryTracerPort,
     VectorIndexModulePort,
 )
+from ..services import QuestionAnswerService
+from ..services.answer_workflow import AnswerWorkflow
+from ..services.knowledge_base_service import KnowledgeBaseService
+from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
+from ..services.runtime_shutdown_service import RuntimeShutdownService
 
 
 class InfrastructureComponentProvider(Protocol):
@@ -161,7 +162,7 @@ class QueryUnderstandingComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> QueryUnderstandingService: ...
 
@@ -175,7 +176,7 @@ class RetrievalComponentProvider(Protocol):
         config: GraphRAGConfig,
         milvus_module: VectorIndexModulePort,
         data_module: GraphDataModulePort,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> HybridRetrievalModule: ...
@@ -184,7 +185,7 @@ class RetrievalComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
     ) -> GraphRAGRetrieval: ...
@@ -195,7 +196,7 @@ class RetrievalComponentProvider(Protocol):
         config: GraphRAGConfig,
         traditional_retrieval: HybridRetrievalModule,
         graph_rag_retrieval: GraphRAGRetrieval,
-        llm_client: Any,
+        llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
     ) -> RoutingWorkflowProtocol: ...

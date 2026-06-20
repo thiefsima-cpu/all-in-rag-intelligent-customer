@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ...runtime.json_types import JsonObject
 
 MAX_QUESTION_CHARS = 4000
 
@@ -52,8 +55,8 @@ class OperationResponseModel(BaseModel):
 
     ok: bool = True
     message: str
-    diagnostics: Optional[Dict[str, Any]] = None
-    stats: Optional[Dict[str, Any]] = None
+    diagnostics: Optional[JsonObject] = None
+    stats: Optional[JsonObject] = None
 
 
 class ArtifactManifestResponseModel(BaseModel):
@@ -71,7 +74,7 @@ class ArtifactManifestResponseModel(BaseModel):
     vector_rows: int = 0
     cache_hit: bool = False
     last_error: str = ""
-    build_metadata: Dict[str, Any] = Field(default_factory=dict)
+    build_metadata: JsonObject = Field(default_factory=dict)
     manifest_version: int = 0
     index_version: str = ""
     collection_base_name: str = ""
@@ -117,7 +120,7 @@ class StartupDiagnosticsPayloadModel(BaseModel):
     rerank_model: str = ""
     trace_enabled: bool = False
     trace_path: str = ""
-    trace_stats: Dict[str, Any] = Field(default_factory=dict)
+    trace_stats: JsonObject = Field(default_factory=dict)
     build_initialized: bool = False
     serving_initialized: bool = False
     artifacts_ready: bool = False
@@ -141,11 +144,13 @@ class SystemStatsPayloadModel(BaseModel):
     artifacts_ready: bool = False
     ready: bool = False
     models: ModelSuiteResponseModel = Field(default_factory=ModelSuiteResponseModel)
-    trace_stats: Dict[str, Any] = Field(default_factory=dict)
-    retrieval_runtime_profile: Dict[str, Any] = Field(default_factory=dict)
-    artifact_manifest: ArtifactManifestResponseModel = Field(default_factory=ArtifactManifestResponseModel)
-    data_stats: Dict[str, Any] = Field(default_factory=dict)
-    index_stats: Dict[str, Any] = Field(default_factory=dict)
+    trace_stats: JsonObject = Field(default_factory=dict)
+    retrieval_runtime_profile: JsonObject = Field(default_factory=dict)
+    artifact_manifest: ArtifactManifestResponseModel = Field(
+        default_factory=ArtifactManifestResponseModel
+    )
+    data_stats: JsonObject = Field(default_factory=dict)
+    index_stats: JsonObject = Field(default_factory=dict)
     route_stats: RouteStatsResponseModel = Field(default_factory=RouteStatsResponseModel)
 
 
@@ -159,8 +164,8 @@ class BuildJobResultModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = ""
-    diagnostics: Optional[Dict[str, Any]] = None
-    stats: Optional[Dict[str, Any]] = None
+    diagnostics: Optional[JsonObject] = None
+    stats: Optional[JsonObject] = None
 
 
 class BuildJobPayloadModel(BaseModel):
@@ -248,26 +253,26 @@ class AnswerSummaryModel(BaseModel):
 class AnswerGroundingModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    retrieval_outcome: Dict[str, Any] = Field(default_factory=dict)
-    answer_context: Dict[str, Any] = Field(default_factory=dict)
-    route_resolution: Dict[str, Any] = Field(default_factory=dict)
-    evidence_documents: list[Dict[str, Any]] = Field(default_factory=list)
+    retrieval_outcome: JsonObject = Field(default_factory=dict)
+    answer_context: JsonObject = Field(default_factory=dict)
+    route_resolution: JsonObject = Field(default_factory=dict)
+    evidence_documents: list[JsonObject] = Field(default_factory=list)
 
 
 class AnswerDiagnosticsModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    analysis: Dict[str, Any] = Field(default_factory=dict)
-    diagnostics: Dict[str, Any] = Field(default_factory=dict)
+    analysis: JsonObject = Field(default_factory=dict)
+    diagnostics: JsonObject = Field(default_factory=dict)
 
 
 class AnswerTracesModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    route_trace: Dict[str, Any] = Field(default_factory=dict)
-    graph_trace: Dict[str, Any] = Field(default_factory=dict)
-    generation_trace: Dict[str, Any] = Field(default_factory=dict)
-    trace_event: Dict[str, Any] = Field(default_factory=dict)
+    route_trace: JsonObject = Field(default_factory=dict)
+    graph_trace: JsonObject = Field(default_factory=dict)
+    generation_trace: JsonObject = Field(default_factory=dict)
+    trace_event: JsonObject = Field(default_factory=dict)
 
 
 class AnswerPayloadModel(BaseModel):
@@ -279,7 +284,7 @@ class AnswerPayloadModel(BaseModel):
     traces: AnswerTracesModel
 
     @classmethod
-    def from_payload(cls, payload: Dict[str, Any]) -> "AnswerPayloadModel":
+    def from_payload(cls, payload: Mapping[str, object]) -> "AnswerPayloadModel":
         return cls.model_validate(dict(payload or {}))
 
 
@@ -312,7 +317,7 @@ class AnswerStreamErrorDataModel(BaseModel):
 
     message: str
     error_type: str
-    diagnostics: Optional[Dict[str, Any]] = None
+    diagnostics: Optional[JsonObject] = None
 
 
 class AnswerStreamDoneDataModel(BaseModel):
@@ -348,7 +353,7 @@ class AnswerStreamEventModel(BaseModel):
         )
 
     @classmethod
-    def result(cls, response: Dict[str, Any]) -> "AnswerStreamEventModel":
+    def result(cls, response: Mapping[str, object]) -> "AnswerStreamEventModel":
         return cls(
             event=AnswerStreamEventType.result,
             data=AnswerStreamResultDataModel(response=AnswerPayloadModel.from_payload(response)),
@@ -360,7 +365,7 @@ class AnswerStreamEventModel(BaseModel):
         *,
         message: str,
         error_type: str,
-        diagnostics: Optional[Dict[str, Any]] = None,
+        diagnostics: Optional[JsonObject] = None,
     ) -> "AnswerStreamEventModel":
         return cls(
             event=AnswerStreamEventType.error,
