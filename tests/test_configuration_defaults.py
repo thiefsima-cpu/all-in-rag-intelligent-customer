@@ -31,29 +31,14 @@ class ConfigurationDefaultTests(unittest.TestCase):
             self.assertIs(resolved, sentinel)
             self.assertEqual(calls, ["load"])
 
-            self.assertEqual(reloaded_module.DEFAULT_CONFIG.value, "lazy-config")
-            self.assertEqual(calls, ["load"])
-
         importlib.reload(configuration_module)
 
-    def test_default_config_proxy_preserves_common_config_methods(self) -> None:
+    def test_default_config_proxy_is_retired(self) -> None:
         import rag_modules.configuration as configuration_module
-        import rag_modules.configuration.loader as loader_module
 
-        sentinel = SimpleNamespace(
-            value="lazy-config",
-            to_dict=lambda: {"value": "lazy-config"},
-            to_domain_dict=lambda: {"models": {"llm_model": "stub"}},
-        )
+        reloaded_module = importlib.reload(configuration_module)
 
-        with patch.object(loader_module, "load_config", return_value=sentinel):
-            reloaded_module = importlib.reload(configuration_module)
-            self.assertEqual(reloaded_module.DEFAULT_CONFIG.to_dict(), {"value": "lazy-config"})
-            self.assertEqual(
-                reloaded_module.DEFAULT_CONFIG.to_domain_dict(),
-                {"models": {"llm_model": "stub"}},
-            )
-
+        self.assertFalse(hasattr(reloaded_module, "DEFAULT_CONFIG"))
         importlib.reload(configuration_module)
 
     def test_explicit_config_source_skips_dotenv_loading(self) -> None:

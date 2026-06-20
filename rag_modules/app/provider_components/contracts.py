@@ -200,17 +200,6 @@ class RetrievalComponentProvider(Protocol):
         query_understanding_service: QueryUnderstandingService,
     ) -> RoutingWorkflowProtocol: ...
 
-    def provide_query_router(
-        self,
-        *,
-        config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalModule,
-        graph_rag_retrieval: GraphRAGRetrieval,
-        llm_client: Any,
-        retrieval_profile: RetrievalRuntimeProfile,
-        query_understanding_service: QueryUnderstandingService,
-    ) -> RoutingWorkflowProtocol: ...
-
 
 class ApplicationServiceComponentProvider(Protocol):
     """Application-layer use-case services."""

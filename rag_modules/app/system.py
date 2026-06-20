@@ -195,18 +195,6 @@ class AdvancedGraphRAGSystem:
     def services(self) -> Any:
         return self.facade_support.services
 
-    def __getattr__(self, name: str) -> Any:
-        resolver = getattr(self.facade_support, "resolve_legacy_attribute", None)
-        if resolver is None:
-            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-        return resolver(self, name)
-
-    def __dir__(self) -> list[str]:
-        legacy_dir = getattr(self.facade_support, "legacy_dir", None)
-        if legacy_dir is None:
-            return object.__dir__(self)
-        return legacy_dir(self)
-
     @property
     def artifact_manifest(self) -> ArtifactManifest:
         return self.facade_support.artifact_manifest

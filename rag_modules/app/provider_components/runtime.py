@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from .build_pipeline import DefaultBuildPipelineComponentProvider
 from .diagnostics import DefaultDiagnosticsComponentProvider
 from .generation import DefaultGenerationComponentProvider
@@ -15,12 +13,7 @@ from .services import DefaultApplicationServiceComponentProvider
 
 
 class DefaultRuntimeComponentProvider:
-    """Capability container used by the application composition root.
-
-    Capability providers are the primary API. Dynamic ``provide_*`` delegation
-    keeps the former monolithic provider surface working during migration
-    without duplicating every provider method here.
-    """
+    """Capability container used by the application composition root."""
 
     capability_names = (
         "infrastructure",
@@ -61,25 +54,6 @@ class DefaultRuntimeComponentProvider:
         """Allow the capability container to act as its own resolved surface."""
 
         return self
-
-    def __getattr__(self, name: str) -> Any:
-        if not name.startswith("provide_"):
-            raise AttributeError(name)
-
-        for capability_name in self.capability_names:
-            capability = object.__getattribute__(self, capability_name)
-            provider_method = getattr(capability, name, None)
-            if callable(provider_method):
-                return provider_method
-
-        if name == "provide_routing_workflow":
-            legacy_method = getattr(self.retrieval, "provide_query_router", None)
-            if callable(legacy_method):
-                return legacy_method
-
-        raise AttributeError(
-            f"{self.__class__.__name__!s} has no provider method {name!r}."
-        )
 
 
 __all__ = ["DefaultRuntimeComponentProvider"]

@@ -6,7 +6,6 @@ from typing import Any
 
 from ...configuration.models import GraphRAGConfig
 from ..runtime_state import BuildRuntime
-from .provider_resolution import RuntimeProviderSurface
 from .shared import ProgressCallback, emit_progress, resolve_config
 
 
@@ -19,9 +18,13 @@ class BuildRuntimeFactory:
         provider,
         assembler: Any | None = None,
     ) -> None:
-        self.providers = RuntimeProviderSurface.from_provider(provider)
-        self.provider = self.providers.provider
+        self.provider = provider
         self.assembler = assembler
+        if assembler is None:
+            self.infrastructure = provider.infrastructure
+            self.build_pipeline = provider.build_pipeline
+            self.diagnostics = provider.diagnostics
+            self.services = provider.services
 
     def build(
         self,
@@ -42,10 +45,10 @@ class BuildRuntimeFactory:
             )
 
         config = resolve_config(config)
-        infrastructure = self.providers.infrastructure
-        build_pipeline = self.providers.build_pipeline
-        diagnostics = self.providers.diagnostics
-        services = self.providers.services
+        infrastructure = self.infrastructure
+        build_pipeline = self.build_pipeline
+        diagnostics = self.diagnostics
+        services = self.services
 
         graph_manager = infrastructure.provide_neo4j_manager(config, neo4j_manager)
         emit_progress(progress, "Initializing graph data module...")

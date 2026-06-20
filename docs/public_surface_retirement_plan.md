@@ -62,10 +62,9 @@ paths will fail instead of forwarding; callers must import the canonical module
 directly.
 
 Flat runtime and system attributes such as `system.query_router` and
-`runtime.data_module` are served by the grouped mapping in
-[`rag_modules/app/legacy_surface.py`](../rag_modules/app/legacy_surface.py).
-Canonical code should use `system.infrastructure`, `system.retrieval`,
-`system.services`, and matching grouped runtime views.
+`runtime.data_module` are retired. Canonical code must use
+`system.infrastructure`, `system.retrieval`, `system.services`, and matching
+grouped runtime views.
 
 ## Retired Facade History
 

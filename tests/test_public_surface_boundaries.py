@@ -5,7 +5,6 @@ from importlib.util import resolve_name
 import unittest
 from pathlib import Path
 
-from rag_modules.app.legacy_surface import GROUPED_LEGACY_ATTRIBUTE_MAP
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
@@ -815,11 +814,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_legacy_grouped_attributes_are_data_driven(self) -> None:
-        legacy_attribute_names = set(GROUPED_LEGACY_ATTRIBUTE_MAP)
+    def test_app_runtime_surfaces_do_not_use_legacy_flat_attribute_resolution(self) -> None:
         targets = {
             RAG_MODULES_DIR / "app" / "runtime_view.py",
             RAG_MODULES_DIR / "app" / "system.py",
+            RAG_MODULES_DIR / "app" / "composition" / "system_facade_support.py",
         }
         violations: list[str] = []
 
@@ -829,12 +828,51 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             tree = ast.parse(source, filename=str(path))
 
             for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in legacy_attribute_names:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+                    "__getattr__",
+                    "__dir__",
+                    "resolve_legacy_attribute",
+                    "legacy_dir",
+                }:
                     violations.append(f"{rel}:{node.lineno}: def {node.name}(...)")
+                elif isinstance(node, ast.ImportFrom):
+                    module_name = self._resolve_import_from(path, node)
+                    if module_name == "rag_modules.app.legacy_surface":
+                        violations.append(f"{rel}:{node.lineno}: legacy_surface import")
+
+        legacy_surface_path = RAG_MODULES_DIR / "app" / "legacy_surface.py"
+        if legacy_surface_path.exists():
+            violations.append(
+                f"{legacy_surface_path.relative_to(ROOT)}: compatibility module still exists"
+            )
 
         self.assertFalse(
             violations,
-            "Found legacy flat attribute accessors that should be served by grouped legacy mapping:\n"
+            "Found retired legacy flat runtime attribute support:\n"
+            + "\n".join(violations),
+        )
+
+    def test_only_package_exports_use_module_getattr(self) -> None:
+        violations: list[str] = []
+
+        for path in RAG_MODULES_DIR.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            if "__pycache__" in rel.parts:
+                continue
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "__getattr__"
+                    and path.name != "__init__.py"
+                ):
+                    violations.append(f"{rel}:{node.lineno}: def __getattr__(...)")
+
+        self.assertFalse(
+            violations,
+            "Found object-level dynamic attribute delegation outside package lazy exports:\n"
             + "\n".join(violations),
         )
 

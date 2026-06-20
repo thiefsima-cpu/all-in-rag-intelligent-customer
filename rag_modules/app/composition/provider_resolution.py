@@ -16,6 +16,8 @@ from ..provider_components.contracts import (
     RetrievalComponentProvider,
     RuntimeComponentProvider,
 )
+
+
 def _create_default_runtime_provider() -> RuntimeComponentProvider:
     from ..provider_components.runtime import DefaultRuntimeComponentProvider
 
@@ -72,19 +74,16 @@ class RuntimeProviderSurface:
         cls,
         provider: RuntimeComponentProvider,
     ) -> "RuntimeProviderSurface":
-        def capability(name: str):
-            return getattr(provider, name, provider)
-
         return cls(
             provider=provider,
-            infrastructure=capability("infrastructure"),
-            build_pipeline=capability("build_pipeline"),
-            diagnostics=capability("diagnostics"),
-            lifecycle=capability("lifecycle"),
-            generation=capability("generation"),
-            query_understanding=capability("query_understanding"),
-            retrieval=capability("retrieval"),
-            services=capability("services"),
+            infrastructure=provider.infrastructure,
+            build_pipeline=provider.build_pipeline,
+            diagnostics=provider.diagnostics,
+            lifecycle=provider.lifecycle,
+            generation=provider.generation,
+            query_understanding=provider.query_understanding,
+            retrieval=provider.retrieval,
+            services=provider.services,
         )
 
 

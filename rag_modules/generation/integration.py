@@ -1,4 +1,4 @@
-"""Legacy generation facade that delegates to the canonical workflow service."""
+"""Generation facade over the canonical workflow service."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .service import GenerationWorkflowService
 
 
 class GenerationIntegrationModule:
-    """Compatibility facade for question/evidence callers over a context-native service."""
+    """Question/evidence facade over a context-native service."""
 
     def __init__(
         self,
@@ -332,9 +332,6 @@ class GenerationIntegrationModule:
         if package is None:
             return answer_context
         return answer_context.with_evidence_package(package)
-
-    def __getattr__(self, name: str):
-        return getattr(self.workflow_service, name)
 
 
 __all__ = [

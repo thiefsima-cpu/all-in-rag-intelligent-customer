@@ -139,7 +139,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.stream_executor_max_workers, 8)
         self.assertEqual(config.api.stream_queue_max_size, 128)
 
-    def test_flat_config_serialization_masks_all_credentials(self) -> None:
+    def test_nested_config_serialization_masks_all_credentials(self) -> None:
         config = load_config(
             source=EnvConfigSource(
                 environ={
@@ -153,10 +153,10 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
 
         payload = config.to_dict()
 
-        self.assertEqual(payload["api_key"], "***")
-        self.assertEqual(payload["neo4j_password"], "***")
-        self.assertEqual(payload["access_token"], "***")
-        self.assertEqual(payload["query_trace_fingerprint_salt"], "***")
+        self.assertEqual(payload["models"]["api_key"], "***")
+        self.assertEqual(payload["storage"]["neo4j_password"], "***")
+        self.assertEqual(payload["api"]["access_token"], "***")
+        self.assertEqual(payload["observability"]["query_trace_fingerprint_salt"], "***")
 
 
 if __name__ == "__main__":

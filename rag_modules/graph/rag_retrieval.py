@@ -23,7 +23,6 @@ from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import GraphRetrievalSnapshot
 
 logger = logging.getLogger(__name__)
-_COMPONENT_FIELDS = frozenset(GraphRetrievalComponents.__annotations__)
 
 
 class GraphRAGRetrieval:
@@ -251,11 +250,6 @@ class GraphRAGRetrieval:
 
     def close(self):
         self._executor.close()
-
-    def __getattr__(self, name: str):
-        if name in _COMPONENT_FIELDS:
-            return getattr(self._components, name)
-        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
 
 __all__ = [

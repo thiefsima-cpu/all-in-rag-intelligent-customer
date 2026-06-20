@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..query_understanding.service import QueryUnderstandingService
@@ -41,9 +41,6 @@ class IntelligentQueryRouter:
                 query_understanding_service=query_understanding_service,
             )
         self.workflow = workflow
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.workflow, name)
 
     def analyze_query(self, query: str) -> "QueryAnalysis":
         return self.workflow.analyze_query(query)

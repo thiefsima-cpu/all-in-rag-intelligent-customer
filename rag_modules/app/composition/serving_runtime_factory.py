@@ -10,10 +10,8 @@ from ..runtime_state import BuildRuntime, ServingRuntime
 from .shared import (
     ProgressCallback,
     emit_progress,
-    provide_routing_workflow_compat,
     resolve_config,
 )
-from .provider_resolution import RuntimeProviderSurface
 
 
 class ServingRuntimeFactory:
@@ -25,9 +23,14 @@ class ServingRuntimeFactory:
         provider,
         assembler: Any | None = None,
     ) -> None:
-        self.providers = RuntimeProviderSurface.from_provider(provider)
-        self.provider = self.providers.provider
+        self.provider = provider
         self.assembler = assembler
+        if assembler is None:
+            self.infrastructure = provider.infrastructure
+            self.generation = provider.generation
+            self.query_understanding = provider.query_understanding
+            self.retrieval = provider.retrieval
+            self.services = provider.services
 
     def build(
         self,
@@ -52,11 +55,11 @@ class ServingRuntimeFactory:
             )
 
         config = resolve_config(config)
-        infrastructure = self.providers.infrastructure
-        generation_provider = self.providers.generation
-        query_understanding_provider = self.providers.query_understanding
-        retrieval_provider = self.providers.retrieval
-        services = self.providers.services
+        infrastructure = self.infrastructure
+        generation_provider = self.generation
+        query_understanding_provider = self.query_understanding
+        retrieval_provider = self.retrieval
+        services = self.services
 
         graph_manager = infrastructure.provide_neo4j_manager(
             config,
@@ -80,10 +83,12 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing query understanding service...")
-        query_understanding_service = query_understanding_provider.provide_query_understanding_service(
-            config=config,
-            llm_client=generation_service.client,
-            retrieval_profile=retrieval_runtime_profile,
+        query_understanding_service = (
+            query_understanding_provider.provide_query_understanding_service(
+                config=config,
+                llm_client=generation_service.client,
+                retrieval_profile=retrieval_runtime_profile,
+            )
         )
 
         emit_progress(progress, "Initializing hybrid retrieval module...")
@@ -105,8 +110,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing routing workflow...")
-        query_router = provide_routing_workflow_compat(
-            retrieval_provider,
+        query_router = retrieval_provider.provide_routing_workflow(
             config=config,
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,

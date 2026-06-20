@@ -403,7 +403,7 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
 
 
 class ServingRuntimeAssemblerTests(unittest.TestCase):
-    def test_assembler_falls_back_to_root_provider_for_query_understanding(self) -> None:
+    def test_assembler_uses_query_understanding_capability_provider(self) -> None:
         config = build_test_config()
         client = SimpleNamespace(name="client")
         profile = SimpleNamespace(name="profile")
@@ -414,7 +414,9 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         answer_workflow = SimpleNamespace(name="workflow")
 
         infrastructure = SimpleNamespace(
-            provide_neo4j_manager=lambda config, existing=None: existing or SimpleNamespace(name="neo4j"),
+            provide_neo4j_manager=(
+                lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
+            ),
             provide_data_module=(
                 lambda config, neo4j_manager, existing=None: existing
                 or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
@@ -445,7 +447,11 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         class _RootProvider:
             def __init__(self) -> None:
                 self.infrastructure = infrastructure
+                self.build_pipeline = SimpleNamespace()
+                self.diagnostics = SimpleNamespace()
+                self.lifecycle = SimpleNamespace()
                 self.generation = generation
+                self.query_understanding = self
                 self.retrieval = retrieval
                 self.services = services
                 self.calls: list[str] = []
@@ -481,14 +487,15 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         self.assertEqual(runtime.question_answer_service.name, "question-answer-service")
         self.assertIs(runtime.question_answer_service.workflow, answer_workflow)
 
-    def test_assembler_falls_back_to_legacy_query_router_provider(self) -> None:
+    def test_assembler_requires_canonical_routing_workflow_provider(self) -> None:
         config = build_test_config()
         profile = SimpleNamespace(name="profile")
         understanding_service = SimpleNamespace(name="understanding")
-        legacy_router = SimpleNamespace(name="legacy-router")
 
         infrastructure = SimpleNamespace(
-            provide_neo4j_manager=lambda config, existing=None: existing or SimpleNamespace(name="neo4j"),
+            provide_neo4j_manager=(
+                lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
+            ),
             provide_data_module=(
                 lambda config, neo4j_manager, existing=None: existing
                 or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
@@ -502,6 +509,9 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         )
         provider = SimpleNamespace(
             infrastructure=infrastructure,
+            build_pipeline=SimpleNamespace(),
+            diagnostics=SimpleNamespace(),
+            lifecycle=SimpleNamespace(),
             generation=SimpleNamespace(
                 provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace())
             ),
@@ -512,7 +522,6 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
             retrieval=SimpleNamespace(
                 provide_traditional_retrieval=lambda **kwargs: SimpleNamespace(name="traditional"),
                 provide_graph_rag_retrieval=lambda **kwargs: SimpleNamespace(name="graph"),
-                provide_query_router=lambda **kwargs: legacy_router,
             ),
             services=SimpleNamespace(
                 provide_answer_workflow=lambda **kwargs: SimpleNamespace(name="workflow"),
@@ -525,10 +534,8 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
 
         assembler = ServingRuntimeAssembler(provider=provider)
 
-        runtime = assembler.assemble(config=config)
-
-        self.assertIs(runtime.query_router, legacy_router)
-        self.assertEqual(runtime.question_answer_service.name, "question-answer-service")
+        with self.assertRaisesRegex(AttributeError, "provide_routing_workflow"):
+            assembler.assemble(config=config)
 
 
 class ServingBootstrapperTests(unittest.TestCase):
@@ -815,6 +822,8 @@ class GraphRAGBootstrapperTests(unittest.TestCase):
         bootstrap_service = _StubSystemBootstrapService(runtime)
         bootstrapper = GraphRAGBootstrapper(
             provider=SimpleNamespace(),
+            build_bootstrapper=SimpleNamespace(name="build"),
+            serving_bootstrapper=SimpleNamespace(name="serve"),
             bootstrap_service=bootstrap_service,
         )
 

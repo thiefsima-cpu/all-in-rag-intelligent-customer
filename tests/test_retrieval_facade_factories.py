@@ -254,7 +254,9 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             (["mapo tofu"], ["topic::mapo tofu"]),
         )
         self.assertIs(module.components.executor, factory.executor)
-        self.assertIs(module.runtime, factory.runtime)
+        with self.assertRaises(AttributeError):
+            _ = module.runtime
+        self.assertIs(module.components.runtime, factory.runtime)
         self.assertEqual(factory.calls[0]["database"], "recipes")
         self.assertEqual(factory.calls[0]["rrf_k"], 88)
         self.assertIs(factory.calls[0]["adapter_factory"], adapter_factory)
@@ -279,7 +281,9 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
         self.assertEqual(module.understand_graph_query("query"), {"understood": "query"})
         self.assertEqual(module.entity_cache, {"entity": 1})
         self.assertIs(module.components.executor, factory.executor)
-        self.assertIs(module.orchestrator, factory.orchestrator)
+        with self.assertRaises(AttributeError):
+            _ = module.orchestrator
+        self.assertIs(module.components.orchestrator, factory.orchestrator)
         self.assertEqual(factory.calls[0]["database_name"], "recipes")
 
 

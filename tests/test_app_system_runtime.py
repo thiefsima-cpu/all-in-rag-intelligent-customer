@@ -421,21 +421,12 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIs(resolved_explicit.provider, explicit_provider)
         self.assertIs(resolved_bootstrapper.provider, bootstrapper_provider)
 
-    def test_provider_surface_resolver_supports_monolithic_provider(self) -> None:
+    def test_provider_surface_resolver_requires_capability_provider_surface(self) -> None:
         provider = SimpleNamespace(name="monolithic")
         resolver = RuntimeProviderSurfaceResolver()
 
-        surface = resolver.resolve(provider=provider)
-
-        self.assertIs(surface.provider, provider)
-        self.assertIs(surface.infrastructure, provider)
-        self.assertIs(surface.build_pipeline, provider)
-        self.assertIs(surface.diagnostics, provider)
-        self.assertIs(surface.lifecycle, provider)
-        self.assertIs(surface.generation, provider)
-        self.assertIs(surface.query_understanding, provider)
-        self.assertIs(surface.retrieval, provider)
-        self.assertIs(surface.services, provider)
+        with self.assertRaisesRegex(AttributeError, "infrastructure"):
+            resolver.resolve(provider=provider)
 
     def test_system_bootstrapper_surface_composer_resolves_bootstrapper_surface(self) -> None:
         provider = _provider_stub("provider")
@@ -705,7 +696,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIsInstance(retrieval_profile, RetrievalRuntimeProfile)
         self.assertIsInstance(understanding_service, QueryUnderstandingService)
 
-    def test_runtime_provider_delegates_query_understanding_to_dedicated_provider(self) -> None:
+    def test_runtime_provider_exposes_query_understanding_capability_only(self) -> None:
         called: list[str] = []
 
         class _StubQueryUnderstandingProvider:
@@ -729,8 +720,13 @@ class AppSystemRuntimeTests(unittest.TestCase):
             query_understanding=_StubQueryUnderstandingProvider(),
         )
 
-        profile = provider.provide_retrieval_runtime_profile(build_test_config())
-        service = provider.provide_query_understanding_service(
+        self.assertFalse(hasattr(provider, "provide_retrieval_runtime_profile"))
+        self.assertFalse(hasattr(provider, "provide_query_understanding_service"))
+
+        profile = provider.query_understanding.provide_retrieval_runtime_profile(
+            build_test_config()
+        )
+        service = provider.query_understanding.provide_query_understanding_service(
             config=build_test_config(),
             llm_client=SimpleNamespace(),
             retrieval_profile=profile,
@@ -740,9 +736,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertEqual(profile.name, "profile")
         self.assertEqual(service.name, "understanding")
 
-    def test_runtime_provider_falls_back_to_legacy_query_router_provider(self) -> None:
+    def test_runtime_provider_does_not_fall_back_to_legacy_query_router_provider(self) -> None:
         legacy_router = SimpleNamespace(name="legacy-router")
-        calls: list[str] = []
 
         class _StubRetrievalProvider:
             def provide_query_router(
@@ -763,24 +758,22 @@ class AppSystemRuntimeTests(unittest.TestCase):
                     retrieval_profile,
                     query_understanding_service,
                 )
-                calls.append("query-router")
                 return legacy_router
 
         provider = DefaultRuntimeComponentProvider(
             retrieval=_StubRetrievalProvider(),
         )
 
-        router = provider.provide_routing_workflow(
-            config=build_test_config(),
-            traditional_retrieval=SimpleNamespace(name="traditional"),
-            graph_rag_retrieval=SimpleNamespace(name="graph"),
-            llm_client=SimpleNamespace(name="client"),
-            retrieval_profile=SimpleNamespace(name="profile"),
-            query_understanding_service=SimpleNamespace(name="understanding"),
-        )
-
-        self.assertEqual(calls, ["query-router"])
-        self.assertIs(router, legacy_router)
+        self.assertFalse(hasattr(provider, "provide_routing_workflow"))
+        with self.assertRaises(AttributeError):
+            provider.retrieval.provide_routing_workflow(
+                config=build_test_config(),
+                traditional_retrieval=SimpleNamespace(name="traditional"),
+                graph_rag_retrieval=SimpleNamespace(name="graph"),
+                llm_client=SimpleNamespace(name="client"),
+                retrieval_profile=SimpleNamespace(name="profile"),
+                query_understanding_service=SimpleNamespace(name="understanding"),
+            )
 
     def test_system_uses_provider_backed_runtime_diagnostics_service(self) -> None:
         called: list[str] = []
@@ -913,7 +906,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertEqual(service.answer_question("compat question").answer, "workflow-ok")
         self.assertIs(service, system.services.question_answer_service)
 
-    def test_legacy_flat_attributes_resolve_through_grouped_runtime_views(self) -> None:
+    def test_flat_runtime_attributes_are_retired_in_favor_of_grouped_views(self) -> None:
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(build_runtime.config)
         system = AdvancedGraphRAGSystem(
@@ -929,14 +922,28 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIsInstance(runtime.infrastructure, SystemInfrastructureView)
         self.assertIsInstance(runtime.retrieval, SystemRetrievalView)
         self.assertIsInstance(runtime.services, SystemServicesView)
-        self.assertIs(system.query_router, system.retrieval.routing_workflow)
-        self.assertIs(system.generation_service, system.services.generation_service)
-        self.assertIs(system.question_answer_service, system.services.question_answer_service)
-        self.assertIs(runtime.data_module, runtime.infrastructure.data_module)
-        self.assertIs(runtime.query_router, runtime.retrieval.routing_workflow)
-        self.assertIs(runtime.answer_workflow, runtime.services.answer_workflow)
-        self.assertIn("query_router", dir(system))
-        self.assertIn("data_module", dir(runtime))
+        self.assertIs(system.retrieval.routing_workflow, serving_runtime.query_router)
+        self.assertIs(system.services.generation_service, serving_runtime.generation_module)
+        self.assertIs(
+            system.services.question_answer_service,
+            serving_runtime.question_answer_service,
+        )
+        self.assertIs(runtime.infrastructure.data_module, serving_runtime.data_module)
+        self.assertIs(runtime.retrieval.routing_workflow, serving_runtime.query_router)
+        self.assertIs(runtime.services.answer_workflow, serving_runtime.answer_workflow)
+
+        for owner, name in (
+            (system, "query_router"),
+            (system, "generation_service"),
+            (system, "question_answer_service"),
+            (runtime, "data_module"),
+            (runtime, "query_router"),
+            (runtime, "answer_workflow"),
+        ):
+            with self.subTest(owner=type(owner).__name__, name=name):
+                with self.assertRaises(AttributeError):
+                    getattr(owner, name)
+                self.assertNotIn(name, dir(owner))
 
     def test_runtime_grouped_views_are_cached_per_runtime_instance(self) -> None:
         build_runtime = _build_runtime()

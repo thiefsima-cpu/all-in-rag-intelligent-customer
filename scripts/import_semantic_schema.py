@@ -24,11 +24,12 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
+    storage = config.storage
     data_module = GraphDataPreparationModule(
-        uri=config.neo4j_uri,
-        user=config.neo4j_user,
-        password=config.neo4j_password,
-        database=config.neo4j_database,
+        uri=storage.neo4j_uri,
+        user=storage.neo4j_user,
+        password=storage.neo4j_password,
+        database=storage.neo4j_database,
     )
     try:
         data_module.load_graph_data()

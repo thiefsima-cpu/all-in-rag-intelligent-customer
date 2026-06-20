@@ -11,7 +11,6 @@ from ...runtime.artifact_ports import (
 )
 from ...runtime.artifact_validation import vector_artifact_mismatch_reason
 from ..runtime_state import BuildRuntime, ServingRuntime
-from .provider_resolution import RuntimeProviderSurface
 from .shared import ProgressCallback, emit_progress
 
 
@@ -26,12 +25,8 @@ class ServingRuntimePreparer:
         document_artifact_cache: DocumentArtifactCachePort | None = None,
         runtime_artifact_access: RuntimeArtifactAccessPort | None = None,
     ) -> None:
-        self.providers = (
-            RuntimeProviderSurface.from_provider(provider)
-            if provider is not None
-            else None
-        )
         self.provider = provider
+        self.infrastructure = getattr(provider, "infrastructure", None)
         self.manifest_store = manifest_store
         self.document_artifact_cache = document_artifact_cache
         self.runtime_artifact_access = runtime_artifact_access
@@ -64,7 +59,11 @@ class ServingRuntimePreparer:
         else:
             resolved_chunks = getattr(runtime.data_module, "chunks", None) or []
         chunks = resolved_chunks
-        if runtime.retrieval_engines_initialized and runtime.artifact_manifest.is_ready and not force:
+        if (
+            runtime.retrieval_engines_initialized
+            and runtime.artifact_manifest.is_ready
+            and not force
+        ):
             return runtime
         if runtime.artifact_manifest.is_ready and not chunks:
             chunks = self.load_cached_document_artifacts(runtime, progress=progress)
@@ -122,11 +121,11 @@ class ServingRuntimePreparer:
     def _resolve_manifest_store(self, config) -> ArtifactManifestStorePort:
         if self.manifest_store is not None:
             return self.manifest_store
-        infrastructure = (
-            self.providers.infrastructure if self.providers is not None else None
-        )
+        infrastructure = self.infrastructure
         if infrastructure is None:
-            raise ValueError("ServingRuntimePreparer requires an infrastructure provider or manifest store.")
+            raise ValueError(
+                "ServingRuntimePreparer requires an infrastructure provider or manifest store."
+            )
         return infrastructure.provide_artifact_manifest_store(config)
 
     def _resolve_document_artifact_cache(
@@ -137,12 +136,11 @@ class ServingRuntimePreparer:
     ) -> DocumentArtifactCachePort:
         if self.document_artifact_cache is not None:
             return self.document_artifact_cache
-        infrastructure = (
-            self.providers.infrastructure if self.providers is not None else None
-        )
+        infrastructure = self.infrastructure
         if infrastructure is None:
             raise ValueError(
-                "ServingRuntimePreparer requires an infrastructure provider or document artifact cache."
+                "ServingRuntimePreparer requires an infrastructure provider "
+                "or document artifact cache."
             )
         return infrastructure.provide_document_artifact_cache(
             config,
@@ -155,12 +153,11 @@ class ServingRuntimePreparer:
     ) -> RuntimeArtifactAccessPort:
         if self.runtime_artifact_access is not None:
             return self.runtime_artifact_access
-        infrastructure = (
-            self.providers.infrastructure if self.providers is not None else None
-        )
+        infrastructure = self.infrastructure
         if infrastructure is None:
             raise ValueError(
-                "ServingRuntimePreparer requires an infrastructure provider or runtime artifact access adapter."
+                "ServingRuntimePreparer requires an infrastructure provider "
+                "or runtime artifact access adapter."
             )
         return infrastructure.provide_runtime_artifact_access(config)
 

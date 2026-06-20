@@ -7,9 +7,6 @@ from typing import Any, Dict, List, Mapping
 
 from .models import (
     ApiSettings,
-    FLAT_FIELD_TO_SECTION,
-    QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS,
-    SECTION_FIELD_NAMES,
     SECTION_ORDER,
     GenerationSettings,
     GraphRAGConfig,
@@ -22,32 +19,16 @@ from .models import (
 )
 
 
-def _set_nested_value(target: Dict[str, Any], path: tuple[str, ...], value: Any) -> None:
-    cursor = target
-    for part in path[:-1]:
-        child = cursor.get(part)
-        if not isinstance(child, dict):
-            child = {}
-            cursor[part] = child
-        cursor = child
-    cursor[path[-1]] = value
-
-
 def _merge_nested_mapping(
     target: Dict[str, Any],
     updates: Mapping[str, Any],
     *,
     path: str,
     unknown_fields: List[str],
-    legacy_aliases: Mapping[str, tuple[str, ...]] | None = None,
 ) -> None:
     for key, value in updates.items():
         key_text = str(key)
         dotted = f"{path}.{key_text}" if path else key_text
-
-        if legacy_aliases and key_text in legacy_aliases:
-            _set_nested_value(target, legacy_aliases[key_text], value)
-            continue
 
         if key_text not in target:
             unknown_fields.append(dotted)
@@ -70,10 +51,15 @@ def _merge_nested_mapping(
         target[key_text] = value
 
 
-def apply_overrides(domain_payload: Dict[str, Dict[str, Any]], overrides: Mapping[str, Any]) -> None:
+def apply_overrides(
+    domain_payload: Dict[str, Dict[str, Any]],
+    overrides: Mapping[str, Any],
+) -> None:
     unknown_fields: List[str] = []
     previous_index_cache_dir = str(domain_payload["storage"].get("index_cache_dir", ""))
-    previous_artifact_manifest_path = str(domain_payload["storage"].get("artifact_manifest_path", ""))
+    previous_artifact_manifest_path = str(
+        domain_payload["storage"].get("artifact_manifest_path", "")
+    )
     artifact_manifest_overridden = False
     build_job_store_path_overridden = False
 
@@ -88,36 +74,16 @@ def apply_overrides(domain_payload: Dict[str, Dict[str, Any]], overrides: Mappin
             nested,
             path=section_name,
             unknown_fields=unknown_fields,
-            legacy_aliases=(
-                QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS
-                if section_name == "query_understanding"
-                else None
-            ),
         )
         if section_name == "storage" and "artifact_manifest_path" in nested:
             artifact_manifest_overridden = True
         if section_name == "storage" and "build_job_store_path" in nested:
             build_job_store_path_overridden = True
 
-    for key, value in overrides.items():
+    for key in overrides:
         if key in SECTION_ORDER:
             continue
-        section_name = FLAT_FIELD_TO_SECTION.get(str(key))
-        if section_name is None:
-            unknown_fields.append(str(key))
-            continue
-        if section_name == "query_understanding":
-            path = QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS.get(str(key))
-            if path is None:
-                unknown_fields.append(str(key))
-                continue
-            _set_nested_value(domain_payload[section_name], path, value)
-        else:
-            domain_payload[section_name][str(key)] = value
-        if section_name == "storage" and str(key) == "artifact_manifest_path":
-            artifact_manifest_overridden = True
-        if section_name == "storage" and str(key) == "build_job_store_path":
-            build_job_store_path_overridden = True
+        unknown_fields.append(str(key))
 
     if not artifact_manifest_overridden:
         previous_default_manifest_path = os.path.join(
@@ -142,12 +108,16 @@ def apply_overrides(domain_payload: Dict[str, Dict[str, Any]], overrides: Mappin
         raise KeyError(f"Unknown configuration fields: {', '.join(unknown_fields)}")
 
 
-def build_config_from_domain_dict(domain_payload: Mapping[str, Mapping[str, Any]]) -> GraphRAGConfig:
+def build_config_from_domain_dict(
+    domain_payload: Mapping[str, Mapping[str, Any]],
+) -> GraphRAGConfig:
     return GraphRAGConfig(
         storage=StorageSettings(**dict(domain_payload["storage"])),
         models=ModelSettings(**dict(domain_payload["models"])),
         retrieval=RetrievalSettings(**dict(domain_payload["retrieval"])),
-        query_understanding=QueryUnderstandingSettings.from_dict(domain_payload["query_understanding"]),
+        query_understanding=QueryUnderstandingSettings.from_dict(
+            domain_payload["query_understanding"]
+        ),
         generation=GenerationSettings(**dict(domain_payload["generation"])),
         graph=GraphSettings(**dict(domain_payload["graph"])),
         observability=ObservabilitySettings(**dict(domain_payload["observability"])),

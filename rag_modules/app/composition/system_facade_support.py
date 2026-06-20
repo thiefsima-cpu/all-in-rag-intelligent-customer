@@ -2,37 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...artifacts import ArtifactManifest
-from ..legacy_surface import (
-    GROUPED_LEGACY_ATTRIBUTE_MAP,
-    GroupedLegacyAttributeMap,
-    merge_legacy_dir_names,
-    resolve_grouped_legacy_attribute,
-)
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemInfrastructureView, SystemRetrievalView, SystemRuntime, SystemServicesView
 from .runtime_state_store import RuntimeStateStore
 
 
 class SystemFacadeSupport:
-    """Centralize runtime access and legacy surface behavior for the public facade."""
+    """Centralize runtime access for the public facade."""
 
     def __init__(
         self,
         *,
         runtime_state_store: RuntimeStateStore,
-        legacy_attribute_map: GroupedLegacyAttributeMap = GROUPED_LEGACY_ATTRIBUTE_MAP,
     ) -> None:
         self.runtime_state_store = runtime_state_store
-        self.legacy_attribute_map = legacy_attribute_map
-
-    def resolve_legacy_attribute(self, owner: object, name: str) -> Any:
-        return resolve_grouped_legacy_attribute(owner, self.legacy_attribute_map, name)
-
-    def legacy_dir(self, owner: object) -> list[str]:
-        return merge_legacy_dir_names(object.__dir__(owner), self.legacy_attribute_map)
 
     @property
     def runtime(self) -> SystemRuntime:

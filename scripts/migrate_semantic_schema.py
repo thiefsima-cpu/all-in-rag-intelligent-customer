@@ -21,12 +21,13 @@ from rag_modules.semantic_schema import SEMANTIC_SCHEMA_VERSION
 
 def _run(dry_run: bool, cleanup_stale: bool) -> dict:
     config = load_config()
+    storage = config.storage
     driver = GraphDatabase.driver(
-        config.neo4j_uri,
-        auth=(config.neo4j_user, config.neo4j_password),
+        storage.neo4j_uri,
+        auth=(storage.neo4j_user, storage.neo4j_password),
     )
     try:
-        with driver.session(database=config.neo4j_database) as session:
+        with driver.session(database=storage.neo4j_database) as session:
             report = session.execute_read(_report_versions)
             report["current_schema_version"] = SEMANTIC_SCHEMA_VERSION
             report["dry_run"] = dry_run

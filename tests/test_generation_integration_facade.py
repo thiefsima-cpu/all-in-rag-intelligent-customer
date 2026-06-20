@@ -129,15 +129,19 @@ class GenerationIntegrationFacadeTests(unittest.TestCase):
         self.assertIs(context.package, package)
         self.assertIs(workflow.compose_calls[0]["plan"], plan)
 
-    def test_context_native_members_passthrough_to_workflow_service(self) -> None:
+    def test_context_native_members_must_use_workflow_service_explicitly(self) -> None:
         workflow = _StubWorkflowService()
         module = GenerationIntegrationModule(workflow_service=workflow)
         direct_context = _Context(question="q", kind="context", payload=[])
 
-        result = module.generate_answer_from_context(direct_context)
-
-        self.assertEqual(result, "answer::context::q")
-        self.assertIs(module.client, workflow.client)
+        self.assertEqual(
+            workflow.generate_answer_from_context(direct_context),
+            "answer::context::q",
+        )
+        with self.assertRaises(AttributeError):
+            module.generate_answer_from_context(direct_context)
+        with self.assertRaises(AttributeError):
+            _ = module.client
 
     def test_from_config_wraps_canonical_workflow_service(self) -> None:
         workflow = _StubWorkflowService()

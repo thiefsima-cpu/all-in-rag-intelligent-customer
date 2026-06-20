@@ -25,7 +25,6 @@ from .runtime_adapter_factory import HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 
 _DEFAULT_RRF_K = 60
-_COMPONENT_FIELDS = frozenset(HybridRetrievalComponents.__annotations__)
 
 
 @dataclass
@@ -354,11 +353,6 @@ class HybridRetrievalModule:
 
     def close(self):
         self._executor.close()
-
-    def __getattr__(self, name: str):
-        if name in _COMPONENT_FIELDS:
-            return getattr(self._components, name)
-        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
 
 __all__ = [

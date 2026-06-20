@@ -111,7 +111,6 @@ def _load_query_semantic_scoring_settings(
         ),
         reasoning_complexity_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_REASONING_COMPLEXITY_THRESHOLD",
-            "QUERY_PLAN_REASONING_COMPLEXITY_THRESHOLD",
             default=float(semantic_defaults.get("reasoning_complexity_threshold", 0.7)),
         ),
         reasoning_relationship_threshold=source.get_float_alias(
@@ -120,22 +119,18 @@ def _load_query_semantic_scoring_settings(
         ),
         relation_hit_intensity_boost_base=source.get_float_alias(
             "QUERY_SEMANTIC_RELATION_HIT_INTENSITY_BOOST_BASE",
-            "QUERY_PLAN_RELATION_INTENSITY_BASE",
             default=float(semantic_defaults.get("relation_hit_intensity_boost_base", 0.45)),
         ),
         relation_hit_intensity_boost_step=source.get_float_alias(
             "QUERY_SEMANTIC_RELATION_HIT_INTENSITY_BOOST_STEP",
-            "QUERY_PLAN_RELATION_INTENSITY_STEP",
             default=float(semantic_defaults.get("relation_hit_intensity_boost_step", 0.12)),
         ),
         relation_hit_complexity_boost_base=source.get_float_alias(
             "QUERY_SEMANTIC_RELATION_HIT_COMPLEXITY_BOOST_BASE",
-            "QUERY_PLAN_COMPLEXITY_BASE",
             default=float(semantic_defaults.get("relation_hit_complexity_boost_base", 0.55)),
         ),
         relation_hit_complexity_boost_step=source.get_float_alias(
             "QUERY_SEMANTIC_RELATION_HIT_COMPLEXITY_BOOST_STEP",
-            "QUERY_PLAN_COMPLEXITY_STEP",
             default=float(semantic_defaults.get("relation_hit_complexity_boost_step", 0.08)),
         ),
     )
@@ -149,12 +144,10 @@ def _load_query_semantic_extraction_settings(
     return QuerySemanticExtractionSettings(
         source_entity_limit=source.get_int_alias(
             "QUERY_SEMANTIC_SOURCE_ENTITY_LIMIT",
-            "QUERY_PLAN_SOURCE_ENTITY_LIMIT",
             default=int(semantic_defaults.get("source_entity_limit", 3)),
         ),
         entity_keyword_limit=source.get_int_alias(
             "QUERY_SEMANTIC_ENTITY_KEYWORD_LIMIT",
-            "QUERY_PLAN_ENTITY_KEYWORD_LIMIT",
             default=int(semantic_defaults.get("entity_keyword_limit", 4)),
         ),
         semantic_profile_entity_keyword_limit=source.get_int_alias(
@@ -163,7 +156,6 @@ def _load_query_semantic_extraction_settings(
         ),
         topic_keyword_limit=source.get_int_alias(
             "QUERY_SEMANTIC_TOPIC_KEYWORD_LIMIT",
-            "QUERY_PLAN_TOPIC_KEYWORD_LIMIT",
             default=int(semantic_defaults.get("topic_keyword_limit", 4)),
         ),
         semantic_profile_topic_keyword_start=source.get_int_alias(
@@ -176,7 +168,6 @@ def _load_query_semantic_extraction_settings(
         ),
         target_entity_limit=source.get_int_alias(
             "QUERY_SEMANTIC_TARGET_ENTITY_LIMIT",
-            "QUERY_PLAN_TARGET_ENTITY_LIMIT",
             default=int(semantic_defaults.get("target_entity_limit", 2)),
         ),
     )
@@ -190,42 +181,34 @@ def _load_query_semantic_routing_settings(
     return QuerySemanticRoutingSettings(
         high_relationship_routing_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_HIGH_RELATIONSHIP_ROUTING_THRESHOLD",
-            "QUERY_PLAN_REASONING_RELATIONSHIP_THRESHOLD",
             default=float(semantic_defaults.get("high_relationship_routing_threshold", 0.7)),
         ),
         multi_hop_hint_entity_count=source.get_int_alias(
             "QUERY_SEMANTIC_MULTI_HOP_HINT_ENTITY_COUNT",
-            "QUERY_PLAN_MULTI_HOP_HINT_ENTITY_COUNT",
             default=int(semantic_defaults.get("multi_hop_hint_entity_count", 2)),
         ),
         multi_hop_hint_relationship_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_MULTI_HOP_HINT_RELATIONSHIP_THRESHOLD",
-            "QUERY_PLAN_MULTI_HOP_HINT_RELATIONSHIP_THRESHOLD",
             default=float(semantic_defaults.get("multi_hop_hint_relationship_threshold", 0.55)),
         ),
         combined_strategy_relationship_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_COMBINED_STRATEGY_RELATIONSHIP_THRESHOLD",
-            "QUERY_PLAN_COMBINED_STRATEGY_RELATIONSHIP_THRESHOLD",
             default=float(semantic_defaults.get("combined_strategy_relationship_threshold", 0.4)),
         ),
         combined_strategy_complexity_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_COMBINED_STRATEGY_COMPLEXITY_THRESHOLD",
-            "QUERY_PLAN_COMBINED_STRATEGY_COMPLEXITY_THRESHOLD",
             default=float(semantic_defaults.get("combined_strategy_complexity_threshold", 0.6)),
         ),
         source_entity_seed_relationship_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_SOURCE_ENTITY_SEED_RELATIONSHIP_THRESHOLD",
-            "QUERY_PLAN_SOURCE_ENTITY_SEED_RELATIONSHIP_THRESHOLD",
             default=float(semantic_defaults.get("source_entity_seed_relationship_threshold", 0.4)),
         ),
         source_entity_backfill_relationship_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_SOURCE_ENTITY_BACKFILL_RELATIONSHIP_THRESHOLD",
-            "QUERY_PLAN_SOURCE_ENTITY_BACKFILL_RELATIONSHIP_THRESHOLD",
             default=float(semantic_defaults.get("source_entity_backfill_relationship_threshold", 0.55)),
         ),
         rule_fallback_confidence=source.get_float_alias(
             "QUERY_SEMANTIC_RULE_FALLBACK_CONFIDENCE",
-            "QUERY_PLAN_RULE_FALLBACK_CONFIDENCE",
             default=float(semantic_defaults.get("rule_fallback_confidence", 0.45)),
         ),
     )

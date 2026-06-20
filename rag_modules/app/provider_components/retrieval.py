@@ -69,22 +69,3 @@ class DefaultRetrievalComponentProvider:
             retrieval_profile=retrieval_profile,
             query_understanding_service=query_understanding_service,
         )
-
-    def provide_query_router(
-        self,
-        *,
-        config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalModule,
-        graph_rag_retrieval: GraphRAGRetrieval,
-        llm_client: Any,
-        retrieval_profile: RetrievalRuntimeProfile,
-        query_understanding_service: QueryUnderstandingService,
-    ) -> RoutingWorkflowProtocol:
-        return self.provide_routing_workflow(
-            config=config,
-            traditional_retrieval=traditional_retrieval,
-            graph_rag_retrieval=graph_rag_retrieval,
-            llm_client=llm_client,
-            retrieval_profile=retrieval_profile,
-            query_understanding_service=query_understanding_service,
-        )

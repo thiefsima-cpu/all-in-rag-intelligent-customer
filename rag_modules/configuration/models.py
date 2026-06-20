@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, fields as dataclass_fields
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping
 
 
 def _serialize_config_value(value: Any) -> Any:
@@ -17,13 +17,6 @@ def _serialize_config_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_serialize_config_value(item) for item in value)
     return value
-
-
-def _resolve_nested_attr(root: Any, path: Sequence[str]) -> Any:
-    current = root
-    for part in path:
-        current = getattr(current, str(part))
-    return current
 
 
 class ConfigSection:
@@ -205,285 +198,6 @@ class QuerySemanticSettings(ConfigSection):
         )
 
 
-QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS = {
-    "query_plan_cache_size": ("planner", "cache_size"),
-    "fast_rule_query_planning": ("planner", "fast_rule_planning"),
-    "query_planner_llm_temperature": ("planner", "llm_temperature"),
-    "query_planner_llm_max_tokens": ("planner", "llm_max_tokens"),
-    "query_plan_reasoning_complexity_threshold": ("semantics", "scoring", "reasoning_complexity_threshold"),
-    "query_plan_reasoning_relationship_threshold": ("semantics", "scoring", "reasoning_relationship_threshold"),
-    "query_plan_relation_intensity_base": ("semantics", "scoring", "relation_hit_intensity_boost_base"),
-    "query_plan_relation_intensity_step": ("semantics", "scoring", "relation_hit_intensity_boost_step"),
-    "query_plan_complexity_base": ("semantics", "scoring", "relation_hit_complexity_boost_base"),
-    "query_plan_complexity_step": ("semantics", "scoring", "relation_hit_complexity_boost_step"),
-    "query_plan_source_entity_limit": ("semantics", "extraction", "source_entity_limit"),
-    "query_plan_entity_keyword_limit": ("semantics", "extraction", "entity_keyword_limit"),
-    "query_plan_topic_keyword_limit": ("semantics", "extraction", "topic_keyword_limit"),
-    "query_plan_target_entity_limit": ("semantics", "extraction", "target_entity_limit"),
-    "query_plan_multi_hop_hint_entity_count": ("semantics", "routing", "multi_hop_hint_entity_count"),
-    "query_plan_multi_hop_hint_relationship_threshold": (
-        "semantics",
-        "routing",
-        "multi_hop_hint_relationship_threshold",
-    ),
-    "query_plan_combined_strategy_relationship_threshold": (
-        "semantics",
-        "routing",
-        "combined_strategy_relationship_threshold",
-    ),
-    "query_plan_combined_strategy_complexity_threshold": (
-        "semantics",
-        "routing",
-        "combined_strategy_complexity_threshold",
-    ),
-    "query_plan_source_entity_seed_relationship_threshold": (
-        "semantics",
-        "routing",
-        "source_entity_seed_relationship_threshold",
-    ),
-    "query_plan_source_entity_backfill_relationship_threshold": (
-        "semantics",
-        "routing",
-        "source_entity_backfill_relationship_threshold",
-    ),
-    "query_plan_rule_fallback_confidence": ("semantics", "routing", "rule_fallback_confidence"),
-    "query_semantic_relation_intensity_reference_ratio": (
-        "semantics",
-        "scoring",
-        "relation_intensity_reference_ratio",
-    ),
-    "query_semantic_complexity_relation_hit_weight": (
-        "semantics",
-        "scoring",
-        "complexity_relation_hit_weight",
-    ),
-    "query_semantic_complexity_constraint_hit_weight": (
-        "semantics",
-        "scoring",
-        "complexity_constraint_hit_weight",
-    ),
-    "query_semantic_complexity_structural_hit_weight": (
-        "semantics",
-        "scoring",
-        "complexity_structural_hit_weight",
-    ),
-    "query_semantic_complexity_length_weight": (
-        "semantics",
-        "scoring",
-        "complexity_length_weight",
-    ),
-    "query_semantic_complexity_length_norm_chars": (
-        "semantics",
-        "scoring",
-        "complexity_length_norm_chars",
-    ),
-    "query_semantic_reasoning_complexity_threshold": (
-        "semantics",
-        "scoring",
-        "reasoning_complexity_threshold",
-    ),
-    "query_semantic_reasoning_relationship_threshold": (
-        "semantics",
-        "scoring",
-        "reasoning_relationship_threshold",
-    ),
-    "query_semantic_high_relationship_routing_threshold": (
-        "semantics",
-        "routing",
-        "high_relationship_routing_threshold",
-    ),
-    "query_semantic_relation_hit_intensity_boost_base": (
-        "semantics",
-        "scoring",
-        "relation_hit_intensity_boost_base",
-    ),
-    "query_semantic_relation_hit_intensity_boost_step": (
-        "semantics",
-        "scoring",
-        "relation_hit_intensity_boost_step",
-    ),
-    "query_semantic_relation_hit_complexity_boost_base": (
-        "semantics",
-        "scoring",
-        "relation_hit_complexity_boost_base",
-    ),
-    "query_semantic_relation_hit_complexity_boost_step": (
-        "semantics",
-        "scoring",
-        "relation_hit_complexity_boost_step",
-    ),
-    "query_semantic_source_entity_limit": ("semantics", "extraction", "source_entity_limit"),
-    "query_semantic_entity_keyword_limit": ("semantics", "extraction", "entity_keyword_limit"),
-    "query_semantic_profile_entity_keyword_limit": (
-        "semantics",
-        "extraction",
-        "semantic_profile_entity_keyword_limit",
-    ),
-    "query_semantic_topic_keyword_limit": ("semantics", "extraction", "topic_keyword_limit"),
-    "query_semantic_profile_topic_keyword_start": (
-        "semantics",
-        "extraction",
-        "semantic_profile_topic_keyword_start",
-    ),
-    "query_semantic_profile_topic_keyword_limit": (
-        "semantics",
-        "extraction",
-        "semantic_profile_topic_keyword_limit",
-    ),
-    "query_semantic_target_entity_limit": ("semantics", "extraction", "target_entity_limit"),
-    "query_semantic_multi_hop_hint_entity_count": (
-        "semantics",
-        "routing",
-        "multi_hop_hint_entity_count",
-    ),
-    "query_semantic_multi_hop_hint_relationship_threshold": (
-        "semantics",
-        "routing",
-        "multi_hop_hint_relationship_threshold",
-    ),
-    "query_semantic_combined_strategy_relationship_threshold": (
-        "semantics",
-        "routing",
-        "combined_strategy_relationship_threshold",
-    ),
-    "query_semantic_combined_strategy_complexity_threshold": (
-        "semantics",
-        "routing",
-        "combined_strategy_complexity_threshold",
-    ),
-    "query_semantic_source_entity_seed_relationship_threshold": (
-        "semantics",
-        "routing",
-        "source_entity_seed_relationship_threshold",
-    ),
-    "query_semantic_source_entity_backfill_relationship_threshold": (
-        "semantics",
-        "routing",
-        "source_entity_backfill_relationship_threshold",
-    ),
-    "query_semantic_rule_fallback_confidence": (
-        "semantics",
-        "routing",
-        "rule_fallback_confidence",
-    ),
-    "query_semantic_entity_relation_max_depth": (
-        "semantics",
-        "traversal",
-        "entity_relation_max_depth",
-    ),
-    "query_semantic_path_finding_max_depth": (
-        "semantics",
-        "traversal",
-        "path_finding_max_depth",
-    ),
-    "query_semantic_path_finding_high_intensity_max_depth": (
-        "semantics",
-        "traversal",
-        "path_finding_high_intensity_max_depth",
-    ),
-    "query_semantic_path_finding_high_intensity_threshold": (
-        "semantics",
-        "traversal",
-        "path_finding_high_intensity_threshold",
-    ),
-    "query_semantic_subgraph_max_depth": ("semantics", "traversal", "subgraph_max_depth"),
-    "query_semantic_subgraph_high_intensity_max_depth": (
-        "semantics",
-        "traversal",
-        "subgraph_high_intensity_max_depth",
-    ),
-    "query_semantic_subgraph_high_intensity_threshold": (
-        "semantics",
-        "traversal",
-        "subgraph_high_intensity_threshold",
-    ),
-    "query_semantic_clustering_max_depth": ("semantics", "traversal", "clustering_max_depth"),
-    "query_semantic_default_max_depth": ("semantics", "traversal", "default_max_depth"),
-    "query_semantic_default_high_intensity_max_depth": (
-        "semantics",
-        "traversal",
-        "default_high_intensity_max_depth",
-    ),
-    "query_semantic_default_high_intensity_threshold": (
-        "semantics",
-        "traversal",
-        "default_high_intensity_threshold",
-    ),
-    "query_semantic_entity_relation_max_nodes": (
-        "semantics",
-        "traversal",
-        "entity_relation_max_nodes",
-    ),
-    "query_semantic_path_finding_max_nodes": (
-        "semantics",
-        "traversal",
-        "path_finding_max_nodes",
-    ),
-    "query_semantic_subgraph_max_nodes": ("semantics", "traversal", "subgraph_max_nodes"),
-    "query_semantic_clustering_max_nodes": (
-        "semantics",
-        "traversal",
-        "clustering_max_nodes",
-    ),
-    "query_semantic_default_max_nodes": ("semantics", "traversal", "default_max_nodes"),
-    "query_semantic_graph_query_max_depth_cap": (
-        "semantics",
-        "traversal",
-        "graph_query_max_depth_cap",
-    ),
-    "query_semantic_graph_query_fallback_name_chars": (
-        "semantics",
-        "traversal",
-        "graph_query_fallback_name_chars",
-    ),
-    "query_semantic_adaptive_multi_hop_subgraph_threshold": (
-        "semantics",
-        "adaptive_traversal",
-        "multi_hop_subgraph_threshold",
-    ),
-    "query_semantic_adaptive_subgraph_multi_hop_threshold": (
-        "semantics",
-        "adaptive_traversal",
-        "subgraph_multi_hop_threshold",
-    ),
-    "query_semantic_adaptive_entity_relation_multi_hop_threshold": (
-        "semantics",
-        "adaptive_traversal",
-        "entity_relation_multi_hop_threshold",
-    ),
-    "query_semantic_adaptive_subgraph_max_depth": (
-        "semantics",
-        "adaptive_traversal",
-        "subgraph_max_depth",
-    ),
-    "query_semantic_adaptive_subgraph_max_nodes": (
-        "semantics",
-        "adaptive_traversal",
-        "subgraph_max_nodes",
-    ),
-    "query_semantic_adaptive_multi_hop_max_depth": (
-        "semantics",
-        "adaptive_traversal",
-        "multi_hop_max_depth",
-    ),
-    "query_semantic_adaptive_multi_hop_max_nodes": (
-        "semantics",
-        "adaptive_traversal",
-        "multi_hop_max_nodes",
-    ),
-    "query_semantic_adaptive_entity_relation_max_depth": (
-        "semantics",
-        "adaptive_traversal",
-        "entity_relation_max_depth",
-    ),
-    "query_semantic_adaptive_entity_relation_max_nodes": (
-        "semantics",
-        "adaptive_traversal",
-        "entity_relation_max_nodes",
-    ),
-}
-
-
 @dataclass(slots=True)
 class QueryUnderstandingSettings(ConfigSection):
     planner: QueryPlannerSettings
@@ -492,39 +206,10 @@ class QueryUnderstandingSettings(ConfigSection):
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "QueryUnderstandingSettings":
         payload = dict(data or {})
-        planner_payload = dict(payload.get("planner") or {})
-        semantics_payload = dict(payload.get("semantics") or {})
-        for legacy_name, path in QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS.items():
-            if legacy_name not in payload:
-                continue
-            cursor = planner_payload if path[0] == "planner" else semantics_payload
-            nested_path = path[1:]
-            for part in nested_path[:-1]:
-                child = cursor.get(part)
-                if not isinstance(child, dict):
-                    child = {}
-                    cursor[part] = child
-                cursor = child
-            cursor[nested_path[-1]] = payload[legacy_name]
         return cls(
-            planner=QueryPlannerSettings(**planner_payload),
-            semantics=QuerySemanticSettings.from_dict(semantics_payload),
+            planner=QueryPlannerSettings(**dict(payload.get("planner") or {})),
+            semantics=QuerySemanticSettings.from_dict(payload.get("semantics") or {}),
         )
-
-    def to_legacy_dict(self) -> Dict[str, Any]:
-        return {
-            field_name: _resolve_nested_attr(self, path)
-            for field_name, path in QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS.items()
-        }
-
-    def __getattr__(self, name: str) -> Any:
-        path = QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS.get(name)
-        if path is None:
-            raise AttributeError(f"{self.__class__.__name__!s} has no attribute {name!r}")
-        return _resolve_nested_attr(self, path)
-
-    def __dir__(self) -> List[str]:
-        return sorted(set(super().__dir__()) | set(QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS))
 
 
 @dataclass(slots=True)
@@ -614,17 +299,8 @@ SECTION_TYPES = {
 }
 SECTION_ORDER = tuple(SECTION_TYPES.keys())
 SECTION_FIELD_NAMES = {
-    section_name: (
-        tuple(field.name for field in dataclass_fields(section_type))
-        if section_name != "query_understanding"
-        else ("planner", "semantics", *QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS.keys())
-    )
+    section_name: tuple(field.name for field in dataclass_fields(section_type))
     for section_name, section_type in SECTION_TYPES.items()
-}
-FLAT_FIELD_TO_SECTION = {
-    field_name: section_name
-    for section_name, field_names in SECTION_FIELD_NAMES.items()
-    for field_name in field_names
 }
 
 
@@ -664,15 +340,6 @@ class GraphRAGConfig:
                 "build_jobs.json",
             )
 
-    def __getattr__(self, name: str) -> Any:
-        section_name = FLAT_FIELD_TO_SECTION.get(name)
-        if section_name is None:
-            raise AttributeError(f"{self.__class__.__name__!s} has no attribute {name!r}")
-        return getattr(getattr(self, section_name), name)
-
-    def __dir__(self) -> List[str]:
-        return sorted(set(super().__dir__()) | set(FLAT_FIELD_TO_SECTION))
-
     def to_domain_dict(self) -> Dict[str, Dict[str, Any]]:
         return {
             section_name: getattr(self, section_name).to_dict()
@@ -680,27 +347,21 @@ class GraphRAGConfig:
         }
 
     def to_dict(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {}
-        for section_name in SECTION_ORDER:
-            section = getattr(self, section_name)
-            if section_name == "query_understanding":
-                payload.update(section.to_legacy_dict())
-            else:
-                payload.update(section.to_dict())
+        payload: Dict[str, Any] = self.to_domain_dict()
         if self.profile_name:
             payload["profile_name"] = self.profile_name
         if self.profile_path:
             payload["profile_path"] = self.profile_path
         if self.profile_hash:
             payload["profile_hash"] = self.profile_hash
-        if payload.get("api_key"):
-            payload["api_key"] = "***"
-        if payload.get("neo4j_password"):
-            payload["neo4j_password"] = "***"
-        if payload.get("access_token"):
-            payload["access_token"] = "***"
-        if payload.get("query_trace_fingerprint_salt"):
-            payload["query_trace_fingerprint_salt"] = "***"
+        if payload["models"].get("api_key"):
+            payload["models"]["api_key"] = "***"
+        if payload["storage"].get("neo4j_password"):
+            payload["storage"]["neo4j_password"] = "***"
+        if payload["api"].get("access_token"):
+            payload["api"]["access_token"] = "***"
+        if payload["observability"].get("query_trace_fingerprint_salt"):
+            payload["observability"]["query_trace_fingerprint_salt"] = "***"
         return payload
 
     def with_overrides(self, overrides: Mapping[str, Any]) -> "GraphRAGConfig":
@@ -731,7 +392,6 @@ class GraphRAGConfig:
 __all__ = [
     "ApiSettings",
     "ConfigSection",
-    "FLAT_FIELD_TO_SECTION",
     "GenerationSettings",
     "GraphRAGConfig",
     "GraphSettings",
@@ -745,7 +405,6 @@ __all__ = [
     "QuerySemanticSettings",
     "QuerySemanticTraversalSettings",
     "QueryUnderstandingSettings",
-    "QUERY_UNDERSTANDING_LEGACY_FIELD_PATHS",
     "RetrievalSettings",
     "SECTION_FIELD_NAMES",
     "SECTION_ORDER",

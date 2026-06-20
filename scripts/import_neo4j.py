@@ -34,12 +34,13 @@ def main() -> None:
     script = script.replace("file:///nodes.csv", "file:///cypher/nodes.csv")
     script = script.replace("file:///relationships.csv", "file:///cypher/relationships.csv")
     statements = split_cypher(script)
+    storage = config.storage
     driver = GraphDatabase.driver(
-        config.neo4j_uri,
-        auth=(config.neo4j_user, config.neo4j_password),
+        storage.neo4j_uri,
+        auth=(storage.neo4j_user, storage.neo4j_password),
     )
     try:
-        with driver.session(database=config.neo4j_database) as session:
+        with driver.session(database=storage.neo4j_database) as session:
             for index, statement in enumerate(statements, start=1):
                 preview = statement.splitlines()[0][:80]
                 print(f"[{index}/{len(statements)}] {preview}")

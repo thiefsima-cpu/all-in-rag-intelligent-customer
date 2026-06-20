@@ -20,25 +20,24 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
             config.query_understanding.planner.cache_size,
         )
 
-    def test_legacy_flat_access_and_flat_serialization_still_work(self) -> None:
+    def test_flat_access_and_flat_serialization_are_retired(self) -> None:
         config = load_config()
 
-        self.assertEqual(
-            config.query_understanding.planner.cache_size,
-            config.query_understanding.query_plan_cache_size,
-        )
-        self.assertEqual(
-            config.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
-            config.query_understanding.query_semantic_combined_strategy_complexity_threshold,
-        )
+        with self.assertRaises(AttributeError):
+            _ = config.query_plan_cache_size
+        with self.assertRaises(AttributeError):
+            _ = config.query_understanding.query_plan_cache_size
+        with self.assertRaises(AttributeError):
+            _ = config.query_understanding.query_semantic_combined_strategy_complexity_threshold
 
-        flat_payload = config.to_dict()
-        self.assertIn("query_plan_cache_size", flat_payload)
-        self.assertIn("query_semantic_combined_strategy_complexity_threshold", flat_payload)
-        self.assertNotIn("planner", flat_payload)
-        self.assertNotIn("semantics", flat_payload)
+        payload = config.to_dict()
+        self.assertIn("query_understanding", payload)
+        self.assertIn("planner", payload["query_understanding"])
+        self.assertIn("semantics", payload["query_understanding"])
+        self.assertNotIn("query_plan_cache_size", payload)
+        self.assertNotIn("query_semantic_combined_strategy_complexity_threshold", payload)
 
-    def test_nested_and_legacy_overrides_both_target_new_structure(self) -> None:
+    def test_only_nested_overrides_target_query_understanding_structure(self) -> None:
         config = load_config()
 
         nested_override = config.with_overrides(
@@ -51,23 +50,28 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
                 }
             }
         )
-        legacy_override = config.with_overrides(
-            {
-                "query_plan_cache_size": 32,
-                "query_semantic_combined_strategy_complexity_threshold": 0.81,
-            }
-        )
-
         self.assertEqual(nested_override.query_understanding.planner.cache_size, 64)
         self.assertEqual(
-            nested_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
+            (
+                nested_override.query_understanding.semantics.routing
+                .combined_strategy_complexity_threshold
+            ),
             0.77,
         )
-        self.assertEqual(legacy_override.query_understanding.planner.cache_size, 32)
-        self.assertEqual(
-            legacy_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
-            0.81,
-        )
+
+        with self.assertRaisesRegex(KeyError, "query_plan_cache_size"):
+            config.with_overrides({"query_plan_cache_size": 32})
+        with self.assertRaisesRegex(
+            KeyError,
+            "query_understanding.query_semantic_combined_strategy_complexity_threshold",
+        ):
+            config.with_overrides(
+                {
+                    "query_understanding": {
+                        "query_semantic_combined_strategy_complexity_threshold": 0.81,
+                    }
+                }
+            )
 
     def test_milvus_dimension_must_match_embedding_dimension(self) -> None:
         config = load_config()
@@ -79,13 +83,13 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
                 }
             )
 
-    def test_query_understanding_env_aliases_target_nested_structure(self) -> None:
+    def test_query_understanding_env_values_target_nested_structure(self) -> None:
         config = load_config(
             source=EnvConfigSource(
                 environ={
                     "QUERY_PLAN_CACHE_SIZE": "21",
                     "QUERY_SEMANTIC_COMBINED_STRATEGY_COMPLEXITY_THRESHOLD": "0.73",
-                    "QUERY_PLAN_SOURCE_ENTITY_LIMIT": "5",
+                    "QUERY_SEMANTIC_SOURCE_ENTITY_LIMIT": "5",
                 }
             )
         )
