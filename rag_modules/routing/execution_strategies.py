@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol
 
@@ -281,6 +282,18 @@ class CombinedRouteStrategy:
 
     strategy = SearchStrategy.COMBINED
 
+    def __init__(
+        self,
+        *,
+        executor: Executor | None = None,
+        max_workers: int | None = None,
+        thread_name_prefix: str = "combined-route",
+    ) -> None:
+        self._executor = executor
+        self._executor_lock = threading.Lock()
+        self._max_workers = max_workers
+        self._thread_name_prefix = thread_name_prefix
+
     def execute(
         self,
         request: RouteExecutionRequestPort,
@@ -326,11 +339,11 @@ class CombinedRouteStrategy:
                 )
             return list(docs), trace, _elapsed_ms(graph_start)
 
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="combined-route") as executor:
-            traditional_future = executor.submit(load_traditional)
-            graph_future = executor.submit(load_graph)
-            traditional_outcome, traditional_latency_ms = traditional_future.result()
-            graph_docs, graph_trace, graph_latency_ms = graph_future.result()
+        executor = self._resolve_executor()
+        traditional_future = executor.submit(load_traditional)
+        graph_future = executor.submit(load_graph)
+        traditional_outcome, traditional_latency_ms = traditional_future.result()
+        graph_docs, graph_trace, graph_latency_ms = graph_future.result()
 
         traditional_docs = list(traditional_outcome.documents)
         graph_docs = services.traditional_retrieval.enrich_to_parent_evidence_documents(
@@ -368,6 +381,23 @@ class CombinedRouteStrategy:
                 )
             ],
         )
+
+    def _resolve_executor(self) -> Executor:
+        executor = self._executor
+        if executor is not None:
+            return executor
+        with self._executor_lock:
+            executor = self._executor
+            if executor is None:
+                if self._max_workers is None:
+                    executor = ThreadPoolExecutor(thread_name_prefix=self._thread_name_prefix)
+                else:
+                    executor = ThreadPoolExecutor(
+                        max_workers=self._max_workers,
+                        thread_name_prefix=self._thread_name_prefix,
+                    )
+                self._executor = executor
+        return executor
 
 
 def _elapsed_ms(start: float) -> float:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
@@ -83,6 +84,36 @@ class _FakeCandidates:
 class _FakeRetrievalProfile:
     def __init__(self) -> None:
         self.candidates = _FakeCandidates()
+
+
+class _ImmediateFuture:
+    def __init__(self, result) -> None:
+        self._result = result
+
+    def result(self):
+        return self._result
+
+
+class _SynchronousExecutor:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.submit_calls = []
+        self.shutdown_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        self.shutdown(wait=True)
+        return False
+
+    def submit(self, fn, *args, **kwargs):
+        self.submit_calls.append({"fn": fn, "args": args, "kwargs": kwargs})
+        return _ImmediateFuture(fn(*args, **kwargs))
+
+    def shutdown(self, wait=True, *, cancel_futures=False) -> None:
+        self.shutdown_calls.append({"wait": wait, "cancel_futures": cancel_futures})
 
 
 class _ParallelTraditionalRetrieval(_FakeTraditionalRetrieval):
@@ -313,6 +344,69 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertTrue(outcome.stages[0].details["parallel_execution"])
         self.assertIn("traditional_latency_ms", outcome.stages[0].details)
         self.assertIn("graph_latency_ms", outcome.stages[0].details)
+
+    def test_combined_strategy_reuses_default_executor_across_executions(self) -> None:
+        created_executors = []
+
+        def build_executor(*args, **kwargs):
+            executor = _SynchronousExecutor(*args, **kwargs)
+            created_executors.append(executor)
+            return executor
+
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy()
+
+        with patch(
+            "rag_modules.routing.execution_strategies.ThreadPoolExecutor",
+            side_effect=build_executor,
+        ):
+            for query in ("first combined route", "second combined route"):
+                strategy.execute(
+                    _request(
+                        query=query,
+                        top_k=2,
+                        strategy=SearchStrategy.COMBINED,
+                    ),
+                    services=services,
+                )
+
+        self.assertEqual(len(created_executors), 1)
+        self.assertEqual(len(created_executors[0].submit_calls), 4)
+        self.assertEqual(created_executors[0].shutdown_calls, [])
+
+    def test_combined_strategy_accepts_injected_executor(self) -> None:
+        executor = _SynchronousExecutor()
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        with patch("rag_modules.routing.execution_strategies.ThreadPoolExecutor") as factory:
+            CombinedRouteStrategy(executor=executor).execute(
+                _request(
+                    query="injected combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+
+        self.assertFalse(factory.called)
+        self.assertEqual(len(executor.submit_calls), 2)
+        self.assertEqual(executor.shutdown_calls, [])
 
     def test_build_route_retrieval_request_keeps_query_plan_and_strategy(self) -> None:
         plan = QueryPlan(query="recommend tofu dishes")
