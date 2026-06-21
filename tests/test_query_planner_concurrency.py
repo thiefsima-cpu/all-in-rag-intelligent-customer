@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 from rag_modules.query_understanding import QueryPlanner
 from rag_modules.retrieval.runtime_profile import QueryPlannerRuntimeSettings
 
 
-class _BlockingCompletions:
+class _BlockingLLMClient:
     def __init__(self) -> None:
         self.calls = 0
         self._lock = threading.Lock()
         self.started = threading.Event()
         self.release = threading.Event()
 
-    def create(self, **kwargs):
+    def create_completion(self, **kwargs):
         del kwargs
         with self._lock:
             self.calls += 1
@@ -41,10 +41,7 @@ class _BlockingCompletions:
 
 class QueryPlannerConcurrencyTests(unittest.TestCase):
     def test_same_query_is_single_flight_and_returns_isolated_plans(self) -> None:
-        completions = _BlockingCompletions()
-        client = SimpleNamespace(
-            chat=SimpleNamespace(completions=completions)
-        )
+        client = _BlockingLLMClient()
         planner = QueryPlanner(
             client,
             settings=QueryPlannerRuntimeSettings(
@@ -56,14 +53,14 @@ class QueryPlannerConcurrencyTests(unittest.TestCase):
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             first_future = executor.submit(planner.plan, "concurrent query")
-            self.assertTrue(completions.started.wait(timeout=1.0))
+            self.assertTrue(client.started.wait(timeout=1.0))
             second_future = executor.submit(planner.plan, "concurrent query")
             time.sleep(0.05)
-            completions.release.set()
+            client.release.set()
             first = first_future.result(timeout=5.0)
             second = second_future.result(timeout=5.0)
 
-        self.assertEqual(completions.calls, 1)
+        self.assertEqual(client.calls, 1)
         self.assertIsNot(first, second)
         self.assertFalse(first.used_cache)
         self.assertTrue(second.used_cache)

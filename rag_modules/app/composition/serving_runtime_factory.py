@@ -78,6 +78,7 @@ class ServingRuntimeFactory:
 
         emit_progress(progress, "Initializing generation service...")
         generation_service = generation_provider.provide_generation_module(config)
+        llm_client = getattr(generation_service, "llm_client", generation_service.client)
         retrieval_runtime_profile = query_understanding_provider.provide_retrieval_runtime_profile(
             config
         )
@@ -86,7 +87,7 @@ class ServingRuntimeFactory:
         query_understanding_service = (
             query_understanding_provider.provide_query_understanding_service(
                 config=config,
-                llm_client=generation_service.client,
+                llm_client=llm_client,
                 retrieval_profile=retrieval_runtime_profile,
             )
         )
@@ -96,7 +97,7 @@ class ServingRuntimeFactory:
             config=config,
             milvus_module=index_module,
             data_module=data_module,
-            llm_client=generation_service.client,
+            llm_client=llm_client,
             neo4j_manager=graph_manager,
             retrieval_profile=retrieval_runtime_profile,
         )
@@ -104,7 +105,7 @@ class ServingRuntimeFactory:
         emit_progress(progress, "Initializing graph retrieval module...")
         graph_rag_retrieval = retrieval_provider.provide_graph_rag_retrieval(
             config=config,
-            llm_client=generation_service.client,
+            llm_client=llm_client,
             neo4j_manager=graph_manager,
             retrieval_profile=retrieval_runtime_profile,
         )
@@ -114,7 +115,7 @@ class ServingRuntimeFactory:
             config=config,
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,
-            llm_client=generation_service.client,
+            llm_client=llm_client,
             retrieval_profile=retrieval_runtime_profile,
             query_understanding_service=query_understanding_service,
         )

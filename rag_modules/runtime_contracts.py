@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -150,7 +150,7 @@ class LLMCompletionResponsePort(Protocol):
 
 
 class LLMCompletionsPort(Protocol):
-    """Minimal chat completions surface required by query planning."""
+    """OpenAI-compatible chat completions surface kept for adapter boundaries."""
 
     def create(
         self,
@@ -164,15 +164,57 @@ class LLMCompletionsPort(Protocol):
 
 
 class LLMChatPort(Protocol):
-    """Minimal chat namespace required by query planning."""
+    """OpenAI-compatible chat namespace kept for adapter boundaries."""
 
     completions: LLMCompletionsPort
 
 
-class LLMClientPort(Protocol):
-    """Minimal OpenAI-compatible LLM client surface used outside generation."""
+class OpenAICompatibleLLMClientPort(Protocol):
+    """Raw OpenAI-compatible client shape used only inside provider adapters."""
 
     chat: LLMChatPort
+
+
+class LLMClientPort(Protocol):
+    """Provider-neutral LLM behavior used by runtime services."""
+
+    def create_completion(
+        self,
+        *,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        timeout: int | float,
+        model_name: str | None = None,
+    ) -> LLMCompletionResponsePort: ...
+
+
+class StreamingLLMClientPort(LLMClientPort, Protocol):
+    """Provider-neutral streaming LLM behavior used by answer generation."""
+
+    def stream_prompt(
+        self,
+        *,
+        prompt: str,
+        max_tokens: int,
+        retries: int,
+        temperature: float | None = None,
+        timeout_seconds: float | None = None,
+    ) -> Iterator[str]: ...
+
+
+class EmbeddingClientPort(Protocol):
+    """Provider-neutral embedding behavior used by vector indexing and search."""
+
+    def embed_query(self, text: str) -> list[float]: ...
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+
+class RerankClientPort(Protocol):
+    """Provider-neutral rerank behavior used by retrieval post-processing."""
+
+    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> list[int]: ...
 
 
 class HybridRetrievalPort(Protocol):
@@ -221,6 +263,7 @@ __all__ = [
     "GraphRAGRetrievalPort",
     "HybridCandidateRuntimePort",
     "HybridRetrievalPort",
+    "EmbeddingClientPort",
     "LLMChatPort",
     "LLMClientPort",
     "LLMCompletionChoicePort",
@@ -230,6 +273,9 @@ __all__ = [
     "Neo4jDriverPort",
     "Neo4jManagerPort",
     "Neo4jSessionPort",
+    "OpenAICompatibleLLMClientPort",
     "QueryTracerPort",
+    "RerankClientPort",
+    "StreamingLLMClientPort",
     "VectorIndexModulePort",
 ]

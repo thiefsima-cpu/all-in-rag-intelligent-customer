@@ -96,14 +96,14 @@ class QueryPlanner:
         try:
             if self.llm_client is None:
                 raise RuntimeError("No LLM client configured for query planning.")
-            response = self.llm_client.chat.completions.create(
-                model=self.settings.model_name,
-                messages=[{"role": "user", "content": self._build_planning_prompt(query)}],
+            response = self.llm_client.create_completion(
+                prompt=self._build_planning_prompt(query),
+                model_name=self.settings.model_name,
                 temperature=self.settings.llm_temperature,
                 max_tokens=self.settings.llm_max_tokens,
                 timeout=self.settings.timeout_seconds,
             )
-            response_content = response.choices[0].message.content or "{}"
+            response_content = self._response_text(response) or "{}"
             plan = QueryPlan.from_dict(
                 query,
                 loads_json_object(response_content),
@@ -137,6 +137,15 @@ class QueryPlanner:
             preferred_relation_types_text=preferred_relation_types_text,
             query=query,
         )
+
+    @staticmethod
+    def _response_text(response: object) -> str:
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return ""
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        return str(content or "")
 
     def _remember(self, cache_key: str, plan: QueryPlan) -> None:
         if not self.settings.cache_size or not cache_key:

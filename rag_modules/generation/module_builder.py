@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder
+from ..runtime_contracts import LLMClientPort
 from .client import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .execution import GenerationExecutionEngine
 from .models import GenerationSettings
@@ -23,6 +24,7 @@ class GenerationRuntimeComponents:
     evidence_max_chars: int
     evidence_builder: AnswerEvidenceBuilder
     client: Any
+    llm_client: LLMClientPort
     client_adapter: GenerationClientAdapter
     prompt_builder: GenerationPromptBuilder
     planner: GenerationPlanner
@@ -132,6 +134,7 @@ def build_generation_runtime(
         evidence_max_chars=resolved_evidence_max_chars,
         evidence_builder=evidence_builder,
         client=client,
+        llm_client=client_adapter,
         client_adapter=client_adapter,
         prompt_builder=prompt_builder,
         planner=planner,

@@ -33,6 +33,12 @@ class _MilvusClientOperations:
         """初始化嵌入模型"""
         logger.info(f"正在初始化嵌入模型: {self.model_name}")
         
+        embedding_client = getattr(self, "embedding_client", None)
+        if embedding_client is not None:
+            self.embeddings = embedding_client
+            logger.info("Embedding client injected through provider port.")
+            return
+
         self.embeddings = DashScopeEmbeddingClient(
             api_key=self.api_key,
             model_name=self.model_name,

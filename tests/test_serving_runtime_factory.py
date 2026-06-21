@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
 from rag_modules.app.bootstrap import GraphRAGBootstrapper, ServingBootstrapper
 from rag_modules.app.composition.bootstrapper_composer import (
     GraphBootstrapperSurface,
@@ -15,10 +14,11 @@ from rag_modules.app.composition.bootstrapper_composer import (
     SystemRuntimeBootstrapServiceComposer,
 )
 from rag_modules.app.composition.serving_runtime_assembler import ServingRuntimeAssembler
+from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
 from rag_modules.app.composition.serving_runtime_lifecycle_service import (
     ServingRuntimeLifecycleService,
 )
-from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
+from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
 from rag_modules.artifacts import ArtifactManifest
 from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.configuration.testing import build_test_config
@@ -406,6 +406,7 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
     def test_assembler_uses_query_understanding_capability_provider(self) -> None:
         config = build_test_config()
         client = SimpleNamespace(name="client")
+        llm_client = SimpleNamespace(name="llm-client")
         profile = SimpleNamespace(name="profile")
         understanding_service = SimpleNamespace(name="understanding")
         traditional_retrieval = SimpleNamespace(name="traditional")
@@ -429,7 +430,10 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
             ),
         )
         generation = SimpleNamespace(
-            provide_generation_module=lambda config: SimpleNamespace(client=client)
+            provide_generation_module=lambda config: SimpleNamespace(
+                client=client,
+                llm_client=llm_client,
+            )
         )
         retrieval = SimpleNamespace(
             provide_traditional_retrieval=lambda **kwargs: traditional_retrieval,
@@ -478,7 +482,7 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         runtime = assembler.assemble(config=config)
 
         self.assertEqual(provider.calls, ["profile", "service"])
-        self.assertIs(provider.last_llm_client, client)
+        self.assertIs(provider.last_llm_client, llm_client)
         self.assertIs(provider.last_profile, profile)
         self.assertIs(runtime.retrieval_runtime_profile, profile)
         self.assertIs(runtime.query_understanding_service, understanding_service)

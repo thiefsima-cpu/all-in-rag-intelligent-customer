@@ -14,6 +14,7 @@ from typing import Any, Dict, Generator, Optional
 from openai import OpenAI
 
 from ..infra.resilience import CircuitBreaker
+from ..runtime_contracts import LLMCompletionResponsePort
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +120,9 @@ class GenerationClientAdapter:
         prompt: str,
         temperature: float,
         max_tokens: int,
-        timeout: int,
-    ):
+        timeout: int | float,
+        model_name: str | None = None,
+    ) -> LLMCompletionResponsePort:
         last_exc: Optional[Exception] = None
         request_deadline = time.perf_counter() + max(0.1, float(timeout))
         for attempt in range(self.request_retries):
@@ -133,7 +135,7 @@ class GenerationClientAdapter:
                     )
                 response = self.circuit_breaker.call(
                     self.client.chat.completions.create,
-                    model=self.model_name,
+                    model=model_name or self.model_name,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=temperature,
                     max_tokens=max_tokens,

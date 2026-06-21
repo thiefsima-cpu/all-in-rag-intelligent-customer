@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from ..configuration.models import GraphRAGConfig
 from ..runtime import AnswerContext, GenerationSnapshot
@@ -95,6 +94,7 @@ class GenerationWorkflowService:
         self.evidence_max_chars = components.evidence_max_chars
         self.evidence_builder = components.evidence_builder
         self.client = components.client
+        self.llm_client = components.llm_client
         self.client_adapter = components.client_adapter
         self.prompt_builder = components.prompt_builder
         self.planner = components.planner

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...runtime_contracts import EmbeddingClientPort
 from .blue_green import _MilvusBlueGreenOperations
 from .client import _MilvusClientOperations
 from .schema import _MilvusSchemaOperations
@@ -35,7 +36,8 @@ class MilvusIndexConstructionModule(
                  vector_search_ef: int = 128,
                  vector_search_max_k: int = 50,
                  blue_green_enabled: bool = True,
-                 collection_alias_suffix: str = "__active"):
+                 collection_alias_suffix: str = "__active",
+                 embedding_client: EmbeddingClientPort | None = None):
         """
         初始化Milvus索引构建模块
 
@@ -67,6 +69,7 @@ class MilvusIndexConstructionModule(
         self.circuit_breaker_recovery_seconds = circuit_breaker_recovery_seconds
         self.vector_search_ef = vector_search_ef
         self.vector_search_max_k = vector_search_max_k
+        self.embedding_client = embedding_client
         
         self.client = None
         self.embeddings = None

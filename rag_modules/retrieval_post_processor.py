@@ -22,6 +22,7 @@ from .retrieval.contracts import (
     to_langchain_documents,
 )
 from .retrieval.runtime_profile import RetrievalPostProcessSettings
+from .runtime_contracts import RerankClientPort
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,21 @@ class RetrievalPostProcessContext:
 class RetrievalPostProcessor:
     """Apply ranking and evidence normalization to retrieved documents."""
 
-    def __init__(self, config=None, *, settings: RetrievalPostProcessSettings | None = None):
+    def __init__(
+        self,
+        config=None,
+        *,
+        settings: RetrievalPostProcessSettings | None = None,
+        rerank_client: RerankClientPort | None = None,
+    ):
         self.config = config
         self.settings = settings or RetrievalPostProcessSettings.from_config(config)
         self.evidence_unit_ranker = EvidenceUnitRanker()
-        self.rerank_client = None
+        self.rerank_client = rerank_client if self.settings.enable_rerank else None
         if self.settings.enable_rerank:
             models = config.models if config is not None and hasattr(config, "models") else None
+            if self.rerank_client is not None:
+                return
             self.rerank_client = DashScopeRerankClient(
                 api_key=str(models.api_key) if models is not None else "",
                 model_name=self.settings.rerank_model,

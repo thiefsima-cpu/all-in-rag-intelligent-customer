@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..runtime_contracts import (
+    EmbeddingClientPort,
     GraphDataModulePort,
     GraphRAGRetrievalPort,
     HybridCandidateRuntimePort,
@@ -16,11 +17,15 @@ from ..runtime_contracts import (
     Neo4jDriverPort,
     Neo4jManagerPort,
     Neo4jSessionPort,
+    OpenAICompatibleLLMClientPort,
     QueryTracerPort,
+    RerankClientPort,
+    StreamingLLMClientPort,
     VectorIndexModulePort,
 )
 
 __all__ = [
+    "EmbeddingClientPort",
     "GraphDataModulePort",
     "GraphRAGRetrievalPort",
     "HybridCandidateRuntimePort",
@@ -34,6 +39,9 @@ __all__ = [
     "Neo4jDriverPort",
     "Neo4jManagerPort",
     "Neo4jSessionPort",
+    "OpenAICompatibleLLMClientPort",
     "QueryTracerPort",
+    "RerankClientPort",
+    "StreamingLLMClientPort",
     "VectorIndexModulePort",
 ]

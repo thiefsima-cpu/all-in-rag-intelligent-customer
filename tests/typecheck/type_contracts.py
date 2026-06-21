@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from rag_modules.app.provider_components.contracts import (
     ApplicationServiceComponentProvider,
@@ -15,6 +15,7 @@ from rag_modules.app.provider_components.services import (
     DefaultApplicationServiceComponentProvider,
 )
 from rag_modules.app.runtime_contracts import (
+    EmbeddingClientPort,
     GraphDataModulePort,
     GraphRAGRetrievalPort,
     HybridRetrievalPort,
@@ -25,7 +26,10 @@ from rag_modules.app.runtime_contracts import (
     LLMCompletionResponsePort,
     LLMCompletionsPort,
     Neo4jManagerPort,
+    OpenAICompatibleLLMClientPort,
     QueryTracerPort,
+    RerankClientPort,
+    StreamingLLMClientPort,
     VectorIndexModulePort,
 )
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
@@ -77,8 +81,50 @@ class _Chat:
     completions: LLMCompletionsPort = _Completions()
 
 
-class _LLMClient:
+class _OpenAICompatibleLLMClient:
     chat: LLMChatPort = _Chat()
+
+
+class _LLMClient:
+    def create_completion(
+        self,
+        *,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        timeout: int | float,
+        model_name: str | None = None,
+    ) -> LLMCompletionResponsePort:
+        del prompt, temperature, max_tokens, timeout, model_name
+        return _CompletionResponse()
+
+    def stream_prompt(
+        self,
+        *,
+        prompt: str,
+        max_tokens: int,
+        retries: int,
+        temperature: float | None = None,
+        timeout_seconds: float | None = None,
+    ) -> Iterator[str]:
+        del prompt, max_tokens, retries, temperature, timeout_seconds
+        return iter(())
+
+
+class _EmbeddingClient:
+    def embed_query(self, text: str) -> list[float]:
+        del text
+        return []
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        del texts
+        return []
+
+
+class _RerankClient:
+    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> list[int]:
+        del query, documents, top_n
+        return []
 
 
 class _HybridRetrieval:
@@ -128,7 +174,11 @@ class _GraphRetrieval:
         raise NotImplementedError
 
 
+openai_compatible_llm_client: OpenAICompatibleLLMClientPort = _OpenAICompatibleLLMClient()
 llm_client: LLMClientPort = _LLMClient()
+streaming_llm_client: StreamingLLMClientPort = _LLMClient()
+embedding_client: EmbeddingClientPort = _EmbeddingClient()
+rerank_client: RerankClientPort = _RerankClient()
 hybrid_retrieval: HybridRetrievalPort = _HybridRetrieval()
 graph_retrieval: GraphRAGRetrievalPort = _GraphRetrieval()
 
