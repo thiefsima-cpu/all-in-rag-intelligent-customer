@@ -53,6 +53,11 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 - New implementation lands in canonical packages only.
 - Compatibility tests should assert retirement and canonical replacements, not
   legacy import behavior.
+- The internal app-layer query-understanding facade
+  `rag_modules.app.services.query_understanding_service` is retired. Internal
+  code must import `rag_modules.query_understanding.service` or the package
+  export from `rag_modules.app.services` when it is intentionally using the
+  application service package surface.
 
 ## Retired Facade Rule
 

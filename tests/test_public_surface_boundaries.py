@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import unittest
 from importlib.util import resolve_name
 from pathlib import Path
@@ -608,7 +609,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
     def test_internal_query_understanding_imports_use_domain_service(self) -> None:
         allowed_files = {
             RAG_MODULES_DIR / "app" / "services" / "__init__.py",
-            RAG_MODULES_DIR / "app" / "services" / "query_understanding_service.py",
         }
         violations: list[str] = []
 
@@ -637,6 +637,17 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "Found internal imports that still depend on the app-layer query-understanding facade:\n"
             + "\n".join(violations),
         )
+
+    def test_internal_query_understanding_facade_is_removed(self) -> None:
+        facade_path = RAG_MODULES_DIR / "app" / "services" / "query_understanding_service.py"
+
+        self.assertFalse(
+            facade_path.exists(),
+            "app/services/query_understanding_service.py is a retired internal facade; "
+            "use rag_modules.query_understanding.service instead.",
+        )
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("rag_modules.app.services.query_understanding_service")
 
     def test_internal_question_answering_imports_use_workflow_or_contracts(self) -> None:
         allowed_files = {
