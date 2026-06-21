@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
+from rag_modules.retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.routing import (
@@ -22,9 +23,10 @@ from rag_modules.runtime import QueryAnalysis, SearchStrategy
 class _FakeTraditionalRetrieval:
     def __init__(self, hybrid_docs=None) -> None:
         self.hybrid_docs = list(hybrid_docs or [])
+        self.hybrid_requests = []
 
     def hybrid_evidence_search(self, request):
-        del request
+        self.hybrid_requests.append(request)
         return HybridRetrievalOutcome(
             documents=list(self.hybrid_docs),
             candidate_counts={"vector": len(self.hybrid_docs)},
@@ -137,6 +139,74 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
         self.assertEqual([doc.recipe_name for doc in docs], ["Mapo Tofu"])
         self.assertEqual(trace.snapshot.fallbacks, ["router_exception_to_hybrid"])
         self.assertIn("hybrid_exception_fallback", trace.snapshot.stages)
+
+    def test_execute_exception_fallback_skips_already_degraded_candidate_sources(self) -> None:
+        traditional = _FakeTraditionalRetrieval(
+            [EvidenceDocument(content="fallback", recipe_name="Mapo Tofu")]
+        )
+        orchestrator = RouteSearchOrchestrator(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=SimpleNamespace(candidates=SimpleNamespace()),
+            post_processor=_FakePostProcessor(),
+        )
+        plan = QueryPlan(query="recommend tofu dishes")
+        retrieval_request = RouteSearchOrchestrator.build_retrieval_request(
+            query="recommend tofu dishes",
+            top_k=2,
+            strategy="combined",
+            query_plan=plan,
+        ).copy_with(metadata={SKIP_CANDIDATE_SOURCES_METADATA_KEY: ["bm25"]})
+        request = RouteExecutionRequest(
+            query="recommend tofu dishes",
+            top_k=2,
+            analysis=QueryAnalysis(recommended_strategy=SearchStrategy.COMBINED),
+            retrieval_request=retrieval_request,
+            constraints=QueryConstraints(),
+            query_plan=plan,
+        )
+        trace = RouteTraceRecorder(query=request.query, requested_top_k=request.top_k)
+        trace.record_execution_outcome(
+            RouteExecutionOutcome(
+                stages=[
+                    RouteExecutionStageResult(
+                        name="combined",
+                        documents=[],
+                        details={
+                            "degraded_candidates": [
+                                {
+                                    "source": "vector",
+                                    "rank_name": "vector",
+                                    "reason": "circuit_open",
+                                    "circuit_state": "open",
+                                },
+                                {
+                                    "source": "bm25",
+                                    "rank_name": "bm25",
+                                    "reason": "request_skip",
+                                },
+                            ],
+                        },
+                    )
+                ],
+            )
+        )
+
+        orchestrator.execute_exception_fallback(
+            request,
+            trace=trace,
+            error=RuntimeError("boom"),
+        )
+
+        fallback_request = traditional.hybrid_requests[0]
+        self.assertEqual(
+            fallback_request.metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY],
+            ["bm25", "vector"],
+        )
+        self.assertEqual(
+            request.retrieval_request.metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY],
+            ["bm25"],
+        )
 
 
 if __name__ == "__main__":

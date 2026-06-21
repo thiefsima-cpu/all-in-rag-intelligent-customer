@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from ..query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
+from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..retrieval_post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
@@ -123,7 +124,7 @@ class RouteSearchOrchestrator:
         error: Exception,
     ) -> List[EvidenceDocument]:
         logger.error("Query routing failed, falling back to hybrid search: %s", error)
-        outcome = self._build_exception_fallback_outcome(request)
+        outcome = self._build_exception_fallback_outcome(request, trace=trace)
         trace.record_execution_outcome(outcome)
         return outcome.documents
 
@@ -162,11 +163,15 @@ class RouteSearchOrchestrator:
     def _build_exception_fallback_outcome(
         self,
         request: RouteExecutionRequest,
+        *,
+        trace: RouteTraceRecorder,
     ) -> RouteExecutionOutcome:
         start = time.perf_counter()
-        hybrid_outcome = self.traditional_retrieval.hybrid_evidence_search(
-            request.retrieval_request
+        fallback_request = self._build_exception_fallback_request(
+            request.retrieval_request,
+            trace=trace,
         )
+        hybrid_outcome = self.traditional_retrieval.hybrid_evidence_search(fallback_request)
         documents = list(hybrid_outcome.documents)
         return RouteExecutionOutcome(
             documents=documents,
@@ -180,6 +185,40 @@ class RouteSearchOrchestrator:
                 )
             ],
         )
+
+    @staticmethod
+    def _build_exception_fallback_request(
+        retrieval_request: RetrievalRequest,
+        *,
+        trace: RouteTraceRecorder,
+    ) -> RetrievalRequest:
+        degraded_sources = _unique_source_names(trace.snapshot.diagnostics.degraded_sources)
+        if not degraded_sources:
+            return retrieval_request
+
+        metadata = dict(retrieval_request.metadata or {})
+        skipped_sources = _unique_source_names(
+            metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
+        )
+        merged_sources = _unique_source_names([*skipped_sources, *degraded_sources])
+        metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY] = merged_sources
+        return retrieval_request.copy_with(metadata=metadata)
+
+
+def _unique_source_names(values: object) -> List[str]:
+    if isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, (list, tuple, set)):
+        raw_values = list(values)
+    else:
+        raw_values = []
+
+    names: List[str] = []
+    for value in raw_values:
+        name = str(value or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 __all__ = ["RouteExecutionRequest", "RouteSearchOrchestrator"]
