@@ -9,7 +9,7 @@ import os
 import re
 import time
 from contextvars import ContextVar
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional, cast
 
 from openai import OpenAI
 
@@ -146,14 +146,11 @@ class GenerationClientAdapter:
                         prompt=prompt,
                         completion=self._response_content(response),
                     )
-                return response
+                return cast(LLMCompletionResponsePort, response)
             except Exception as exc:
                 last_exc = exc
                 logger.warning("Completion attempt %s failed: %s", attempt + 1, exc)
-                if (
-                    attempt < self.request_retries - 1
-                    and is_retryable_generation_error(exc)
-                ):
+                if attempt < self.request_retries - 1 and is_retryable_generation_error(exc):
                     remaining = request_deadline - time.perf_counter()
                     if remaining <= 0:
                         break
@@ -234,10 +231,7 @@ class GenerationClientAdapter:
                 logger.warning("Streaming generation attempt %s failed: %s", attempt + 1, exc)
                 if emitted_content:
                     break
-                if (
-                    attempt < resolved_attempts - 1
-                    and is_retryable_generation_error(exc)
-                ):
+                if attempt < resolved_attempts - 1 and is_retryable_generation_error(exc):
                     remaining = request_deadline - time.perf_counter()
                     if remaining <= 0:
                         break
@@ -266,9 +260,7 @@ class GenerationClientAdapter:
         prompt_tokens = value("prompt_tokens", "input_tokens")
         completion_tokens = value("completion_tokens", "output_tokens")
         total_tokens = value("total_tokens") or prompt_tokens + completion_tokens
-        current_prompt, current_completion, current_total, _source = (
-            self._token_usage.get()
-        )
+        current_prompt, current_completion, current_total, _source = self._token_usage.get()
         self._token_usage.set(
             (
                 current_prompt + prompt_tokens,
@@ -282,9 +274,7 @@ class GenerationClientAdapter:
     def _record_estimated_usage(self, *, prompt: str, completion: str) -> None:
         prompt_tokens = self._estimate_tokens(prompt)
         completion_tokens = self._estimate_tokens(completion)
-        current_prompt, current_completion, current_total, current_source = (
-            self._token_usage.get()
-        )
+        current_prompt, current_completion, current_total, current_source = self._token_usage.get()
         self._token_usage.set(
             (
                 current_prompt + prompt_tokens,
@@ -304,10 +294,16 @@ class GenerationClientAdapter:
         if not choices:
             return ""
         first = choices[0]
-        message = first.get("message") if isinstance(first, dict) else getattr(first, "message", None)
+        message = (
+            first.get("message") if isinstance(first, dict) else getattr(first, "message", None)
+        )
         if message is None:
             return ""
-        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+        content = (
+            message.get("content")
+            if isinstance(message, dict)
+            else getattr(message, "content", None)
+        )
         return str(content or "")
 
     @staticmethod

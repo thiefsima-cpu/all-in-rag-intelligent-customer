@@ -10,8 +10,15 @@ from langchain_core.documents import Document
 from ..query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan, QuerySemanticProfile
 from ..retrieval.contracts import EvidenceDocument
-from .analysis_models import QueryAnalysis, ensure_query_analysis
+from .analysis_models import QueryAnalysis, SearchStrategy, ensure_query_analysis
 from .retrieval_models import RetrievalOutcome
+
+
+def _search_strategy(value: str) -> SearchStrategy:
+    try:
+        return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
+    except ValueError:
+        return SearchStrategy.HYBRID_TRADITIONAL
 
 
 @dataclass
@@ -59,7 +66,7 @@ class QueryUnderstandingSnapshot:
             relationship_intensity=plan.relationship_intensity,
             reasoning_required=plan.reasoning_required,
             entity_count=plan.entity_count,
-            recommended_strategy=plan.strategy,
+            recommended_strategy=_search_strategy(plan.strategy),
             confidence=plan.confidence,
             reasoning=plan.reasoning,
             semantic_profile=plan.semantic_profile,
@@ -76,12 +83,19 @@ class QueryUnderstandingSnapshot:
     @classmethod
     def from_dict(cls, data: Dict[str, Any] | None) -> "QueryUnderstandingSnapshot":
         payload = dict(data or {})
+        query = str(payload.get("query") or "")
+        query_plan_payload = payload.get("query_plan")
+        query_plan = (
+            query_plan_payload
+            if isinstance(query_plan_payload, QueryPlan)
+            else QueryPlan.from_dict(query, dict(query_plan_payload or {}))
+        )
         return cls(
-            query=str(payload.get("query") or ""),
-            query_plan=payload.get("query_plan") or {},
-            analysis=payload.get("analysis") or {},
-            constraints=payload.get("constraints") or {},
-            semantic_profile=payload.get("semantic_profile") or {},
+            query=query,
+            query_plan=query_plan,
+            analysis=ensure_query_analysis(payload.get("analysis")),
+            constraints=QueryConstraints.from_dict(dict(payload.get("constraints") or {})),
+            semantic_profile=QuerySemanticProfile.from_dict(payload.get("semantic_profile")),
             metadata=payload.get("metadata") or {},
         )
 
@@ -131,8 +145,8 @@ class RouteResolution:
     def from_dict(cls, data: Dict[str, Any] | None) -> "RouteResolution":
         payload = dict(data or {})
         return cls(
-            understanding=payload.get("understanding") or {},
-            retrieval=payload.get("retrieval") or {},
+            understanding=QueryUnderstandingSnapshot.from_dict(payload.get("understanding")),
+            retrieval=RetrievalOutcome.from_dict(payload.get("retrieval")),
             metadata=payload.get("metadata") or {},
         )
 
@@ -166,9 +180,7 @@ class AnswerContext:
             self.understanding,
             QueryUnderstandingSnapshot,
         ):
-            self.understanding = QueryUnderstandingSnapshot.from_dict(
-                dict(self.understanding)
-            )
+            self.understanding = QueryUnderstandingSnapshot.from_dict(dict(self.understanding))
         self.analysis = ensure_query_analysis(self.analysis) if self.analysis is not None else None
         if self.analysis is None and self.understanding is not None:
             self.analysis = self.understanding.analysis
@@ -213,7 +225,9 @@ class AnswerContext:
 
     @property
     def has_evidence_package(self) -> bool:
-        items = self.evidence_package.get("items") if isinstance(self.evidence_package, dict) else None
+        items = (
+            self.evidence_package.get("items") if isinstance(self.evidence_package, dict) else None
+        )
         return bool(items)
 
     def with_evidence_package(self, payload: Any) -> "AnswerContext":

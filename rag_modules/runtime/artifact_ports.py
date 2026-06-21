@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 class ArtifactManifestStorePort(Protocol):
     """Stable manifest repository boundary for build and serving lifecycles."""
 
+    manifest_path: str
+
     def load(self) -> ArtifactManifest: ...
 
     def save(self, manifest: ArtifactManifest) -> ArtifactManifest: ...

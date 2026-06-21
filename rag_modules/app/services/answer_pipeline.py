@@ -153,9 +153,7 @@ class AnswerPipelineService:
         message_callback: MessageCallback,
     ) -> tuple[str, GenerationSnapshot]:
         if not stream:
-            return self.generation_traces.generate_answer_with_trace_from_context(
-                answer_context
-            )
+            return self.generation_traces.generate_answer_with_trace_from_context(answer_context)
 
         try:
             answer, trace = self.generation_traces.generate_answer_stream_with_trace_from_context(
@@ -171,9 +169,7 @@ class AnswerPipelineService:
                 message_callback,
                 "\n[WARN] Streaming output interrupted. Falling back to standard mode...",
             )
-            return self.generation_traces.generate_answer_with_trace_from_context(
-                answer_context
-            )
+            return self.generation_traces.generate_answer_with_trace_from_context(answer_context)
 
     @staticmethod
     def _format_strategy_summary(analysis: QueryAnalysis) -> str:
@@ -211,5 +207,6 @@ class AnswerPipelineService:
     def _emit(callback: MessageCallback, message: str) -> None:
         if callback:
             callback(message)
+
 
 __all__ = ["AnswerPipelineService", "NO_EVIDENCE_ANSWER"]

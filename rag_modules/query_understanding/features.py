@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 from .registry import (
     AMBIGUOUS_RECOMMENDATION_MARKERS,
-    CONSTRAINT_MARKERS,
     CUISINE_STYLE_TERMS,
     DIFFICULTY_TERMS,
     ENTITY_PHRASE_MARKERS,
@@ -16,7 +15,6 @@ from .registry import (
     FILTERING_MARKERS,
     FLAVOR_TERMS,
     GRAPH_GENERIC_TERMS,
-    GRAPH_QUERY_TYPES,
     GRAPH_RELATION_TYPES,
     GRAPH_SOURCE_PREFIXES,
     GRAPH_SOURCE_SUFFIXES,
@@ -225,7 +223,7 @@ def normalize_graph_sources(values: Sequence[str]) -> List[str]:
             continue
         for prefix in GRAPH_SOURCE_PREFIXES:
             if text.startswith(prefix) and len(text) > len(prefix):
-                text = text[len(prefix):]
+                text = text[len(prefix) :]
         for suffix in GRAPH_SOURCE_SUFFIXES:
             if text.endswith(suffix) and len(text) > len(suffix):
                 text = text[: -len(suffix)]
@@ -312,12 +310,13 @@ def infer_query_constraints(query: str) -> Dict[str, Any]:
     excluded_terms = extract_excluded_terms(normalized)
     style = extract_style(normalized) if selection_intent else ""
     difficulty = extract_difficulty(normalized) if selection_intent else ""
-    category_hits = (
-        matched_terms(normalized, INGREDIENT_CATEGORY_TERMS) if selection_intent else []
-    )
+    category_hits = matched_terms(normalized, INGREDIENT_CATEGORY_TERMS) if selection_intent else []
     health_hits = matched_terms(normalized, HEALTH_TERMS) if selection_intent else []
 
-    if query_type in {"path_finding", "multi_hop", "subgraph", "clustering"} and not selection_intent:
+    if (
+        query_type in {"path_finding", "multi_hop", "subgraph", "clustering"}
+        and not selection_intent
+    ):
         category_hits = []
         health_hits = []
         style = ""

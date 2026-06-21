@@ -81,9 +81,7 @@ class KnowledgeBaseManifestLifecycle:
         if self.artifact_manifest.is_ready:
             self.candidate_manifest = self._save_candidate(failed_manifest)
             return self.artifact_manifest
-        self.artifact_manifest = self.manifest_store.save(
-            failed_manifest
-        )
+        self.artifact_manifest = self.manifest_store.save(failed_manifest)
         return self.artifact_manifest
 
     def reset(self, *, stage: str) -> ArtifactManifest:

@@ -262,13 +262,17 @@ class RecipeDocumentBuilder:
         if semantics["cuisine_style_tags"]:
             semantic_lines.append(f"菜系风格标签: {', '.join(semantics['cuisine_style_tags'])}")
         if semantics["ingredient_category_tags"]:
-            semantic_lines.append(f"食材类别标签: {', '.join(semantics['ingredient_category_tags'])}")
+            semantic_lines.append(
+                f"食材类别标签: {', '.join(semantics['ingredient_category_tags'])}"
+            )
         if semantics["time_profile_tags"]:
             semantic_lines.append(f"时间轮廓标签: {', '.join(semantics['time_profile_tags'])}")
         if semantics["difficulty_level_tags"]:
             semantic_lines.append(f"难度标签: {', '.join(semantics['difficulty_level_tags'])}")
         contribution_items = semantics["semantic_relations"].get("CONTRIBUTES_TO") or []
         if contribution_items:
-            relation_text = [f"{'/'.join(item['causes'])} -> {item['effect']}" for item in contribution_items]
+            relation_text = [
+                f"{'/'.join(item['causes'])} -> {item['effect']}" for item in contribution_items
+            ]
             semantic_lines.append(f"语义贡献: {'; '.join(relation_text)}")
         return semantic_lines

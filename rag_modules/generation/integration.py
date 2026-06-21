@@ -6,7 +6,7 @@ from typing import Any, List
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..configuration.models import GraphRAGConfig
-from ..retrieval.contracts import EvidenceDocument
+from ..retrieval.contracts import EvidenceDocument, PageDocumentLike
 from .models import AnswerPlan, GenerationDecision, GenerationTrace, RenderedPrompt
 from .service import GenerationWorkflowService
 
@@ -73,7 +73,7 @@ class GenerationIntegrationModule:
     def generate_answer_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
         analysis: Any = None,
     ) -> str:
         return self.workflow_service.generate_answer_from_context(
@@ -87,7 +87,7 @@ class GenerationIntegrationModule:
     def generate_answer_with_trace_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
         analysis: Any = None,
     ):
         return self.workflow_service.generate_answer_with_trace_from_context(
@@ -101,7 +101,7 @@ class GenerationIntegrationModule:
     def generate_answer_stream_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
         max_retries: int | None = None,
         analysis: Any = None,
     ):
@@ -117,7 +117,7 @@ class GenerationIntegrationModule:
     def generate_adaptive_answer(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
         analysis: Any = None,
     ) -> str:
         return self.generate_answer_from_documents(question, documents, analysis=analysis)
@@ -137,7 +137,7 @@ class GenerationIntegrationModule:
     def generate_adaptive_answer_stream(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
         max_retries: int | None = None,
         analysis: Any = None,
     ):
@@ -184,7 +184,7 @@ class GenerationIntegrationModule:
     def build_answer_plan_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
         *,
         analysis: Any = None,
         package: AnswerEvidencePackage | None = None,
@@ -224,7 +224,7 @@ class GenerationIntegrationModule:
     def compose_answer_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
         *,
         analysis: Any = None,
         plan: AnswerPlan | dict | None = None,
@@ -318,7 +318,7 @@ class GenerationIntegrationModule:
         self,
         *,
         question: str,
-        documents: List[object | EvidenceDocument] | None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None,
         analysis: Any = None,
     ):
         return self.workflow_service.context_factory.build_answer_context_from_documents(

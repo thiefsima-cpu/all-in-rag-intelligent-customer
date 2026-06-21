@@ -10,60 +10,134 @@ from .shared import _SEMANTIC_DEFAULTS, _as_float, _as_int
 
 @dataclass
 class QuerySemanticRuntimeSettings:
-    relation_intensity_reference_ratio: float = float(_SEMANTIC_DEFAULTS.get("relation_intensity_reference_ratio", 0.5))
-    complexity_relation_hit_weight: float = float(_SEMANTIC_DEFAULTS.get("complexity_relation_hit_weight", 0.14))
-    complexity_constraint_hit_weight: float = float(_SEMANTIC_DEFAULTS.get("complexity_constraint_hit_weight", 0.1))
-    complexity_structural_hit_weight: float = float(_SEMANTIC_DEFAULTS.get("complexity_structural_hit_weight", 0.12))
-    complexity_length_weight: float = float(_SEMANTIC_DEFAULTS.get("complexity_length_weight", 0.28))
-    complexity_length_norm_chars: int = int(_SEMANTIC_DEFAULTS.get("complexity_length_norm_chars", 140))
-    reasoning_complexity_threshold: float = float(_SEMANTIC_DEFAULTS.get("reasoning_complexity_threshold", 0.7))
-    reasoning_relationship_threshold: float = float(_SEMANTIC_DEFAULTS.get("reasoning_relationship_threshold", 0.4))
-    high_relationship_routing_threshold: float = float(_SEMANTIC_DEFAULTS.get("high_relationship_routing_threshold", 0.7))
-    relation_hit_intensity_boost_base: float = float(_SEMANTIC_DEFAULTS.get("relation_hit_intensity_boost_base", 0.45))
-    relation_hit_intensity_boost_step: float = float(_SEMANTIC_DEFAULTS.get("relation_hit_intensity_boost_step", 0.12))
-    relation_hit_complexity_boost_base: float = float(_SEMANTIC_DEFAULTS.get("relation_hit_complexity_boost_base", 0.55))
-    relation_hit_complexity_boost_step: float = float(_SEMANTIC_DEFAULTS.get("relation_hit_complexity_boost_step", 0.08))
+    relation_intensity_reference_ratio: float = float(
+        _SEMANTIC_DEFAULTS.get("relation_intensity_reference_ratio", 0.5)
+    )
+    complexity_relation_hit_weight: float = float(
+        _SEMANTIC_DEFAULTS.get("complexity_relation_hit_weight", 0.14)
+    )
+    complexity_constraint_hit_weight: float = float(
+        _SEMANTIC_DEFAULTS.get("complexity_constraint_hit_weight", 0.1)
+    )
+    complexity_structural_hit_weight: float = float(
+        _SEMANTIC_DEFAULTS.get("complexity_structural_hit_weight", 0.12)
+    )
+    complexity_length_weight: float = float(
+        _SEMANTIC_DEFAULTS.get("complexity_length_weight", 0.28)
+    )
+    complexity_length_norm_chars: int = int(
+        _SEMANTIC_DEFAULTS.get("complexity_length_norm_chars", 140)
+    )
+    reasoning_complexity_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("reasoning_complexity_threshold", 0.7)
+    )
+    reasoning_relationship_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("reasoning_relationship_threshold", 0.4)
+    )
+    high_relationship_routing_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("high_relationship_routing_threshold", 0.7)
+    )
+    relation_hit_intensity_boost_base: float = float(
+        _SEMANTIC_DEFAULTS.get("relation_hit_intensity_boost_base", 0.45)
+    )
+    relation_hit_intensity_boost_step: float = float(
+        _SEMANTIC_DEFAULTS.get("relation_hit_intensity_boost_step", 0.12)
+    )
+    relation_hit_complexity_boost_base: float = float(
+        _SEMANTIC_DEFAULTS.get("relation_hit_complexity_boost_base", 0.55)
+    )
+    relation_hit_complexity_boost_step: float = float(
+        _SEMANTIC_DEFAULTS.get("relation_hit_complexity_boost_step", 0.08)
+    )
     source_entity_limit: int = int(_SEMANTIC_DEFAULTS.get("source_entity_limit", 3))
     entity_keyword_limit: int = int(_SEMANTIC_DEFAULTS.get("entity_keyword_limit", 4))
-    semantic_profile_entity_keyword_limit: int = int(_SEMANTIC_DEFAULTS.get("semantic_profile_entity_keyword_limit", 6))
+    semantic_profile_entity_keyword_limit: int = int(
+        _SEMANTIC_DEFAULTS.get("semantic_profile_entity_keyword_limit", 6)
+    )
     topic_keyword_limit: int = int(_SEMANTIC_DEFAULTS.get("topic_keyword_limit", 4))
-    semantic_profile_topic_keyword_start: int = int(_SEMANTIC_DEFAULTS.get("semantic_profile_topic_keyword_start", 4))
-    semantic_profile_topic_keyword_limit: int = int(_SEMANTIC_DEFAULTS.get("semantic_profile_topic_keyword_limit", 6))
+    semantic_profile_topic_keyword_start: int = int(
+        _SEMANTIC_DEFAULTS.get("semantic_profile_topic_keyword_start", 4)
+    )
+    semantic_profile_topic_keyword_limit: int = int(
+        _SEMANTIC_DEFAULTS.get("semantic_profile_topic_keyword_limit", 6)
+    )
     target_entity_limit: int = int(_SEMANTIC_DEFAULTS.get("target_entity_limit", 2))
     multi_hop_hint_entity_count: int = int(_SEMANTIC_DEFAULTS.get("multi_hop_hint_entity_count", 2))
-    multi_hop_hint_relationship_threshold: float = float(_SEMANTIC_DEFAULTS.get("multi_hop_hint_relationship_threshold", 0.55))
-    combined_strategy_relationship_threshold: float = float(_SEMANTIC_DEFAULTS.get("combined_strategy_relationship_threshold", 0.4))
-    combined_strategy_complexity_threshold: float = float(_SEMANTIC_DEFAULTS.get("combined_strategy_complexity_threshold", 0.6))
-    source_entity_seed_relationship_threshold: float = float(_SEMANTIC_DEFAULTS.get("source_entity_seed_relationship_threshold", 0.4))
-    source_entity_backfill_relationship_threshold: float = float(_SEMANTIC_DEFAULTS.get("source_entity_backfill_relationship_threshold", 0.55))
-    rule_fallback_confidence: float = float(_SEMANTIC_DEFAULTS.get("rule_fallback_confidence", 0.45))
+    multi_hop_hint_relationship_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("multi_hop_hint_relationship_threshold", 0.55)
+    )
+    combined_strategy_relationship_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("combined_strategy_relationship_threshold", 0.4)
+    )
+    combined_strategy_complexity_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("combined_strategy_complexity_threshold", 0.6)
+    )
+    source_entity_seed_relationship_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("source_entity_seed_relationship_threshold", 0.4)
+    )
+    source_entity_backfill_relationship_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("source_entity_backfill_relationship_threshold", 0.55)
+    )
+    rule_fallback_confidence: float = float(
+        _SEMANTIC_DEFAULTS.get("rule_fallback_confidence", 0.45)
+    )
     entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.get("entity_relation_max_depth", 1))
     path_finding_max_depth: int = int(_SEMANTIC_DEFAULTS.get("path_finding_max_depth", 3))
-    path_finding_high_intensity_max_depth: int = int(_SEMANTIC_DEFAULTS.get("path_finding_high_intensity_max_depth", 4))
-    path_finding_high_intensity_threshold: float = float(_SEMANTIC_DEFAULTS.get("path_finding_high_intensity_threshold", 0.6))
+    path_finding_high_intensity_max_depth: int = int(
+        _SEMANTIC_DEFAULTS.get("path_finding_high_intensity_max_depth", 4)
+    )
+    path_finding_high_intensity_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("path_finding_high_intensity_threshold", 0.6)
+    )
     subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.get("subgraph_max_depth", 2))
-    subgraph_high_intensity_max_depth: int = int(_SEMANTIC_DEFAULTS.get("subgraph_high_intensity_max_depth", 3))
-    subgraph_high_intensity_threshold: float = float(_SEMANTIC_DEFAULTS.get("subgraph_high_intensity_threshold", 0.5))
+    subgraph_high_intensity_max_depth: int = int(
+        _SEMANTIC_DEFAULTS.get("subgraph_high_intensity_max_depth", 3)
+    )
+    subgraph_high_intensity_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("subgraph_high_intensity_threshold", 0.5)
+    )
     clustering_max_depth: int = int(_SEMANTIC_DEFAULTS.get("clustering_max_depth", 3))
     default_max_depth: int = int(_SEMANTIC_DEFAULTS.get("default_max_depth", 2))
-    default_high_intensity_max_depth: int = int(_SEMANTIC_DEFAULTS.get("default_high_intensity_max_depth", 3))
-    default_high_intensity_threshold: float = float(_SEMANTIC_DEFAULTS.get("default_high_intensity_threshold", 0.7))
+    default_high_intensity_max_depth: int = int(
+        _SEMANTIC_DEFAULTS.get("default_high_intensity_max_depth", 3)
+    )
+    default_high_intensity_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("default_high_intensity_threshold", 0.7)
+    )
     entity_relation_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("entity_relation_max_nodes", 20))
     path_finding_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("path_finding_max_nodes", 40))
     subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("subgraph_max_nodes", 80))
     clustering_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("clustering_max_nodes", 60))
     default_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("default_max_nodes", 50))
     graph_query_max_depth_cap: int = int(_SEMANTIC_DEFAULTS.get("graph_query_max_depth_cap", 4))
-    graph_query_fallback_name_chars: int = int(_SEMANTIC_DEFAULTS.get("graph_query_fallback_name_chars", 16))
-    adaptive_multi_hop_subgraph_threshold: float = float(_SEMANTIC_DEFAULTS.get("adaptive_multi_hop_subgraph_threshold", 0.7))
-    adaptive_subgraph_multi_hop_threshold: float = float(_SEMANTIC_DEFAULTS.get("adaptive_subgraph_multi_hop_threshold", 0.45))
-    adaptive_entity_relation_multi_hop_threshold: float = float(_SEMANTIC_DEFAULTS.get("adaptive_entity_relation_multi_hop_threshold", 0.5))
+    graph_query_fallback_name_chars: int = int(
+        _SEMANTIC_DEFAULTS.get("graph_query_fallback_name_chars", 16)
+    )
+    adaptive_multi_hop_subgraph_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("adaptive_multi_hop_subgraph_threshold", 0.7)
+    )
+    adaptive_subgraph_multi_hop_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("adaptive_subgraph_multi_hop_threshold", 0.45)
+    )
+    adaptive_entity_relation_multi_hop_threshold: float = float(
+        _SEMANTIC_DEFAULTS.get("adaptive_entity_relation_multi_hop_threshold", 0.5)
+    )
     adaptive_subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.get("adaptive_subgraph_max_depth", 3))
-    adaptive_subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("adaptive_subgraph_max_nodes", 100))
-    adaptive_multi_hop_max_depth: int = int(_SEMANTIC_DEFAULTS.get("adaptive_multi_hop_max_depth", 3))
-    adaptive_multi_hop_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("adaptive_multi_hop_max_nodes", 50))
-    adaptive_entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.get("adaptive_entity_relation_max_depth", 2))
-    adaptive_entity_relation_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("adaptive_entity_relation_max_nodes", 40))
+    adaptive_subgraph_max_nodes: int = int(
+        _SEMANTIC_DEFAULTS.get("adaptive_subgraph_max_nodes", 100)
+    )
+    adaptive_multi_hop_max_depth: int = int(
+        _SEMANTIC_DEFAULTS.get("adaptive_multi_hop_max_depth", 3)
+    )
+    adaptive_multi_hop_max_nodes: int = int(
+        _SEMANTIC_DEFAULTS.get("adaptive_multi_hop_max_nodes", 50)
+    )
+    adaptive_entity_relation_max_depth: int = int(
+        _SEMANTIC_DEFAULTS.get("adaptive_entity_relation_max_depth", 2)
+    )
+    adaptive_entity_relation_max_nodes: int = int(
+        _SEMANTIC_DEFAULTS.get("adaptive_entity_relation_max_nodes", 40)
+    )
 
     def __post_init__(self) -> None:
         defaults = _SEMANTIC_DEFAULTS
@@ -160,7 +234,11 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                _as_int(getattr(self, field_name), int(defaults.get(field_name, getattr(self, field_name))), minimum=minimum),
+                _as_int(
+                    getattr(self, field_name),
+                    int(defaults.get(field_name, getattr(self, field_name))),
+                    minimum=minimum,
+                ),
             )
         for field_name in (
             "multi_hop_hint_relationship_threshold",
@@ -179,12 +257,14 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                _as_float(getattr(self, field_name), float(defaults.get(field_name, getattr(self, field_name)))),
+                _as_float(
+                    getattr(self, field_name),
+                    float(defaults.get(field_name, getattr(self, field_name))),
+                ),
             )
 
     @classmethod
     def from_config(cls, config) -> "QuerySemanticRuntimeSettings":
-        defaults = _SEMANTIC_DEFAULTS
         semantics = config.query_understanding.semantics
         scoring = semantics.scoring
         extraction = semantics.extraction
@@ -249,7 +329,9 @@ class QuerySemanticRuntimeSettings:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()}
+        return {
+            field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()
+        }
 
 
 __all__ = ["QuerySemanticRuntimeSettings"]

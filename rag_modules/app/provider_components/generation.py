@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-
 from ...generation.service import GenerationWorkflowService
 
 

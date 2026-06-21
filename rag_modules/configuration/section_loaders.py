@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping
 
+from ..query_understanding.registry import (
+    default_entity_linker_query_type_priorities,
+    default_entity_linker_relation_priorities,
+)
 from .env import EnvConfigSource
 from .models import (
     ApiSettings,
@@ -14,10 +18,6 @@ from .models import (
     ObservabilitySettings,
     RetrievalSettings,
     StorageSettings,
-)
-from ..query_understanding.registry import (
-    default_entity_linker_query_type_priorities,
-    default_entity_linker_relation_priorities,
 )
 
 
@@ -65,17 +65,27 @@ def load_storage_settings(
             "build_jobs.json",
         )
     return StorageSettings(
-        neo4j_uri=source.get_str("NEO4J_URI", str(storage_defaults.get("neo4j_uri", "bolt://localhost:7687"))),
+        neo4j_uri=source.get_str(
+            "NEO4J_URI", str(storage_defaults.get("neo4j_uri", "bolt://localhost:7687"))
+        ),
         neo4j_user=source.get_str("NEO4J_USER", str(storage_defaults.get("neo4j_user", "neo4j"))),
-        neo4j_password=source.get_str("NEO4J_PASSWORD", str(storage_defaults.get("neo4j_password", "password"))),
-        neo4j_database=source.get_str("NEO4J_DATABASE", str(storage_defaults.get("neo4j_database", "neo4j"))),
-        milvus_host=source.get_str("MILVUS_HOST", str(storage_defaults.get("milvus_host", "localhost"))),
+        neo4j_password=source.get_str(
+            "NEO4J_PASSWORD", str(storage_defaults.get("neo4j_password", "password"))
+        ),
+        neo4j_database=source.get_str(
+            "NEO4J_DATABASE", str(storage_defaults.get("neo4j_database", "neo4j"))
+        ),
+        milvus_host=source.get_str(
+            "MILVUS_HOST", str(storage_defaults.get("milvus_host", "localhost"))
+        ),
         milvus_port=source.get_int("MILVUS_PORT", int(storage_defaults.get("milvus_port", 19530))),
         milvus_collection_name=source.get_str(
             "MILVUS_COLLECTION_NAME",
             str(storage_defaults.get("milvus_collection_name", "cooking_knowledge")),
         ),
-        milvus_dimension=source.get_int("MILVUS_DIMENSION", int(storage_defaults.get("milvus_dimension", 1024))),
+        milvus_dimension=source.get_int(
+            "MILVUS_DIMENSION", int(storage_defaults.get("milvus_dimension", 1024))
+        ),
         enable_index_cache=source.get_bool(
             "ENABLE_INDEX_CACHE",
             bool(storage_defaults.get("enable_index_cache", True)),
@@ -126,9 +136,8 @@ def load_model_settings(
     defaults: Mapping[str, Any] | None = None,
 ) -> ModelSettings:
     model_defaults = _mapping_defaults(defaults)
-    api_key = (
-        source.get_first("DASHSCOPE_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY")
-        or str(model_defaults.get("api_key", ""))
+    api_key = source.get_first("DASHSCOPE_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY") or str(
+        model_defaults.get("api_key", "")
     )
     return ModelSettings(
         api_key=api_key,
@@ -317,7 +326,9 @@ def load_generation_settings(
 ) -> GenerationSettings:
     generation_defaults = _mapping_defaults(defaults)
     return GenerationSettings(
-        temperature=source.get_float("TEMPERATURE", float(generation_defaults.get("temperature", 0.1))),
+        temperature=source.get_float(
+            "TEMPERATURE", float(generation_defaults.get("temperature", 0.1))
+        ),
         max_tokens=source.get_int("MAX_TOKENS", int(generation_defaults.get("max_tokens", 2048))),
         generation_timeout_seconds=source.get_int(
             "GENERATION_TIMEOUT_SECONDS",
@@ -560,9 +571,8 @@ def load_api_settings(
     defaults: Mapping[str, Any] | None = None,
 ) -> ApiSettings:
     api_defaults = _mapping_defaults(defaults)
-    access_token = (
-        source.get_first("API_ACCESS_TOKEN", "GRAPH_RAG_API_TOKEN")
-        or str(api_defaults.get("access_token", ""))
+    access_token = source.get_first("API_ACCESS_TOKEN", "GRAPH_RAG_API_TOKEN") or str(
+        api_defaults.get("access_token", "")
     )
     return ApiSettings(
         auth_enabled=source.get_bool(

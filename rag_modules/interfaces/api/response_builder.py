@@ -7,6 +7,7 @@ from typing import Iterable
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from ...artifacts import artifact_health
 from .models import (
     AnswerResponseModel,
     AnswerStreamEventModel,
@@ -16,7 +17,6 @@ from .models import (
     DiagnosticsResponseModel,
     StatsResponseModel,
 )
-from ...artifacts import artifact_health
 
 
 def _artifact_manifest_payload(manifest) -> dict:

@@ -24,7 +24,6 @@ from rag_modules.public_surface_manifest import (
     surface_by_kind,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
 INTERNAL_PACKAGE_PREFIXES = tuple(modules_for(INTERNAL_ONLY_SURFACE))

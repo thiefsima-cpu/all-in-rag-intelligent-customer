@@ -3,10 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 
+from rag_modules.app.provider_components.diagnostics import DefaultDiagnosticsComponentProvider
 from rag_modules.app.provider_components.infrastructure import (
     DefaultInfrastructureComponentProvider,
 )
-from rag_modules.app.provider_components.diagnostics import DefaultDiagnosticsComponentProvider
 from rag_modules.artifacts import ArtifactManifestStore
 from rag_modules.build_pipeline.document_artifacts import DocumentIndexCache
 from rag_modules.configuration.testing import build_test_config
@@ -153,10 +153,16 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
             self.assertIsInstance(cache, DocumentIndexCache)
             self.assertIs(cache.manifest_store, manifest_store)
             self.assertTrue(callable(getattr(runtime_artifact_access, "load_graph_data", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "has_vector_collection", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "load_vector_collection", None)))
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "has_vector_collection", None))
+            )
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "load_vector_collection", None))
+            )
             self.assertTrue(callable(getattr(runtime_artifact_access, "build_vector_index", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "delete_vector_collection", None)))
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "delete_vector_collection", None))
+            )
 
     def test_diagnostics_provider_exposes_runtime_stats_access(self) -> None:
         provider = DefaultDiagnosticsComponentProvider()

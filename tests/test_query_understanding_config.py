@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration import load_config
+from rag_modules.configuration.env import EnvConfigSource
 
 
 class QueryUnderstandingConfigTests(unittest.TestCase):
@@ -53,8 +53,7 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
         self.assertEqual(nested_override.query_understanding.planner.cache_size, 64)
         self.assertEqual(
             (
-                nested_override.query_understanding.semantics.routing
-                .combined_strategy_complexity_threshold
+                nested_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold
             ),
             0.77,
         )

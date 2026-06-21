@@ -96,16 +96,18 @@ class DualLevelRetrieverTests(unittest.TestCase):
                     value_content="RecipeB first line\nmore",
                 )
             },
-            get_entities_by_key=lambda keyword: [
-                SimpleNamespace(
-                    entity_name="RecipeCategory",
-                    entity_type="Recipe",
-                    value_content="category-hit",
-                    metadata={"node_id": "n4"},
-                )
-            ]
-            if keyword == "light"
-            else [],
+            get_entities_by_key=lambda keyword: (
+                [
+                    SimpleNamespace(
+                        entity_name="RecipeCategory",
+                        entity_type="Recipe",
+                        value_content="category-hit",
+                        metadata={"node_id": "n4"},
+                    )
+                ]
+                if keyword == "light"
+                else []
+            ),
         )
         self.retriever = DualLevelRetriever(
             driver=None,

@@ -17,20 +17,17 @@ class BootstrapFacadeSupportTests(unittest.TestCase):
         kb_calls: list[dict] = []
         rebuild_calls: list[dict] = []
         factory = SimpleNamespace(
-            build=lambda config=None, **kwargs: build_calls.append(
-                {"config": config, **kwargs}
+            build=lambda config=None, **kwargs: (
+                build_calls.append({"config": config, **kwargs}) or runtime
             )
-            or runtime
         )
         executor = SimpleNamespace(
-            build_knowledge_base=lambda runtime_arg, **kwargs: kb_calls.append(
-                {"runtime": runtime_arg, **kwargs}
-            )
-            or runtime_arg,
-            rebuild_knowledge_base=lambda runtime_arg, **kwargs: rebuild_calls.append(
-                {"runtime": runtime_arg, **kwargs}
-            )
-            or runtime_arg,
+            build_knowledge_base=lambda runtime_arg, **kwargs: (
+                kb_calls.append({"runtime": runtime_arg, **kwargs}) or runtime_arg
+            ),
+            rebuild_knowledge_base=lambda runtime_arg, **kwargs: (
+                rebuild_calls.append({"runtime": runtime_arg, **kwargs}) or runtime_arg
+            ),
         )
         adapter = BuildBootstrapperInvocationAdapter()
 
@@ -51,18 +48,15 @@ class BootstrapFacadeSupportTests(unittest.TestCase):
         prepare_calls: list[dict] = []
         shared_prepare_calls: list[dict] = []
         lifecycle_service = SimpleNamespace(
-            build_ready=lambda config=None, **kwargs: build_calls.append(
-                {"config": config, **kwargs}
-            )
-            or runtime,
-            prepare=lambda runtime_arg, **kwargs: prepare_calls.append(
-                {"runtime": runtime_arg, **kwargs}
-            )
-            or runtime_arg,
-            prepare_with_shared_runtime=lambda runtime_arg, **kwargs: shared_prepare_calls.append(
-                {"runtime": runtime_arg, **kwargs}
-            )
-            or runtime_arg,
+            build_ready=lambda config=None, **kwargs: (
+                build_calls.append({"config": config, **kwargs}) or runtime
+            ),
+            prepare=lambda runtime_arg, **kwargs: (
+                prepare_calls.append({"runtime": runtime_arg, **kwargs}) or runtime_arg
+            ),
+            prepare_with_shared_runtime=lambda runtime_arg, **kwargs: (
+                shared_prepare_calls.append({"runtime": runtime_arg, **kwargs}) or runtime_arg
+            ),
         )
         adapter = ServingBootstrapperInvocationAdapter()
 
@@ -92,8 +86,9 @@ class BootstrapFacadeSupportTests(unittest.TestCase):
         runtime = SimpleNamespace(name="runtime")
         build_calls: list[dict] = []
         bootstrap_service = SimpleNamespace(
-            build=lambda config=None, **kwargs: build_calls.append({"config": config, **kwargs})
-            or runtime
+            build=lambda config=None, **kwargs: (
+                build_calls.append({"config": config, **kwargs}) or runtime
+            )
         )
         adapter = GraphBootstrapperInvocationAdapter()
 

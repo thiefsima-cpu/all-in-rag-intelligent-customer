@@ -25,7 +25,9 @@ class AnswerPlan:
                 {
                     "title": str(item.get("title") or "").strip(),
                     "claim": str(item.get("claim") or "").strip(),
-                    "citations": [str(c).strip() for c in item.get("citations", []) if str(c).strip()],
+                    "citations": [
+                        str(c).strip() for c in item.get("citations", []) if str(c).strip()
+                    ],
                     "use_graph_evidence": bool(item.get("use_graph_evidence")),
                 }
                 for item in data.get("key_points", [])
@@ -72,9 +74,7 @@ class RenderedPrompt:
         self.question = str(self.question or "")
         self.text = str(self.text or "")
         self.evidence_citations = [
-            str(item).strip()
-            for item in (self.evidence_citations or [])
-            if str(item).strip()
+            str(item).strip() for item in (self.evidence_citations or []) if str(item).strip()
         ]
         self.evidence_item_count = max(0, int(self.evidence_item_count or 0))
         self.plan = dict(self.plan or {})
@@ -175,7 +175,9 @@ class GenerationSettings:
         self.stream_timeout_seconds = max(1, int(self.stream_timeout_seconds or 45))
         self.latency_budget_seconds = max(1, int(self.latency_budget_seconds or 24))
         self.planner_max_tokens = max(256, int(self.planner_max_tokens or 900))
-        self.composer_max_tokens = max(256, int(self.composer_max_tokens or self.max_tokens or 1400))
+        self.composer_max_tokens = max(
+            256, int(self.composer_max_tokens or self.max_tokens or 1400)
+        )
         self.planner_temperature = float(self.planner_temperature)
         self.planner_mode = str(self.planner_mode or "rule").strip().lower()
         self.max_retries = max(1, int(self.max_retries or 1))

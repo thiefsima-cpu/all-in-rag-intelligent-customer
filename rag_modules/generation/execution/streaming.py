@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
 import logging
 import time
+from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
 from ..client import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
+from .contracts import _GenerationExecutionHost
 
 logger = logging.getLogger(__name__)
 
 
-class _StreamingGenerationMixin:
+class _StreamingGenerationMixin(_GenerationExecutionHost):
     def stream(
         self,
         *,
@@ -129,9 +130,7 @@ class _StreamingGenerationMixin:
                     trace.status = "degraded"
                     trace.direct_latency_ms = self._elapsed_ms(direct_start)
                     trace.provider_latency_ms = (
-                        trace.plan_latency_ms
-                        + trace.compose_latency_ms
-                        + trace.direct_latency_ms
+                        trace.plan_latency_ms + trace.compose_latency_ms + trace.direct_latency_ms
                     )
                     trace.failure_code = generation_failure_code(exc)
                     trace.request_retries += self._consume_retry_count()

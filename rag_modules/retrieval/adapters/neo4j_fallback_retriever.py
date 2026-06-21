@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+from collections.abc import Iterable, Mapping
+from typing import Any, List, cast
 
 from ...runtime_contracts import Neo4jDriverPort
 from ..contracts import EvidenceDocument
@@ -39,7 +40,11 @@ class Neo4jFallbackRetriever:
                 ORDER BY score DESC
                 LIMIT $limit
                 """
-                for record in session.run(cypher_query, {"keywords": keywords, "limit": limit}):
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
+                )
+                for record in records:
                     content_parts = []
                     if record["name"]:
                         content_parts.append(f"菜谱: {record['name']}")
@@ -94,7 +99,11 @@ class Neo4jFallbackRetriever:
                 ORDER BY r.difficulty ASC, r.name
                 LIMIT $limit
                 """
-                for record in session.run(cypher_query, {"keywords": keywords, "limit": limit}):
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
+                )
+                for record in records:
                     content_parts = [f"菜谱: {record['name']}"]
                     if record["category"]:
                         content_parts.append(f"分类: {record['category']}")
@@ -140,11 +149,11 @@ class Neo4jFallbackRetriever:
                 RETURN neighbor.name AS name
                 LIMIT $limit
                 """
-                return [
-                    str(record["name"])
-                    for record in session.run(query, {"node_id": node_id, "limit": max_neighbors})
-                    if record["name"]
-                ]
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(query, {"node_id": node_id, "limit": max_neighbors}),
+                )
+                return [str(record["name"]) for record in records if record["name"]]
         except Exception as exc:
             logger.error("Neighbor lookup failed: %s", exc)
             return []

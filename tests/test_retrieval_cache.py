@@ -16,9 +16,7 @@ from rag_modules.retrieval_cache import (
 
 class RetrievalCacheStoreTests(unittest.TestCase):
     def _store(self, cache_dir: str) -> RetrievalCacheStore:
-        config = build_test_config(
-            {"storage": {"index_cache_dir": cache_dir}}
-        )
+        config = build_test_config({"storage": {"index_cache_dir": cache_dir}})
         return RetrievalCacheStore(config)
 
     def test_json_cache_round_trip_and_full_chunk_signature(self) -> None:

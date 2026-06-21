@@ -36,9 +36,7 @@ AMBIGUOUS_RECOMMENDATION_MARKERS: Tuple[str, ...] = POLICY.term_group(
     "ambiguous_recommendation_markers"
 )
 FILTERING_MARKERS: Tuple[str, ...] = POLICY.term_group("filtering_markers")
-STRUCTURAL_REASONING_MARKERS: Tuple[str, ...] = POLICY.term_group(
-    "structural_reasoning_markers"
-)
+STRUCTURAL_REASONING_MARKERS: Tuple[str, ...] = POLICY.term_group("structural_reasoning_markers")
 RELATION_MARKERS: Tuple[str, ...] = POLICY.term_group("relation_markers")
 FAST_RULE_MARKERS: Tuple[str, ...] = POLICY.term_group("fast_rule_markers")
 CONSTRAINT_MARKERS: Tuple[str, ...] = POLICY.term_group("constraint_markers")
@@ -52,9 +50,7 @@ GRAPH_SOURCE_SUFFIXES: Tuple[str, ...] = POLICY.term_group("graph_source_suffixe
 SEMANTIC_RELATION_HINTS: Dict[str, str] = dict(POLICY.semantic_relation_hints)
 RELATION_INDEX_KEYWORDS: Dict[str, Tuple[str, ...]] = dict(POLICY.relation_index_keywords)
 RELATION_QUERY_MARKERS: Dict[str, Tuple[str, ...]] = dict(POLICY.relation_query_markers)
-DEFAULT_ENTITY_LINKER_PREFERRED_LABELS: Tuple[str, ...] = (
-    POLICY.entity_linker_preferred_labels
-)
+DEFAULT_ENTITY_LINKER_PREFERRED_LABELS: Tuple[str, ...] = POLICY.entity_linker_preferred_labels
 
 SEMANTIC_NODE_TERMS: Tuple[str, ...] = flatten_term_groups(
     "flavor_terms",
@@ -197,17 +193,11 @@ class QuerySemanticProfile:
 
 
 def default_entity_linker_query_type_priorities() -> Dict[str, List[str]]:
-    return {
-        key: list(value)
-        for key, value in POLICY.entity_linker_query_type_priorities.items()
-    }
+    return {key: list(value) for key, value in POLICY.entity_linker_query_type_priorities.items()}
 
 
 def default_entity_linker_relation_priorities() -> Dict[str, List[str]]:
-    return {
-        key: list(value)
-        for key, value in POLICY.entity_linker_relation_priorities.items()
-    }
+    return {key: list(value) for key, value in POLICY.entity_linker_relation_priorities.items()}
 
 
 def dedupe_preserve_order(values: Iterable[Any]) -> List[str]:

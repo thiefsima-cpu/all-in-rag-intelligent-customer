@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
-from ..configuration.models import GraphRAGConfig
-
 from ..artifacts import ArtifactManifest
+from ..configuration.models import GraphRAGConfig
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
     QuestionAnswerer,
@@ -37,9 +36,12 @@ class AdvancedGraphRAGSystem:
         assembler: ApplicationAssembler | None = None,
         container: ApplicationContainer | None = None,
     ):
-        container = container or (assembler or ApplicationAssembler(
-            system_composer=system_composer,
-        )).assemble(
+        container = container or (
+            assembler
+            or ApplicationAssembler(
+                system_composer=system_composer,
+            )
+        ).assemble(
             config=config,
             provider=provider,
             bootstrapper=bootstrapper,

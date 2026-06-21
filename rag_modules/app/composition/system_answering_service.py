@@ -63,9 +63,7 @@ class SystemAnsweringService:
         self.backend.require_ready()
         serving_runtime = self.runtime_state_store.serving_runtime
         answer_service = (
-            serving_runtime.question_answer_service
-            if serving_runtime is not None
-            else None
+            serving_runtime.question_answer_service if serving_runtime is not None else None
         )
         if answer_service is None:
             raise ValueError("Question-answer service is not initialized.")

@@ -49,8 +49,7 @@ def _report_versions(tx) -> dict:
     ORDER BY version
     """
     relationship_versions = [
-        {"version": row["version"], "relationships": row["relationships"]}
-        for row in tx.run(query)
+        {"version": row["version"], "relationships": row["relationships"]} for row in tx.run(query)
     ]
     node_query = """
     MATCH (n)
@@ -59,8 +58,7 @@ def _report_versions(tx) -> dict:
     ORDER BY version
     """
     node_versions = [
-        {"version": row["version"], "nodes": row["nodes"]}
-        for row in tx.run(node_query)
+        {"version": row["version"], "nodes": row["nodes"]} for row in tx.run(node_query)
     ]
     return {"relationship_versions": relationship_versions, "node_versions": node_versions}
 
@@ -103,7 +101,9 @@ def _cleanup_stale(tx) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cleanup-stale", action="store_true")
-    parser.add_argument("--apply", action="store_true", help="Apply cleanup. Without this, cleanup is dry-run.")
+    parser.add_argument(
+        "--apply", action="store_true", help="Apply cleanup. Without this, cleanup is dry-run."
+    )
     args = parser.parse_args()
     report = _run(dry_run=not args.apply, cleanup_stale=args.cleanup_stale)
     print(json.dumps(report, ensure_ascii=False, indent=2))

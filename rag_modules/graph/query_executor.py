@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from neo4j import Driver
 
-from .retrieval_plan import GraphRetrievalPlan
 from ..semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
+from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,9 @@ class GraphQueryExecutor:
     def shortest_paths(self, plan: GraphRetrievalPlan) -> List[Any]:
         if not self.driver:
             return []
-        if not (plan.source_node_ids or plan.source_terms) or not (plan.target_node_ids or plan.target_terms):
+        if not (plan.source_node_ids or plan.source_terms) or not (
+            plan.target_node_ids or plan.target_terms
+        ):
             return self.entity_relation_paths(plan)
         max_depth = max(1, min(int(plan.max_depth or 3), 4))
         query = f"""
@@ -134,6 +136,7 @@ class GraphQueryExecutor:
     def subgraphs(self, plan: GraphRetrievalPlan) -> List[Any]:
         if not self.driver:
             return []
+        driver = self.driver
         max_depth = max(1, min(int(plan.max_depth or 2), 3))
         query = f"""
         MATCH (source)
@@ -164,7 +167,7 @@ class GraphQueryExecutor:
         params = self._params(plan)
         params["max_nodes"] = plan.max_nodes
         try:
-            with self.driver.session(database=self.database) as session:
+            with driver.session(database=self.database) as session:
                 return list(session.run(query, params))
         except Exception as exc:
             logger.error("Subgraph query failed: %s", exc)
@@ -198,11 +201,12 @@ class GraphQueryExecutor:
         }
 
     def _run_path_query(self, query: str, params: Dict[str, Any]) -> List[Any]:
+        if self.driver is None:
+            return []
+        driver = self.driver
         try:
-            with self.driver.session(database=self.database) as session:
+            with driver.session(database=self.database) as session:
                 return list(session.run(query, params))
         except Exception as exc:
             logger.error("Graph path query failed: %s", exc)
             return []
-
-

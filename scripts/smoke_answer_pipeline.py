@@ -27,15 +27,13 @@ from rag_modules.runtime import (
 )
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule as _OfflineGenerationModule,
+)
+from scripts.smoke_answer_pipeline_support import (
     build_tracer as _build_tracer,
 )
 
-
 DEFAULT_CORPUS_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "tests"
-    / "fixtures"
-    / "answer_pipeline_corpus.json"
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "answer_pipeline_corpus.json"
 )
 
 
@@ -46,11 +44,7 @@ class _OfflineQueryRouter:
         self.route_trace = build_route_snapshot(case, requested_top_k=top_k)
         self.graph_trace = build_graph_snapshot(case, requested_top_k=top_k)
         if self.graph_trace.has_content():
-            stage_name = (
-                "combined"
-                if self.route_trace.strategy == "combined"
-                else "graph_rag"
-            )
+            stage_name = "combined" if self.route_trace.strategy == "combined" else "graph_rag"
             stage = self.route_trace.stages.get(stage_name)
             if stage is not None:
                 stage.details["graph_trace"] = self.graph_trace.to_dict()
@@ -74,9 +68,7 @@ class _OfflineQueryRouter:
         )
 
     def route_with_trace(self, question: str, top_k: int):
-        return self.route(question, top_k), RouteSnapshot.from_dict(
-            self.route_trace.to_dict()
-        )
+        return self.route(question, top_k), RouteSnapshot.from_dict(self.route_trace.to_dict())
 
 
 @dataclass
@@ -140,7 +132,9 @@ def _graph_doc_count(documents: Iterable[EvidenceDocument]) -> int:
 
 def build_route_snapshot(case: AnswerPipelineCase, *, requested_top_k: int) -> RouteSnapshot:
     strategy = case.expected_route_strategy
-    graph_doc_count = _graph_doc_count(case.evidence_documents) if strategy != "hybrid_traditional" else 0
+    graph_doc_count = (
+        _graph_doc_count(case.evidence_documents) if strategy != "hybrid_traditional" else 0
+    )
     final_doc_count = len(case.evidence_documents)
     snapshot = RouteSnapshot(
         query=case.question,
@@ -158,31 +152,43 @@ def build_route_snapshot(case: AnswerPipelineCase, *, requested_top_k: int) -> R
     if strategy == "graph_rag":
         snapshot.add_stage(
             "graph_rag",
-            RouteStageSnapshot(latency_ms=2.0, doc_count=final_doc_count, sources={"graph_rag": final_doc_count}),
+            RouteStageSnapshot(
+                latency_ms=2.0, doc_count=final_doc_count, sources={"graph_rag": final_doc_count}
+            ),
         )
     elif strategy == "hybrid_traditional":
         snapshot.add_stage(
             "hybrid",
-            RouteStageSnapshot(latency_ms=2.0, doc_count=final_doc_count, sources={"hybrid": final_doc_count}),
+            RouteStageSnapshot(
+                latency_ms=2.0, doc_count=final_doc_count, sources={"hybrid": final_doc_count}
+            ),
         )
     elif strategy == "combined":
         snapshot.add_stage(
             "graph_rag",
-            RouteStageSnapshot(latency_ms=1.5, doc_count=graph_doc_count, sources={"graph_rag": graph_doc_count}),
+            RouteStageSnapshot(
+                latency_ms=1.5, doc_count=graph_doc_count, sources={"graph_rag": graph_doc_count}
+            ),
         )
         snapshot.add_stage(
             "combined",
-            RouteStageSnapshot(latency_ms=2.5, doc_count=final_doc_count, sources={"combined": final_doc_count}),
+            RouteStageSnapshot(
+                latency_ms=2.5, doc_count=final_doc_count, sources={"combined": final_doc_count}
+            ),
         )
     snapshot.add_stage(
         "post_process",
-        RouteStageSnapshot(latency_ms=0.8, doc_count=final_doc_count, sources={strategy: final_doc_count}),
+        RouteStageSnapshot(
+            latency_ms=0.8, doc_count=final_doc_count, sources={strategy: final_doc_count}
+        ),
     )
     snapshot.finalize(total_latency_ms=4.2, final_doc_count=final_doc_count)
     return snapshot
 
 
-def build_graph_snapshot(case: AnswerPipelineCase, *, requested_top_k: int) -> GraphRetrievalSnapshot:
+def build_graph_snapshot(
+    case: AnswerPipelineCase, *, requested_top_k: int
+) -> GraphRetrievalSnapshot:
     strategy = case.expected_route_strategy
     if strategy == "hybrid_traditional":
         return GraphRetrievalSnapshot()
@@ -221,6 +227,7 @@ def build_understanding_snapshot(case: AnswerPipelineCase):
         semantic_profile=case.analysis.semantic_profile,
     )
 
+
 def evaluate_case(case: AnswerPipelineCase) -> dict:
     router = _OfflineQueryRouter(case=case)
     generation_module = _OfflineGenerationModule([case.answer_text])
@@ -245,9 +252,7 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
     )
     answer_context = response.answer_context
     answer_understanding = (
-        answer_context.get("understanding", {})
-        if isinstance(answer_context, dict)
-        else {}
+        answer_context.get("understanding", {}) if isinstance(answer_context, dict) else {}
     )
 
     failures: List[str] = []
@@ -257,9 +262,7 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
             f"actual_route_strategy={response.strategy}"
         )
     if route_trace.get("strategy") != case.expected_route_strategy:
-        failures.append(
-            f"route_snapshot_strategy_mismatch={route_trace.get('strategy', '')}"
-        )
+        failures.append(f"route_snapshot_strategy_mismatch={route_trace.get('strategy', '')}")
     if route_resolution_analysis.get("recommended_strategy") != case.expected_route_strategy:
         failures.append(
             "route_resolution_strategy_mismatch="
@@ -267,7 +270,10 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
         )
     if not answer_understanding:
         failures.append("missing_answer_context_understanding")
-    elif answer_understanding.get("analysis", {}).get("recommended_strategy") != case.expected_route_strategy:
+    elif (
+        answer_understanding.get("analysis", {}).get("recommended_strategy")
+        != case.expected_route_strategy
+    ):
         failures.append(
             "answer_context_strategy_mismatch="
             f"{answer_understanding.get('analysis', {}).get('recommended_strategy', '')}"
@@ -279,7 +285,9 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
         )
     stage_names = list((route_trace.get("stages") or {}).keys())
     if stage_names != case.expected_stage_names:
-        failures.append(f"expected_stage_names={case.expected_stage_names} actual_stage_names={stage_names}")
+        failures.append(
+            f"expected_stage_names={case.expected_stage_names} actual_stage_names={stage_names}"
+        )
     if route_diagnostics.get("graph_doc_count") != case.expected_graph_doc_count:
         failures.append(
             f"expected_graph_doc_count={case.expected_graph_doc_count} "
@@ -293,9 +301,7 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
     if event.strategy != case.expected_route_strategy:
         failures.append(f"trace_event_strategy_mismatch={event.strategy}")
     if event.retrieval.doc_count != len(case.evidence_documents):
-        failures.append(
-            f"trace_event_doc_count_mismatch={event.retrieval.doc_count}"
-        )
+        failures.append(f"trace_event_doc_count_mismatch={event.retrieval.doc_count}")
 
     return {
         "name": case.name,

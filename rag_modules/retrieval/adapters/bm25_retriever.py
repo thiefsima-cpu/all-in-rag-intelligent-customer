@@ -77,8 +77,13 @@ class BM25Retriever:
         if not tokenized_query:
             return []
 
-        scores = self.bm25.get_scores(tokenized_query)
-        top_indices = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)[:top_k]
+        bm25 = self.bm25
+        if bm25 is None:
+            return []
+        scores = bm25.get_scores(tokenized_query)
+        top_indices = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)[
+            :top_k
+        ]
 
         docs: List[EvidenceDocument] = []
         for idx in top_indices:
@@ -149,9 +154,7 @@ class BM25Retriever:
                 for item in corpus_docs
             ]
             normalized_tokens = [
-                [str(token) for token in row]
-                for row in tokenized
-                if isinstance(row, list)
+                [str(token) for token in row] for row in tokenized if isinstance(row, list)
             ]
             if len(normalized_tokens) != len(self.corpus_docs):
                 return False

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Optional
 
 from ..configuration.models import GraphRAGConfig
-
 from .bootstrap_facade_support import (
     BuildBootstrapperInvocationAdapter,
     GraphBootstrapperInvocationAdapter,
@@ -32,6 +31,9 @@ from .runtime_view import SystemRuntime
 
 class BuildBootstrapper(_ComposedBootstrapperFacade):
     """Public build bootstrapper backed by the canonical build composition root."""
+
+    executor: BuildRuntimeExecutor
+    factory: BuildRuntimeFactory
 
     def __init__(
         self,
@@ -96,6 +98,8 @@ class BuildBootstrapper(_ComposedBootstrapperFacade):
 
 class ServingBootstrapper(_ComposedBootstrapperFacade):
     """Public serving bootstrapper backed by the canonical serving composition root."""
+
+    lifecycle_service: ServingRuntimeLifecycleServiceProtocol
 
     def __init__(
         self,
@@ -176,6 +180,10 @@ class ServingBootstrapper(_ComposedBootstrapperFacade):
 
 class GraphRAGBootstrapper(_ComposedBootstrapperFacade):
     """Compatibility facade that exposes split bootstrappers under one surface."""
+
+    bootstrap_service: SystemRuntimeBootstrapService
+    build_bootstrapper: BuildBootstrapper
+    serving_bootstrapper: ServingBootstrapper
 
     def __init__(
         self,

@@ -29,9 +29,7 @@ class _GraphRAGApiServiceLocks:
     def lifecycle_operation(self):
         with self._state_changed:
             while (
-                self._lifecycle_active
-                or self._active_answers > 0
-                or self._active_inspections > 0
+                self._lifecycle_active or self._active_answers > 0 or self._active_inspections > 0
             ):
                 self._state_changed.wait()
             self._lifecycle_active = True

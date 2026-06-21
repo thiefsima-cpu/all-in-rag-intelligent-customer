@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ast
-from importlib.util import resolve_name
 import unittest
+from importlib.util import resolve_name
 from pathlib import Path
 
 from rag_modules.public_surface_manifest import (
@@ -15,13 +15,9 @@ from rag_modules.public_surface_manifest import (
     root_facade_module_names,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
-ALLOWED_ROOT_WRAPPERS = {
-    f"{entry.module_name}.py"
-    for entry in ROOT_PUBLIC_SURFACE
-}
+ALLOWED_ROOT_WRAPPERS = {f"{entry.module_name}.py" for entry in ROOT_PUBLIC_SURFACE}
 PROHIBITED_ROOT_MODULES = root_facade_module_names()
 PROHIBITED_REPO_ROOT_MODULES = repo_root_facade_module_names()
 LEGACY_FACADE_MODULES = PROHIBITED_ROOT_MODULES | PROHIBITED_REPO_ROOT_MODULES
@@ -112,9 +108,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     module_name = self._resolve_import_from(path, node)
                     imported_names = {module_name}
                     imported_names.update(
-                        f"{module_name}.{alias.name}"
-                        for alias in node.names
-                        if alias.name != "*"
+                        f"{module_name}.{alias.name}" for alias in node.names if alias.name != "*"
                     )
                     if module_name.startswith("rag_modules.compat") or (
                         imported_names & PROHIBITED_LEGACY_FACADE_MODULES
@@ -148,8 +142,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found scripts importing repo-root configuration facades:\n"
-            + "\n".join(violations),
+            "Found scripts importing repo-root configuration facades:\n" + "\n".join(violations),
         )
 
     def test_scripts_and_non_compat_tests_do_not_import_remaining_legacy_facades(self) -> None:
@@ -209,7 +202,10 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 lines = source.splitlines()
 
                 for node in ast.walk(tree):
-                    if isinstance(node, ast.ImportFrom) and node.module == "rag_modules.runtime_models":
+                    if (
+                        isinstance(node, ast.ImportFrom)
+                        and node.module == "rag_modules.runtime_models"
+                    ):
                         violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                     elif isinstance(node, ast.Import):
                         for alias in node.names:
@@ -257,8 +253,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found scripts/tests still importing retired query facades:\n"
-            + "\n".join(violations),
+            "Found scripts/tests still importing retired query facades:\n" + "\n".join(violations),
         )
 
     def test_retirement_plan_document_states_current_policy(self) -> None:
@@ -305,10 +300,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             path.stem
             for path in RAG_MODULES_DIR.glob("*.py")
             if path.name != "__init__.py"
-            and (
-                path.name in ALLOWED_ROOT_WRAPPERS
-                or path.stem.startswith("graph_")
-            )
+            and (path.name in ALLOWED_ROOT_WRAPPERS or path.stem.startswith("graph_"))
         }
         manifest_root = {entry.module_name for entry in ROOT_PUBLIC_SURFACE}
         manifest_external = {entry.module_name for entry in EXTERNAL_PUBLIC_SURFACE}
@@ -360,7 +352,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     for target in node.targets
                 ):
                     continue
-                violations.append(f"{rel}:{node.lineno}: {source.splitlines()[node.lineno - 1].strip()}")
+                violations.append(
+                    f"{rel}:{node.lineno}: {source.splitlines()[node.lineno - 1].strip()}"
+                )
 
             self.assertIn(
                 entry.canonical_module,
@@ -408,9 +402,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     isinstance(node.value, ast.Constant)
                     and node.value.value in RETIRED_LEGACY_FACADE_MODULES
                 ):
-                    violations.append(
-                        f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
-                    )
+                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
 
         self.assertFalse(
             violations,
@@ -474,15 +466,12 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found refactored compatibility modules with local logic:\n"
-            + "\n".join(violations),
+            "Found refactored compatibility modules with local logic:\n" + "\n".join(violations),
         )
 
     def test_composer_modules_are_grouped_by_composition_root(self) -> None:
         composition_dir = RAG_MODULES_DIR / "app" / "composition"
-        composer_modules = {
-            path.name for path in composition_dir.glob("*composer.py")
-        }
+        composer_modules = {path.name for path in composition_dir.glob("*composer.py")}
         self.assertEqual(
             {
                 "bootstrapper_composer.py",
@@ -522,16 +511,19 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                             path == allowed_definition[0]
                             and lines[node.lineno - 1].strip().startswith(allowed_definition[1])
                         ):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
                     elif isinstance(node, ast.Call):
                         func = node.func
                         if isinstance(func, ast.Attribute) and func.attr == "route_query":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
-            "Found routing calls that bypass RouteResolution.route():\n"
-            + "\n".join(violations),
+            "Found routing calls that bypass RouteResolution.route():\n" + "\n".join(violations),
         )
 
     def test_internal_generation_assembly_uses_workflow_service_not_legacy_facade(self) -> None:
@@ -560,7 +552,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.generation.integration":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -601,7 +595,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     if isinstance(node, ast.Call):
                         func = node.func
                         if isinstance(func, ast.Attribute) and func.attr in prohibited_methods:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -632,7 +628,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.app.services.query_understanding_service":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -664,7 +662,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.app.services.question_answer_service":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -722,7 +722,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 func_name = (
                     node.func.id
                     if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
                 )
                 if func_name in prohibited_constructors:
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
@@ -750,7 +752,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_internal_and_script_answer_generation_do_not_route_through_compat_service(self) -> None:
+    def test_internal_and_script_answer_generation_do_not_route_through_compat_service(
+        self,
+    ) -> None:
         violations: list[str] = []
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
@@ -848,8 +852,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found retired legacy flat runtime attribute support:\n"
-            + "\n".join(violations),
+            "Found retired legacy flat runtime attribute support:\n" + "\n".join(violations),
         )
 
     def test_only_package_exports_use_module_getattr(self) -> None:
@@ -985,7 +988,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 func_name = (
                     node.func.id
                     if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
                 )
                 if func_name in {"getattr", "compose"}:
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
@@ -1048,11 +1053,18 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         for node in ast.walk(support_tree):
             if isinstance(node, ast.ClassDef) and node.name == "_ComposedBootstrapperFacade":
                 found_base_class = True
-            elif isinstance(node, ast.ClassDef) and node.name == "BuildBootstrapperInvocationAdapter":
+            elif (
+                isinstance(node, ast.ClassDef) and node.name == "BuildBootstrapperInvocationAdapter"
+            ):
                 found_build_invocation_adapter = True
-            elif isinstance(node, ast.ClassDef) and node.name == "ServingBootstrapperInvocationAdapter":
+            elif (
+                isinstance(node, ast.ClassDef)
+                and node.name == "ServingBootstrapperInvocationAdapter"
+            ):
                 found_serving_invocation_adapter = True
-            elif isinstance(node, ast.ClassDef) and node.name == "GraphBootstrapperInvocationAdapter":
+            elif (
+                isinstance(node, ast.ClassDef) and node.name == "GraphBootstrapperInvocationAdapter"
+            ):
                 found_graph_invocation_adapter = True
             elif isinstance(node, ast.FunctionDef) and node.name == "_compose_and_bind":
                 found_compose_and_bind = True
@@ -1165,7 +1177,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_graph_bootstrapper_uses_bootstrapper_composer_not_inline_service_assembly(self) -> None:
+    def test_graph_bootstrapper_uses_bootstrapper_composer_not_inline_service_assembly(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "bootstrap.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -1266,7 +1280,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_system_composer_uses_provider_surface_resolver_not_inline_provider_resolution(self) -> None:
+    def test_system_composer_uses_provider_surface_resolver_not_inline_provider_resolution(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -1324,7 +1340,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         if alias.name.endswith("provider_resolution"):
                             found_provider_resolver_import = True
                         if alias.name.endswith("provider_components.runtime"):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
             self.assertTrue(
                 found_provider_resolver_import,
@@ -1337,7 +1355,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_graph_bootstrapper_composer_resolves_surface_and_builds_bootstrap_service(self) -> None:
+    def test_graph_bootstrapper_composer_resolves_surface_and_builds_bootstrap_service(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "bootstrapper_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -1345,10 +1365,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         class_node = next(
             node
             for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "GraphRAGBootstrapperComposer"
+            if isinstance(node, ast.ClassDef) and node.name == "GraphRAGBootstrapperComposer"
         )
-        lines = source.splitlines()
         found_surface_composer = False
         found_bootstrap_service_composer = False
         violations: list[str] = []
@@ -1377,8 +1395,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         )
         self.assertFalse(
             violations,
-            "Found graph-bootstrapper assembly boundary violations:\n"
-            + "\n".join(violations),
+            "Found graph-bootstrapper assembly boundary violations:\n" + "\n".join(violations),
         )
 
     def test_bootstrap_service_composer_wires_system_runtime_bootstrap_service(self) -> None:
@@ -1392,7 +1409,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             if isinstance(node, ast.ClassDef)
             and node.name == "SystemRuntimeBootstrapServiceComposer"
         )
-        lines = source.splitlines()
         found_lifecycle_composer = False
         found_bootstrap_service = False
         violations: list[str] = []
@@ -1425,7 +1441,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "Found bootstrap-service composer wiring gaps:\n" + "\n".join(violations),
         )
 
-    def test_runtime_infrastructure_composer_wires_runtime_manager_with_lifecycle_bundle(self) -> None:
+    def test_runtime_infrastructure_composer_wires_runtime_manager_with_lifecycle_bundle(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -1433,10 +1451,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         class_node = next(
             node
             for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "SystemRuntimeInfrastructureComposer"
+            if isinstance(node, ast.ClassDef) and node.name == "SystemRuntimeInfrastructureComposer"
         )
-        lines = source.splitlines()
         found_runtime_manager_call = False
         saw_lifecycle_services_keyword = False
         found_stats_access_call = False
@@ -1462,7 +1478,10 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         violations.append(f"{rel}:{node.lineno}: missing runtime_state_store=")
                     if not saw_lifecycle_services_keyword:
                         violations.append(f"{rel}:{node.lineno}: missing lifecycle_services=")
-                    if "diagnostics_service" not in keyword_names or "shutdown_service" not in keyword_names:
+                    if (
+                        "diagnostics_service" not in keyword_names
+                        or "shutdown_service" not in keyword_names
+                    ):
                         violations.append(
                             f"{rel}:{node.lineno}: manager should be wired with explicit services"
                         )
@@ -1470,11 +1489,16 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     chain = ".".join(self._attribute_chain(node.func))
                     if chain == "provider_surface.diagnostics.provide_runtime_stats_access":
                         found_stats_access_call = True
-                    elif chain == "provider_surface.diagnostics.provide_runtime_diagnostics_service":
+                    elif (
+                        chain == "provider_surface.diagnostics.provide_runtime_diagnostics_service"
+                    ):
                         found_diagnostics_provider_call = True
                     elif chain == "provider_surface.lifecycle.provide_runtime_shutdown_service":
                         found_shutdown_provider_call = True
-                elif isinstance(node.func, ast.Name) and node.func.id == "SystemRuntimeInfrastructure":
+                elif (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "SystemRuntimeInfrastructure"
+                ):
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
                     found_state_store_return = "runtime_state_store" in keyword_names
                     if "runtime_manager" not in keyword_names:
@@ -1571,7 +1595,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 func_name = (
                     node.func.id
                     if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
                 )
                 if func_name in {"resolve_grouped_legacy_attribute", "merge_legacy_dir_names"}:
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
@@ -1733,10 +1759,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         class_node = next(
             node
             for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "AdvancedGraphRAGSystemComposer"
+            if isinstance(node, ast.ClassDef) and node.name == "AdvancedGraphRAGSystemComposer"
         )
-        lines = source.splitlines()
         found_bootstrapper_surface_composer = False
         found_runtime_infrastructure_composer = False
         found_application_service_composer = False
@@ -1769,7 +1793,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     if "facade_support" not in keyword_names:
                         violations.append(f"{rel}:{node.lineno}: missing facade_support=")
                     if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing components runtime_state_store=")
+                        violations.append(
+                            f"{rel}:{node.lineno}: missing components runtime_state_store="
+                        )
                     if "operations_service" not in keyword_names:
                         violations.append(f"{rel}:{node.lineno}: missing operations_service=")
                     if "answering_service" not in keyword_names:
@@ -1809,10 +1835,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         class_node = next(
             node
             for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "SystemApplicationServiceComposer"
+            if isinstance(node, ast.ClassDef) and node.name == "SystemApplicationServiceComposer"
         )
-        lines = source.splitlines()
         found_support_call = False
         found_services_bundle = False
         found_support_state_store = False
@@ -1830,9 +1854,13 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
                     found_support_state_store = "runtime_state_store" in keyword_names
                     if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing facade runtime_state_store=")
+                        violations.append(
+                            f"{rel}:{node.lineno}: missing facade runtime_state_store="
+                        )
                     if "runtime_manager" in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: facade support should not take runtime_manager=")
+                        violations.append(
+                            f"{rel}:{node.lineno}: facade support should not take runtime_manager="
+                        )
                 elif node.func.id == "SystemOperationsService":
                     found_operations_call = True
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
@@ -1845,7 +1873,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     found_answering_state_store = "runtime_state_store" in keyword_names
                     found_answering_manager = "backend" in keyword_names
                     if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing answering runtime_state_store=")
+                        violations.append(
+                            f"{rel}:{node.lineno}: missing answering runtime_state_store="
+                        )
                     if "backend" not in keyword_names:
                         violations.append(f"{rel}:{node.lineno}: missing answering backend=")
                 elif node.func.id == "SystemApplicationServices":
@@ -1857,7 +1887,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         "facade_support",
                     ):
                         if required not in keyword_names:
-                            violations.append(f"{rel}:{node.lineno}: missing services bundle {required}=")
+                            violations.append(
+                                f"{rel}:{node.lineno}: missing services bundle {required}="
+                            )
 
         self.assertTrue(
             found_support_call,
@@ -1925,7 +1957,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 func_name = (
                     node.func.id
                     if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
                 )
                 if func_name in prohibited:
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")

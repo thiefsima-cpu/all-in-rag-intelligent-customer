@@ -37,9 +37,7 @@ class HybridRetrievalOutcome:
             for key, value in dict(self.candidate_counts or {}).items()
         }
         self.degraded_candidates = [
-            dict(item)
-            for item in (self.degraded_candidates or [])
-            if isinstance(item, dict)
+            dict(item) for item in (self.degraded_candidates or []) if isinstance(item, dict)
         ]
         self.metadata = dict(self.metadata or {})
 
@@ -79,8 +77,7 @@ class HybridRetrievalOutcome:
     @property
     def circuit_breaker_triggered(self) -> bool:
         return any(
-            item.get("reason") == "circuit_open"
-            or item.get("circuit_state") == "open"
+            item.get("reason") == "circuit_open" or item.get("circuit_state") == "open"
             for item in self.degraded_candidates
         )
 

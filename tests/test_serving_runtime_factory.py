@@ -245,7 +245,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         document_cache = _FakeDocumentArtifactCache(cache_result)
         runtime_artifact_access = _FakeRuntimeArtifactAccess()
         infrastructure = SimpleNamespace(
-            provide_artifact_manifest_store=lambda config, existing=None: existing or manifest_store,
+            provide_artifact_manifest_store=lambda config, existing=None: (
+                existing or manifest_store
+            ),
             provide_document_artifact_cache=(
                 lambda config, existing=None, *, manifest_store=None: existing or document_cache
             ),
@@ -320,8 +322,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
                 lambda config, existing=None: existing or _FakeManifestStore(ready_manifest)
             ),
             provide_document_artifact_cache=(
-                lambda config, existing=None, *, manifest_store=None: existing
-                or _FakeDocumentArtifactCache(cache_result)
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or _FakeDocumentArtifactCache(cache_result)
+                )
             ),
             provide_runtime_artifact_access=(
                 lambda config, existing=None: existing or _FakeRuntimeArtifactAccess()
@@ -341,12 +344,16 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
             graph_rag_retrieval=_FailingGraphRetrieval(),
         )
 
-        with self.assertRaisesRegex(RuntimeError, "Serving runtime retrieval initialization failed"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Serving runtime retrieval initialization failed"
+        ):
             preparer.prepare(runtime)
 
         self.assertFalse(runtime.retrieval_engines_initialized)
 
-    def test_preparer_marks_manifest_stale_when_cached_artifacts_mismatch_index_signature(self) -> None:
+    def test_preparer_marks_manifest_stale_when_cached_artifacts_mismatch_index_signature(
+        self,
+    ) -> None:
         ready_manifest = ArtifactManifest(
             stage="ready",
             manifest_path="manifest.json",
@@ -369,8 +376,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
                 lambda config, existing=None: existing or _FakeManifestStore(ready_manifest)
             ),
             provide_document_artifact_cache=(
-                lambda config, existing=None, *, manifest_store=None: existing
-                or _FakeDocumentArtifactCache(cache_result)
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or _FakeDocumentArtifactCache(cache_result)
+                )
             ),
             provide_runtime_artifact_access=(
                 lambda config, existing=None: existing or _FakeRuntimeArtifactAccess()
@@ -419,8 +427,9 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
                 lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
             ),
             provide_data_module=(
-                lambda config, neo4j_manager, existing=None: existing
-                or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                lambda config, neo4j_manager, existing=None: (
+                    existing or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                )
             ),
             provide_index_module=(
                 lambda config, existing=None: existing or SimpleNamespace(name="index")
@@ -501,8 +510,9 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
                 lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
             ),
             provide_data_module=(
-                lambda config, neo4j_manager, existing=None: existing
-                or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                lambda config, neo4j_manager, existing=None: (
+                    existing or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                )
             ),
             provide_index_module=(
                 lambda config, existing=None: existing or SimpleNamespace(name="index")
@@ -555,9 +565,7 @@ class ServingBootstrapperTests(unittest.TestCase):
 
         self.assertIsInstance(components, ServingBootstrapperComponents)
         self.assertTrue(callable(getattr(components.factory, "build", None)))
-        self.assertTrue(
-            callable(getattr(components.preparer, "prepare_with_shared_runtime", None))
-        )
+        self.assertTrue(callable(getattr(components.preparer, "prepare_with_shared_runtime", None)))
         self.assertIsInstance(components.lifecycle_service, ServingRuntimeLifecycleService)
 
     def test_public_bootstrapper_binds_serving_components_from_composer_dataclass(self) -> None:
@@ -681,9 +689,7 @@ class GraphRAGBootstrapperTests(unittest.TestCase):
                 adapt_calls.append(kwargs)
                 return SimpleNamespace(
                     build_runtime_factory=_StubBuildBootstrapper(),
-                    serving_runtime_lifecycle_service=_StubServingLifecycleService(
-                        serving_runtime
-                    ),
+                    serving_runtime_lifecycle_service=_StubServingLifecycleService(serving_runtime),
                 )
 
         composer = GraphRAGBootstrapperComposer()

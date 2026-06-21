@@ -63,11 +63,14 @@ class RuntimeInitializationService:
             and query_tracer is None
             and neo4j_manager is None
         ):
-            return self.serving_runtime_refresh_service.prepare_existing(
+            refreshed_runtime = self.serving_runtime_refresh_service.prepare_existing(
                 current_runtime,
                 shared_runtime=build_runtime,
                 progress=progress,
             )
+            if refreshed_runtime is None:
+                raise ValueError("Serving runtime refresh unexpectedly returned no runtime.")
+            return refreshed_runtime
 
         shared_runtime = build_runtime if build_runtime and build_runtime.is_initialized() else None
         return self.serving_runtime_lifecycle_service.build_ready(

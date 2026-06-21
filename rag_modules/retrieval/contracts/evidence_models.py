@@ -72,17 +72,13 @@ class EvidenceDocument:
             source=coerce_str(data.get("source")),
             evidence_type=coerce_str(data.get("evidence_type")),
             matched_terms=[
-                str(item).strip()
-                for item in (data.get("matched_terms") or [])
-                if str(item).strip()
+                str(item).strip() for item in (data.get("matched_terms") or []) if str(item).strip()
             ],
             graph_evidence=dict(data.get("graph_evidence") or {}),
             recipe_graph_evidence=dict(data.get("recipe_graph_evidence") or {}),
             constraint_evidence=dict(data.get("constraint_evidence") or {}),
             evidence_units=[
-                dict(item)
-                for item in (data.get("evidence_units") or [])
-                if isinstance(item, dict)
+                dict(item) for item in (data.get("evidence_units") or []) if isinstance(item, dict)
             ],
             route_strategy=coerce_str(data.get("route_strategy")),
             metadata=dict(data.get("metadata") or {}),

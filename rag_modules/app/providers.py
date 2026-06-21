@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..runtime.artifact_ports import RuntimeArtifactAccessPort
+from ..runtime.stats_ports import RuntimeStatsAccessPort
 from .provider_components import (
     ApplicationServiceComponentProvider,
     ArtifactManifestStorePort,
@@ -15,8 +17,8 @@ from .provider_components import (
     DefaultQueryUnderstandingComponentProvider,
     DefaultRetrievalComponentProvider,
     DefaultRuntimeComponentProvider,
-    DocumentArtifactCachePort,
     DiagnosticsComponentProvider,
+    DocumentArtifactCachePort,
     GenerationComponentProvider,
     InfrastructureComponentProvider,
     LifecycleComponentProvider,
@@ -24,14 +26,13 @@ from .provider_components import (
     RetrievalComponentProvider,
     RuntimeComponentProvider,
 )
-from ..runtime.artifact_ports import RuntimeArtifactAccessPort
-from ..runtime.stats_ports import RuntimeStatsAccessPort
 
 
 def create_default_runtime_provider() -> RuntimeComponentProvider:
     """Create the default composite runtime provider through the app facade."""
 
     return DefaultRuntimeComponentProvider()
+
 
 __all__ = [
     "ApplicationServiceComponentProvider",

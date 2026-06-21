@@ -38,10 +38,7 @@ class EvaluationMetricTests(unittest.TestCase):
 
     def test_grounding_metrics_score_support_and_citation_validity(self) -> None:
         metrics = grounding_metrics(
-            (
-                "Tofu provides protein. Evidence 1. "
-                "The moon is made of cheese. Evidence 3."
-            ),
+            ("Tofu provides protein. Evidence 1. The moon is made of cheese. Evidence 3."),
             [
                 {
                     "content": "Tofu is a protein-rich ingredient.",

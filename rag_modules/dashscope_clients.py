@@ -54,7 +54,7 @@ class DashScopeEmbeddingClient:
     def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
         vectors: List[List[float]] = []
         for start in range(0, len(texts), self.batch_size):
-            batch = [str(text or "") for text in texts[start:start + self.batch_size]]
+            batch = [str(text or "") for text in texts[start : start + self.batch_size]]
             vectors.extend(self._embed_batch(batch))
         return vectors
 

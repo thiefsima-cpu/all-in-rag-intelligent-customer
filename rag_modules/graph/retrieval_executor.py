@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
 
 from neo4j import GraphDatabase
 
@@ -41,7 +41,7 @@ class GraphRetrievalExecutor:
         self.neo4j_manager = neo4j_manager
         self.database_name = database_name
 
-        self.driver = None
+        self.driver: Any | None = None
         self._owns_driver = False
         self.entity_cache: Dict[str, dict] = {}
         self.relation_cache: Dict[str, int] = {}
@@ -60,7 +60,11 @@ class GraphRetrievalExecutor:
                 )
                 self._owns_driver = True
 
-            with self.driver.session(database=self.database_name) as session:
+            driver = self.driver
+            if driver is None:
+                raise RuntimeError("Neo4j driver was not initialized.")
+
+            with driver.session(database=self.database_name) as session:
                 session.run("RETURN 1")
 
             self.entity_linker.driver = self.driver
@@ -194,5 +198,3 @@ class GraphRetrievalExecutor:
         if self._owns_driver and self.driver:
             self.driver.close()
             logger.info("GraphRAG retrieval closed")
-
-

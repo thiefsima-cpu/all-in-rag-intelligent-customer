@@ -8,13 +8,13 @@ from typing import List, Optional, Union
 from ..fusion import FusionRanker
 from ..query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
+from .adapters import ConstraintRetriever
 from .candidate_generator import RetrievalCandidateGenerator
 from .candidate_sources import (
     DefaultHybridCandidateSourceFactory,
     HybridCandidateSourceFactory,
 )
-from .adapters import ConstraintRetriever
-from .contracts import EvidenceDocument, RetrievalRequest
+from .contracts import RetrievalRequest
 from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_settings import RetrievalRuntimeProfile
 

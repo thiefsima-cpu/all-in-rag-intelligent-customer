@@ -32,9 +32,7 @@ class RuntimeComponentProviderResolver:
         *,
         default_provider_factory: Callable[[], RuntimeComponentProvider] | None = None,
     ) -> None:
-        self.default_provider_factory = (
-            default_provider_factory or _create_default_runtime_provider
-        )
+        self.default_provider_factory = default_provider_factory or _create_default_runtime_provider
 
     def resolve(
         self,
@@ -99,9 +97,7 @@ class RuntimeProviderSurfaceResolver:
         serving_bootstrapper=None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
     ) -> RuntimeProviderSurface:
-        resolved_provider = (
-            provider_resolver or RuntimeComponentProviderResolver()
-        ).resolve(
+        resolved_provider = (provider_resolver or RuntimeComponentProviderResolver()).resolve(
             provider=provider,
             bootstrapper=bootstrapper,
             build_bootstrapper=build_bootstrapper,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from ...telemetry import get_runtime_telemetry
 from .answer_models import (
     AnswerPipelineState,
     ChunkCallback,
@@ -15,7 +16,6 @@ from .answer_models import (
 from .answer_pipeline import AnswerPipelineService
 from .answer_result_factory import QuestionAnswerResultFactory
 from .answer_trace_assembler import AnswerTraceAssembler
-from ...telemetry import get_runtime_telemetry
 
 logger = logging.getLogger(__name__)
 

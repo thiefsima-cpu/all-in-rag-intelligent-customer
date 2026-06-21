@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
 import queue
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import Iterator, Optional
 
 from ....app.application_protocol import GraphRAGApplication
@@ -17,7 +17,12 @@ from ..models import AnswerStreamEventModel
 from .base import _BaseGraphRAGApiService
 from .errors import ApiBackpressureError, SystemNotReadyError, _StreamCancelledError
 
-_STREAM_END = object()
+
+class _StreamEnd:
+    pass
+
+
+_STREAM_END = _StreamEnd()
 
 
 class _AnswerAdmissionController:
@@ -79,13 +84,9 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         )
         self._artifact_registry = artifact_registry
         if self._artifact_registry is None and resolved_config is not None:
-            self._artifact_registry = ArtifactRegistry(
-                ArtifactManifestStore(resolved_config)
-            )
+            self._artifact_registry = ArtifactRegistry(ArtifactManifestStore(resolved_config))
         api_settings = getattr(resolved_config, "api", None)
-        self._hot_refresh_enabled = bool(
-            getattr(api_settings, "serving_hot_refresh_enabled", True)
-        )
+        self._hot_refresh_enabled = bool(getattr(api_settings, "serving_hot_refresh_enabled", True))
         self._hot_refresh_interval_seconds = max(
             0.1,
             float(
@@ -121,8 +122,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         with self._hot_refresh_check_lock:
             if (
                 not force_check
-                and now - self._last_hot_refresh_check
-                < self._hot_refresh_interval_seconds
+                and now - self._last_hot_refresh_check < self._hot_refresh_interval_seconds
             ):
                 return False
             self._last_hot_refresh_check = now
@@ -223,7 +223,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         self._refresh_serving_runtime_if_stale()
         self._raise_if_system_not_ready()
 
-        event_queue: "queue.Queue[AnswerStreamEventModel | object]" = queue.Queue(
+        event_queue: "queue.Queue[AnswerStreamEventModel | _StreamEnd]" = queue.Queue(
             maxsize=self._stream_queue_max_size
         )
         stream_closed = threading.Event()
@@ -302,7 +302,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         try:
             while True:
                 item = event_queue.get()
-                if item is _STREAM_END:
+                if isinstance(item, _StreamEnd):
                     yield AnswerStreamEventModel.done()
                     break
                 yield item

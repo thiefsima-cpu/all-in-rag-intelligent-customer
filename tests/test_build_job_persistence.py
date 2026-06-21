@@ -145,9 +145,7 @@ class BuildJobPersistenceTests(unittest.TestCase):
                     }
                 ]
             )
-            config = build_test_config(
-                {"storage": {"build_job_store_path": path}}
-            )
+            config = build_test_config({"storage": {"build_job_store_path": path}})
 
             service = GraphRAGBuildApiService(
                 system=_BuildSystem(config),

@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from collections.abc import Iterable, Mapping
+from typing import Any, Dict, List, cast
 
-from ...runtime_contracts import Neo4jDriverPort
+from ...runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
+
+
+def _metadata_dict(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
 
 
 class VectorRetriever:
@@ -16,10 +28,10 @@ class VectorRetriever:
 
     def __init__(
         self,
-        milvus_module,
+        milvus_module: VectorIndexModulePort,
         driver: Neo4jDriverPort | None = None,
         database: str = "neo4j",
-    ):
+    ) -> None:
         self.milvus_module = milvus_module
         self.driver = driver
         self.database = database
@@ -34,24 +46,24 @@ class VectorRetriever:
         if not vector_docs:
             return []
 
-        node_ids = [
-            str(result.get("metadata", {}).get("node_id") or "")
-            for result in vector_docs
-            if result.get("metadata", {}).get("node_id")
-        ]
+        node_ids = []
+        for result in vector_docs:
+            node_id = _metadata_dict(result.get("metadata")).get("node_id")
+            if node_id:
+                node_ids.append(str(node_id))
         neighbor_map = self._batch_get_neighbors(node_ids) if node_ids else {}
 
         enhanced: List[EvidenceDocument] = []
         for result in vector_docs:
             content = str(result.get("text", "") or "")
-            metadata = dict(result.get("metadata", {}) or {})
+            metadata = _metadata_dict(result.get("metadata"))
             node_id = str(metadata.get("node_id") or "")
             neighbors = neighbor_map.get(node_id, [])
             if neighbors:
                 content += f"\n鐩稿叧淇℃伅: {', '.join(neighbors[:3])}"
 
             recipe_name = str(metadata.get("recipe_name") or metadata.get("name") or "")
-            vector_score = float(result.get("score", 0.0) or 0.0)
+            vector_score = _coerce_float(result.get("score", 0.0))
             metadata.update(
                 {
                     "recipe_name": recipe_name,
@@ -80,7 +92,9 @@ class VectorRetriever:
 
         return enhanced[:top_k]
 
-    def _batch_get_neighbors(self, node_ids: List[str], max_neighbors: int = 3) -> Dict[str, List[str]]:
+    def _batch_get_neighbors(
+        self, node_ids: List[str], max_neighbors: int = 3
+    ) -> Dict[str, List[str]]:
         if not self.driver or not node_ids:
             return {}
         try:
@@ -95,9 +109,10 @@ class VectorRetriever:
                     query,
                     {"node_ids": list(set(node_ids)), "max_n": max_neighbors},
                 )
+                records = cast(Iterable[Mapping[str, Any]], result)
                 return {
                     str(record["nid"]): [str(name) for name in record["names"] if name]
-                    for record in result
+                    for record in records
                 }
         except Exception as exc:
             logger.error("Batch neighbor lookup failed: %s", exc)

@@ -8,7 +8,7 @@ instead of each module opening its own connection.
 import logging
 from typing import Optional
 
-from neo4j import GraphDatabase, Driver
+from neo4j import Driver, GraphDatabase
 
 logger = logging.getLogger(__name__)
 

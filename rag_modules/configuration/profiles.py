@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
-import tomllib
 
 
 def _repo_root() -> Path:
@@ -72,7 +72,9 @@ def load_profile(
     profile_path: str | Path | None = None,
     profiles_dir: str | Path | None = None,
 ) -> ConfigProfile:
-    resolved_profiles_dir = Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
+    resolved_profiles_dir = (
+        Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
+    )
     merged: dict[str, Any] = {}
     loaded_files: list[str] = []
     selected_name = str(profile or "").strip()
@@ -84,7 +86,9 @@ def load_profile(
         loaded_files.append(str(base_path))
 
     if selected_path is None and selected_name:
-        selected_path = _profile_path(profile=selected_name, profiles_dir=resolved_profiles_dir).resolve()
+        selected_path = _profile_path(
+            profile=selected_name, profiles_dir=resolved_profiles_dir
+        ).resolve()
 
     if selected_path is not None:
         if not selected_path.exists():

@@ -46,9 +46,9 @@ class BuildBootstrapperComposer:
         executor: BuildRuntimeExecutorProtocol | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
     ) -> BuildBootstrapperComponents:
-        resolved_provider = (
-            provider_resolver or RuntimeComponentProviderResolver()
-        ).resolve(provider=provider)
+        resolved_provider = (provider_resolver or RuntimeComponentProviderResolver()).resolve(
+            provider=provider
+        )
         return BuildBootstrapperComponents(
             provider=resolved_provider,
             factory=factory or BuildRuntimeFactory(provider=resolved_provider),
@@ -78,9 +78,9 @@ class ServingBootstrapperComposer:
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
     ) -> ServingBootstrapperComponents:
-        resolved_provider = (
-            provider_resolver or RuntimeComponentProviderResolver()
-        ).resolve(provider=provider)
+        resolved_provider = (provider_resolver or RuntimeComponentProviderResolver()).resolve(
+            provider=provider
+        )
         resolved_factory = factory or ServingRuntimeFactory(provider=resolved_provider)
         resolved_preparer = preparer or ServingRuntimePreparer(provider=resolved_provider)
         resolved_lifecycle_service = lifecycle_service or ServingRuntimeLifecycleService(

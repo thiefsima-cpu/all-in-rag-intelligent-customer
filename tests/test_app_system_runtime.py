@@ -9,14 +9,14 @@ from rag_modules.app.composition import (
     AdvancedGraphRAGSystemComponents,
     AdvancedGraphRAGSystemComposer,
     RuntimeComponentProviderResolver,
-    SystemApplicationServiceComposer,
-    SystemBootstrapperSurfaceComposer,
     RuntimeLifecycleServiceBundle,
     RuntimeProviderSurface,
     RuntimeProviderSurfaceResolver,
     RuntimeReadinessService,
     RuntimeStateStore,
     SystemAnsweringService,
+    SystemApplicationServiceComposer,
+    SystemBootstrapperSurfaceComposer,
     SystemFacadeSupport,
     SystemOperationsService,
     SystemRuntimeInfrastructureComposer,
@@ -26,8 +26,6 @@ from rag_modules.app.provider_components.query_understanding import (
     DefaultQueryUnderstandingComponentProvider,
 )
 from rag_modules.app.provider_components.runtime import DefaultRuntimeComponentProvider
-from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.app.runtime_view import (
     SystemInfrastructureView,
@@ -36,6 +34,8 @@ from rag_modules.app.runtime_view import (
 )
 from rag_modules.app.services.answer_models import QuestionAnswerResult
 from rag_modules.app.services.question_answer_service import QuestionAnswerService
+from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
+from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.artifacts import ArtifactManifest
 from rag_modules.configuration.testing import build_test_config
@@ -162,7 +162,9 @@ class _FakeServingBootstrapper(ServingBootstrapper):
     ) -> ServingRuntime:
         return self.prepare(
             runtime,
-            chunks=shared_runtime.data_module.chunks if shared_runtime and shared_runtime.data_module else None,
+            chunks=shared_runtime.data_module.chunks
+            if shared_runtime and shared_runtime.data_module
+            else None,
             artifact_manifest=shared_runtime.artifact_manifest if shared_runtime else None,
             progress=progress,
             force=force,
@@ -234,7 +236,9 @@ def _serving_runtime(config) -> ServingRuntime:
         query_router=query_router,
         answer_workflow=answer_workflow,
         question_answer_service=question_answer_service,
-        artifact_manifest=ArtifactManifest.missing(manifest_path="storage/indexes/artifact_manifest.json"),
+        artifact_manifest=ArtifactManifest.missing(
+            manifest_path="storage/indexes/artifact_manifest.json"
+        ),
         retrieval_engines_initialized=False,
     )
 
@@ -254,7 +258,9 @@ def _provider_stub(name: str = "provider"):
 
 
 class AppSystemRuntimeTests(unittest.TestCase):
-    def test_runtime_component_provider_resolver_resolves_explicit_or_inherited_provider(self) -> None:
+    def test_runtime_component_provider_resolver_resolves_explicit_or_inherited_provider(
+        self,
+    ) -> None:
         explicit_provider = _provider_stub("explicit")
         bootstrapper_provider = _provider_stub("bootstrapper")
         build_provider = _provider_stub("build")
@@ -271,7 +277,9 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIs(resolved_explicit, explicit_provider)
         self.assertIs(resolved_build, build_provider)
 
-    def test_runtime_infrastructure_composer_assembles_runtime_manager_and_shared_store(self) -> None:
+    def test_runtime_infrastructure_composer_assembles_runtime_manager_and_shared_store(
+        self,
+    ) -> None:
         config = build_test_config()
         expected_runtime_stats_access = SimpleNamespace(name="stats")
         diagnostics_service = RuntimeDiagnosticsService(
@@ -579,7 +587,9 @@ class AppSystemRuntimeTests(unittest.TestCase):
         manager = components.operations_service.backend
         self.assertIs(manager.runtime_state_store, components.runtime_state_store)
         self.assertIs(components.facade_support.runtime_state_store, components.runtime_state_store)
-        self.assertIs(components.answering_service.runtime_state_store, components.runtime_state_store)
+        self.assertIs(
+            components.answering_service.runtime_state_store, components.runtime_state_store
+        )
 
     def test_system_composer_produces_operations_service(self) -> None:
         build_runtime = _build_runtime()
@@ -593,7 +603,10 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
 
         self.assertIsInstance(components.operations_service, SystemOperationsService)
-        self.assertIs(components.operations_service.backend.runtime_state_store, components.runtime_state_store)
+        self.assertIs(
+            components.operations_service.backend.runtime_state_store,
+            components.runtime_state_store,
+        )
 
     def test_system_composer_produces_answering_service(self) -> None:
         build_runtime = _build_runtime()
@@ -806,7 +819,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
             diagnostics=_StubDiagnosticsProvider(),
         )
 
-        system = AdvancedGraphRAGSystem(
+        AdvancedGraphRAGSystem(
             config=build_test_config(),
             provider=provider,
             build_bootstrapper=_FakeBuildBootstrapper(_build_runtime()),

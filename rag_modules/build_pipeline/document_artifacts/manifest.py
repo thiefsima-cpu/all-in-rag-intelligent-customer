@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...artifacts import ArtifactManifest, ArtifactManifestStore
+from ...artifacts import ArtifactManifest
+from ...runtime.artifact_ports import ArtifactManifestStorePort
 from .models import DocumentArtifactSignatures, DocumentArtifactStats
 from .settings import DocumentArtifactSettings
 
@@ -14,7 +15,7 @@ class DocumentArtifactManifestAssembler:
         self,
         *,
         settings: DocumentArtifactSettings,
-        manifest_store: ArtifactManifestStore,
+        manifest_store: ArtifactManifestStorePort,
     ) -> None:
         self.settings = settings
         self.manifest_store = manifest_store

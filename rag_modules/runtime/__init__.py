@@ -1,13 +1,5 @@
 """Structured runtime contracts split by responsibility."""
 
-from .artifact_ports import (
-    ArtifactManifestStorePort,
-    DocumentArtifactCachePort,
-    RuntimeArtifactAccessPort,
-)
-from .artifact_adapters import DefaultRuntimeArtifactAccess
-from .stats_ports import RuntimeStatsAccessPort
-from .stats_adapters import DefaultRuntimeStatsAccess
 from .analysis_models import (
     AnalysisInput,
     AnalysisMapping,
@@ -19,6 +11,12 @@ from .analysis_models import (
     ensure_optional_query_analysis,
     ensure_query_analysis,
 )
+from .artifact_adapters import DefaultRuntimeArtifactAccess
+from .artifact_ports import (
+    ArtifactManifestStorePort,
+    DocumentArtifactCachePort,
+    RuntimeArtifactAccessPort,
+)
 from .generation_models import GenerationSnapshot
 from .graph_models import (
     GraphRetrievalSnapshot,
@@ -26,6 +24,8 @@ from .graph_models import (
 )
 from .retrieval_models import RetrievalOutcome
 from .route_models import RouteDiagnostics, RouteSnapshot, RouteStageSnapshot
+from .stats_adapters import DefaultRuntimeStatsAccess
+from .stats_ports import RuntimeStatsAccessPort
 from .trace_models import (
     AnswerTraceSnapshot,
     ModelSuiteSnapshot,

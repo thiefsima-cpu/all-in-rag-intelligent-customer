@@ -20,7 +20,6 @@ from scripts.smoke_generation_plans import run_smoke as run_generation_plans
 from scripts.smoke_generation_prompts import run_smoke as run_generation_prompts
 from scripts.smoke_route_queries import run_smoke as run_route_semantics
 
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "release_gate.json"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "eval" / "reports" / "release_gate"
@@ -134,9 +133,7 @@ def _evaluate_metric_thresholds(
     policy: dict[str, Any],
     suite_reports: dict[str, dict[str, Any]],
 ) -> None:
-    for metric_path, threshold in dict(
-        policy.get("metric_thresholds") or {}
-    ).items():
+    for metric_path, threshold in dict(policy.get("metric_thresholds") or {}).items():
         limits = dict(threshold or {})
         actual = _resolve_metric(suite_reports, str(metric_path))
         if actual is None:
@@ -176,9 +173,7 @@ def evaluate_gate(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     required_suites = [
-        str(item)
-        for item in (policy.get("required_suites") or [])
-        if str(item).strip()
+        str(item) for item in (policy.get("required_suites") or []) if str(item).strip()
     ]
     minimum_cases = {
         str(key): max(0, int(value))
@@ -203,7 +198,8 @@ def evaluate_gate(
             name=f"suite_available:{suite_name}",
             passed=suite_present,
             expected="available_without_error",
-            actual=metrics["suite_error"] or ("available" if suite_name in suite_reports else "missing"),
+            actual=metrics["suite_error"]
+            or ("available" if suite_name in suite_reports else "missing"),
         )
 
         required_case_count = minimum_cases.get(suite_name, 0)
@@ -228,9 +224,7 @@ def evaluate_gate(
     total_passed = sum(item["passed_count"] for item in suite_metrics.values())
     overall_pass_rate = total_passed / total_cases if total_cases else 0.0
     minimum_total_cases = max(0, int(policy.get("minimum_total_cases") or 0))
-    minimum_overall_pass_rate = float(
-        policy.get("minimum_overall_pass_rate", 1.0)
-    )
+    minimum_overall_pass_rate = float(policy.get("minimum_overall_pass_rate", 1.0))
     _check(
         checks,
         name="minimum_total_cases",
@@ -260,13 +254,9 @@ def evaluate_gate(
         actual=len(route_categories),
     )
     required_route_categories = {
-        str(item)
-        for item in (policy.get("required_route_categories") or [])
-        if str(item).strip()
+        str(item) for item in (policy.get("required_route_categories") or []) if str(item).strip()
     }
-    missing_route_categories = sorted(
-        required_route_categories.difference(route_categories)
-    )
+    missing_route_categories = sorted(required_route_categories.difference(route_categories))
     _check(
         checks,
         name="required_route_categories",
@@ -299,8 +289,7 @@ def evaluate_gate(
         "checks": checks,
         "failed_checks": failed_checks,
         "suite_reports": {
-            suite_name: suite_reports.get(suite_name) or {}
-            for suite_name in required_suites
+            suite_name: suite_reports.get(suite_name) or {} for suite_name in required_suites
         },
     }
 
@@ -359,9 +348,7 @@ def run_release_gate(
 ) -> dict[str, Any]:
     policy = load_policy(policy_path)
     required_suites = [
-        str(item)
-        for item in (policy.get("required_suites") or [])
-        if str(item).strip()
+        str(item) for item in (policy.get("required_suites") or []) if str(item).strip()
     ]
     suite_reports = run_suites(required_suites)
     report = evaluate_gate(policy, suite_reports)

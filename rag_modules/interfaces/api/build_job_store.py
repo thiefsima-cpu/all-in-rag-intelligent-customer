@@ -8,7 +8,7 @@ import os
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Mapping
+from typing import Any, BinaryIO, Iterator, Mapping, cast
 
 from ...artifacts import write_json_atomic
 
@@ -35,7 +35,7 @@ class _InterprocessFileLock:
         self.path = os.path.abspath(path)
         self.blocking = bool(blocking)
         self._process_lock = _process_file_lock(self.path)
-        self._file = None
+        self._file: BinaryIO | None = None
         self._acquired = False
 
     def acquire(self) -> bool:
@@ -53,7 +53,7 @@ class _InterprocessFileLock:
                 mode = msvcrt.LK_LOCK if self.blocking else msvcrt.LK_NBLCK
                 msvcrt.locking(file.fileno(), mode, 1)
             else:
-                import fcntl
+                fcntl = cast(Any, __import__("fcntl"))
 
                 flags = fcntl.LOCK_EX
                 if not self.blocking:
@@ -83,7 +83,7 @@ class _InterprocessFileLock:
                     file.seek(0)
                     msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
                 else:
-                    import fcntl
+                    fcntl = cast(Any, __import__("fcntl"))
 
                     fcntl.flock(file.fileno(), fcntl.LOCK_UN)
         finally:
@@ -196,11 +196,7 @@ class FileBuildJobStore:
         jobs = payload.get("jobs")
         if not isinstance(jobs, list):
             return []
-        return [
-            copy.deepcopy(dict(job))
-            for job in jobs
-            if isinstance(job, Mapping)
-        ]
+        return [copy.deepcopy(dict(job)) for job in jobs if isinstance(job, Mapping)]
 
     def _save_all_unlocked(self, jobs: list[Mapping[str, Any]]) -> None:
         write_json_atomic(
@@ -294,10 +290,7 @@ class PersistentBuildJobRegistry:
         with self._lock:
             with self.store.locked():
                 self._refresh_from_store_locked(recover_interrupted=False)
-            return [
-                self._jobs[job_id].to_dict()
-                for job_id in reversed(self._order)
-            ]
+            return [self._jobs[job_id].to_dict() for job_id in reversed(self._order)]
 
     def get(self, job_id: str) -> dict | None:
         with self._lock:
@@ -355,9 +348,7 @@ class PersistentBuildJobRegistry:
 
     def _load(self, *, recover_interrupted: bool) -> None:
         with self.store.locked():
-            recovered = self._refresh_from_store_locked(
-                recover_interrupted=recover_interrupted
-            )
+            recovered = self._refresh_from_store_locked(recover_interrupted=recover_interrupted)
             if recovered:
                 self._persist_store_locked()
 
@@ -412,9 +403,7 @@ class PersistentBuildJobRegistry:
             self._active_job_id = None
 
     def _persist_store_locked(self) -> None:
-        self.store._save_all_unlocked(
-            [self._jobs[job_id].to_dict() for job_id in self._order]
-        )
+        self.store._save_all_unlocked([self._jobs[job_id].to_dict() for job_id in self._order])
 
 
 def default_build_job_store_path(config: Any) -> str:

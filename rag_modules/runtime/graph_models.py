@@ -71,10 +71,18 @@ class GraphRetrievalSnapshot:
         elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
             self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
         self.query_type = str(self.query_type or "")
-        self.source_entities = [str(item).strip() for item in (self.source_entities or []) if str(item).strip()]
-        self.target_entities = [str(item).strip() for item in (self.target_entities or []) if str(item).strip()]
-        self.relation_types = [str(item).strip() for item in (self.relation_types or []) if str(item).strip()]
-        self.sub_questions = [str(item).strip() for item in (self.sub_questions or []) if str(item).strip()]
+        self.source_entities = [
+            str(item).strip() for item in (self.source_entities or []) if str(item).strip()
+        ]
+        self.target_entities = [
+            str(item).strip() for item in (self.target_entities or []) if str(item).strip()
+        ]
+        self.relation_types = [
+            str(item).strip() for item in (self.relation_types or []) if str(item).strip()
+        ]
+        self.sub_questions = [
+            str(item).strip() for item in (self.sub_questions or []) if str(item).strip()
+        ]
         self.path_count = max(0, int(self.path_count or 0))
         self.subgraph_count = max(0, int(self.subgraph_count or 0))
         self.reasoning_patterns = [
@@ -85,7 +93,9 @@ class GraphRetrievalSnapshot:
         self.doc_count = max(0, int(self.doc_count or 0))
         self.retrieval_plan = dict(self.retrieval_plan or {})
         self.events = [
-            event if isinstance(event, GraphTraceEventSnapshot) else GraphTraceEventSnapshot.from_dict(event)
+            event
+            if isinstance(event, GraphTraceEventSnapshot)
+            else GraphTraceEventSnapshot.from_dict(event)
             for event in (self.events or [])
         ]
         self.total_latency_ms = round(float(self.total_latency_ms or 0.0), 2)

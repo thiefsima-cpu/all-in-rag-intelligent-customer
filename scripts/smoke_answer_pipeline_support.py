@@ -37,9 +37,7 @@ class OfflineCompletions:
         if not self.responses:
             raise AssertionError(f"Unexpected completion request for prompt: {prompt[:80]}")
         text = self.responses.pop(0)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
     def stream_prompt(self, **_: object):
         raise AssertionError("Offline answer pipeline smoke does not use streaming.")

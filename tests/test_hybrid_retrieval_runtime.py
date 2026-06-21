@@ -29,7 +29,9 @@ class _StubDualLevelService:
         return [EvidenceDocument(content="dual", recipe_name=request.query)]
 
     def entity_level_retrieval(self, entity_keywords, top_k=5):
-        return [EvidenceDocument(content="entity", recipe_name="|".join(entity_keywords), score=0.9)]
+        return [
+            EvidenceDocument(content="entity", recipe_name="|".join(entity_keywords), score=0.9)
+        ]
 
     def topic_level_retrieval(self, topic_keywords, top_k=5):
         return [EvidenceDocument(content="topic", recipe_name="|".join(topic_keywords), score=0.8)]

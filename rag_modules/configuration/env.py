@@ -20,11 +20,15 @@ class EnvConfigSource:
 
     def get_int(self, name: str, default: int) -> int:
         value = self.environ.get(name)
-        return int(value) if value not in (None, "") else default
+        if value in (None, ""):
+            return default
+        return int(str(value))
 
     def get_float(self, name: str, default: float) -> float:
         value = self.environ.get(name)
-        return float(value) if value not in (None, "") else default
+        if value in (None, ""):
+            return default
+        return float(str(value))
 
     def get_bool(self, name: str, default: bool) -> bool:
         value = self.environ.get(name)

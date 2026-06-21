@@ -13,14 +13,17 @@ from typing import Dict, List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from scripts.smoke_generation_plans import (
-    DEFAULT_CORPUS_PATH as DEFAULT_PLAN_CORPUS_PATH,
-    build_generation_stack,
-    load_cases as load_plan_cases,
-)
 from rag_modules.generation import RenderedPrompt, decide_generation_mode
 from rag_modules.runtime import AnswerContext, RetrievalOutcome
-
+from scripts.smoke_generation_plans import (
+    DEFAULT_CORPUS_PATH as DEFAULT_PLAN_CORPUS_PATH,
+)
+from scripts.smoke_generation_plans import (
+    build_generation_stack,
+)
+from scripts.smoke_generation_plans import (
+    load_cases as load_plan_cases,
+)
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1]
@@ -79,7 +82,9 @@ def normalize_prompt_text(text: str) -> str:
     return "\n".join(normalized_lines).strip("\n") + "\n"
 
 
-def build_rendered_prompt(case: PromptSnapshotCase, plan_case_index: Dict[str, object]) -> RenderedPrompt:
+def build_rendered_prompt(
+    case: PromptSnapshotCase, plan_case_index: Dict[str, object]
+) -> RenderedPrompt:
     plan_case = plan_case_index.get(case.plan_case)
     if plan_case is None:
         raise KeyError(f"Missing plan case '{case.plan_case}' for prompt snapshot '{case.name}'.")
@@ -154,9 +159,7 @@ def evaluate_case(
     elif not snapshot_exists:
         failures.append(f"missing_snapshot={case.snapshot_path}")
     else:
-        expected_prompt = normalize_prompt_text(
-            case.snapshot_path.read_text(encoding="utf-8")
-        )
+        expected_prompt = normalize_prompt_text(case.snapshot_path.read_text(encoding="utf-8"))
         if expected_prompt != prompt_text:
             failures.append(f"snapshot_mismatch={case.snapshot_path}")
             diff_preview = _snapshot_diff(
@@ -183,10 +186,7 @@ def run_smoke(
     plan_corpus_path: str | Path = DEFAULT_PLAN_CORPUS_PATH,
     write_snapshots: bool = False,
 ) -> dict:
-    plan_case_index = {
-        case.name: case
-        for case in load_plan_cases(plan_corpus_path)
-    }
+    plan_case_index = {case.name: case for case in load_plan_cases(plan_corpus_path)}
     results = [
         evaluate_case(case, plan_case_index, write_snapshots=write_snapshots)
         for case in load_snapshot_cases(corpus_path)

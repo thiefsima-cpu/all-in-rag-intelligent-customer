@@ -11,7 +11,7 @@ from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiag
 from rag_modules.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
-from rag_modules.interfaces.api.models import AnswerStreamEventType, MAX_QUESTION_CHARS
+from rag_modules.interfaces.api.models import MAX_QUESTION_CHARS, AnswerStreamEventType
 from rag_modules.interfaces.api.service import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
@@ -324,9 +324,17 @@ class ApiAppTests(unittest.TestCase):
         from rag_modules.interfaces.api import service as compat_service
         from rag_modules.interfaces.api.services import (
             BuildJobConflictError as CanonicalBuildJobConflictError,
+        )
+        from rag_modules.interfaces.api.services import (
             BuildJobNotFoundError as CanonicalBuildJobNotFoundError,
+        )
+        from rag_modules.interfaces.api.services import (
             GraphRAGBuildApiService as CanonicalBuildService,
+        )
+        from rag_modules.interfaces.api.services import (
             GraphRAGServingApiService as CanonicalServingService,
+        )
+        from rag_modules.interfaces.api.services import (
             SystemNotReadyError as CanonicalSystemNotReadyError,
         )
 
@@ -560,9 +568,7 @@ class ApiAppTests(unittest.TestCase):
                 body = "".join(answer_response.iter_text())
 
         self.assertEqual(answer_response.status_code, 200)
-        self.assertTrue(
-            answer_response.headers["content-type"].startswith("text/event-stream")
-        )
+        self.assertTrue(answer_response.headers["content-type"].startswith("text/event-stream"))
         self.assertEqual(system.initialize_build_calls, 0)
         self.assertEqual(system.initialize_serving_calls, 1)
         self.assertEqual(system.answer_calls, [("Can I cook tofu?", True, True)])
@@ -608,9 +614,7 @@ class ApiAppTests(unittest.TestCase):
             openapi_response = client.get("/openapi.json")
 
         self.assertEqual(answer_response.status_code, 200)
-        self.assertTrue(
-            answer_response.headers["content-type"].startswith("text/event-stream")
-        )
+        self.assertTrue(answer_response.headers["content-type"].startswith("text/event-stream"))
         self.assertEqual(system.answer_calls, [("Explain mapo tofu", True, False)])
         self.assertIn("event: result", body)
 
@@ -906,9 +910,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(api_key_response.status_code, 200)
 
     def test_authentication_fails_closed_when_token_is_not_configured(self) -> None:
-        config = build_test_config(
-            {"api": {"auth_enabled": True, "access_token": ""}}
-        )
+        config = build_test_config({"api": {"auth_enabled": True, "access_token": ""}})
         app = create_serving_api_app(system=_FakeApiSystem(), config=config)
 
         with TestClient(app) as client:
@@ -918,9 +920,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("no access token", response.json()["message"])
 
     def test_authentication_rejects_weak_configured_token(self) -> None:
-        config = build_test_config(
-            {"api": {"auth_enabled": True, "access_token": "too-short"}}
-        )
+        config = build_test_config({"api": {"auth_enabled": True, "access_token": "too-short"}})
         app = create_serving_api_app(system=_FakeApiSystem(), config=config)
 
         with TestClient(app) as client:

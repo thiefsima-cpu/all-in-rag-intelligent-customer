@@ -31,11 +31,7 @@ class _BlockingLLMClient:
             "relationship_intensity": 0.1,
         }
         return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content=json.dumps(payload))
-                )
-            ]
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))]
         )
 
 

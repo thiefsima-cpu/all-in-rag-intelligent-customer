@@ -61,21 +61,31 @@ class GraphIndexingModuleTests(unittest.TestCase):
         semantic_relations = module.get_relations_by_key("麻辣")
 
         self.assertTrue(any(item.relation_type == "REQUIRES" for item in graph_relations))
-        self.assertTrue(any(item.metadata.get("created_from_semantic_schema") for item in semantic_relations))
+        self.assertTrue(
+            any(item.metadata.get("created_from_semantic_schema") for item in semantic_relations)
+        )
 
     def test_snapshot_round_trip_and_deduplication(self) -> None:
         module = self._build_module()
         module.deduplicate_entities_and_relations()
         payload = module.to_cache_dict()
 
-        restored = GraphIndexingModule(SimpleNamespace(enable_llm_relation_keys=False), llm_client=None)
+        restored = GraphIndexingModule(
+            SimpleNamespace(enable_llm_relation_keys=False), llm_client=None
+        )
         loaded = restored.from_cache_dict(payload)
 
         self.assertTrue(loaded)
         self.assertEqual(restored.get_statistics()["total_entities"], 3)
         self.assertEqual(restored.get_statistics()["total_relations"], 4)
         self.assertEqual(
-            len([item for item in restored.get_relations_by_key("食材搭配") if item.relation_type == "REQUIRES"]),
+            len(
+                [
+                    item
+                    for item in restored.get_relations_by_key("食材搭配")
+                    if item.relation_type == "REQUIRES"
+                ]
+            ),
             1,
         )
         self.assertTrue(restored.get_relations_by_key("制作步骤"))

@@ -27,8 +27,8 @@ from .runtime.snapshot_utils import (
     clone_graph_snapshot,
     clone_route_snapshot,
 )
-from .tracing_sinks import JsonlQueryTraceSink, NullQueryTraceSink, QueryTraceSink
 from .trace_privacy import TraceSanitizer
+from .tracing_sinks import JsonlQueryTraceSink, NullQueryTraceSink, QueryTraceSink
 
 logger = logging.getLogger(__name__)
 
@@ -218,9 +218,7 @@ class QueryTracer:
             ),
             retrieval_degraded=route_diagnostics.retrieval_degraded,
             degraded_sources=list(route_diagnostics.degraded_sources or []),
-            degraded_candidates=[
-                dict(item) for item in route_diagnostics.degraded_candidates
-            ],
+            degraded_candidates=[dict(item) for item in route_diagnostics.degraded_candidates],
             circuit_breaker_triggered=route_diagnostics.circuit_breaker_triggered,
             answer_impacted=self._answer_impacted(
                 documents,
@@ -251,9 +249,7 @@ class QueryTracer:
         if graph_stage and graph_stage.doc_count == 0:
             reasons.append("graph_empty")
         hybrid_stage = (
-            stages.get("hybrid")
-            or stages.get("hybrid_fallback")
-            or stages.get("combined")
+            stages.get("hybrid") or stages.get("hybrid_fallback") or stages.get("combined")
         )
         if hybrid_stage and hybrid_stage.doc_count == 0:
             reasons.append("hybrid_empty")
@@ -276,9 +272,7 @@ class QueryTracer:
         stages = route_trace.stages or {}
         graph_stage = stages.get("graph_rag")
         hybrid_stage = (
-            stages.get("hybrid")
-            or stages.get("hybrid_fallback")
-            or stages.get("combined")
+            stages.get("hybrid") or stages.get("hybrid_fallback") or stages.get("combined")
         )
         if (
             graph_stage

@@ -6,11 +6,11 @@ from typing import Any, Mapping
 
 from dotenv import load_dotenv
 
+from .assembly import apply_overrides
 from .env import EnvConfigSource, default_env_source
 from .models import GraphRAGConfig
 from .profiles import load_profile
 from .query_understanding_loader import load_query_understanding_settings
-from .assembly import apply_overrides
 from .section_loaders import (
     load_api_settings,
     load_generation_settings,
@@ -36,7 +36,9 @@ def _load_domain_payload(
             source,
             section_defaults.get("query_understanding"),
         ).to_dict(),
-        "generation": load_generation_settings(source, section_defaults.get("generation")).to_dict(),
+        "generation": load_generation_settings(
+            source, section_defaults.get("generation")
+        ).to_dict(),
         "graph": load_graph_settings(source, section_defaults.get("graph")).to_dict(),
         "observability": load_observability_settings(
             source,
@@ -64,11 +66,13 @@ def load_config(
     domain_payload = _load_domain_payload(default_source)
     resolved_profile = load_profile(
         profile=profile or env_source.get_first("GRAPH_RAG_PROFILE", "CONFIG_PROFILE"),
-        profile_path=profile_path or env_source.get_first(
+        profile_path=profile_path
+        or env_source.get_first(
             "GRAPH_RAG_PROFILE_PATH",
             "CONFIG_PROFILE_PATH",
         ),
-        profiles_dir=profiles_dir or env_source.get_first(
+        profiles_dir=profiles_dir
+        or env_source.get_first(
             "GRAPH_RAG_PROFILES_DIR",
             "CONFIG_PROFILES_DIR",
         ),

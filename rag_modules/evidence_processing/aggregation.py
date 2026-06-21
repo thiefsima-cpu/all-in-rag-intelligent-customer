@@ -48,7 +48,9 @@ def aggregate_recipe_evidence(documents: List[EvidenceDocument]) -> List[RecipeE
             if unit.get("is_graph_evidence"):
                 recipe.graph_paths.append({"evidence_unit": unit})
 
-        reasons = evidence.constraint_evidence.get("reasons") if evidence.constraint_evidence else []
+        reasons = (
+            evidence.constraint_evidence.get("reasons") if evidence.constraint_evidence else []
+        )
         for reason in reasons or []:
             if reason and reason not in recipe.constraint_reasons:
                 recipe.constraint_reasons.append(reason)

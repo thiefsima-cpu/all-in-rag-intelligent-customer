@@ -1,11 +1,10 @@
 """Generation submodules for decision, planning, prompting, and fallback."""
 
-from .service import GenerationWorkflowService
-from .integration import GenerationIntegrationModule
 from .client import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .decision import decide_generation_mode
 from .execution import GenerationExecutionEngine
 from .fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
+from .integration import GenerationIntegrationModule
 from .models import (
     AnswerPlan,
     GenerationDecision,
@@ -15,6 +14,7 @@ from .models import (
 )
 from .planner import GenerationPlanner
 from .prompt_builder import GenerationPromptBuilder
+from .service import GenerationWorkflowService
 
 __all__ = [
     "AnswerPlan",

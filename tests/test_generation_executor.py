@@ -22,7 +22,9 @@ class _FakePromptBuilder:
         item_count = len(answer_context.evidence_package.get("items") or [])
         return f"direct::{question}::{item_count}"
 
-    def render_direct_answer_prompt_from_context(self, answer_context: AnswerContext) -> RenderedPrompt:
+    def render_direct_answer_prompt_from_context(
+        self, answer_context: AnswerContext
+    ) -> RenderedPrompt:
         return RenderedPrompt(
             prompt_type="direct",
             question=answer_context.question,

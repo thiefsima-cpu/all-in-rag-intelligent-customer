@@ -7,9 +7,10 @@ from typing import Any
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import GenerationSnapshot
 from ..models import GenerationDecision
+from .contracts import _GenerationExecutionHost
 
 
-class _GenerationTraceMixin:
+class _GenerationTraceMixin(_GenerationExecutionHost):
     @staticmethod
     def _clone_trace(trace: GenerationSnapshot) -> GenerationSnapshot:
         return GenerationSnapshot.from_dict(trace.to_dict())
@@ -76,15 +77,11 @@ class _GenerationTraceMixin:
         )
         snapshot.estimated_cost_usd = round(
             (
-                snapshot.prompt_tokens
-                * self.settings.input_cost_per_million_tokens
-                + snapshot.completion_tokens
-                * self.settings.output_cost_per_million_tokens
+                snapshot.prompt_tokens * self.settings.input_cost_per_million_tokens
+                + snapshot.completion_tokens * self.settings.output_cost_per_million_tokens
             )
             / 1_000_000,
             8,
         )
-        snapshot.token_usage_source = str(
-            usage.get("token_usage_source") or ""
-        )
+        snapshot.token_usage_source = str(usage.get("token_usage_source") or "")
         return snapshot

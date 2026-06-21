@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from ...artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
-from ..runtime_view import SystemInfrastructureView, SystemRetrievalView, SystemRuntime, SystemServicesView
+from ..runtime_view import (
+    SystemInfrastructureView,
+    SystemRetrievalView,
+    SystemRuntime,
+    SystemServicesView,
+)
 from .runtime_state_store import RuntimeStateStore
 
 

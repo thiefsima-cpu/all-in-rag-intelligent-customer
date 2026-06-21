@@ -45,9 +45,7 @@ def find_runtime_lock_violations(lock_path: Path) -> list[str]:
     names = _requirement_names(lock_path.read_text(encoding="utf-8").splitlines())
     pyproject_path = REPOSITORY_ROOT / "pyproject.toml"
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    dev_dependencies = _requirement_names(
-        pyproject["project"]["optional-dependencies"]["dev"]
-    )
+    dev_dependencies = _requirement_names(pyproject["project"]["optional-dependencies"]["dev"])
     return sorted(names.intersection(ENVIRONMENT_ONLY_PACKAGES | dev_dependencies))
 
 
@@ -65,10 +63,7 @@ def validate_environment(
         active_conda_env.lower() == expected_conda_env.lower()
         and Path(prefix).name.lower() == expected_conda_env.lower()
     )
-    if (
-        _normalized_path(prefix) == _normalized_path(base_prefix)
-        and not expected_conda_env_active
-    ):
+    if _normalized_path(prefix) == _normalized_path(base_prefix) and not expected_conda_env_active:
         errors.append(
             "Python is not running inside an isolated virtual environment "
             "or expected conda environment."
@@ -80,7 +75,9 @@ def validate_environment(
     environment_root = _normalized_path(prefix)
     executable_path = _normalized_path(executable)
     try:
-        executable_is_local = os.path.commonpath([executable_path, environment_root]) == environment_root
+        executable_is_local = (
+            os.path.commonpath([executable_path, environment_root]) == environment_root
+        )
     except ValueError:
         executable_is_local = False
     if not executable_is_local:
@@ -125,8 +122,7 @@ def main() -> int:
         violations = find_runtime_lock_violations(args.runtime_lock)
         if violations:
             errors.append(
-                "Runtime lock contains development-only packages: "
-                + ", ".join(violations)
+                "Runtime lock contains development-only packages: " + ", ".join(violations)
             )
     if errors:
         for error in errors:

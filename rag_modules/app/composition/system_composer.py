@@ -58,9 +58,7 @@ class SystemBootstrapperSurfaceComposer:
         bootstrapper_composer: GraphRAGBootstrapperComposer | None = None,
         provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None,
     ) -> AdvancedGraphRAGBootstrapperSurface:
-        provider_surface = (
-            provider_surface_resolver or RuntimeProviderSurfaceResolver()
-        ).resolve(
+        provider_surface = (provider_surface_resolver or RuntimeProviderSurfaceResolver()).resolve(
             provider=provider,
             bootstrapper=bootstrapper,
             build_bootstrapper=build_bootstrapper,
@@ -156,20 +154,27 @@ class SystemApplicationServiceComposer:
         answering_service: QuestionAnswerer | None = None,
         facade_support: SystemFacadeSupportProtocol | None = None,
     ) -> SystemApplicationServices:
-        operations_service = operations_service or SystemOperationsService(
-            backend=runtime_backend,
+        resolved_operations_service: SystemOperationsProtocol = (
+            operations_service
+            if operations_service is not None
+            else SystemOperationsService(backend=runtime_backend)
         )
-        answering_service = answering_service or SystemAnsweringService(
-            backend=runtime_backend,
-            runtime_state_store=runtime_state_store,
-        )
-        facade_support = facade_support or SystemFacadeSupport(
-            runtime_state_store=runtime_state_store,
+        if answering_service is not None:
+            resolved_answering_service = answering_service
+        else:
+            resolved_answering_service = SystemAnsweringService(
+                backend=runtime_backend,
+                runtime_state_store=runtime_state_store,
+            )
+        resolved_facade_support: SystemFacadeSupportProtocol = (
+            facade_support
+            if facade_support is not None
+            else SystemFacadeSupport(runtime_state_store=runtime_state_store)
         )
         return SystemApplicationServices(
-            operations_service=operations_service,
-            answering_service=answering_service,
-            facade_support=facade_support,
+            operations_service=resolved_operations_service,
+            answering_service=resolved_answering_service,
+            facade_support=resolved_facade_support,
         )
 
 
@@ -206,9 +211,7 @@ class AdvancedGraphRAGSystemComposer:
         provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None,
         bootstrapper_surface_composer: SystemBootstrapperSurfaceComposer | None = None,
     ) -> AdvancedGraphRAGBootstrapperSurface:
-        return (
-            bootstrapper_surface_composer or SystemBootstrapperSurfaceComposer()
-        ).compose(
+        return (bootstrapper_surface_composer or SystemBootstrapperSurfaceComposer()).compose(
             provider=provider,
             bootstrapper=bootstrapper,
             build_bootstrapper=build_bootstrapper,

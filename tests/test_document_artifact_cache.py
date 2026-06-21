@@ -21,7 +21,11 @@ class StubDataModule:
                 node_id="recipe-1",
                 labels=["Recipe"],
                 name="麻婆豆腐",
-                properties={"description": description, "category": "家常菜", "cuisineType": "川菜"},
+                properties={
+                    "description": description,
+                    "category": "家常菜",
+                    "cuisineType": "川菜",
+                },
             )
         ]
         self.ingredients = [

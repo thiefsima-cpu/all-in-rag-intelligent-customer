@@ -49,8 +49,7 @@ class ServingRuntimePreparer:
             runtime.artifact_manifest = self.load_persisted_manifest(runtime.config)
 
         manifest_changed = (
-            int(runtime.artifact_manifest.manifest_version or 0)
-            != previous_manifest_version
+            int(runtime.artifact_manifest.manifest_version or 0) != previous_manifest_version
         )
         if chunks is not None:
             resolved_chunks = chunks
@@ -80,18 +79,20 @@ class ServingRuntimePreparer:
             return runtime
 
         emit_progress(progress, "Initializing retrieval engines...")
+        traditional_retrieval = runtime.traditional_retrieval
+        graph_rag_retrieval = runtime.graph_rag_retrieval
+        if traditional_retrieval is None or graph_rag_retrieval is None:
+            raise ValueError("Serving runtime is missing retrieval engines.")
         try:
-            runtime.traditional_retrieval.initialize(to_langchain_text_documents(chunks))
-            runtime.graph_rag_retrieval.initialize()
+            traditional_retrieval.initialize(to_langchain_text_documents(chunks))
+            graph_rag_retrieval.initialize()
         except Exception as exc:
             runtime.retrieval_engines_initialized = False
             emit_progress(
                 progress,
                 f"[ERROR] Retrieval engine initialization failed: {exc}",
             )
-            raise RuntimeError(
-                f"Serving runtime retrieval initialization failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"Serving runtime retrieval initialization failed: {exc}") from exc
         runtime.retrieval_engines_initialized = True
         emit_progress(progress, "[OK] Serving runtime is ready.")
         return runtime
@@ -203,6 +204,13 @@ class ServingRuntimePreparer:
         *,
         progress: ProgressCallback = None,
     ) -> bool:
+        index_module = runtime.index_module
+        if index_module is None:
+            emit_progress(
+                progress,
+                "[WARN] Serving runtime is missing a vector index module.",
+            )
+            return False
         runtime_artifact_access = self._resolve_runtime_artifact_access(runtime.config)
         configure = getattr(
             runtime_artifact_access,
@@ -210,19 +218,19 @@ class ServingRuntimePreparer:
             None,
         )
         if callable(configure):
-            configure(runtime.index_module, runtime.artifact_manifest)
+            configure(index_module, runtime.artifact_manifest)
         elif runtime.artifact_manifest.collection_name and hasattr(
-            runtime.index_module,
+            index_module,
             "collection_name",
         ):
-            runtime.index_module.collection_name = runtime.artifact_manifest.collection_name
-        if not runtime_artifact_access.has_vector_collection(runtime.index_module):
+            index_module.collection_name = runtime.artifact_manifest.collection_name
+        if not runtime_artifact_access.has_vector_collection(index_module):
             emit_progress(
                 progress,
                 "[WARN] Vector collection is missing. Build artifacts before starting serving.",
             )
             return False
-        if runtime_artifact_access.load_vector_collection(runtime.index_module):
+        if runtime_artifact_access.load_vector_collection(index_module):
             return True
         emit_progress(
             progress,

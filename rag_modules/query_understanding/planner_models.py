@@ -106,7 +106,9 @@ class QueryPlan:
             validation_errors.append(f"invalid_strategy:{strategy}")
             strategy = "combined" if constraints.has_constraints() else "hybrid_traditional"
 
-        graph_query_type = str(data.get("graph_query_type") or resolved_profile.query_type or "subgraph")
+        graph_query_type = str(
+            data.get("graph_query_type") or resolved_profile.query_type or "subgraph"
+        )
         if graph_query_type not in _VALID_GRAPH_QUERY_TYPES:
             validation_errors.append(f"invalid_graph_query_type:{graph_query_type}")
             graph_query_type = (
@@ -132,13 +134,23 @@ class QueryPlan:
         )
         constraints.needs_recipe_recommendation = needs_recipe_recommendation
 
-        entity_keywords = _as_list(data.get("entity_keywords")) or list(resolved_profile.entity_keywords)
-        topic_keywords = _as_list(data.get("topic_keywords")) or list(resolved_profile.topic_keywords)
-        source_entities = _as_list(data.get("source_entities")) or list(resolved_profile.source_entities)
-        target_entities = _as_list(data.get("target_entities")) or list(resolved_profile.target_entities)
+        entity_keywords = _as_list(data.get("entity_keywords")) or list(
+            resolved_profile.entity_keywords
+        )
+        topic_keywords = _as_list(data.get("topic_keywords")) or list(
+            resolved_profile.topic_keywords
+        )
+        source_entities = _as_list(data.get("source_entities")) or list(
+            resolved_profile.source_entities
+        )
+        target_entities = _as_list(data.get("target_entities")) or list(
+            resolved_profile.target_entities
+        )
         relation_types = [
             relation
-            for relation in (_as_list(data.get("relation_types")) or list(resolved_profile.relation_types))
+            for relation in (
+                _as_list(data.get("relation_types")) or list(resolved_profile.relation_types)
+            )
             if relation in _SCHEMA_RELATION_TYPES
         ]
 
@@ -200,4 +212,3 @@ class QueryPlan:
 
 
 __all__ = ["QueryPlan"]
-

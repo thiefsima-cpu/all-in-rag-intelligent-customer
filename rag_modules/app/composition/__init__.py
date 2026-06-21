@@ -5,13 +5,6 @@ code should depend on the stable facades in ``rag_modules.app`` instead of
 importing composition helpers directly.
 """
 
-INTERNAL_ONLY = True
-INTERNAL_ONLY_REASON = (
-    "Use rag_modules.app.assembly, rag_modules.app.system, or rag_modules.app.providers "
-    "instead of importing app.composition from feature code."
-)
-
-from .build_runtime_assembler import BuildRuntimeAssembler
 from .bootstrapper_composer import (
     BuildBootstrapperComponents,
     BuildBootstrapperComposer,
@@ -23,6 +16,7 @@ from .bootstrapper_composer import (
     ServingBootstrapperComposer,
     SystemRuntimeBootstrapServiceComposer,
 )
+from .build_runtime_assembler import BuildRuntimeAssembler
 from .build_runtime_executor import BuildRuntimeExecutor
 from .build_runtime_factory import BuildRuntimeFactory
 from .build_runtime_lifecycle_service import BuildRuntimeLifecycleService
@@ -45,6 +39,7 @@ from .serving_runtime_assembler import ServingRuntimeAssembler
 from .serving_runtime_factory import ServingRuntimeFactory
 from .serving_runtime_lifecycle_service import ServingRuntimeLifecycleService
 from .serving_runtime_preparer import ServingRuntimePreparer
+from .system_answering_service import SystemAnsweringService
 from .system_composer import (
     AdvancedGraphRAGBootstrapperSurface,
     AdvancedGraphRAGSystemComponents,
@@ -55,10 +50,15 @@ from .system_composer import (
     SystemRuntimeInfrastructure,
     SystemRuntimeInfrastructureComposer,
 )
-from .system_answering_service import SystemAnsweringService
 from .system_facade_support import SystemFacadeSupport
 from .system_operations_service import SystemOperationsService
 from .system_runtime_bootstrap_service import SystemRuntimeBootstrapService
+
+INTERNAL_ONLY = True
+INTERNAL_ONLY_REASON = (
+    "Use rag_modules.app.assembly, rag_modules.app.system, or rag_modules.app.providers "
+    "instead of importing app.composition from feature code."
+)
 
 __all__ = [
     "INTERNAL_ONLY",

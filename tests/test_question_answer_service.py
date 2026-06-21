@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 from rag_modules.app.services.answer_models import QuestionAnswerResult
@@ -85,9 +85,7 @@ class _FakeGenerationService:
             total_evidence_items=2,
             selected_evidence_items=1,
         )
-        self.stream_trace = stream_trace or GenerationSnapshot.from_dict(
-            self.trace.to_dict()
-        )
+        self.stream_trace = stream_trace or GenerationSnapshot.from_dict(self.trace.to_dict())
         self.direct_calls = 0
         self.stream_calls = 0
         self.answer_contexts = []
@@ -157,10 +155,7 @@ class _FakeQueryRouter:
     def route_with_trace(self, question: str, top_k: int):
         resolution = self.route(question, top_k)
         route_trace = RouteSnapshot.from_dict(self.route_trace.to_dict())
-        if (
-            self.graph_trace.has_content()
-            and route_trace.strategy in {"graph_rag", "combined"}
-        ):
+        if self.graph_trace.has_content() and route_trace.strategy in {"graph_rag", "combined"}:
             if route_trace.strategy == "combined":
                 route_trace.add_stage(
                     "combined",
@@ -535,9 +530,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         self.assertEqual(result.answer, "fallback answer")
         self.assertEqual(generation.stream_calls, 1)
         self.assertEqual(generation.direct_calls, 1)
-        self.assertTrue(
-            any("Falling back to standard mode" in message for message in messages)
-        )
+        self.assertTrue(any("Falling back to standard mode" in message for message in messages))
 
     def test_concurrent_requests_keep_all_traces_request_scoped(self) -> None:
         route_barrier = threading.Barrier(2)
@@ -608,10 +601,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
                 question: executor.submit(service.answer_question, question)
                 for question in questions
             }
-            results = {
-                question: future.result(timeout=3.0)
-                for question, future in futures.items()
-            }
+            results = {question: future.result(timeout=3.0) for question, future in futures.items()}
 
         first = results["concurrent-one"]
         second = results["concurrent-two"]

@@ -69,9 +69,7 @@ class RouteDiagnostics:
         self.retrieval_degraded = bool(self.retrieval_degraded)
         self.degraded_sources = _unique_strings(self.degraded_sources)
         self.degraded_candidates = [
-            dict(item)
-            for item in (self.degraded_candidates or [])
-            if isinstance(item, dict)
+            dict(item) for item in (self.degraded_candidates or []) if isinstance(item, dict)
         ]
         self.circuit_breaker_triggered = bool(self.circuit_breaker_triggered)
         self.answer_impacted = bool(self.answer_impacted)
@@ -143,9 +141,7 @@ class RouteSnapshot:
             )
             for name, stage in dict(self.stages or {}).items()
         }
-        self.fallbacks = [
-            str(item).strip() for item in (self.fallbacks or []) if str(item).strip()
-        ]
+        self.fallbacks = [str(item).strip() for item in (self.fallbacks or []) if str(item).strip()]
         if isinstance(self.diagnostics, dict):
             self.diagnostics = RouteDiagnostics.from_dict(self.diagnostics)
         elif not isinstance(self.diagnostics, RouteDiagnostics):
@@ -165,7 +161,7 @@ class RouteSnapshot:
             retrieval_request=payload.get("retrieval_request"),
             stages=payload.get("stages") or {},
             fallbacks=payload.get("fallbacks") or [],
-            diagnostics=payload.get("diagnostics") or {},
+            diagnostics=RouteDiagnostics.from_dict(payload.get("diagnostics")),
             total_latency_ms=payload.get("total_latency_ms", 0.0),
             final_doc_count=payload.get("final_doc_count", 0),
             error=payload.get("error", ""),

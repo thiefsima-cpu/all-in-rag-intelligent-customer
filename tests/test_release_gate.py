@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from pathlib import Path
 
 from scripts.release_gate import (
     DEFAULT_POLICY_PATH,
@@ -78,8 +77,7 @@ class ReleaseGateTests(unittest.TestCase):
             "route_semantics": {
                 **_suite_report(24),
                 "category_counts": {
-                    category: 1
-                    for category in policy["required_route_categories"]
+                    category: 1 for category in policy["required_route_categories"]
                 },
             },
             "answer_pipeline": _suite_report(3),
@@ -113,8 +111,7 @@ class ReleaseGateTests(unittest.TestCase):
             "route_semantics": {
                 **_suite_report(24),
                 "category_counts": {
-                    category: 1
-                    for category in policy["required_route_categories"]
+                    category: 1 for category in policy["required_route_categories"]
                 },
             },
             "answer_pipeline": _suite_report(3),
@@ -138,8 +135,7 @@ class ReleaseGateTests(unittest.TestCase):
             "route_semantics": {
                 **_suite_report(24),
                 "category_counts": {
-                    category: 1
-                    for category in policy["required_route_categories"]
+                    category: 1 for category in policy["required_route_categories"]
                 },
             },
             "answer_pipeline": _suite_report(3),
@@ -174,9 +170,7 @@ class ReleaseGateTests(unittest.TestCase):
         report = evaluate_gate(policy, suite_reports)
 
         self.assertTrue(report["passed"])
-        quality_checks = [
-            item for item in report["checks"] if item["name"].startswith("metric_")
-        ]
+        quality_checks = [item for item in report["checks"] if item["name"].startswith("metric_")]
         self.assertEqual(len(quality_checks), 2)
 
 

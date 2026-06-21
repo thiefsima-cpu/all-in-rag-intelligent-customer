@@ -177,20 +177,12 @@ class QuestionAnswerResponse:
                 has_evidence=bool(result.evidence_documents),
                 fallback_used=bool(result.generation_trace.fallback_used),
                 failure_code=str(result.generation_trace.failure_code or ""),
-                provider_latency_ms=float(
-                    result.generation_trace.provider_latency_ms or 0.0
-                ),
+                provider_latency_ms=float(result.generation_trace.provider_latency_ms or 0.0),
                 prompt_tokens=int(result.generation_trace.prompt_tokens or 0),
-                completion_tokens=int(
-                    result.generation_trace.completion_tokens or 0
-                ),
+                completion_tokens=int(result.generation_trace.completion_tokens or 0),
                 total_tokens=int(result.generation_trace.total_tokens or 0),
-                estimated_cost_usd=float(
-                    result.generation_trace.estimated_cost_usd or 0.0
-                ),
-                token_usage_source=str(
-                    result.generation_trace.token_usage_source or ""
-                ),
+                estimated_cost_usd=float(result.generation_trace.estimated_cost_usd or 0.0),
+                token_usage_source=str(result.generation_trace.token_usage_source or ""),
                 error=result.error,
             ),
             grounding=QuestionAnswerGrounding(
@@ -341,6 +333,7 @@ class QuestionAnswerer(Protocol):
     def answer_question(
         self,
         question: str,
+        *,
         stream: bool = False,
         explain_routing: bool = False,
         message_callback: MessageCallback = None,
@@ -350,6 +343,7 @@ class QuestionAnswerer(Protocol):
     def answer_question_response(
         self,
         question: str,
+        *,
         stream: bool = False,
         explain_routing: bool = False,
         message_callback: MessageCallback = None,

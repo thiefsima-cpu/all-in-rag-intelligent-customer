@@ -9,18 +9,18 @@ from fastapi import FastAPI, Response
 
 from ...configuration.models import ApiSettings
 from ...telemetry import get_runtime_telemetry
-from .services import (
-    GraphRAGBuildApiService,
-    GraphRAGServingApiService,
-)
 from .routes import (
     register_api_backpressure_handler,
-    register_build_routes,
     register_build_job_handlers,
+    register_build_routes,
     register_serving_routes,
     register_system_not_ready_handler,
 )
 from .security import ApiSecurityMiddleware, configure_openapi_security
+from .services import (
+    GraphRAGBuildApiService,
+    GraphRAGServingApiService,
+)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:

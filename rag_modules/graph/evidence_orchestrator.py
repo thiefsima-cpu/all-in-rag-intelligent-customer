@@ -7,10 +7,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
+from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan
 from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,8 @@ class GraphEvidenceOrchestrator:
 
     def extract_knowledge_subgraph(self, graph_query: Any) -> KnowledgeSubgraph:
         retrieval_plan = (
-            graph_query if isinstance(graph_query, GraphRetrievalPlan)
+            graph_query
+            if isinstance(graph_query, GraphRetrievalPlan)
             else self.build_retrieval_plan(graph_query, evidence_goals=[])
         )
         logger.info("Extracting knowledge subgraph for %s", retrieval_plan.source_entities)
@@ -85,9 +86,7 @@ class GraphEvidenceOrchestrator:
         try:
             records = self.graph_executor.subgraphs(retrieval_plan)
             subgraphs = [
-                self.postprocessor.build_knowledge_subgraph(record)
-                for record in records
-                if record
+                self.postprocessor.build_knowledge_subgraph(record) for record in records if record
             ]
             if subgraphs:
                 return self.postprocessor.merge_subgraphs(subgraphs)
@@ -211,7 +210,11 @@ class GraphEvidenceOrchestrator:
         trace,
         record_event: Callable[..., None],
     ) -> List[EvidenceDocument]:
-        if graph_query.query_type in {QueryType.MULTI_HOP, QueryType.PATH_FINDING, QueryType.ENTITY_RELATION}:
+        if graph_query.query_type in {
+            QueryType.MULTI_HOP,
+            QueryType.PATH_FINDING,
+            QueryType.ENTITY_RELATION,
+        }:
             path_start = time.perf_counter()
             paths = self.execute_graph_plan(retrieval_plan)
             trace.path_count = len(paths)
@@ -255,5 +258,3 @@ class GraphEvidenceOrchestrator:
                 request.query,
             )
         return []
-
-

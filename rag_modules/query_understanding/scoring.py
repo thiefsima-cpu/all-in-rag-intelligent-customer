@@ -140,4 +140,3 @@ __all__ = [
     "estimate_relationship_intensity",
     "should_use_fast_rule_plan",
 ]
-

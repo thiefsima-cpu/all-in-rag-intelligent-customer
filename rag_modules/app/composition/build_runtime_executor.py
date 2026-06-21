@@ -15,8 +15,11 @@ class BuildRuntimeExecutor:
         *,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
-        runtime.knowledge_base_service.build(progress=progress)
-        runtime.artifact_manifest = runtime.knowledge_base_service.artifact_manifest
+        knowledge_base_service = runtime.knowledge_base_service
+        if knowledge_base_service is None:
+            raise ValueError("Build runtime is missing a knowledge base service.")
+        knowledge_base_service.build(progress=progress)
+        runtime.artifact_manifest = knowledge_base_service.artifact_manifest
         return runtime
 
     def rebuild_knowledge_base(
@@ -25,8 +28,11 @@ class BuildRuntimeExecutor:
         *,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
-        runtime.knowledge_base_service.rebuild(progress=progress)
-        runtime.artifact_manifest = runtime.knowledge_base_service.artifact_manifest
+        knowledge_base_service = runtime.knowledge_base_service
+        if knowledge_base_service is None:
+            raise ValueError("Build runtime is missing a knowledge base service.")
+        knowledge_base_service.rebuild(progress=progress)
+        runtime.artifact_manifest = knowledge_base_service.artifact_manifest
         return runtime
 
 

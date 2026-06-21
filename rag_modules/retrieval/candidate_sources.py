@@ -27,7 +27,8 @@ class CandidateSourceSpec:
 class RetrievalCandidateSource(Protocol):
     """Stable contract for one hybrid retrieval candidate source."""
 
-    spec: CandidateSourceSpec
+    @property
+    def spec(self) -> CandidateSourceSpec: ...
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]: ...
 

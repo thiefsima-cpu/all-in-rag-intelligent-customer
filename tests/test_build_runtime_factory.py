@@ -8,7 +8,6 @@ from rag_modules.app.composition.bootstrapper_composer import (
     BuildBootstrapperComponents,
     BuildBootstrapperComposer,
 )
-from rag_modules.app.composition.build_runtime_executor import BuildRuntimeExecutor
 from rag_modules.app.composition.build_runtime_factory import BuildRuntimeFactory
 
 

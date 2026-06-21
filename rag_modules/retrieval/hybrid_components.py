@@ -5,16 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
-from ..runtime_contracts import (
-    GraphDataModulePort,
-    Neo4jManagerPort,
-    VectorIndexModulePort,
-)
 from ..configuration.models import GraphRAGConfig
 from ..fusion import FusionRanker
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    VectorIndexModulePort,
+)
 from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever, tokenize_chinese
 from .candidate_sources import DefaultHybridCandidateSourceFactory
 from .hybrid_driver_service import HybridDriverService
@@ -56,7 +56,7 @@ class HybridRetrievalComponentFactory(Protocol):
         milvus_module: VectorIndexModulePort,
         data_module: GraphDataModulePort,
         llm_client: object,
-        neo4j_manager: Neo4jManagerPort,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database: str,
         rrf_k: int,
@@ -74,7 +74,7 @@ class DefaultHybridRetrievalComponentFactory:
         milvus_module: VectorIndexModulePort,
         data_module: GraphDataModulePort,
         llm_client: object,
-        neo4j_manager: Neo4jManagerPort,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database: str,
         rrf_k: int,

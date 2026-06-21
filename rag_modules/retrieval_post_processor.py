@@ -60,9 +60,7 @@ class RetrievalPostProcessor:
                 model_name=self.settings.rerank_model,
                 base_url=self.settings.rerank_base_url,
                 timeout=self.settings.rerank_timeout_seconds,
-                http_pool_connections=int(
-                    getattr(models, "http_pool_connections", 10)
-                ),
+                http_pool_connections=int(getattr(models, "http_pool_connections", 10)),
                 http_pool_maxsize=int(getattr(models, "http_pool_maxsize", 20)),
                 circuit_breaker_failure_threshold=int(
                     getattr(models, "circuit_breaker_failure_threshold", 5)
@@ -79,9 +77,7 @@ class RetrievalPostProcessor:
         context: RetrievalPostProcessContext,
     ) -> List[EvidenceDocument]:
         graph_candidates = [
-            doc
-            for doc in evidence_documents
-            if doc.graph_evidence or doc.recipe_graph_evidence
+            doc for doc in evidence_documents if doc.graph_evidence or doc.recipe_graph_evidence
         ]
         reranked_documents = self._rerank_documents(
             query=context.query,
@@ -98,9 +94,7 @@ class RetrievalPostProcessor:
             graph_candidates=graph_candidates,
             strategy=context.strategy,
             top_k=top_k,
-            preserve_graph_evidence=self.settings.should_preserve_graph_evidence(
-                context.strategy
-            ),
+            preserve_graph_evidence=self.settings.should_preserve_graph_evidence(context.strategy),
             preserve_strategies=self.settings.graph_preservation_strategies,
         )
 
@@ -196,15 +190,9 @@ class RetrievalPostProcessor:
 
         graph_doc = graph_candidates[0]
         graph_key = cls._document_key(graph_doc)
-        without_duplicate = [
-            doc for doc in documents if cls._document_key(doc) != graph_key
-        ]
+        without_duplicate = [doc for doc in documents if cls._document_key(doc) != graph_key]
         insert_at = max(0, min(top_k, len(without_duplicate)) - 1)
-        return (
-            without_duplicate[:insert_at]
-            + [graph_doc]
-            + without_duplicate[insert_at:]
-        )
+        return without_duplicate[:insert_at] + [graph_doc] + without_duplicate[insert_at:]
 
     @staticmethod
     def _document_key(doc: EvidenceDocument) -> str:
@@ -249,5 +237,3 @@ class RetrievalPostProcessor:
         ]
         text = "\n".join(part for part in fields if part and not part.endswith(": "))
         return text[: max_chars * 2]
-
-

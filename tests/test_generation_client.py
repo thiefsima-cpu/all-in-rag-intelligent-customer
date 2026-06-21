@@ -29,11 +29,7 @@ class _FakeClient:
 
 
 def _stream_chunk(content=None, *, include_choice: bool = True):
-    choices = (
-        [SimpleNamespace(delta=SimpleNamespace(content=content))]
-        if include_choice
-        else []
-    )
+    choices = [SimpleNamespace(delta=SimpleNamespace(content=content))] if include_choice else []
     return SimpleNamespace(choices=choices)
 
 
@@ -83,11 +79,13 @@ class GenerationClientAdapterTests(unittest.TestCase):
 
     def test_stream_skips_empty_choice_events(self) -> None:
         client = _FakeClient(
-            [[
-                _stream_chunk(include_choice=False),
-                _stream_chunk("hello"),
-                _stream_chunk(include_choice=False),
-            ]]
+            [
+                [
+                    _stream_chunk(include_choice=False),
+                    _stream_chunk("hello"),
+                    _stream_chunk(include_choice=False),
+                ]
+            ]
         )
         adapter = GenerationClientAdapter(
             client=client,

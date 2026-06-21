@@ -10,11 +10,37 @@ prompts.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, cast
 
 from .evidence_processing import aggregate_recipe_evidence
-from .retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from .retrieval.contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+
+
+def _float_value(value: object, default: float = 0.0) -> float:
+    if value in (None, ""):
+        return default
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _iter_values(value: object) -> Iterable[object]:
+    if value is None or isinstance(value, (str, bytes, Mapping)):
+        return []
+    if isinstance(value, Iterable):
+        return value
+    return []
+
+
+def _string_list(value: object) -> List[str]:
+    return [text for item in _iter_values(value) if (text := str(item).strip())]
+
+
+def _dict_list(value: object) -> List[dict]:
+    return [dict(item) for item in _iter_values(value) if isinstance(item, dict)]
 
 
 @dataclass
@@ -38,37 +64,13 @@ class AnswerEvidenceItem:
             citation=str(data.get("citation") or ""),
             recipe_id=str(data.get("recipe_id") or ""),
             recipe_name=str(data.get("recipe_name") or ""),
-            confidence=float(data.get("confidence") or 0.0),
-            retrieval_sources=[
-                str(item).strip()
-                for item in (data.get("retrieval_sources") or [])
-                if str(item).strip()
-            ],
-            matched_terms=[
-                str(item).strip()
-                for item in (data.get("matched_terms") or [])
-                if str(item).strip()
-            ],
-            constraint_reasons=[
-                str(item).strip()
-                for item in (data.get("constraint_reasons") or [])
-                if str(item).strip()
-            ],
-            graph_paths=[
-                dict(item)
-                for item in (data.get("graph_paths") or [])
-                if isinstance(item, dict)
-            ],
-            evidence_units=[
-                dict(item)
-                for item in (data.get("evidence_units") or [])
-                if isinstance(item, dict)
-            ],
-            document_evidence=[
-                dict(item)
-                for item in (data.get("document_evidence") or [])
-                if isinstance(item, dict)
-            ],
+            confidence=_float_value(data.get("confidence")),
+            retrieval_sources=_string_list(data.get("retrieval_sources")),
+            matched_terms=_string_list(data.get("matched_terms")),
+            constraint_reasons=_string_list(data.get("constraint_reasons")),
+            graph_paths=_dict_list(data.get("graph_paths")),
+            evidence_units=_dict_list(data.get("evidence_units")),
+            document_evidence=_dict_list(data.get("document_evidence")),
             content=str(data.get("content") or ""),
         )
 
@@ -133,11 +135,7 @@ class AnswerEvidenceItem:
         }
         if include_document_evidence:
             payload["document_evidence"] = self.document_evidence[:6]
-        payload = {
-            key: value
-            for key, value in payload.items()
-            if value not in (None, "", [], {})
-        }
+        payload = {key: value for key, value in payload.items() if value not in (None, "", [], {})}
 
         parts = [f"[{self.citation}]", json.dumps(payload, ensure_ascii=False)]
         if include_content and self.content.strip():
@@ -157,14 +155,15 @@ class AnswerEvidencePackage:
     @classmethod
     def from_dict(cls, payload: Dict[str, object] | None) -> "AnswerEvidencePackage":
         data = dict(payload or {})
+        items: List[AnswerEvidenceItem] = []
+        for item in _iter_values(data.get("items")):
+            if isinstance(item, AnswerEvidenceItem):
+                items.append(item)
+            elif isinstance(item, dict):
+                items.append(AnswerEvidenceItem.from_dict(cast(Dict[str, object], item)))
         return cls(
             question=str(data.get("question") or ""),
-            items=[
-                item
-                if isinstance(item, AnswerEvidenceItem)
-                else AnswerEvidenceItem.from_dict(item)
-                for item in (data.get("items") or [])
-            ],
+            items=items,
         )
 
     def limit_items(self, max_items: int | None) -> "AnswerEvidencePackage":
@@ -214,7 +213,9 @@ class AnswerEvidenceBuilder:
     def __init__(self, max_content_chars: int = 1800):
         self.max_content_chars = max(300, int(max_content_chars or 1800))
 
-    def build(self, question: str, evidence_documents: List[EvidenceDocument]) -> AnswerEvidencePackage:
+    def build(
+        self, question: str, evidence_documents: List[EvidenceDocument]
+    ) -> AnswerEvidencePackage:
         items: List[AnswerEvidenceItem] = []
         recipe_evidence = aggregate_recipe_evidence(list(evidence_documents or []))
         for index, recipe in enumerate(recipe_evidence, start=1):
@@ -261,7 +262,7 @@ class AnswerEvidenceBuilder:
     def build_from_documents(
         self,
         question: str,
-        documents: List[object | EvidenceDocument],
+        documents: List[PageDocumentLike | EvidenceDocument],
     ) -> AnswerEvidencePackage:
         return self.build(question, ensure_evidence_documents(documents))
 

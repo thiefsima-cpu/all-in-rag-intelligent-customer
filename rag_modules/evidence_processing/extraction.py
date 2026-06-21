@@ -42,11 +42,7 @@ def _graph_relationship_units(
         if recipe_ids
         else str(metadata.get("recipe_id") or metadata.get("node_id") or "")
     )
-    recipe_name = (
-        str(recipe_names[0])
-        if recipe_names
-        else str(metadata.get("recipe_name") or "")
-    )
+    recipe_name = str(recipe_names[0]) if recipe_names else str(metadata.get("recipe_name") or "")
 
     units: List[EvidenceUnit] = []
     description = str(graph_evidence.get("description") or "").strip()
@@ -132,7 +128,9 @@ def extract_evidence_units(
         elif isinstance(item, dict) and item.get("claim"):
             units.append(
                 EvidenceUnit(
-                    unit_id=str(item.get("unit_id") or f"unit::{stable_hash(str(item.get('claim')))}"),
+                    unit_id=str(
+                        item.get("unit_id") or f"unit::{stable_hash(str(item.get('claim')))}"
+                    ),
                     evidence_type=str(item.get("evidence_type") or "text"),
                     claim=str(item.get("claim") or ""),
                     source=str(item.get("source") or source),

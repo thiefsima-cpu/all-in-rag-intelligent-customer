@@ -67,7 +67,7 @@ class QueryAnalysis:
             ),
             confidence=payload.get("confidence", 0.0),
             reasoning=payload.get("reasoning", ""),
-            semantic_profile=payload.get("semantic_profile") or {},
+            semantic_profile=QuerySemanticProfile.from_dict(payload.get("semantic_profile")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -111,7 +111,7 @@ def analysis_payload(analysis: Any) -> Dict[str, Any]:
         }
 
     strategy = payload.get("recommended_strategy")
-    if hasattr(strategy, "value"):
+    if isinstance(strategy, SearchStrategy):
         payload["recommended_strategy"] = strategy.value
     elif strategy is None:
         payload["recommended_strategy"] = ""

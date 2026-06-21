@@ -15,7 +15,9 @@ from .semantic_settings import QuerySemanticRuntimeSettings
 class RetrievalRuntimeProfile:
     planner: QueryPlannerRuntimeSettings = field(default_factory=QueryPlannerRuntimeSettings)
     semantics: QuerySemanticRuntimeSettings = field(default_factory=QuerySemanticRuntimeSettings)
-    candidates: RetrievalCandidateSizingSettings = field(default_factory=RetrievalCandidateSizingSettings)
+    candidates: RetrievalCandidateSizingSettings = field(
+        default_factory=RetrievalCandidateSizingSettings
+    )
     postprocess: RetrievalPostProcessSettings = field(default_factory=RetrievalPostProcessSettings)
 
     @classmethod

@@ -162,11 +162,7 @@ class GenerationExecutionEngine(
             prompt=prompt,
             temperature=self.settings.temperature,
             max_tokens=self.settings.composer_max_tokens,
-            timeout=(
-                self.settings.timeout_seconds
-                if timeout_seconds is None
-                else timeout_seconds
-            ),
+            timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
         )
         return self._response_text(response)
 

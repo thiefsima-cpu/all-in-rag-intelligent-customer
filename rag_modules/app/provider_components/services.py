@@ -8,21 +8,21 @@ from ...build_pipeline.contracts import (
 )
 from ...configuration.models import GraphRAGConfig
 from ...generation.service import GenerationWorkflowService
+from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,
     RuntimeArtifactAccessPort,
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
-from ...routing import RoutingWorkflowProtocol
 from ..runtime_contracts import (
     GraphDataModulePort,
     Neo4jManagerPort,
     QueryTracerPort,
     VectorIndexModulePort,
 )
+from ..services import QuestionAnswerService
 from ..services.answer_workflow import AnswerWorkflow
 from ..services.knowledge_base_service import KnowledgeBaseService
-from ..services import QuestionAnswerService
 
 
 class DefaultApplicationServiceComponentProvider:

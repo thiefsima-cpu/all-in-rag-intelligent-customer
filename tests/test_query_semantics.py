@@ -52,9 +52,7 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertEqual(plan.graph_query_type, "multi_hop")
         self.assertIn(
             "水煮肉片",
-            list(plan.entity_keywords)
-            + list(plan.source_entities)
-            + list(plan.target_entities),
+            list(plan.entity_keywords) + list(plan.source_entities) + list(plan.target_entities),
         )
 
     def test_simple_recipe_query_prefers_hybrid(self) -> None:

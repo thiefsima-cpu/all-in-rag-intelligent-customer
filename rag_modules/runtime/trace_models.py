@@ -44,14 +44,10 @@ class QueryDiagnostics:
             "overall_bucket": self.overall_bucket,
             "retrieval_degraded": bool(self.retrieval_degraded),
             "degraded_sources": [
-                str(item).strip()
-                for item in (self.degraded_sources or [])
-                if str(item).strip()
+                str(item).strip() for item in (self.degraded_sources or []) if str(item).strip()
             ],
             "degraded_candidates": [
-                dict(item)
-                for item in (self.degraded_candidates or [])
-                if isinstance(item, dict)
+                dict(item) for item in (self.degraded_candidates or []) if isinstance(item, dict)
             ],
             "circuit_breaker_triggered": bool(self.circuit_breaker_triggered),
             "answer_impacted": bool(self.answer_impacted),
@@ -108,11 +104,16 @@ class RetrievalTraceSnapshot:
     @classmethod
     def from_dict(cls, data: Dict[str, Any] | None) -> "RetrievalTraceSnapshot":
         payload = dict(data or {})
+        graph_trace_payload = payload.get("graph_trace")
         return cls(
             doc_count=payload.get("doc_count", 0),
             evidence=payload.get("evidence") or [],
-            route_trace=payload.get("route_trace") or {},
-            graph_trace=payload.get("graph_trace") or {},
+            route_trace=RouteSnapshot.from_dict(payload.get("route_trace")),
+            graph_trace=(
+                GraphRetrievalSnapshot.from_dict(graph_trace_payload)
+                if graph_trace_payload
+                else None
+            ),
             failure_reasons=payload.get("failure_reasons") or [],
         )
 

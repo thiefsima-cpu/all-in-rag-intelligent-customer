@@ -6,8 +6,8 @@ import os
 from typing import Any, Dict, List, Mapping
 
 from .models import (
-    ApiSettings,
     SECTION_ORDER,
+    ApiSettings,
     GenerationSettings,
     GraphRAGConfig,
     GraphSettings,
@@ -97,9 +97,7 @@ def apply_overrides(
             )
     if not build_job_store_path_overridden:
         domain_payload["storage"]["build_job_store_path"] = os.path.join(
-            os.path.dirname(
-                str(domain_payload["storage"].get("artifact_manifest_path", ""))
-            ),
+            os.path.dirname(str(domain_payload["storage"].get("artifact_manifest_path", ""))),
             "build_jobs.json",
         )
 

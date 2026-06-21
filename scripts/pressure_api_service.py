@@ -290,7 +290,9 @@ def run_pressure_test(
         completed_requests=completed_requests,
         rejected_requests=rejected_requests,
         total_duration_ms=total_duration_ms,
-        throughput_rps=(completed_requests / (total_duration_ms / 1000.0)) if total_duration_ms else 0.0,
+        throughput_rps=(completed_requests / (total_duration_ms / 1000.0))
+        if total_duration_ms
+        else 0.0,
         avg_latency_ms=(sum(latencies) / len(latencies)) if latencies else 0.0,
         p95_latency_ms=_percentile(latencies, 0.95),
         trace_stats=trace_stats,

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from ...artifacts import ArtifactManifestStore
 from ...build_pipeline.document_artifacts import DocumentIndexCache
-from ...configuration.models import GraphRAGConfig
-
 from ...build_pipeline.graph_preparation import GraphDataPreparationModule
+from ...configuration.models import GraphRAGConfig
 from ...infra.milvus import MilvusIndexConstructionModule
 from ...neo4j_pool import Neo4jConnectionManager
 from ...runtime.artifact_adapters import DefaultRuntimeArtifactAccess
@@ -48,19 +49,20 @@ class DefaultInfrastructureComponentProvider:
         if existing is not None:
             return existing
         storage = config.storage
-        return Neo4jConnectionManager(
-            uri=storage.neo4j_uri,
-            user=storage.neo4j_user,
-            password=storage.neo4j_password,
-            database=storage.neo4j_database,
-            max_connection_pool_size=storage.neo4j_max_connection_pool_size,
-            connection_acquisition_timeout_seconds=(
-                storage.neo4j_connection_acquisition_timeout_seconds
+        return cast(
+            Neo4jManagerPort,
+            Neo4jConnectionManager(
+                uri=storage.neo4j_uri,
+                user=storage.neo4j_user,
+                password=storage.neo4j_password,
+                database=storage.neo4j_database,
+                max_connection_pool_size=storage.neo4j_max_connection_pool_size,
+                connection_acquisition_timeout_seconds=(
+                    storage.neo4j_connection_acquisition_timeout_seconds
+                ),
+                max_connection_lifetime_seconds=(storage.neo4j_max_connection_lifetime_seconds),
+                connection_timeout_seconds=storage.neo4j_connection_timeout_seconds,
             ),
-            max_connection_lifetime_seconds=(
-                storage.neo4j_max_connection_lifetime_seconds
-            ),
-            connection_timeout_seconds=storage.neo4j_connection_timeout_seconds,
         )
 
     def provide_data_module(
@@ -77,7 +79,7 @@ class DefaultInfrastructureComponentProvider:
             user=storage.neo4j_user,
             password=storage.neo4j_password,
             database=storage.neo4j_database,
-            driver=neo4j_manager.driver,
+            driver=cast(Any, neo4j_manager.driver),
         )
 
     def provide_index_module(
@@ -102,17 +104,11 @@ class DefaultInfrastructureComponentProvider:
             embedding_timeout_seconds=models.embedding_timeout_seconds,
             http_pool_connections=models.http_pool_connections,
             http_pool_maxsize=models.http_pool_maxsize,
-            circuit_breaker_failure_threshold=(
-                models.circuit_breaker_failure_threshold
-            ),
-            circuit_breaker_recovery_seconds=(
-                models.circuit_breaker_recovery_seconds
-            ),
+            circuit_breaker_failure_threshold=(models.circuit_breaker_failure_threshold),
+            circuit_breaker_recovery_seconds=(models.circuit_breaker_recovery_seconds),
             vector_search_ef=retrieval.vector_search_ef,
             vector_search_max_k=retrieval.vector_search_max_k,
-            blue_green_enabled=bool(
-                getattr(storage, "milvus_blue_green_enabled", True)
-            ),
+            blue_green_enabled=bool(getattr(storage, "milvus_blue_green_enabled", True)),
             collection_alias_suffix=str(
                 getattr(storage, "milvus_collection_alias_suffix", "__active")
             ),

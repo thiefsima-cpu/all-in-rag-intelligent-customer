@@ -73,9 +73,10 @@ class HybridIndexService:
 
         try:
             self.graph_indexed = self.graph_indexing.from_cache_dict(payload)
-            parent_doc_map = self._deserialize_parent_documents(
-                payload.get("parent_documents")
-            ) or self._build_parent_doc_map()
+            parent_doc_map = (
+                self._deserialize_parent_documents(payload.get("parent_documents"))
+                or self._build_parent_doc_map()
+            )
             self.parent_enricher.parent_doc_map = parent_doc_map
             recipe_matcher = RecipeConstraintMatcher(list(parent_doc_map.values()))
             if not self.restore_bm25_retriever(payload):
@@ -92,9 +93,7 @@ class HybridIndexService:
             recipe_matcher=recipe_matcher,
         )
         if not (
-            artifacts.bm25 is not None
-            and artifacts.bm25_corpus_docs
-            and artifacts.graph_indexed
+            artifacts.bm25 is not None and artifacts.bm25_corpus_docs and artifacts.graph_indexed
         ):
             return None
         return artifacts
@@ -102,9 +101,7 @@ class HybridIndexService:
     def save_index_cache(self, chunks: List[Document], artifacts: HybridIndexArtifacts) -> None:
         payload = {
             "bm25_retriever": self.bm25_retriever.to_cache_dict(),
-            "parent_documents": self._serialize_parent_documents(
-                artifacts.parent_doc_map
-            ),
+            "parent_documents": self._serialize_parent_documents(artifacts.parent_doc_map),
             **self.graph_indexing.to_cache_dict(),
         }
         self.cache_store.save(chunks, payload)
@@ -112,8 +109,7 @@ class HybridIndexService:
     def restore_bm25_retriever(self, payload: Dict[str, Any]) -> bool:
         bm25_cache = payload.get("bm25_retriever")
         return bool(
-            isinstance(bm25_cache, dict)
-            and self.bm25_retriever.from_cache_dict(bm25_cache)
+            isinstance(bm25_cache, dict) and self.bm25_retriever.from_cache_dict(bm25_cache)
         )
 
     @staticmethod

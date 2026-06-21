@@ -9,10 +9,10 @@ from .features import (
     extract_entity_candidates,
     extract_query_tokens,
     fallback_entity_phrases,
+    has_recommendation_intent,
     infer_graph_query_type,
     infer_query_constraints,
     infer_relation_types,
-    has_recommendation_intent,
     matched_terms,
     normalize_graph_sources,
     pairwise_entity_matches,
@@ -105,7 +105,9 @@ def split_graph_entities(
         target_entities = normalize_graph_sources(matched_terms(normalized, TEXTURE_EFFECT_TERMS))
 
     if not source_entities and normalized:
-        source_entities = [normalized[: settings.graph_query_fallback_name_chars].strip() or normalized]
+        source_entities = [
+            normalized[: settings.graph_query_fallback_name_chars].strip() or normalized
+        ]
 
     return dedupe_preserve_order(source_entities), dedupe_preserve_order(target_entities)
 
@@ -221,4 +223,3 @@ __all__ = [
     "infer_query_semantic_profile",
     "split_graph_entities",
 ]
-

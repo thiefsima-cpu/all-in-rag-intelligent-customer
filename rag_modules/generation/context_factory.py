@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
-from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from ..retrieval.contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
 from ..runtime import (
     AnalysisInput,
     AnswerContext,
@@ -66,7 +66,7 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
         package: AnswerEvidencePackage | None = None,
     ) -> AnswerEvidencePackage:
         if package is not None:
@@ -77,7 +77,7 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
         analysis: AnalysisInput = None,
     ) -> AnswerContext:
         return self.build_answer_context_from_evidence(

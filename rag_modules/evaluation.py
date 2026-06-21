@@ -42,11 +42,7 @@ def retrieval_metrics(
     relevant_labels = {label for label, grade in relevance.items() if grade > 0}
     retrieved_relevant = relevant_labels.intersection(ranked)
     first_rank = next(
-        (
-            index
-            for index, label in enumerate(ranked, start=1)
-            if relevance.get(label, 0.0) > 0
-        ),
+        (index for index, label in enumerate(ranked, start=1) if relevance.get(label, 0.0) > 0),
         None,
     )
     actual_grades = [relevance.get(label, 0.0) for label in ranked]
@@ -56,9 +52,7 @@ def retrieval_metrics(
         "recall_at_k": len(retrieved_relevant) / len(relevant_labels),
         "reciprocal_rank": (1.0 / first_rank) if first_rank else 0.0,
         "ndcg_at_k": (
-            _discounted_cumulative_gain(actual_grades) / ideal_dcg
-            if ideal_dcg > 0
-            else 0.0
+            _discounted_cumulative_gain(actual_grades) / ideal_dcg if ideal_dcg > 0 else 0.0
         ),
     }
 
@@ -74,20 +68,14 @@ def grounding_metrics(
     claims = _answer_claims(answer)
     evidence_texts = [_evidence_text(item) for item in evidence_documents]
     citations = [int(match) for match in _CITATION_PATTERN.findall(answer or "")]
-    valid_citations = [
-        citation for citation in citations if 1 <= citation <= len(evidence_texts)
-    ]
+    valid_citations = [citation for citation in citations if 1 <= citation <= len(evidence_texts)]
 
     supported_claims = 0
     cited_claims = 0
     for claim in claims:
-        claim_citations = [
-            int(match) for match in _CITATION_PATTERN.findall(claim)
-        ]
+        claim_citations = [int(match) for match in _CITATION_PATTERN.findall(claim)]
         valid_claim_citations = [
-            citation
-            for citation in claim_citations
-            if 1 <= citation <= len(evidence_texts)
+            citation for citation in claim_citations if 1 <= citation <= len(evidence_texts)
         ]
         if claim_citations:
             cited_claims += 1
@@ -97,25 +85,18 @@ def grounding_metrics(
             else evidence_texts
         )
         if any(
-            _support_score(claim, evidence) >= support_threshold
-            for evidence in candidate_evidence
+            _support_score(claim, evidence) >= support_threshold for evidence in candidate_evidence
         ):
             supported_claims += 1
 
     return {
         "claim_count": len(claims),
         "supported_claim_count": supported_claims,
-        "faithfulness": (
-            supported_claims / len(claims) if claims else None
-        ),
+        "faithfulness": (supported_claims / len(claims) if claims else None),
         "citation_count": len(citations),
         "valid_citation_count": len(valid_citations),
-        "citation_accuracy": (
-            len(valid_citations) / len(citations) if citations else None
-        ),
-        "citation_coverage": (
-            cited_claims / len(claims) if claims else None
-        ),
+        "citation_accuracy": (len(valid_citations) / len(citations) if citations else None),
+        "citation_coverage": (cited_claims / len(claims) if claims else None),
     }
 
 
@@ -139,8 +120,7 @@ def estimate_token_cost(
 ) -> float:
     return round(
         (
-            max(0, int(prompt_tokens or 0))
-            * max(0.0, float(input_cost_per_million_tokens or 0.0))
+            max(0, int(prompt_tokens or 0)) * max(0.0, float(input_cost_per_million_tokens or 0.0))
             + max(0, int(completion_tokens or 0))
             * max(0.0, float(output_cost_per_million_tokens or 0.0))
         )
@@ -158,11 +138,7 @@ def _relevance_map(
             for label, grade in relevant_items.items()
             if _normalize_label(label)
         }
-    return {
-        _normalize_label(label): 1.0
-        for label in relevant_items
-        if _normalize_label(label)
-    }
+    return {_normalize_label(label): 1.0 for label in relevant_items if _normalize_label(label)}
 
 
 def _discounted_cumulative_gain(grades: Sequence[float]) -> float:
@@ -224,10 +200,7 @@ def _tokens(text: str) -> set[str]:
     compact_cjk = "".join(
         character for character in normalized if "\u3400" <= character <= "\u9fff"
     )
-    tokens.update(
-        compact_cjk[index : index + 2]
-        for index in range(max(0, len(compact_cjk) - 1))
-    )
+    tokens.update(compact_cjk[index : index + 2] for index in range(max(0, len(compact_cjk) - 1)))
     return {token for token in tokens if token.strip()}
 
 

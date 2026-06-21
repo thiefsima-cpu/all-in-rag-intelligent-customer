@@ -33,16 +33,12 @@ class RuntimeDiagnosticsService:
         models = self.config.models
         infrastructure = runtime.infrastructure
         retrieval = runtime.retrieval
-        data_stats = self.runtime_stats_access.get_graph_data_stats(
-            infrastructure.data_module
-        )
+        data_stats = self.runtime_stats_access.get_graph_data_stats(infrastructure.data_module)
         index_stats = self.runtime_stats_access.get_vector_collection_stats(
             infrastructure.index_module
         )
         route_stats = self.runtime_stats_access.get_route_stats(retrieval.routing_workflow)
-        trace_stats = self.runtime_stats_access.get_query_trace_stats(
-            infrastructure.query_tracer
-        )
+        trace_stats = self.runtime_stats_access.get_query_trace_stats(infrastructure.query_tracer)
         runtime_profile = self.runtime_stats_access.get_retrieval_runtime_profile(
             retrieval.retrieval_runtime_profile
         )
@@ -76,7 +72,9 @@ class RuntimeDiagnosticsService:
         models = self.config.models
         observability = self.config.observability
         trace_stats = self.runtime_stats_access.get_query_trace_stats(
-            runtime.infrastructure.query_tracer if getattr(runtime, "infrastructure", None) else None
+            runtime.infrastructure.query_tracer
+            if getattr(runtime, "infrastructure", None)
+            else None
         )
         retrieval_engines_initialized = bool(
             runtime.serving_runtime and runtime.serving_runtime.retrieval_engines_initialized
@@ -96,5 +94,6 @@ class RuntimeDiagnosticsService:
             retrieval_engines_initialized=retrieval_engines_initialized,
             manifest=ArtifactManifestDiagnostics.from_manifest(runtime.artifact_manifest),
         )
+
 
 __all__ = ["RuntimeDiagnosticsService"]

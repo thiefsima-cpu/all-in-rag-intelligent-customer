@@ -136,18 +136,10 @@ class GenerationWorkflowService:
             include_document_evidence=generation.generation_include_document_evidence,
             compose_include_content=generation.generation_compose_include_content,
             fallback_on_timeout=generation.generation_fallback_on_timeout,
-            circuit_breaker_failure_threshold=(
-                models.circuit_breaker_failure_threshold
-            ),
-            circuit_breaker_recovery_seconds=(
-                models.circuit_breaker_recovery_seconds
-            ),
-            input_cost_per_million_tokens=(
-                models.llm_input_cost_per_million_tokens
-            ),
-            output_cost_per_million_tokens=(
-                models.llm_output_cost_per_million_tokens
-            ),
+            circuit_breaker_failure_threshold=(models.circuit_breaker_failure_threshold),
+            circuit_breaker_recovery_seconds=(models.circuit_breaker_recovery_seconds),
+            input_cost_per_million_tokens=(models.llm_input_cost_per_million_tokens),
+            output_cost_per_million_tokens=(models.llm_output_cost_per_million_tokens),
         )
 
     def generate_answer_from_context(self, answer_context: AnswerContext | dict) -> str:
@@ -202,9 +194,9 @@ class GenerationWorkflowService:
         plan: AnswerPlan | dict | None = None,
     ) -> str:
         context = self._ensure_context(answer_context)
-        resolved_plan = self.context_factory.ensure_plan(plan) or self.build_answer_plan_from_context(
-            context
-        )
+        resolved_plan = self.context_factory.ensure_plan(
+            plan
+        ) or self.build_answer_plan_from_context(context)
         return self.executor.compose_from_context(context, resolved_plan)
 
     def render_plan_prompt_from_context(
@@ -222,9 +214,9 @@ class GenerationWorkflowService:
         plan: AnswerPlan | dict | None = None,
     ) -> RenderedPrompt:
         context = self._ensure_context(answer_context)
-        resolved_plan = self.context_factory.ensure_plan(plan) or self.build_answer_plan_from_context(
-            context
-        )
+        resolved_plan = self.context_factory.ensure_plan(
+            plan
+        ) or self.build_answer_plan_from_context(context)
         return self.prompt_builder.render_compose_prompt_from_context(
             context,
             resolved_plan,

@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 
 class _MilvusBlueGreenOperations:
+    active_collection_name: str
+    active_collection_slot: str
+    base_collection_name: str
+    blue_green_enabled: bool
+    build_collection_name: str
+    client: Any
+    collection_alias: str
+    collection_created: bool
+    collection_name: str
+
+    if TYPE_CHECKING:
+
+        def delete_collection(self, collection_name: Optional[str] = None) -> bool: ...
+
     def use_manifest(self, manifest) -> str:
         """Bind reads to the collection published by an artifact manifest."""
 
@@ -118,11 +132,7 @@ class _MilvusBlueGreenOperations:
             payload = self.client.describe_alias(alias=self.collection_alias) or {}
         except Exception:
             return ""
-        return str(
-            payload.get("collection")
-            or payload.get("collection_name")
-            or ""
-        )
+        return str(payload.get("collection") or payload.get("collection_name") or "")
 
     def physical_collection_name(self, slot: str) -> str:
         normalized_slot = "green" if str(slot).lower() == "green" else "blue"

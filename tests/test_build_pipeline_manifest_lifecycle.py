@@ -74,7 +74,9 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
 
     def test_mark_failed_persists_failure_state(self) -> None:
         store = _FakeManifestStore(
-            ArtifactManifest.missing(manifest_path="manifest.json").evolve(stage=ARTIFACT_STAGE_BUILDING)
+            ArtifactManifest.missing(manifest_path="manifest.json").evolve(
+                stage=ARTIFACT_STAGE_BUILDING
+            )
         )
         lifecycle = KnowledgeBaseManifestLifecycle(store)
 

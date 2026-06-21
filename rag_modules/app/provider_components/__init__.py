@@ -5,12 +5,9 @@ code should go through ``rag_modules.app.providers`` or other public app-layer
 facades instead of importing provider components directly.
 """
 
-INTERNAL_ONLY = True
-INTERNAL_ONLY_REASON = (
-    "Use rag_modules.app.providers or application assembly facades instead of "
-    "importing app.provider_components from feature code."
-)
-
+from ...runtime.artifact_ports import RuntimeArtifactAccessPort
+from ...runtime.stats_ports import RuntimeStatsAccessPort
+from .build_pipeline import DefaultBuildPipelineComponentProvider
 from .contracts import (
     ApplicationServiceComponentProvider,
     ArtifactManifestStorePort,
@@ -24,7 +21,6 @@ from .contracts import (
     RetrievalComponentProvider,
     RuntimeComponentProvider,
 )
-from .build_pipeline import DefaultBuildPipelineComponentProvider
 from .diagnostics import DefaultDiagnosticsComponentProvider
 from .generation import DefaultGenerationComponentProvider
 from .infrastructure import DefaultInfrastructureComponentProvider
@@ -33,8 +29,12 @@ from .query_understanding import DefaultQueryUnderstandingComponentProvider
 from .retrieval import DefaultRetrievalComponentProvider
 from .runtime import DefaultRuntimeComponentProvider
 from .services import DefaultApplicationServiceComponentProvider
-from ...runtime.artifact_ports import RuntimeArtifactAccessPort
-from ...runtime.stats_ports import RuntimeStatsAccessPort
+
+INTERNAL_ONLY = True
+INTERNAL_ONLY_REASON = (
+    "Use rag_modules.app.providers or application assembly facades instead of "
+    "importing app.provider_components from feature code."
+)
 
 __all__ = [
     "INTERNAL_ONLY",

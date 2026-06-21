@@ -59,12 +59,10 @@ class RetrievalOutcome:
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or ""),
             evidence_documents=[
-                item
-                if isinstance(item, EvidenceDocument)
-                else EvidenceDocument.from_dict(item)
+                item if isinstance(item, EvidenceDocument) else EvidenceDocument.from_dict(item)
                 for item in raw_evidence
             ],
-            route_trace=payload.get("route_trace") or {},
+            route_trace=RouteSnapshot.from_dict(payload.get("route_trace")),
             degradation_summary=payload.get("degradation_summary") or {},
             metadata=payload.get("metadata") or {},
             documents_input=payload.get("documents") or [],
@@ -118,5 +116,6 @@ def _normalize_degradation_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
         "circuit_breaker_triggered": bool(payload.get("circuit_breaker_triggered", False)),
         "answer_impacted": bool(payload.get("answer_impacted", False)),
     }
+
 
 __all__ = ["RetrievalOutcome"]

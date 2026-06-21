@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.build_pipeline.graph_data_preparation import GraphDataPreparationModule
 from rag_modules.build_pipeline.document_artifacts import build_or_load_documents
+from rag_modules.build_pipeline.graph_data_preparation import GraphDataPreparationModule
 from rag_modules.configuration import load_config
 from rag_modules.infra.semantic_graph_writer import SemanticGraphSchemaWriter
 

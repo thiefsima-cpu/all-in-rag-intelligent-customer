@@ -37,8 +37,7 @@ class GraphCacheWarmupService:
             if item.get("node_id")
         }
         relation_cache = {
-            str(key): int(value)
-            for key, value in dict(stats.relation_frequencies or {}).items()
+            str(key): int(value) for key, value in dict(stats.relation_frequencies or {}).items()
         }
         return GraphWarmupResult(
             stats=stats,
@@ -49,8 +48,10 @@ class GraphCacheWarmupService:
     def _load_or_build_graph_stats(self, driver, *, database_name: str) -> GraphCacheStats:
         expected_signature = self.store.expected_graph_signature()
         cached = self.store.load()
-        if cached and cached.entities and (
-            not expected_signature or cached.graph_signature == expected_signature
+        if (
+            cached
+            and cached.entities
+            and (not expected_signature or cached.graph_signature == expected_signature)
         ):
             return cached
         built = self._collect_graph_stats(
@@ -118,7 +119,9 @@ class GraphCacheWarmupService:
             for record in session.run(relation_query):
                 relation_frequencies[str(record["rel_type"] or "")] = int(record["frequency"] or 0)
 
-        entities.sort(key=lambda item: (-int(item.get("degree") or 0), str(item.get("node_id") or "")))
+        entities.sort(
+            key=lambda item: (-int(item.get("degree") or 0), str(item.get("node_id") or ""))
+        )
         return GraphCacheStats(
             graph_signature=expected_signature,
             entity_count=len(entities),
@@ -128,5 +131,3 @@ class GraphCacheWarmupService:
             page_size=max(1, int(page_size)),
             source="paged_warmup",
         )
-
-

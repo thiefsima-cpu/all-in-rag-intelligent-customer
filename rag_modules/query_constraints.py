@@ -105,9 +105,7 @@ class QueryConstraints:
             max_total_minutes=parse_minutes(time_data.get("max_total_minutes")),
             max_prep_minutes=parse_minutes(time_data.get("max_prep_minutes")),
             max_cook_minutes=parse_minutes(time_data.get("max_cook_minutes")),
-            needs_recipe_recommendation=bool(
-                data.get("needs_recipe_recommendation", False)
-            ),
+            needs_recipe_recommendation=bool(data.get("needs_recipe_recommendation", False)),
         )
 
     def has_constraints(self) -> bool:
@@ -157,9 +155,7 @@ class QueryConstraintExtractor:
     ):
         self.llm_client = llm_client
         self.model_name = model_name
-        self.semantic_settings = (
-            semantic_settings or QuerySemanticRuntimeSettings()
-        )
+        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
 
     def extract(self, query: str) -> QueryConstraints:
         from .query_understanding import infer_query_semantic_profile
@@ -317,9 +313,7 @@ class RecipeConstraintMatcher:
                 "search_type",
                 "constraint_recipe",
             )
-            scored.append(
-                Document(page_content=doc.page_content, metadata=metadata)
-            )
+            scored.append(Document(page_content=doc.page_content, metadata=metadata))
 
         scored.sort(
             key=lambda d: d.metadata.get("constraint_score", 0.0),

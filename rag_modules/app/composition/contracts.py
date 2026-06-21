@@ -11,6 +11,7 @@ from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from .shared import ProgressCallback
 
+
 class BuildRuntimeFactoryProtocol(Protocol):
     """Factory capable of assembling a build runtime."""
 

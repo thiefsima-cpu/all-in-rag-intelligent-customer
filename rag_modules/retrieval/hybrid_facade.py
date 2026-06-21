@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from langchain_core.documents import Document
 
 from ..fusion import FusionRanker
-from ..neo4j_pool import Neo4jConnectionManager
 from ..query_constraints import QueryConstraints, RecipeConstraintMatcher
 from ..query_understanding import QueryPlan
+from ..runtime_contracts import Neo4jManagerPort
 from .adapters import tokenize_chinese
 from .contracts import EvidenceDocument, RetrievalRequest, to_langchain_documents
 from .hybrid_components import (
@@ -63,7 +63,7 @@ class HybridRetrievalModule:
         milvus_module,
         data_module,
         llm_client,
-        neo4j_manager: Optional[Neo4jConnectionManager] = None,
+        neo4j_manager: Optional[Neo4jManagerPort] = None,
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
         component_factory: Optional[HybridRetrievalComponentFactory] = None,
         adapter_factory: Optional[HybridRuntimeAdapterFactory] = None,

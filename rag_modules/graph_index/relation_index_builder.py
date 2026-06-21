@@ -170,13 +170,15 @@ class RelationIndexBuilder:
             target_entity.entity_name,
         )
         keys.extend(
-            [
+            str(value)
+            for value in (
                 source_props.get("category"),
                 source_props.get("cuisineType"),
                 target_props.get("category"),
                 target_props.get("cuisineType"),
                 *_RELATION_TYPE_HINTS.get(relation_type, ()),
-            ]
+            )
+            if value
         )
         if relation_type == "REQUIRES":
             keys.append(f"{source_entity.entity_name}_食材")

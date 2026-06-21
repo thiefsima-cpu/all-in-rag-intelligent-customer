@@ -39,9 +39,9 @@ class FusionRanker:
                 )
 
                 new_key = (rank, source_priority)
-                if (
-                    doc_id not in best_doc_info
-                    or new_key < (best_doc_info[doc_id][0], best_doc_info[doc_id][1])
+                if doc_id not in best_doc_info or new_key < (
+                    best_doc_info[doc_id][0],
+                    best_doc_info[doc_id][1],
                 ):
                     best_doc_info[doc_id] = (rank, source_priority, doc)
 

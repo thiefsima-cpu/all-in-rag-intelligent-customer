@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field, fields as dataclass_fields
-from typing import Any, Dict, List, Mapping
+from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
+from typing import Any, Dict, List, Mapping, cast
 
 
 def _serialize_config_value(value: Any) -> Any:
@@ -25,7 +26,7 @@ class ConfigSection:
     def to_dict(self) -> Dict[str, Any]:
         return {
             field.name: _serialize_config_value(getattr(self, field.name))
-            for field in dataclass_fields(self)
+            for field in dataclass_fields(cast(Any, self))
         }
 
 
@@ -342,8 +343,7 @@ class GraphRAGConfig:
 
     def to_domain_dict(self) -> Dict[str, Dict[str, Any]]:
         return {
-            section_name: getattr(self, section_name).to_dict()
-            for section_name in SECTION_ORDER
+            section_name: getattr(self, section_name).to_dict() for section_name in SECTION_ORDER
         }
 
     def to_dict(self) -> Dict[str, Any]:

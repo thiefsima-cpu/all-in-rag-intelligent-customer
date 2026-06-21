@@ -37,7 +37,7 @@ class HybridRetrievalRuntime:
         *,
         config: GraphRAGConfig,
         milvus_module: VectorIndexModulePort,
-        neo4j_manager: Neo4jManagerPort,
+        neo4j_manager: Neo4jManagerPort | None,
         database: str,
         graph_indexing: GraphIndexingModule,
         graph_kv_retriever: GraphKVRetriever,

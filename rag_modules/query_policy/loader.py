@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Tuple
 
 
 def _to_tuple(value: Any) -> Tuple[str, ...]:
@@ -20,18 +20,12 @@ def _to_tuple(value: Any) -> Tuple[str, ...]:
 
 def _to_tuple_map(value: Any) -> Dict[str, Tuple[str, ...]]:
     payload = dict(value or {})
-    return {
-        str(key): _to_tuple(items)
-        for key, items in payload.items()
-    }
+    return {str(key): _to_tuple(items) for key, items in payload.items()}
 
 
 def _to_runtime_defaults(value: Any) -> Dict[str, Dict[str, Any]]:
     payload = dict(value or {})
-    return {
-        str(section): dict(section_values or {})
-        for section, section_values in payload.items()
-    }
+    return {str(section): dict(section_values or {}) for section, section_values in payload.items()}
 
 
 @dataclass(frozen=True)
@@ -88,9 +82,7 @@ def get_query_policy() -> QueryPolicy:
         entity_linker_query_type_priorities=_to_tuple_map(
             entity_linker.get("query_type_priorities")
         ),
-        entity_linker_relation_priorities=_to_tuple_map(
-            entity_linker.get("relation_priorities")
-        ),
+        entity_linker_relation_priorities=_to_tuple_map(entity_linker.get("relation_priorities")),
         regex_rules=_to_tuple_map(payload.get("regex_rules")),
         runtime_defaults=_to_runtime_defaults(payload.get("runtime_defaults")),
     )
@@ -103,11 +95,11 @@ def get_planner_prompt_template() -> str:
 
 def flatten_term_groups(*names: str) -> Tuple[str, ...]:
     policy = get_query_policy()
-    merged = []
+    merged: list[str] = []
     for name in names:
         merged.extend(policy.term_group(name))
-    deduped = []
-    seen = set()
+    deduped: list[str] = []
+    seen: set[str] = set()
     for item in merged:
         if item in seen:
             continue

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
 from .diagnostics import StartupDiagnostics
 from .services.answer_models import QuestionAnswerResponse, QuestionAnswerResult

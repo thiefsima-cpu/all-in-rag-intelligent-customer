@@ -128,7 +128,9 @@ class GenerationTraceAdapter:
             return answer, clone_generation_snapshot(trace)
 
         chunks: list[str] = []
-        for chunk_text in self.generation_service.generate_answer_stream_from_context(answer_context):
+        for chunk_text in self.generation_service.generate_answer_stream_from_context(
+            answer_context
+        ):
             chunks.append(chunk_text)
             if chunk_callback:
                 chunk_callback(chunk_text)

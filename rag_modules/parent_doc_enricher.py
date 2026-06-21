@@ -12,6 +12,14 @@ from .retrieval.contracts import EvidenceDocument
 logger = logging.getLogger(__name__)
 
 
+def _iter_metadata_values(value: object) -> list[object]:
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    if value in (None, ""):
+        return []
+    return [value]
+
+
 class ParentDocumentEnricher:
     """Replace top ranked chunks or graph snippets with full recipe documents."""
 
@@ -49,7 +57,9 @@ class ParentDocumentEnricher:
                 continue
             enriched.append(
                 Document(
-                    page_content=self._truncate_parent_content(parent.page_content or "", max_chars),
+                    page_content=self._truncate_parent_content(
+                        parent.page_content or "", max_chars
+                    ),
                     metadata=dict(doc.metadata or {}),
                 )
             )
@@ -77,7 +87,9 @@ class ParentDocumentEnricher:
                 continue
             metadata = dict(doc.metadata or {})
             metadata.setdefault("node_id", doc.node_id or parent.metadata.get("node_id"))
-            metadata.setdefault("recipe_name", doc.recipe_name or parent.metadata.get("recipe_name"))
+            metadata.setdefault(
+                "recipe_name", doc.recipe_name or parent.metadata.get("recipe_name")
+            )
             enriched.append(
                 doc.copy_with(
                     content=self._truncate_parent_content(parent.page_content or "", max_chars),
@@ -88,7 +100,9 @@ class ParentDocumentEnricher:
             )
         return enriched
 
-    def enrich_graph_documents(self, docs: List[Document], top_n: Optional[int] = None) -> List[Document]:
+    def enrich_graph_documents(
+        self, docs: List[Document], top_n: Optional[int] = None
+    ) -> List[Document]:
         if not docs or not self.parent_doc_map:
             return docs
 
@@ -100,7 +114,9 @@ class ParentDocumentEnricher:
                 continue
             metadata = dict(doc.metadata or {})
             metadata.update(replacement.metadata or {})
-            metadata["search_source"] = doc.metadata.get("search_source", doc.metadata.get("search_type", "graph"))
+            metadata["search_source"] = doc.metadata.get(
+                "search_source", doc.metadata.get("search_type", "graph")
+            )
             graph_context = (doc.page_content or "").strip()
             parent_context = replacement.page_content or ""
             if graph_context and graph_context not in parent_context:
@@ -142,7 +158,8 @@ class ParentDocumentEnricher:
                     content=content,
                     node_id=doc.node_id or str(metadata.get("node_id") or ""),
                     recipe_name=doc.recipe_name or str(metadata.get("recipe_name") or ""),
-                    recipe_id=doc.recipe_id or str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
+                    recipe_id=doc.recipe_id
+                    or str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
                     metadata=metadata,
                 )
             )
@@ -150,11 +167,11 @@ class ParentDocumentEnricher:
         return self.attach_evidence(enriched, top_n=top_n)
 
     def _find_parent(self, metadata: Dict[str, object]) -> Optional[Document]:
-        for node_id in metadata.get("recipe_node_ids") or []:
+        for node_id in _iter_metadata_values(metadata.get("recipe_node_ids")):
             parent = self.parent_doc_map.get(str(node_id))
             if parent:
                 return parent
-        for recipe_name in metadata.get("recipe_names") or []:
+        for recipe_name in _iter_metadata_values(metadata.get("recipe_names")):
             for parent in self.parent_doc_map.values():
                 if parent.metadata.get("recipe_name") == recipe_name:
                     return parent
@@ -182,7 +199,9 @@ class ParentDocumentEnricher:
 
     @staticmethod
     def _doc_parent_key(metadata: Dict[str, object]) -> str:
-        return str(metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id") or "")
+        return str(
+            metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id") or ""
+        )
 
     def _evidence_parent_key(self, doc: EvidenceDocument) -> str:
         metadata = doc.metadata or {}

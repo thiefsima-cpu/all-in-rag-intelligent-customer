@@ -76,9 +76,7 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
                 index_module=SimpleNamespace(stats={"row_count": 4}),
             ),
             retrieval=SimpleNamespace(
-                routing_workflow=SimpleNamespace(
-                    get_route_statistics=lambda: {"total_queries": 3}
-                ),
+                routing_workflow=SimpleNamespace(get_route_statistics=lambda: {"total_queries": 3}),
                 retrieval_runtime_profile=SimpleNamespace(
                     to_dict=lambda: {"planner": {"max_candidates": 8}}
                 ),

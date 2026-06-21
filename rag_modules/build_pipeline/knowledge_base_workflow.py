@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from ..artifacts import ArtifactManifest, ArtifactManifestStore
-from ..artifacts import ARTIFACT_STAGE_REBUILDING
+from ..artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest, ArtifactManifestStore
 from ..runtime.artifact_adapters import DefaultRuntimeArtifactAccess
 from ..runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
+from ..runtime.artifact_validation import vector_artifact_mismatch_reason
 from ..runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ..runtime.stats_ports import RuntimeStatsAccessPort
-from ..runtime.artifact_validation import vector_artifact_mismatch_reason
 from .contracts import (
     DocumentArtifactBuilderPort,
     SemanticGraphSchemaSyncPort,
@@ -93,11 +92,13 @@ class KnowledgeBaseBuildWorkflow:
         published = False
         self._configure_active_collection(active_manifest)
         try:
-            if (
-                not force_rebuild
-                and self.runtime_artifact_access.has_vector_collection(self.index_module)
+            if not force_rebuild and self.runtime_artifact_access.has_vector_collection(
+                self.index_module
             ):
-                self._emit(progress, "[OK] Existing vector collection found. Checking artifact signatures...")
+                self._emit(
+                    progress,
+                    "[OK] Existing vector collection found. Checking artifact signatures...",
+                )
                 self._emit(progress, "Loading graph data...")
                 self.runtime_artifact_access.load_graph_data(self.data_module)
                 self._emit(progress, "Loading or building documents and chunks...")
@@ -106,7 +107,10 @@ class KnowledgeBaseBuildWorkflow:
                     document_result.manifest,
                     progress=progress,
                 ):
-                    self._emit(progress, "[OK] Existing vector collection matches current artifacts. Attempting load...")
+                    self._emit(
+                        progress,
+                        "[OK] Existing vector collection matches current artifacts. Attempting load...",
+                    )
                     if self.runtime_artifact_access.load_vector_collection(self.index_module):
                         self._emit(progress, "[OK] Knowledge base loaded successfully.")
                         schema_sync_result = self._sync_semantic_graph_schema(progress)
@@ -116,15 +120,24 @@ class KnowledgeBaseBuildWorkflow:
                                 active_manifest=active_manifest,
                             ),
                             vector_rows=self.stats_presenter.vector_row_count(),
-                            build_metadata=self._build_metadata(document_result, schema_sync_result),
+                            build_metadata=self._build_metadata(
+                                document_result, schema_sync_result
+                            ),
                             index_version=active_manifest.index_version,
                         )
                         return self.artifact_manifest
-                    self._emit(progress, "[WARN] Existing knowledge base load failed. Rebuilding...")
+                    self._emit(
+                        progress, "[WARN] Existing knowledge base load failed. Rebuilding..."
+                    )
                 else:
-                    self._emit(progress, "[WARN] Existing vector collection is stale for current artifacts. Rebuilding...")
+                    self._emit(
+                        progress,
+                        "[WARN] Existing vector collection is stale for current artifacts. Rebuilding...",
+                    )
 
-            self._emit(progress, "No usable vector collection found. Building a new knowledge base...")
+            self._emit(
+                progress, "No usable vector collection found. Building a new knowledge base..."
+            )
             self._emit(progress, "Loading graph data from Neo4j...")
             self.runtime_artifact_access.load_graph_data(self.data_module)
             self._emit(progress, "Building documents and chunks...")
@@ -147,9 +160,7 @@ class KnowledgeBaseBuildWorkflow:
                 collection_name=build_target["collection_name"],
             ):
                 raise RuntimeError("Vector index build failed")
-            publish_rollback_target = self._publish_vector_index(
-                build_target["collection_name"]
-            )
+            publish_rollback_target = self._publish_vector_index(build_target["collection_name"])
             published = True
             self.manifest_lifecycle.mark_ready(
                 candidate_manifest,
@@ -201,10 +212,14 @@ class KnowledgeBaseBuildWorkflow:
             return result
         except Exception as exc:
             logger.warning("Semantic graph schema sync failed: %s", exc)
-            self._emit(progress, f"[WARN] Semantic graph schema sync failed. Continuing startup: {exc}")
+            self._emit(
+                progress, f"[WARN] Semantic graph schema sync failed. Continuing startup: {exc}"
+            )
             return SemanticGraphSchemaSyncResult(enabled=True, error=str(exc))
 
-    def _build_metadata(self, document_result, schema_sync_result: SemanticGraphSchemaSyncResult) -> dict:
+    def _build_metadata(
+        self, document_result, schema_sync_result: SemanticGraphSchemaSyncResult
+    ) -> dict:
         return {
             "config_profile": {
                 "name": getattr(self.config, "profile_name", ""),
@@ -330,8 +345,7 @@ class KnowledgeBaseBuildWorkflow:
         active_manifest: ArtifactManifest,
     ) -> ArtifactManifest:
         return document_manifest.evolve(
-            collection_name=active_manifest.collection_name
-            or document_manifest.collection_name,
+            collection_name=active_manifest.collection_name or document_manifest.collection_name,
             collection_base_name=active_manifest.collection_base_name
             or document_manifest.collection_base_name
             or document_manifest.collection_name,

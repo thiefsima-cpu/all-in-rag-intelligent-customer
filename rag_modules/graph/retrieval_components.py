@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from ..entity_linker import EntityLinker
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
 from .evidence_builder import GraphEvidenceBuilder
@@ -18,7 +19,6 @@ from .retrieval_executor import GraphRetrievalExecutor
 from .retrieval_plan import GraphPlanBuilder
 from .retrieval_postprocess import GraphRetrievalPostProcessor
 from .retrieval_runtime import GraphRetrievalRuntime
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 
 
 @dataclass
@@ -113,6 +113,3 @@ class DefaultGraphRetrievalComponentFactory:
             cache_warmup=cache_warmup,
             executor=executor,
         )
-
-
-

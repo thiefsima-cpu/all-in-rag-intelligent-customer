@@ -42,15 +42,21 @@ class EntityIndexBuilder:
             if props.get("health_tags"):
                 content_parts.append(f"健康标签: {', '.join(props.get('health_tags') or [])}")
             if props.get("cuisine_style_tags"):
-                content_parts.append(f"菜系风格标签: {', '.join(props.get('cuisine_style_tags') or [])}")
+                content_parts.append(
+                    f"菜系风格标签: {', '.join(props.get('cuisine_style_tags') or [])}"
+                )
             if props.get("ingredient_category_tags"):
                 content_parts.append(
                     f"食材类别标签: {', '.join(props.get('ingredient_category_tags') or [])}"
                 )
             if props.get("time_profile_tags"):
-                content_parts.append(f"时间轮廓标签: {', '.join(props.get('time_profile_tags') or [])}")
+                content_parts.append(
+                    f"时间轮廓标签: {', '.join(props.get('time_profile_tags') or [])}"
+                )
             if props.get("difficulty_level_tags"):
-                content_parts.append(f"难度标签: {', '.join(props.get('difficulty_level_tags') or [])}")
+                content_parts.append(
+                    f"难度标签: {', '.join(props.get('difficulty_level_tags') or [])}"
+                )
 
             entity_kv = EntityKeyValue(
                 entity_name=entity_name,

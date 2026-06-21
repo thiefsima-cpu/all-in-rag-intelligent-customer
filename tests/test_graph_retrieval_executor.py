@@ -37,7 +37,9 @@ class _FakeGraphRuntime:
         trace.error = error
         return trace
 
-    def record_event(self, trace, name, *, start_time=None, latency_ms=None, status="ok", details=None):
+    def record_event(
+        self, trace, name, *, start_time=None, latency_ms=None, status="ok", details=None
+    ):
         del start_time, latency_ms
         self.events.append((name, status, details or {}))
         trace.add_event(name, status=status, latency_ms=0.0, details=details or {})

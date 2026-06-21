@@ -136,9 +136,7 @@ def compute_graph_signature(data_module) -> str:
                 {
                     "node_id": str(getattr(node, "node_id", "")),
                     "name": str(getattr(node, "name", "")),
-                    "labels": sorted(
-                        str(label) for label in (getattr(node, "labels", []) or [])
-                    ),
+                    "labels": sorted(str(label) for label in (getattr(node, "labels", []) or [])),
                     "properties": _json_safe(getattr(node, "properties", {}) or {}),
                 }
                 for node in collection
@@ -330,7 +328,9 @@ class ArtifactManifest:
         return cls(
             schema_version=str(payload.get("schema_version") or ARTIFACT_MANIFEST_SCHEMA_VERSION),
             manifest_version=int(payload.get("manifest_version") or 0),
-            semantic_schema_version=str(payload.get("semantic_schema_version") or SEMANTIC_SCHEMA_VERSION),
+            semantic_schema_version=str(
+                payload.get("semantic_schema_version") or SEMANTIC_SCHEMA_VERSION
+            ),
             stage=str(payload.get("stage") or ARTIFACT_STAGE_MISSING),
             updated_at=str(payload.get("updated_at") or utc_now_iso()),
             published_at=str(payload.get("published_at") or ""),
@@ -341,9 +341,7 @@ class ArtifactManifest:
             index_version=str(payload.get("index_version") or ""),
             collection_name=str(payload.get("collection_name") or ""),
             collection_base_name=str(
-                payload.get("collection_base_name")
-                or payload.get("collection_name")
-                or ""
+                payload.get("collection_base_name") or payload.get("collection_name") or ""
             ),
             collection_slot=str(payload.get("collection_slot") or ""),
             previous_collection_name=str(payload.get("previous_collection_name") or ""),

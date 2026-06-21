@@ -51,9 +51,7 @@ class SystemRuntimeViewBuilder:
             traditional_retrieval=(
                 serving_runtime.traditional_retrieval if serving_runtime else None
             ),
-            graph_rag_retrieval=(
-                serving_runtime.graph_rag_retrieval if serving_runtime else None
-            ),
+            graph_rag_retrieval=(serving_runtime.graph_rag_retrieval if serving_runtime else None),
             routing_workflow=(serving_runtime.routing_workflow if serving_runtime else None),
         )
 

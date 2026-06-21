@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import copy
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-import threading
 from typing import Optional
 from uuid import uuid4
 

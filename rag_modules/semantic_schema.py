@@ -13,7 +13,6 @@ from typing import Any, Dict, Iterable, List
 
 from .query_constraints import parse_minutes
 
-
 SEMANTIC_SCHEMA_VERSION = "semantic-schema-v5"
 
 SEMANTIC_RELATION_TYPES = [
@@ -191,8 +190,12 @@ def _extract_ingredient_categories(ingredients: List[str], haystack: str) -> Lis
 
 def _extract_cuisine_styles(recipe_properties: Dict[str, Any], haystack: str) -> List[str]:
     matched = []
-    matched.extend(_contains_terms(str(recipe_properties.get("cuisineType", "")), _CUISINE_STYLE_TERMS))
-    matched.extend(_contains_terms(str(recipe_properties.get("category", "")), _CUISINE_STYLE_TERMS))
+    matched.extend(
+        _contains_terms(str(recipe_properties.get("cuisineType", "")), _CUISINE_STYLE_TERMS)
+    )
+    matched.extend(
+        _contains_terms(str(recipe_properties.get("category", "")), _CUISINE_STYLE_TERMS)
+    )
     matched.extend(_contains_terms(haystack, _CUISINE_STYLE_TERMS))
     return _unique(matched)
 
@@ -227,16 +230,21 @@ def _extract_time_profiles(recipe_properties: Dict[str, Any], haystack: str) -> 
         else:
             matched.extend(["1小时以上", "60分钟以上"])
 
-    matched.extend(_contains_terms(haystack, [
-        "快手",
-        "15分钟内",
-        "半小时内",
-        "30分钟内",
-        "1小时内",
-        "60分钟内",
-        "1小时以上",
-        "60分钟以上",
-    ]))
+    matched.extend(
+        _contains_terms(
+            haystack,
+            [
+                "快手",
+                "15分钟内",
+                "半小时内",
+                "30分钟内",
+                "1小时内",
+                "60分钟内",
+                "1小时以上",
+                "60分钟以上",
+            ],
+        )
+    )
     return _unique(matched)
 
 
@@ -247,7 +255,7 @@ def _extract_difficulty_levels(recipe_properties: Dict[str, Any], haystack: str)
     numeric_difficulty = None
     try:
         if raw_difficulty not in (None, ""):
-            numeric_difficulty = float(raw_difficulty)
+            numeric_difficulty = float(str(raw_difficulty))
     except (TypeError, ValueError):
         numeric_difficulty = None
 
@@ -259,7 +267,11 @@ def _extract_difficulty_levels(recipe_properties: Dict[str, Any], haystack: str)
         else:
             matched.extend(["困难", "进阶"])
     else:
-        matched.extend(_contains_terms(str(raw_difficulty or ""), ["简单", "快手", "新手", "中等", "困难", "进阶"]))
+        matched.extend(
+            _contains_terms(
+                str(raw_difficulty or ""), ["简单", "快手", "新手", "中等", "困难", "进阶"]
+            )
+        )
 
     matched.extend(_contains_terms(haystack, ["简单", "快手", "新手", "中等", "困难", "进阶"]))
     return _unique(matched)
@@ -271,15 +283,17 @@ def infer_recipe_semantics(
     steps: List[str],
     full_content: str,
 ) -> Dict[str, Any]:
-    haystack = "\n".join([
-        full_content or "",
-        str(recipe_properties.get("description", "")),
-        str(recipe_properties.get("category", "")),
-        str(recipe_properties.get("cuisineType", "")),
-        " ".join(_normalize_tags(recipe_properties.get("tags"))),
-        " ".join(ingredients),
-        " ".join(steps),
-    ])
+    haystack = "\n".join(
+        [
+            full_content or "",
+            str(recipe_properties.get("description", "")),
+            str(recipe_properties.get("category", "")),
+            str(recipe_properties.get("cuisineType", "")),
+            " ".join(_normalize_tags(recipe_properties.get("tags"))),
+            " ".join(ingredients),
+            " ".join(steps),
+        ]
+    )
 
     flavor_tags = _unique(_contains_terms(haystack, _FLAVOR_TERMS))
     technique_tags = _unique(_contains_terms(haystack, _TECHNIQUE_TERMS))
@@ -295,25 +309,31 @@ def infer_recipe_semantics(
     for effect, causes in _CONTRIBUTION_HINTS.items():
         matched_causes = _contains_terms(haystack, causes)
         if matched_causes:
-            contribution_hints.append({
-                "effect": effect,
-                "causes": _unique(matched_causes),
-            })
-            for cause in matched_causes:
-                ingredient_contributions.append({
-                    "source": cause,
+            contribution_hints.append(
+                {
                     "effect": effect,
-                })
+                    "causes": _unique(matched_causes),
+                }
+            )
+            for cause in matched_causes:
+                ingredient_contributions.append(
+                    {
+                        "source": cause,
+                        "effect": effect,
+                    }
+                )
 
     technique_effects = []
     for effect, techniques in _TECHNIQUE_EFFECT_HINTS.items():
         matched_techniques = _contains_terms(haystack, techniques)
         if matched_techniques:
             for technique in _unique(matched_techniques):
-                technique_effects.append({
-                    "source": technique,
-                    "effect": effect,
-                })
+                technique_effects.append(
+                    {
+                        "source": technique,
+                        "effect": effect,
+                    }
+                )
 
     semantic_relations = {
         "HAS_FLAVOR": flavor_tags,

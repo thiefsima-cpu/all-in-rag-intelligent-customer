@@ -41,21 +41,29 @@ class DualLevelEvidenceService:
                     content=content,
                     node_type=str(metadata.get("entity_type") or evidence.node_type or "Entity"),
                     score=float(metadata.get("relevance_score", evidence.score)),
-                    search_type=str(metadata.get("search_type") or evidence.search_type or "graph_entity"),
-                    search_method=str(metadata.get("search_method") or evidence.search_method or "graph_entity"),
+                    search_type=str(
+                        metadata.get("search_type") or evidence.search_type or "graph_entity"
+                    ),
+                    search_method=str(
+                        metadata.get("search_method") or evidence.search_method or "graph_entity"
+                    ),
                     retrieval_level="entity",
                     metadata=metadata,
                 )
             )
         return results
 
-    def enrich_topic_candidates(self, evidence_documents: List[EvidenceDocument]) -> List[EvidenceDocument]:
+    def enrich_topic_candidates(
+        self, evidence_documents: List[EvidenceDocument]
+    ) -> List[EvidenceDocument]:
         results: List[EvidenceDocument] = []
         for evidence in evidence_documents:
             metadata = dict(evidence.metadata or {})
             source_entity = str(metadata.get("source_entity") or evidence.node_id or "")
             source_kv = self.graph_indexing.entity_kv_store.get(source_entity)
-            source_name = str(metadata.get("source_name") or (source_kv.entity_name if source_kv else ""))
+            source_name = str(
+                metadata.get("source_name") or (source_kv.entity_name if source_kv else "")
+            )
             matched_keyword = str(metadata.get("matched_keyword") or "")
             content_parts = [
                 f"主题: {matched_keyword}" if matched_keyword else "",
@@ -88,7 +96,9 @@ class DualLevelEvidenceService:
                     content="\n".join(part for part in content_parts if part),
                     node_id=source_entity,
                     recipe_name=source_name,
-                    node_type=source_kv.entity_type if source_kv else evidence.node_type or "Relation",
+                    node_type=source_kv.entity_type
+                    if source_kv
+                    else evidence.node_type or "Relation",
                     score=float(metadata.get("relevance_score", evidence.score or 0.0)),
                     search_type=str(enriched_metadata["search_type"]),
                     search_method=str(enriched_metadata["search_method"]),

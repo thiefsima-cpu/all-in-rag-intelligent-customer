@@ -78,7 +78,9 @@ class BuildRuntimeAssemblerTests(unittest.TestCase):
                 lambda config, existing=None: existing or manifest_store
             ),
             provide_document_artifact_cache=(
-                lambda config, existing=None, *, manifest_store=None: existing or document_artifact_cache
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or document_artifact_cache
+                )
             ),
             provide_runtime_artifact_access=(
                 lambda config, existing=None: existing or runtime_artifact_access

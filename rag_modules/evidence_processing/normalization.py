@@ -58,9 +58,7 @@ def normalize_evidence_document(
         "reasons": metadata.get("constraint_reasons") or [],
     }
     constraint_evidence = {
-        key: value
-        for key, value in constraint_evidence.items()
-        if value not in (None, "", [], {})
+        key: value for key, value in constraint_evidence.items() if value not in (None, "", [], {})
     }
 
     matched_terms: List[str] = []

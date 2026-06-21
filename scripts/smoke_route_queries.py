@@ -19,7 +19,6 @@ from rag_modules.retrieval.runtime_profile import (
     QuerySemanticRuntimeSettings,
 )
 
-
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "route_smoke_corpus.json"
 )
@@ -117,9 +116,7 @@ def _subset_failures(
             if key not in actual:
                 failures.append(f"{child_path}:missing")
                 continue
-            failures.extend(
-                _subset_failures(value, actual[key], path=child_path)
-            )
+            failures.extend(_subset_failures(value, actual[key], path=child_path))
         return failures
     if isinstance(expected, list):
         actual_items = list(actual or []) if isinstance(actual, (list, tuple, set)) else []
@@ -139,18 +136,13 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         failures.append(
             f"expected_strategy={case.expected_strategy} actual_strategy={plan.strategy}"
         )
-    if (
-        case.expected_graph_query_type
-        and plan.graph_query_type != case.expected_graph_query_type
-    ):
+    if case.expected_graph_query_type and plan.graph_query_type != case.expected_graph_query_type:
         failures.append(
             "expected_graph_query_type="
             f"{case.expected_graph_query_type} actual_graph_query_type={plan.graph_query_type}"
         )
     if case.expected_intent and plan.intent != case.expected_intent:
-        failures.append(
-            f"expected_intent={case.expected_intent} actual_intent={plan.intent}"
-        )
+        failures.append(f"expected_intent={case.expected_intent} actual_intent={plan.intent}")
     if (
         case.expected_reasoning_required is not None
         and plan.reasoning_required != case.expected_reasoning_required
@@ -161,8 +153,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         )
     if (
         case.expected_needs_recipe_recommendation is not None
-        and plan.needs_recipe_recommendation
-        != case.expected_needs_recipe_recommendation
+        and plan.needs_recipe_recommendation != case.expected_needs_recipe_recommendation
     ):
         failures.append(
             "expected_needs_recipe_recommendation="
@@ -177,9 +168,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
     if missing_relation_types:
         failures.append(f"missing_relation_types={missing_relation_types}")
     if plan.complexity < case.min_complexity:
-        failures.append(
-            f"min_complexity={case.min_complexity} actual_complexity={plan.complexity}"
-        )
+        failures.append(f"min_complexity={case.min_complexity} actual_complexity={plan.complexity}")
     if plan.relationship_intensity < case.min_relationship_intensity:
         failures.append(
             "min_relationship_intensity="
@@ -227,11 +216,7 @@ def run_smoke(corpus_path: str | Path = DEFAULT_CORPUS_PATH) -> dict:
     return {
         "case_count": len(results),
         "passed_count": len(results) - len(failures),
-        "pass_rate": (
-            (len(results) - len(failures)) / len(results)
-            if results
-            else 0.0
-        ),
+        "pass_rate": ((len(results) - len(failures)) / len(results) if results else 0.0),
         "category_count": len(category_counts),
         "category_counts": dict(sorted(category_counts.items())),
         "strategy_counts": dict(sorted(strategy_counts.items())),
@@ -276,4 +261,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

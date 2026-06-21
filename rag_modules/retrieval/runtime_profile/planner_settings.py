@@ -18,8 +18,12 @@ class QueryPlannerRuntimeSettings:
     llm_max_tokens: int = int(_PLANNER_DEFAULTS.get("llm_max_tokens", 1200))
 
     def __post_init__(self) -> None:
-        self.model_name = str(self.model_name or _PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus"))
-        self.cache_size = _as_int(self.cache_size, int(_PLANNER_DEFAULTS.get("cache_size", 128)), minimum=0)
+        self.model_name = str(
+            self.model_name or _PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus")
+        )
+        self.cache_size = _as_int(
+            self.cache_size, int(_PLANNER_DEFAULTS.get("cache_size", 128)), minimum=0
+        )
         self.timeout_seconds = _as_int(
             self.timeout_seconds,
             int(_PLANNER_DEFAULTS.get("timeout_seconds", 20)),

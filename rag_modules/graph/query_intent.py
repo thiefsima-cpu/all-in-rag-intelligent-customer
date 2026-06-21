@@ -11,11 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
 from ..query_understanding import (
     infer_graph_max_depth,
     infer_query_semantic_profile,
 )
+from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
 
 
 @dataclass
@@ -56,6 +56,3 @@ def infer_graph_query_intent(
         ),
         constraints=profile.constraints,
     )
-
-
-

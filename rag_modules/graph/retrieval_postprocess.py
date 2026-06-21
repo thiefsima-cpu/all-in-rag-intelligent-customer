@@ -6,10 +6,10 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ..evidence_processing import extract_evidence_units
+from ..retrieval.contracts import EvidenceDocument
 from .evidence_builder import GraphEvidenceBuilder
 from .path_ranker import GraphDocumentRanker
 from .retrieval_types import GraphPath, KnowledgeSubgraph
-from ..retrieval.contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,9 @@ class GraphRetrievalPostProcessor:
     def build_knowledge_subgraph(self, record: Any) -> KnowledgeSubgraph:
         try:
             source_node = record["source"]
-            central_nodes = [{**dict(source_node), "labels": list(getattr(source_node, "labels", []))}]
+            central_nodes = [
+                {**dict(source_node), "labels": list(getattr(source_node, "labels", []))}
+            ]
             connected_nodes = [
                 {**dict(node), "labels": list(getattr(node, "labels", []))}
                 for node in record["nodes"]
@@ -92,7 +94,9 @@ class GraphRetrievalPostProcessor:
 
         for subgraph in subgraphs:
             total_node_count += int(subgraph.graph_metrics.get("node_count", 0) or 0)
-            total_relationship_count += int(subgraph.graph_metrics.get("relationship_count", 0) or 0)
+            total_relationship_count += int(
+                subgraph.graph_metrics.get("relationship_count", 0) or 0
+            )
             for node in subgraph.central_nodes:
                 node_key = str(node.get("nodeId") or node.get("name") or id(node))
                 if node_key not in seen_nodes:
@@ -115,7 +119,11 @@ class GraphRetrievalPostProcessor:
 
         node_count = len(central_nodes) + len(connected_nodes)
         relationship_count = len(relationships)
-        density = float(relationship_count) / (node_count * (node_count - 1) / 2) if node_count > 1 else 0.0
+        density = (
+            float(relationship_count) / (node_count * (node_count - 1) / 2)
+            if node_count > 1
+            else 0.0
+        )
         return KnowledgeSubgraph(
             central_nodes=central_nodes,
             connected_nodes=connected_nodes,
@@ -131,7 +139,9 @@ class GraphRetrievalPostProcessor:
             reasoning_chains=[],
         )
 
-    def paths_to_evidence_documents(self, paths: List[GraphPath], query: str) -> List[EvidenceDocument]:
+    def paths_to_evidence_documents(
+        self, paths: List[GraphPath], query: str
+    ) -> List[EvidenceDocument]:
         return self.evidence_builder.paths_to_evidence(paths, query)
 
     def subgraph_to_evidence_documents(
@@ -154,7 +164,9 @@ class GraphRetrievalPostProcessor:
     def relationship_lines(self, subgraph: KnowledgeSubgraph, limit: int = 30) -> List[str]:
         return self.evidence_builder.relationship_lines(subgraph, limit=limit)
 
-    def rank_by_graph_relevance(self, documents: List[EvidenceDocument], query: str) -> List[EvidenceDocument]:
+    def rank_by_graph_relevance(
+        self, documents: List[EvidenceDocument], query: str
+    ) -> List[EvidenceDocument]:
         if not self.ranker:
             return list(documents or [])
         return self.ranker.rank(documents, query)
@@ -181,7 +193,9 @@ class GraphRetrievalPostProcessor:
         for doc in documents:
             metadata = dict(doc.metadata or {})
             metadata["evidence_units"] = extract_evidence_units(doc, metadata)
-            enriched.append(doc.copy_with(evidence_units=metadata["evidence_units"], metadata=metadata))
+            enriched.append(
+                doc.copy_with(evidence_units=metadata["evidence_units"], metadata=metadata)
+            )
         return enriched
 
     @staticmethod
@@ -193,5 +207,3 @@ class GraphRetrievalPostProcessor:
             graph_metrics={},
             reasoning_chains=[],
         )
-
-

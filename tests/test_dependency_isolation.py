@@ -76,13 +76,9 @@ class DependencyIsolationTests(unittest.TestCase):
                 "uvicorn",
             }.issubset(runtime_names)
         )
+        self.assertTrue({"mypy", "pip-tools", "pre-commit", "pytest", "ruff"}.issubset(dev_names))
         self.assertTrue(
-            {"mypy", "pip-tools", "pre-commit", "pytest", "ruff"}.issubset(dev_names)
-        )
-        self.assertTrue(
-            runtime_names.isdisjoint(
-                {"mypy", "pip-tools", "pre-commit", "pytest", "ruff"}
-            )
+            runtime_names.isdisjoint({"mypy", "pip-tools", "pre-commit", "pytest", "ruff"})
         )
 
     def test_current_runtime_lock_contains_no_development_only_packages(self) -> None:

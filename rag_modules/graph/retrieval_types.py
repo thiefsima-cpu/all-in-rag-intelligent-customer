@@ -44,6 +44,3 @@ class KnowledgeSubgraph:
     relationships: List[Dict[str, Any]] = field(default_factory=list)
     graph_metrics: Dict[str, float] = field(default_factory=dict)
     reasoning_chains: List[List[str] | str] = field(default_factory=list)
-
-
-

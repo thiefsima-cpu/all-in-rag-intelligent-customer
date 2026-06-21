@@ -19,18 +19,10 @@ def vector_artifact_mismatch_reason(
     ):
         return "Persisted vector artifacts do not match the current document or embedding configuration."
     persisted_base_name = (
-        persisted_manifest.collection_base_name
-        or persisted_manifest.collection_name
+        persisted_manifest.collection_base_name or persisted_manifest.collection_name
     )
-    current_base_name = (
-        current_manifest.collection_base_name
-        or current_manifest.collection_name
-    )
-    if (
-        persisted_base_name
-        and current_base_name
-        and persisted_base_name != current_base_name
-    ):
+    current_base_name = current_manifest.collection_base_name or current_manifest.collection_name
+    if persisted_base_name and current_base_name and persisted_base_name != current_base_name:
         return "Persisted vector collection name does not match the current runtime configuration."
     return ""
 

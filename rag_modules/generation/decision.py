@@ -22,8 +22,7 @@ def decide_generation_mode(
 
     if not analysis:
         has_graph_evidence = any(
-            item.graph_paths
-            or any(unit.get("is_graph_evidence") for unit in item.evidence_units)
+            item.graph_paths or any(unit.get("is_graph_evidence") for unit in item.evidence_units)
             for item in package.items
         )
         if has_graph_evidence and len(package.items) > 1:

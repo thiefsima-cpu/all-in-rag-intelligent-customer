@@ -9,8 +9,13 @@ from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.runtime import GenerationSnapshot, QueryTraceEvent
-from rag_modules.runtime import GraphRetrievalSnapshot, RouteSnapshot, RouteStageSnapshot
+from rag_modules.runtime import (
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    QueryTraceEvent,
+    RouteSnapshot,
+    RouteStageSnapshot,
+)
 from rag_modules.tracing import QueryTracer
 from rag_modules.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
 
@@ -170,7 +175,6 @@ class QueryTracerTests(unittest.TestCase):
 
         self.assertTrue(delegate.closed)
         self.assertEqual([event.query for event in delegate.events], ["问题 A", "问题 B"])
-
 
     def test_async_sink_drops_when_queue_is_full_without_blocking_writer(self) -> None:
         delegate = _BlockingSink()

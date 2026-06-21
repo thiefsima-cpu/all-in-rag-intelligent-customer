@@ -174,11 +174,7 @@ class RetrievalCandidateGenerator:
         raw_sources = request.metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
         if isinstance(raw_sources, str):
             raw_sources = [raw_sources]
-        return {
-            str(item).strip()
-            for item in (raw_sources or [])
-            if str(item).strip()
-        }
+        return {str(item).strip() for item in (raw_sources or []) if str(item).strip()}
 
     def _retrieve_source(
         self,

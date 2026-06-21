@@ -9,13 +9,13 @@ from rag_modules.app.composition import (
     RuntimeLifecycleServiceBundle,
     RuntimeLifecycleServiceComposer,
     RuntimeReadinessService,
-    ServingRuntimeRefreshService,
     ServingRuntimeLifecycleService,
+    ServingRuntimeRefreshService,
     SystemRuntimeManager,
 )
+from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
-from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.artifacts import ArtifactManifest
 from rag_modules.configuration.testing import build_test_config
 
@@ -111,9 +111,9 @@ def _serving_runtime(*, ready: bool = False) -> ServingRuntime:
         graph_rag_retrieval=SimpleNamespace(),
         query_router=SimpleNamespace(),
         answer_workflow=SimpleNamespace(),
-        artifact_manifest=_ready_manifest() if ready else ArtifactManifest.missing(
-            manifest_path="storage/indexes/artifact_manifest.json"
-        ),
+        artifact_manifest=_ready_manifest()
+        if ready
+        else ArtifactManifest.missing(manifest_path="storage/indexes/artifact_manifest.json"),
         retrieval_engines_initialized=ready,
     )
 
@@ -210,9 +210,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
             0,
         )
         self.assertEqual(
-            len(
-                service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls
-            ),
+            len(service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls),
             1,
         )
 

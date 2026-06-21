@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, TypeVar
+from typing import Any, Iterable, List, Mapping, Protocol, TypeVar, cast
 
 from langchain_core.documents import Document
 
@@ -10,6 +10,14 @@ from ._common import coerce_float, coerce_str
 from .evidence_models import EvidenceDocument
 
 EvidenceDocumentT = TypeVar("EvidenceDocumentT", bound=EvidenceDocument)
+
+
+class PageDocumentLike(Protocol):
+    @property
+    def page_content(self) -> str: ...
+
+    @property
+    def metadata(self) -> Mapping[str, Any]: ...
 
 
 def _matched_terms_from_metadata(metadata: dict) -> List[str]:
@@ -28,17 +36,16 @@ def _matched_terms_from_metadata(metadata: dict) -> List[str]:
 
 
 def evidence_document_from_langchain(
-    doc: Document,
+    doc: PageDocumentLike,
     *,
-    cls: type[EvidenceDocumentT] = EvidenceDocument,
+    cls: type[EvidenceDocumentT] | None = None,
 ) -> EvidenceDocumentT:
     metadata = dict(doc.metadata or {})
-    return cls(
+    document_cls = cls or cast(type[EvidenceDocumentT], EvidenceDocument)
+    return document_cls(
         content=doc.page_content or "",
         node_id=coerce_str(
-            metadata.get("node_id")
-            or metadata.get("parent_id")
-            or metadata.get("recipe_id")
+            metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id")
         ),
         recipe_name=coerce_str(metadata.get("recipe_name") or metadata.get("name")),
         node_type=coerce_str(metadata.get("node_type") or metadata.get("entity_type")),
@@ -54,9 +61,7 @@ def evidence_document_from_langchain(
         retrieval_level=coerce_str(metadata.get("retrieval_level")),
         doc_id=coerce_str(metadata.get("doc_id")),
         recipe_id=coerce_str(
-            metadata.get("recipe_id")
-            or metadata.get("node_id")
-            or metadata.get("parent_id")
+            metadata.get("recipe_id") or metadata.get("node_id") or metadata.get("parent_id")
         ),
         source=coerce_str(
             metadata.get("source")
@@ -85,11 +90,7 @@ def evidence_document_from_langchain(
 def evidence_document_to_langchain(doc: EvidenceDocument) -> Document:
     metadata = dict(doc.metadata or {})
     metadata.update(
-        {
-            key: value
-            for key, value in doc.to_metadata().items()
-            if value not in (None, "", [], {})
-        }
+        {key: value for key, value in doc.to_metadata().items() if value not in (None, "", [], {})}
     )
     if doc.node_id:
         metadata.setdefault("node_id", doc.node_id)
@@ -108,13 +109,13 @@ def evidence_document_to_langchain(doc: EvidenceDocument) -> Document:
 
 
 def ensure_evidence_documents(
-    documents: Iterable[Document | EvidenceDocument],
+    documents: Iterable[PageDocumentLike | EvidenceDocument],
 ) -> List[EvidenceDocument]:
     evidence_documents: List[EvidenceDocument] = []
     for doc in documents or []:
         if isinstance(doc, EvidenceDocument):
             evidence_documents.append(doc)
-        elif isinstance(doc, Document):
+        else:
             evidence_documents.append(evidence_document_from_langchain(doc))
     return evidence_documents
 

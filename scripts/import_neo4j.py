@@ -2,11 +2,12 @@
 Import the CSV knowledge graph into the running Neo4j service.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from neo4j import GraphDatabase
+
 from rag_modules.configuration import load_config
 
 

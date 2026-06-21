@@ -6,8 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rag_modules.graph.evidence_builder import GraphEvidenceBuilder
-from scripts.check_encoding import audit_file
-
+from scripts.check_encoding import audit_file, run_audit
 
 READABLE_SUBGRAPH_NAME = "\u77e5\u8bc6\u5b50\u56fe"
 LEAKED_SUBGRAPH_NAME = "\u942d\u30e8\u7611\u701b\u612c\u6d58"
@@ -25,6 +24,27 @@ class CheckEncodingTests(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0].kind, "mojibake")
         self.assertEqual(issues[0].line, 1)
+
+    def test_run_audit_excludes_generated_and_local_state_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            tracked_file = root / "tracked.py"
+            tracked_file.write_text("name = 'ok'\n", encoding="utf-8")
+
+            for directory in (
+                ".worktrees/feature",
+                "eval/reports",
+                "storage/cache",
+                "volumes/api",
+            ):
+                path = root / directory / "leaked.py"
+                path.parent.mkdir(parents=True)
+                path.write_text(f'name = "{LEAKED_SUBGRAPH_NAME}"\n', encoding="utf-8")
+
+            report = run_audit(root)
+
+        self.assertEqual(report.scanned_files, 1)
+        self.assertEqual(report.issues, [])
 
 
 class GraphEvidenceBuilderEncodingTests(unittest.TestCase):

@@ -23,7 +23,9 @@ class _BoundaryInvocationSupport:
         return getattr(boundary, method_name)(*args, **kwargs)
 
 
-class BuildBootstrapperInvocationAdapter(BuildBootstrapperInvocationProtocol, _BoundaryInvocationSupport):
+class BuildBootstrapperInvocationAdapter(
+    BuildBootstrapperInvocationProtocol, _BoundaryInvocationSupport
+):
     """Invocation strategy for the public build bootstrapper facade."""
 
     def build_runtime(

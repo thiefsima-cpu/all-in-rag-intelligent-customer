@@ -14,7 +14,12 @@ from .trace_privacy import TraceSanitizer
 
 logger = logging.getLogger(__name__)
 
-_QUEUE_SENTINEL = object()
+
+class _QueueSentinel:
+    pass
+
+
+_QUEUE_SENTINEL = _QueueSentinel()
 
 
 class QueryTraceSink(Protocol):
@@ -128,7 +133,7 @@ class AsyncQueryTraceSink:
         worker_name: str = "query-trace-sink",
     ) -> None:
         self.delegate = delegate
-        self._queue: queue.Queue[QueryTraceEvent | object] = queue.Queue(
+        self._queue: queue.Queue[QueryTraceEvent | _QueueSentinel] = queue.Queue(
             maxsize=max(0, int(max_queue_size or 0))
         )
         self._max_queue_size = max(0, int(max_queue_size or 0))
@@ -158,8 +163,7 @@ class AsyncQueryTraceSink:
                 dropped_events = self._dropped_events
             if dropped_events == 1 or dropped_events % 100 == 0:
                 logger.warning(
-                    "Dropping query trace events because the async sink queue is full. "
-                    "dropped=%s",
+                    "Dropping query trace events because the async sink queue is full. dropped=%s",
                     dropped_events,
                 )
 
@@ -208,7 +212,7 @@ class AsyncQueryTraceSink:
     def _drain_queue(self) -> None:
         while True:
             event = self._queue.get()
-            if event is _QUEUE_SENTINEL:
+            if isinstance(event, _QueueSentinel):
                 break
             try:
                 self.delegate.write(event)

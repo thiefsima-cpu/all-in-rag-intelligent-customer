@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 from .artifacts import ArtifactManifest
 from .runtime.artifact_ports import ArtifactManifestStorePort

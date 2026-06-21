@@ -16,7 +16,9 @@ class HybridParentDocumentService:
         self.index_service = index_service
         self.parent_enricher = parent_enricher
 
-    def apply_parent_doc_map(self, state, parent_doc_map: Dict[str, Document] | None) -> Dict[str, Document]:
+    def apply_parent_doc_map(
+        self, state, parent_doc_map: Dict[str, Document] | None
+    ) -> Dict[str, Document]:
         state.parent_doc_map = dict(parent_doc_map or {})
         self.parent_enricher.parent_doc_map = state.parent_doc_map
         return state.parent_doc_map

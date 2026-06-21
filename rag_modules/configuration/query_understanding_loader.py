@@ -1,6 +1,7 @@
 """Dedicated loader for query-understanding configuration sections."""
 
 from __future__ import annotations
+
 from typing import Any, Mapping
 
 from rag_modules.query_policy import get_query_policy
@@ -69,9 +70,13 @@ def _load_query_semantic_settings(
     semantic_defaults = _mapping_defaults(defaults)
     return QuerySemanticSettings(
         scoring=_load_query_semantic_scoring_settings(source, semantic_defaults.get("scoring")),
-        extraction=_load_query_semantic_extraction_settings(source, semantic_defaults.get("extraction")),
+        extraction=_load_query_semantic_extraction_settings(
+            source, semantic_defaults.get("extraction")
+        ),
         routing=_load_query_semantic_routing_settings(source, semantic_defaults.get("routing")),
-        traversal=_load_query_semantic_traversal_settings(source, semantic_defaults.get("traversal")),
+        traversal=_load_query_semantic_traversal_settings(
+            source, semantic_defaults.get("traversal")
+        ),
         adaptive_traversal=_load_query_semantic_adaptive_traversal_settings(
             source,
             semantic_defaults.get("adaptive_traversal"),
@@ -205,7 +210,9 @@ def _load_query_semantic_routing_settings(
         ),
         source_entity_backfill_relationship_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_SOURCE_ENTITY_BACKFILL_RELATIONSHIP_THRESHOLD",
-            default=float(semantic_defaults.get("source_entity_backfill_relationship_threshold", 0.55)),
+            default=float(
+                semantic_defaults.get("source_entity_backfill_relationship_threshold", 0.55)
+            ),
         ),
         rule_fallback_confidence=source.get_float_alias(
             "QUERY_SEMANTIC_RULE_FALLBACK_CONFIDENCE",
@@ -311,7 +318,9 @@ def _load_query_semantic_adaptive_traversal_settings(
         ),
         entity_relation_multi_hop_threshold=source.get_float_alias(
             "QUERY_SEMANTIC_ADAPTIVE_ENTITY_RELATION_MULTI_HOP_THRESHOLD",
-            default=float(semantic_defaults.get("adaptive_entity_relation_multi_hop_threshold", 0.5)),
+            default=float(
+                semantic_defaults.get("adaptive_entity_relation_multi_hop_threshold", 0.5)
+            ),
         ),
         subgraph_max_depth=source.get_int_alias(
             "QUERY_SEMANTIC_ADAPTIVE_SUBGRAPH_MAX_DEPTH",

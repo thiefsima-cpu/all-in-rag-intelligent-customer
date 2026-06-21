@@ -26,7 +26,9 @@ from rag_modules.evaluation import grounding_metrics, percentile, retrieval_metr
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval_observability import summarize_documents
 
-DEFAULT_CORPUS_PATH = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
+DEFAULT_CORPUS_PATH = (
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
+)
 
 
 @dataclass
@@ -56,9 +58,7 @@ class EvalCase:
             ],
             expected_recipe_relevance={
                 str(name).strip(): float(grade)
-                for name, grade in dict(
-                    payload.get("expected_recipe_relevance") or {}
-                ).items()
+                for name, grade in dict(payload.get("expected_recipe_relevance") or {}).items()
                 if str(name).strip()
             },
         )
@@ -111,11 +111,7 @@ def _doc_recipe_names(docs: List[EvidenceDocument | dict[str, Any]]) -> List[str
 def _ranked_doc_recipe_names(
     docs: List[EvidenceDocument | dict[str, Any]],
 ) -> List[str]:
-    return [
-        name
-        for name in (_document_recipe_name(doc) for doc in docs)
-        if name
-    ]
+    return [name for name in (_document_recipe_name(doc) for doc in docs) if name]
 
 
 def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List[dict]:
@@ -138,8 +134,12 @@ def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List
                         or ""
                     ),
                     "score": doc.get("score", metadata.get("score", 0.0)),
-                    "evidence_type": str(doc.get("evidence_type") or metadata.get("evidence_type") or ""),
-                    "matched_terms": list(doc.get("matched_terms") or metadata.get("matched_terms") or []),
+                    "evidence_type": str(
+                        doc.get("evidence_type") or metadata.get("evidence_type") or ""
+                    ),
+                    "matched_terms": list(
+                        doc.get("matched_terms") or metadata.get("matched_terms") or []
+                    ),
                     "has_graph_evidence": bool(graph_evidence),
                     "graph_relationships": len(graph_evidence.get("relationships") or []),
                     "constraint_evidence": dict(
@@ -174,10 +174,7 @@ def _answer_has_graph_reasoning_marker(answer: str) -> bool:
 def _complex_answer_failed(category: str, answer: str, *, checked: bool) -> bool:
     if not checked or category not in {"complex_relation", "semantic_flavor"}:
         return False
-    return not (
-        _answer_has_citation_marker(answer)
-        and _answer_has_graph_reasoning_marker(answer)
-    )
+    return not (_answer_has_citation_marker(answer) and _answer_has_graph_reasoning_marker(answer))
 
 
 def _response_query_plan(response) -> dict[str, Any]:
@@ -232,26 +229,15 @@ def evaluate_case(
 
     answer_missing_terms = []
     if generate:
-        answer_missing_terms = [
-            term for term in case.expected_answer_terms if term not in answer
-        ]
+        answer_missing_terms = [term for term in case.expected_answer_terms if term not in answer]
 
     recipe_names = _doc_recipe_names(docs)
     ranked_recipe_names = _ranked_doc_recipe_names(docs)
     expected_recipe_names = list(case.expected_recipe_names) or [
-        name
-        for name, grade in case.expected_recipe_relevance.items()
-        if float(grade or 0.0) > 0
+        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
     ]
-    missing_names = [
-        expected
-        for expected in expected_recipe_names
-        if expected not in recipe_names
-    ]
-    strategy_failed = (
-        case.expected_strategy is not None
-        and strategy != case.expected_strategy
-    )
+    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
+    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
     answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
     complex_answer_failed = _complex_answer_failed(
         case.category,
@@ -261,9 +247,7 @@ def evaluate_case(
 
     failures: list[str] = []
     if strategy_failed:
-        failures.append(
-            f"expected_strategy={case.expected_strategy} actual_strategy={strategy}"
-        )
+        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
     if missing_names:
         failures.append(f"missing_recipe_names={missing_names}")
     if answer_failed:
@@ -273,10 +257,7 @@ def evaluate_case(
     if not docs:
         failures.append("no_evidence")
 
-    relevance = (
-        case.expected_recipe_relevance
-        or {name: 1.0 for name in case.expected_recipe_names}
-    )
+    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
     ranking = retrieval_metrics(
         ranked_recipe_names,
         relevance,
@@ -297,13 +278,8 @@ def evaluate_case(
     )
     response_payload = contracts["answer_response"]
     summary = dict(response_payload.get("summary") or {})
-    generation_trace = dict(
-        (response_payload.get("traces") or {}).get("generation_trace") or {}
-    )
-    prompt_tokens = int(
-        summary.get("prompt_tokens", generation_trace.get("prompt_tokens", 0))
-        or 0
-    )
+    generation_trace = dict((response_payload.get("traces") or {}).get("generation_trace") or {})
+    prompt_tokens = int(summary.get("prompt_tokens", generation_trace.get("prompt_tokens", 0)) or 0)
     completion_tokens = int(
         summary.get(
             "completion_tokens",
@@ -313,8 +289,7 @@ def evaluate_case(
     )
     total_tokens = int(
         summary.get("total_tokens", generation_trace.get("total_tokens", 0))
-        or prompt_tokens
-        + completion_tokens
+        or prompt_tokens + completion_tokens
     )
     estimated_cost_usd = float(
         summary.get(
@@ -392,14 +367,10 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         == item.get("evaluation", {}).get("expected_strategy")
     )
     recipe_cases = [
-        item
-        for item in results
-        if item.get("evaluation", {}).get("expected_recipe_names")
+        item for item in results if item.get("evaluation", {}).get("expected_recipe_names")
     ]
     recipe_passed = sum(
-        1
-        for item in recipe_cases
-        if not item.get("retrieval", {}).get("missing_recipe_names")
+        1 for item in recipe_cases if not item.get("retrieval", {}).get("missing_recipe_names")
     )
     graph_covered = sum(
         1
@@ -449,24 +420,16 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         if item.get("grounding", {}).get("citation_accuracy") is not None
     ]
     total_prompt_tokens = sum(
-        int(item.get("cost", {}).get("prompt_tokens", 0) or 0)
-        for item in results
+        int(item.get("cost", {}).get("prompt_tokens", 0) or 0) for item in results
     )
     total_completion_tokens = sum(
-        int(item.get("cost", {}).get("completion_tokens", 0) or 0)
-        for item in results
+        int(item.get("cost", {}).get("completion_tokens", 0) or 0) for item in results
     )
-    total_tokens = sum(
-        int(item.get("cost", {}).get("total_tokens", 0) or 0)
-        for item in results
-    )
+    total_tokens = sum(int(item.get("cost", {}).get("total_tokens", 0) or 0) for item in results)
     total_estimated_cost_usd = sum(
-        float(item.get("cost", {}).get("estimated_cost_usd", 0.0) or 0.0)
-        for item in results
+        float(item.get("cost", {}).get("estimated_cost_usd", 0.0) or 0.0) for item in results
     )
-    answer_cases = [
-        item for item in results if item.get("evaluation", {}).get("answer_checked")
-    ]
+    answer_cases = [item for item in results if item.get("evaluation", {}).get("answer_checked")]
     answer_passed = sum(
         1 for item in answer_cases if item.get("evaluation", {}).get("answer_passed")
     )
@@ -479,9 +442,7 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     citation_passed = sum(
         1
         for item in citation_cases
-        if _answer_has_citation_marker(
-            item.get("evaluation", {}).get("answer_preview", "")
-        )
+        if _answer_has_citation_marker(item.get("evaluation", {}).get("answer_preview", ""))
     )
     grouped = {}
     for item in results:
@@ -492,8 +453,7 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
             "case_count": len(items),
             "pass_rate": sum(1 for item in items if item["passed"]) / len(items),
             "avg_latency_ms": (
-                sum(item.get("runtime", {}).get("latency_ms", 0.0) for item in items)
-                / len(items)
+                sum(item.get("runtime", {}).get("latency_ms", 0.0) for item in items) / len(items)
             ),
             "graph_evidence_coverage": sum(
                 1
@@ -526,21 +486,11 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0.0,
         "p95_latency_ms": percentile(latencies, 0.95),
         "max_latency_ms": max(latencies) if latencies else 0.0,
-        "recall_at_k": (
-            sum(recall_values) / len(recall_values) if recall_values else None
-        ),
-        "mrr": (
-            sum(reciprocal_ranks) / len(reciprocal_ranks)
-            if reciprocal_ranks
-            else None
-        ),
-        "ndcg_at_k": (
-            sum(ndcg_values) / len(ndcg_values) if ndcg_values else None
-        ),
+        "recall_at_k": (sum(recall_values) / len(recall_values) if recall_values else None),
+        "mrr": (sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else None),
+        "ndcg_at_k": (sum(ndcg_values) / len(ndcg_values) if ndcg_values else None),
         "faithfulness": (
-            sum(faithfulness_values) / len(faithfulness_values)
-            if faithfulness_values
-            else None
+            sum(faithfulness_values) / len(faithfulness_values) if faithfulness_values else None
         ),
         "citation_accuracy": (
             sum(citation_accuracy_values) / len(citation_accuracy_values)
@@ -552,9 +502,7 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "total_tokens": total_tokens,
         "estimated_cost_usd": round(total_estimated_cost_usd, 8),
         "avg_tokens_per_case": total_tokens / total if total else 0.0,
-        "avg_cost_usd_per_case": (
-            total_estimated_cost_usd / total if total else 0.0
-        ),
+        "avg_cost_usd_per_case": (total_estimated_cost_usd / total if total else 0.0),
         "answer_pass_rate": answer_passed / len(answer_cases) if answer_cases else None,
         "answer_citation_rate": citation_passed / len(citation_cases) if citation_cases else None,
         "by_category": category_metrics,
@@ -718,11 +666,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--generate", action="store_true", help="Also generate answers and check expected answer terms.")
-    parser.add_argument("--corpus", default=str(DEFAULT_CORPUS_PATH), help="Path to the curated eval corpus JSON file.")
-    parser.add_argument("--profile", default=None, help="Configuration profile name from the profiles directory.")
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Also generate answers and check expected answer terms.",
+    )
+    parser.add_argument(
+        "--corpus",
+        default=str(DEFAULT_CORPUS_PATH),
+        help="Path to the curated eval corpus JSON file.",
+    )
+    parser.add_argument(
+        "--profile", default=None, help="Configuration profile name from the profiles directory."
+    )
     parser.add_argument("--profile-path", default=None, help="Explicit TOML profile path.")
-    parser.add_argument("--output-dir", default=None, help="Optional directory for report.json and summary.md.")
+    parser.add_argument(
+        "--output-dir", default=None, help="Optional directory for report.json and summary.md."
+    )
     args = parser.parse_args()
     return run_eval(
         top_k=args.top_k,

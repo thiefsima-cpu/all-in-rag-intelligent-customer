@@ -41,7 +41,9 @@ class _FakeResponse:
             },
             "grounding": {
                 "retrieval_outcome": {
-                    "query": self.route_resolution.get("understanding", {}).get("query_plan", {}).get("query", ""),
+                    "query": self.route_resolution.get("understanding", {})
+                    .get("query_plan", {})
+                    .get("query", ""),
                     "strategy": self.strategy,
                     "doc_count": len(self.evidence_documents),
                     "evidence_documents": list(self.evidence_documents),
@@ -74,9 +76,7 @@ class _FakeRouteResolution:
         query: str,
     ) -> None:
         self.retrieval = SimpleNamespace(evidence_documents=list(evidence_documents))
-        self.analysis = SimpleNamespace(
-            recommended_strategy=SimpleNamespace(value=strategy)
-        )
+        self.analysis = SimpleNamespace(recommended_strategy=SimpleNamespace(value=strategy))
         self.understanding = SimpleNamespace(
             query_plan=SimpleNamespace(
                 to_dict=lambda: {

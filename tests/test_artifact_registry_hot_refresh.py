@@ -37,19 +37,13 @@ class ArtifactRegistryHotRefreshTests(unittest.TestCase):
     def test_registry_lists_immutable_versions_and_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
-                {
-                    "storage": {
-                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json")
-                    }
-                }
+                {"storage": {"artifact_manifest_path": str(Path(temp_dir) / "manifest.json")}}
             )
             store = ArtifactManifestStore(config)
             first = store.save(
                 ArtifactManifest(stage=ARTIFACT_STAGE_READY, collection_name="recipes__blue")
             )
-            second = store.save(
-                first.evolve(collection_name="recipes__green")
-            )
+            second = store.save(first.evolve(collection_name="recipes__green"))
             candidate = store.save_candidate(
                 second.evolve(stage="building", collection_name="recipes__blue")
             )
@@ -69,9 +63,7 @@ class ArtifactRegistryHotRefreshTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
                 {
-                    "storage": {
-                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json")
-                    },
+                    "storage": {"artifact_manifest_path": str(Path(temp_dir) / "manifest.json")},
                     "api": {"serving_hot_refresh_interval_seconds": 0.1},
                 }
             )
@@ -84,9 +76,7 @@ class ArtifactRegistryHotRefreshTests(unittest.TestCase):
                 system=system,
                 artifact_registry=ArtifactRegistry(store),
             )
-            second = store.save(
-                first.evolve(collection_name="recipes__green")
-            )
+            second = store.save(first.evolve(collection_name="recipes__green"))
 
             refreshed = service._refresh_serving_runtime_if_stale(force_check=True)
 
