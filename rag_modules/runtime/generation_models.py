@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -29,7 +30,7 @@ class GenerationSnapshot:
     token_usage_source: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "GenerationSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "GenerationSnapshot":
         payload = dict(data or {})
         allowed = {field.name for field in cls.__dataclass_fields__.values()}
         return cls(**{key: payload[key] for key in allowed if key in payload})

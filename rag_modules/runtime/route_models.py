@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -22,7 +23,7 @@ class RouteStageSnapshot:
         self.details = dict(self.details or {})
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RouteStageSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RouteStageSnapshot":
         payload = dict(data or {})
         details = {
             key: value
@@ -78,7 +79,7 @@ class RouteDiagnostics:
         ]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RouteDiagnostics":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RouteDiagnostics":
         payload = dict(data or {})
         return cls(
             used_fallback=payload.get("used_fallback", False),
@@ -152,7 +153,7 @@ class RouteSnapshot:
         self.refresh_diagnostics()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RouteSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RouteSnapshot":
         payload = dict(data or {})
         return cls(
             query=payload.get("query", ""),

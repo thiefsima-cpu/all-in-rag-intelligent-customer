@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -22,7 +23,7 @@ class GraphTraceEventSnapshot:
         self.details = dict(self.details or {})
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "GraphTraceEventSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "GraphTraceEventSnapshot":
         payload = dict(data or {})
         return cls(
             name=payload.get("name", ""),
@@ -102,7 +103,7 @@ class GraphRetrievalSnapshot:
         self.error = str(self.error or "")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "GraphRetrievalSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "GraphRetrievalSnapshot":
         payload = dict(data or {})
         return cls(
             query=payload.get("query", ""),

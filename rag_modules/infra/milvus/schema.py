@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from pymilvus import CollectionSchema, DataType, FieldSchema
+
+from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
 
 
-class _MilvusSchemaOperations:
-    client: Any
-    collection_created: bool
-    collection_name: str
-    dimension: int
-
+class _MilvusSchemaOperations(MilvusOperationHost):
     def _create_collection_schema(self) -> CollectionSchema:
         """
         创建集合模式

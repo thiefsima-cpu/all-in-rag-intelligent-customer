@@ -2,24 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Dict
+
+from .contracts import MilvusOperationHost
 
 
-class _MilvusBlueGreenOperations:
-    active_collection_name: str
-    active_collection_slot: str
-    base_collection_name: str
-    blue_green_enabled: bool
-    build_collection_name: str
-    client: Any
-    collection_alias: str
-    collection_created: bool
-    collection_name: str
-
-    if TYPE_CHECKING:
-
-        def delete_collection(self, collection_name: Optional[str] = None) -> bool: ...
-
+class _MilvusBlueGreenOperations(MilvusOperationHost):
     def use_manifest(self, manifest) -> str:
         """Bind reads to the collection published by an artifact manifest."""
 

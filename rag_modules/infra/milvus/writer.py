@@ -4,32 +4,15 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import List, Optional
 
-from ...runtime_contracts import EmbeddingClientPort
 from ...text_document import TextDocument
+from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
 
 
-class _MilvusWriterOperations:
-    build_collection_name: str
-    client: Any
-    collection_created: bool
-    collection_name: str
-    embeddings: EmbeddingClientPort
-
-    if TYPE_CHECKING:
-
-        def create_collection(
-            self,
-            force_recreate: bool = False,
-            *,
-            collection_name: Optional[str] = None,
-        ) -> bool: ...
-
-        def create_index(self, *, collection_name: Optional[str] = None) -> bool: ...
-
+class _MilvusWriterOperations(MilvusOperationHost):
     def _safe_truncate(self, text: str, max_length: int) -> str:
         """
         安全截取字符串，处理None值

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -23,7 +24,7 @@ class QueryDiagnostics:
     failure_reasons: List[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "QueryDiagnostics":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryDiagnostics":
         payload = dict(data or {})
         return cls(
             retrieval_bucket=payload.get("retrieval_bucket", ""),
@@ -62,7 +63,7 @@ class ModelSuiteSnapshot:
     rerank: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "ModelSuiteSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "ModelSuiteSnapshot":
         payload = dict(data or {})
         return cls(
             llm=str(payload.get("llm") or ""),
@@ -102,7 +103,7 @@ class RetrievalTraceSnapshot:
         ]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RetrievalTraceSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RetrievalTraceSnapshot":
         payload = dict(data or {})
         graph_trace_payload = payload.get("graph_trace")
         return cls(
@@ -137,7 +138,7 @@ class AnswerTraceSnapshot:
         self.preview = str(self.preview or "")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "AnswerTraceSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "AnswerTraceSnapshot":
         payload = dict(data or {})
         return cls(
             chars=payload.get("chars", 0),
@@ -191,7 +192,7 @@ class QueryTraceEvent:
         self.error = str(self.error or "")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "QueryTraceEvent":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryTraceEvent":
         payload = dict(data or {})
         payload["models"] = ModelSuiteSnapshot.from_dict(payload.get("models"))
         payload["retrieval"] = RetrievalTraceSnapshot.from_dict(payload.get("retrieval"))

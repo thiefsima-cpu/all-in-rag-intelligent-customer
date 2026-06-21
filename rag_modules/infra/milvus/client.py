@@ -3,42 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Optional
 
 from pymilvus import MilvusClient
 
 from ...dashscope_clients import DashScopeEmbeddingClient
-from ...runtime_contracts import EmbeddingClientPort
+from ...runtime.json_types import JsonObject, coerce_json_object
+from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
 
 
-class _MilvusClientOperations:
-    active_collection_name: str
-    active_collection_slot: str
-    api_key: str
-    circuit_breaker_failure_threshold: int
-    circuit_breaker_recovery_seconds: float
-    client: Any
-    collection_alias: str
-    collection_created: bool
-    collection_name: str
-    dimension: int
-    embedding_base_url: str
-    embedding_batch_size: int
-    embedding_client: EmbeddingClientPort | None
-    embedding_timeout_seconds: int
-    embeddings: EmbeddingClientPort
-    host: str
-    http_pool_connections: int
-    http_pool_maxsize: int
-    model_name: str
-    port: int
-
-    if TYPE_CHECKING:
-
-        def alias_target(self) -> str: ...
-
+class _MilvusClientOperations(MilvusOperationHost):
     def _setup_client(self):
         """初始化Milvus客户端"""
         try:
@@ -81,7 +57,7 @@ class _MilvusClientOperations:
     def get_collection_stats(
         self,
         collection_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> JsonObject:
         """
         获取集合统计信息
 
@@ -105,7 +81,7 @@ class _MilvusClientOperations:
                 "collection_slot": self.active_collection_slot,
                 "row_count": stats.get("row_count", 0),
                 "index_building_progress": stats.get("index_building_progress", 0),
-                "stats": stats,
+                "stats": coerce_json_object(stats),
             }
 
         except Exception as e:

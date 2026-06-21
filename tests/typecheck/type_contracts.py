@@ -39,12 +39,23 @@ from rag_modules.app.runtime_views import (
     SystemServicesView,
 )
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.generation.execution.contracts import GenerationExecutionHost
+from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.graph.retrieval_types import GraphQuery
+from rag_modules.infra.milvus.contracts import MilvusOperationHost
+from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
 from rag_modules.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
-from rag_modules.runtime import GraphRetrievalSnapshot
+from rag_modules.runtime import (
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    QueryTraceEvent,
+    RetrievalOutcome,
+    RouteSnapshot,
+)
+from rag_modules.runtime.json_types import JsonObject
 
 infrastructure_provider: InfrastructureComponentProvider = DefaultInfrastructureComponentProvider()
 retrieval_provider: RetrievalComponentProvider = DefaultRetrievalComponentProvider()
@@ -218,3 +229,48 @@ def accept_grouped_views(
     services: SystemServicesView,
 ) -> tuple[SystemInfrastructureView, SystemRetrievalView, SystemServicesView]:
     return infrastructure, retrieval, services
+
+
+def accept_execution_hosts(
+    generation_engine: GenerationExecutionEngine,
+    milvus_module: MilvusIndexConstructionModule,
+) -> tuple[GenerationExecutionHost, MilvusOperationHost, VectorIndexModulePort]:
+    return generation_engine, milvus_module, milvus_module
+
+
+def accept_runtime_mapping_payloads(
+    payload: Mapping[str, object],
+) -> tuple[
+    GenerationSnapshot,
+    RouteSnapshot,
+    RetrievalOutcome,
+    QueryTraceEvent,
+]:
+    return (
+        GenerationSnapshot.from_dict(payload),
+        RouteSnapshot.from_dict(payload),
+        RetrievalOutcome.from_dict(payload),
+        QueryTraceEvent.from_dict(payload),
+    )
+
+
+def accept_json_runtime_ports(
+    query_tracer: QueryTracerPort,
+    index_module: VectorIndexModulePort,
+    payload: JsonObject,
+) -> tuple[JsonObject, JsonObject, list[JsonObject], QueryTraceEvent]:
+    event = query_tracer.record(
+        "question",
+        analysis=payload,
+        documents=RetrievalOutcome(),
+        latency_ms=1.0,
+        route_trace=payload,
+        graph_trace=payload,
+        generation_trace=payload,
+    )
+    return (
+        query_tracer.stats(),
+        index_module.get_collection_stats(),
+        index_module.similarity_search("question", filters=payload),
+        event,
+    )

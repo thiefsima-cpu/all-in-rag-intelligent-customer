@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Iterable, List
 
@@ -52,7 +53,7 @@ class RetrievalOutcome:
         self.metadata = dict(self.metadata or {})
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RetrievalOutcome":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RetrievalOutcome":
         payload = dict(data or {})
         raw_evidence = payload.get("evidence_documents") or []
         return cls(

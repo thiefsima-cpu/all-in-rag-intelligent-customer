@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional
 
 from .retrieval.contracts import EvidenceDocument, ensure_evidence_documents
@@ -22,6 +23,7 @@ from .runtime import (
     RouteSnapshot,
     analysis_strategy_name,
 )
+from .runtime.json_types import JsonObject, coerce_json_object
 from .runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
@@ -55,9 +57,9 @@ class QueryTracer:
         latency_ms: float,
         answer: Optional[str] = None,
         error: Optional[str] = None,
-        route_trace: Optional[Dict[str, Any] | RouteSnapshot] = None,
-        graph_trace: Optional[Dict[str, Any] | GraphRetrievalSnapshot] = None,
-        generation_trace: Optional[Dict[str, Any] | GenerationSnapshot] = None,
+        route_trace: Mapping[str, Any] | RouteSnapshot | None = None,
+        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None = None,
+        generation_trace: Mapping[str, Any] | GenerationSnapshot | None = None,
     ) -> QueryTraceEvent:
         evidence_documents = self._normalize_evidence_documents(documents)
         event = self._build_event(
@@ -87,19 +89,21 @@ class QueryTracer:
         except Exception as exc:
             logger.warning("Failed to close query tracer sink: %s", exc)
 
-    def stats(self) -> Dict[str, Any]:
-        sink_stats: Dict[str, Any] = {}
+    def stats(self) -> JsonObject:
+        sink_stats: JsonObject = {}
         sink_stats_getter = getattr(self.sink, "stats", None)
         if callable(sink_stats_getter):
             try:
-                sink_stats = dict(sink_stats_getter() or {})
+                sink_stats = coerce_json_object(sink_stats_getter() or {})
             except Exception as exc:
                 logger.debug("Failed to read query trace sink stats: %s", exc)
-        return {
-            "enabled": self.enabled,
-            "path": self.trace_path,
-            **sink_stats,
-        }
+        return coerce_json_object(
+            {
+                "enabled": self.enabled,
+                "path": self.trace_path,
+                **sink_stats,
+            }
+        )
 
     def _build_event(
         self,
@@ -110,9 +114,9 @@ class QueryTracer:
         latency_ms: float,
         answer: Optional[str],
         error: Optional[str],
-        route_trace: Optional[Dict[str, Any] | RouteSnapshot],
-        graph_trace: Optional[Dict[str, Any] | GraphRetrievalSnapshot],
-        generation_trace: Optional[Dict[str, Any] | GenerationSnapshot],
+        route_trace: Mapping[str, Any] | RouteSnapshot | None,
+        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None,
+        generation_trace: Mapping[str, Any] | GenerationSnapshot | None,
     ) -> QueryTraceEvent:
         plan = self._extract_plan(documents, evidence_documents)
         strategy = analysis_strategy_name(analysis) or None
@@ -179,19 +183,19 @@ class QueryTracer:
 
     @staticmethod
     def _normalize_route_snapshot(
-        route_trace: Optional[Dict[str, Any] | RouteSnapshot],
+        route_trace: Mapping[str, Any] | RouteSnapshot | None,
     ) -> RouteSnapshot:
         return clone_route_snapshot(route_trace)
 
     @staticmethod
     def _normalize_graph_snapshot(
-        graph_trace: Optional[Dict[str, Any] | GraphRetrievalSnapshot],
+        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None,
     ) -> GraphRetrievalSnapshot:
         return clone_graph_snapshot(graph_trace)
 
     @staticmethod
     def _normalize_generation_snapshot(
-        generation_trace: Optional[Dict[str, Any] | GenerationSnapshot],
+        generation_trace: Mapping[str, Any] | GenerationSnapshot | None,
     ) -> GenerationSnapshot:
         return clone_generation_snapshot(generation_trace)
 

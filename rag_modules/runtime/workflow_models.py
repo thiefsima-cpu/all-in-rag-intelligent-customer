@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List
 
@@ -81,7 +82,7 @@ class QueryUnderstandingSnapshot:
         )
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "QueryUnderstandingSnapshot":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryUnderstandingSnapshot":
         payload = dict(data or {})
         query = str(payload.get("query") or "")
         query_plan_payload = payload.get("query_plan")
@@ -142,7 +143,7 @@ class RouteResolution:
         return list(self.retrieval.evidence_documents or [])
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RouteResolution":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RouteResolution":
         payload = dict(data or {})
         return cls(
             understanding=QueryUnderstandingSnapshot.from_dict(payload.get("understanding")),

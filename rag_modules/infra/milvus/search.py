@@ -3,24 +3,21 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from collections.abc import Mapping
 
-from ...runtime_contracts import EmbeddingClientPort
+from ...runtime.json_types import JsonObject, JsonValue
+from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
 
 
-class _MilvusSearchOperations:
-    client: Any
-    collection_created: bool
-    collection_name: str
-    embeddings: EmbeddingClientPort
-    vector_search_ef: int
-    vector_search_max_k: int
-
+class _MilvusSearchOperations(MilvusOperationHost):
     def similarity_search(
-        self, query: str, k: int = 5, filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        self,
+        query: str,
+        k: int = 5,
+        filters: Mapping[str, JsonValue] | None = None,
+    ) -> list[JsonObject]:
         """
         相似度搜索
 
@@ -55,8 +52,9 @@ class _MilvusSearchOperations:
                         filter_conditions.append(f"{key} == {value}")
                     elif isinstance(value, list):
                         # 支持IN操作
-                        if all(isinstance(v, str) for v in value):
-                            value_str = '", "'.join(value)
+                        string_values = [item for item in value if isinstance(item, str)]
+                        if len(string_values) == len(value):
+                            value_str = '", "'.join(string_values)
                             filter_conditions.append(f'{key} in ["{value_str}"]')
                         else:
                             value_str = ", ".join(map(str, value))
@@ -96,7 +94,7 @@ class _MilvusSearchOperations:
             results = self.client.search(**search_kwargs)
 
             # 处理结果
-            formatted_results = []
+            formatted_results: list[JsonObject] = []
             if results and len(results) > 0:
                 for hit in results[0]:  # results[0]因为我们只发送了一个查询向量
                     result = {

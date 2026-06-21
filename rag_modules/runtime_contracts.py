@@ -19,7 +19,11 @@ if TYPE_CHECKING:
         RetrievalOutcome,
         RouteSnapshot,
     )
+    from .runtime.json_types import JsonObject, JsonValue
     from .text_document import TextDocument
+else:
+    JsonObject = dict[str, object]
+    JsonValue = object
 
 
 class Neo4jSessionPort(Protocol):
@@ -55,7 +59,7 @@ class GraphDataModulePort(Protocol):
     documents: list[TextDocument]
     chunks: list[TextDocument]
 
-    def load_graph_data(self) -> dict[str, object]: ...
+    def load_graph_data(self) -> JsonObject: ...
 
     def build_recipe_documents(self) -> list[TextDocument]: ...
 
@@ -65,7 +69,7 @@ class GraphDataModulePort(Protocol):
         chunk_overlap: int = 50,
     ) -> list[TextDocument]: ...
 
-    def get_statistics(self) -> dict[str, object]: ...
+    def get_statistics(self) -> JsonObject: ...
 
     def close(self) -> None: ...
 
@@ -90,10 +94,10 @@ class VectorIndexModulePort(Protocol):
         self,
         query: str,
         k: int = 5,
-        filters: dict[str, object] | None = None,
-    ) -> list[dict[str, object]]: ...
+        filters: Mapping[str, JsonValue] | None = None,
+    ) -> list[JsonObject]: ...
 
-    def get_collection_stats(self, collection_name: str | None = None) -> dict[str, object]: ...
+    def get_collection_stats(self, collection_name: str | None = None) -> JsonObject: ...
 
     def delete_collection(self, collection_name: str | None = None) -> bool: ...
 
@@ -111,12 +115,12 @@ class QueryTracerPort(Protocol):
         latency_ms: float,
         answer: str | None = None,
         error: str | None = None,
-        route_trace: dict[str, object] | RouteSnapshot | None = None,
-        graph_trace: dict[str, object] | GraphRetrievalSnapshot | None = None,
-        generation_trace: dict[str, object] | GenerationSnapshot | None = None,
+        route_trace: Mapping[str, JsonValue] | RouteSnapshot | None = None,
+        graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None = None,
+        generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None = None,
     ) -> QueryTraceEvent: ...
 
-    def stats(self) -> dict[str, object]: ...
+    def stats(self) -> JsonObject: ...
 
     def close(self) -> None: ...
 
