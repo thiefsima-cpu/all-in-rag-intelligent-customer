@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict
 
 from .candidate_settings import RetrievalCandidateSizingSettings
+from .candidate_source_settings import RetrievalCandidateSourceSettings
 from .planner_settings import QueryPlannerRuntimeSettings
 from .postprocess_settings import RetrievalPostProcessSettings
 from .semantic_settings import QuerySemanticRuntimeSettings
@@ -17,6 +18,9 @@ class RetrievalRuntimeProfile:
     semantics: QuerySemanticRuntimeSettings = field(default_factory=QuerySemanticRuntimeSettings)
     candidates: RetrievalCandidateSizingSettings = field(
         default_factory=RetrievalCandidateSizingSettings
+    )
+    candidate_sources: RetrievalCandidateSourceSettings = field(
+        default_factory=RetrievalCandidateSourceSettings
     )
     postprocess: RetrievalPostProcessSettings = field(default_factory=RetrievalPostProcessSettings)
 
@@ -31,6 +35,7 @@ class RetrievalRuntimeProfile:
             "planner": self.planner.to_dict(),
             "semantics": self.semantics.to_dict(),
             "candidates": self.candidates.to_dict(),
+            "candidate_sources": self.candidate_sources.to_dict(),
             "postprocess": self.postprocess.to_dict(),
         }
 

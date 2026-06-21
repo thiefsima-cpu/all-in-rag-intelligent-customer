@@ -148,6 +148,79 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
         self.assertEqual(candidate_set.degraded_details[0]["circuit_state"], "open")
         self.assertEqual(len(bm25.requests), 1)
 
+    def test_configured_failure_threshold_delays_open_circuit(self) -> None:
+        vector = _FailingSource(
+            CandidateSourceSpec(
+                name="vector",
+                rank_name="vector",
+                search_method="vector",
+                search_type="vector_enhanced",
+                rank_order=1,
+            ),
+            TimeoutError("vector timed out"),
+        )
+        bm25 = _StubSource(
+            CandidateSourceSpec(
+                name="bm25",
+                rank_name="bm25",
+                search_method="bm25",
+                search_type="bm25",
+                rank_order=2,
+            ),
+            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+        )
+        generator = RetrievalCandidateGenerator(
+            sources=[vector, bm25],
+            source_failure_threshold=2,
+        )
+        request = RetrievalRequest.from_inputs(query="recommend tofu", top_k=2, candidate_k=4)
+
+        first = generator.generate(request)
+        second = generator.generate(request)
+        third = generator.generate(request)
+
+        self.assertEqual(len(vector.requests), 2)
+        self.assertEqual(len(bm25.requests), 3)
+        self.assertEqual(first.degraded_details[0]["reason"], "exception")
+        self.assertEqual(first.degraded_details[0]["circuit_state"], "closed")
+        self.assertEqual(first.degraded_details[0]["failure_count"], 1)
+        self.assertEqual(second.degraded_details[0]["reason"], "exception")
+        self.assertEqual(second.degraded_details[0]["circuit_state"], "open")
+        self.assertEqual(third.degraded_details[0]["reason"], "circuit_open")
+
+    def test_fail_fast_strategy_raises_source_exception_and_stops_later_sources(self) -> None:
+        vector = _FailingSource(
+            CandidateSourceSpec(
+                name="vector",
+                rank_name="vector",
+                search_method="vector",
+                search_type="vector_enhanced",
+                rank_order=1,
+            ),
+            TimeoutError("vector timed out"),
+        )
+        bm25 = _StubSource(
+            CandidateSourceSpec(
+                name="bm25",
+                rank_name="bm25",
+                search_method="bm25",
+                search_type="bm25",
+                rank_order=2,
+            ),
+            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+        )
+        generator = RetrievalCandidateGenerator(
+            sources=[vector, bm25],
+            source_degradation_strategy="fail_fast",
+        )
+        request = RetrievalRequest.from_inputs(query="recommend tofu", top_k=2, candidate_k=4)
+
+        with self.assertRaisesRegex(TimeoutError, "vector timed out"):
+            generator.generate(request)
+
+        self.assertEqual(len(vector.requests), 1)
+        self.assertEqual(len(bm25.requests), 0)
+
     def test_open_circuit_skips_only_the_failed_source(self) -> None:
         vector = _FailingSource(
             CandidateSourceSpec(

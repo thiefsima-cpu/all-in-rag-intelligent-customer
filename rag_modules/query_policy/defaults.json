@@ -766,6 +766,11 @@
       "graph_supplement_multiplier": 2,
       "graph_supplement_min_candidates": 10
     },
+    "candidate_sources": {
+      "failure_threshold": 1,
+      "recovery_timeout_seconds": 30.0,
+      "degradation_strategy": "continue"
+    },
     "postprocess": {
       "enable_rerank": true,
       "rerank_model": "qwen3-vl-rerank",

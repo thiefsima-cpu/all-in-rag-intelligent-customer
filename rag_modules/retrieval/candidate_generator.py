@@ -13,6 +13,20 @@ from .contracts import EvidenceDocument, RetrievalRequest
 logger = logging.getLogger(__name__)
 
 SKIP_CANDIDATE_SOURCES_METADATA_KEY = "skip_candidate_sources"
+SOURCE_DEGRADATION_STRATEGY_CONTINUE = "continue"
+SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = "fail_fast"
+SUPPORTED_SOURCE_DEGRADATION_STRATEGIES = {
+    SOURCE_DEGRADATION_STRATEGY_CONTINUE,
+    SOURCE_DEGRADATION_STRATEGY_FAIL_FAST,
+}
+
+
+def _normalize_source_degradation_strategy(value: str) -> str:
+    normalized = str(value or SOURCE_DEGRADATION_STRATEGY_CONTINUE).strip().lower()
+    if normalized not in SUPPORTED_SOURCE_DEGRADATION_STRATEGIES:
+        supported = ", ".join(sorted(SUPPORTED_SOURCE_DEGRADATION_STRATEGIES))
+        raise ValueError(f"source_degradation_strategy must be one of: {supported}")
+    return normalized
 
 
 @dataclass
@@ -115,12 +129,18 @@ class RetrievalCandidateGenerator:
         sources: Sequence[RetrievalCandidateSource],
         source_failure_threshold: int = 1,
         source_recovery_timeout_seconds: float = 30.0,
+        source_degradation_strategy: str = SOURCE_DEGRADATION_STRATEGY_CONTINUE,
     ):
         self.sources = tuple(sources)
+        self.source_failure_threshold = max(1, int(source_failure_threshold))
+        self.source_recovery_timeout_seconds = max(0.1, float(source_recovery_timeout_seconds))
+        self.source_degradation_strategy = _normalize_source_degradation_strategy(
+            source_degradation_strategy
+        )
         self._source_breakers = {
             source.spec.name: CircuitBreaker(
-                failure_threshold=source_failure_threshold,
-                recovery_timeout_seconds=source_recovery_timeout_seconds,
+                failure_threshold=self.source_failure_threshold,
+                recovery_timeout_seconds=self.source_recovery_timeout_seconds,
             )
             for source in self.sources
         }
@@ -193,6 +213,8 @@ class RetrievalCandidateGenerator:
         try:
             breaker.before_call()
         except CircuitOpenError as exc:
+            if self._should_raise_degradation():
+                raise
             return [], self._degradation(
                 source.spec,
                 reason="circuit_open",
@@ -207,6 +229,8 @@ class RetrievalCandidateGenerator:
         except Exception as exc:
             breaker.record_failure()
             logger.warning("Candidate source %s degraded: %s", source.spec.name, exc)
+            if self._should_raise_degradation():
+                raise
             return [], self._degradation(
                 source.spec,
                 reason="exception",
@@ -215,6 +239,9 @@ class RetrievalCandidateGenerator:
             )
         breaker.record_success()
         return documents, None
+
+    def _should_raise_degradation(self) -> bool:
+        return self.source_degradation_strategy == SOURCE_DEGRADATION_STRATEGY_FAIL_FAST
 
     @staticmethod
     def _degradation(

@@ -33,9 +33,16 @@ class _FakeCandidatesProfile:
         return top_k + (2 if constrained else 1)
 
 
+class _FakeCandidateSourceProfile:
+    failure_threshold = 1
+    recovery_timeout_seconds = 30.0
+    degradation_strategy = "continue"
+
+
 class _FakeRetrievalProfile:
-    def __init__(self) -> None:
+    def __init__(self, candidate_sources=None) -> None:
         self.candidates = _FakeCandidatesProfile()
+        self.candidate_sources = candidate_sources or _FakeCandidateSourceProfile()
 
 
 class _FakeRuntime:
@@ -175,6 +182,26 @@ class HybridSearchServiceTests(unittest.TestCase):
         self.assertEqual(len(service.candidate_generator.sources), 0)
         self.assertIs(source_factory.calls[0]["runtime"], runtime)
         self.assertEqual(source_factory.calls[0]["constraint_retriever"].name, "constraint")
+
+    def test_default_candidate_generator_uses_profile_source_resilience(self) -> None:
+        config = build_test_config()
+        policy = SimpleNamespace(
+            failure_threshold=4,
+            recovery_timeout_seconds=12.5,
+            degradation_strategy="fail_fast",
+        )
+        service = HybridSearchService(
+            config=config,
+            retrieval_profile=_FakeRetrievalProfile(candidate_sources=policy),
+            runtime=_FakeRuntime(),
+            fusion_ranker=_FakeFusionRanker(),
+            constraint_retriever=SimpleNamespace(name="constraint"),
+            candidate_source_factory=_StubCandidateSourceFactory(),
+        )
+
+        self.assertEqual(service.candidate_generator.source_failure_threshold, 4)
+        self.assertEqual(service.candidate_generator.source_recovery_timeout_seconds, 12.5)
+        self.assertEqual(service.candidate_generator.source_degradation_strategy, "fail_fast")
 
 
 if __name__ == "__main__":

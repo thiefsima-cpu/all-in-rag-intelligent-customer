@@ -10,6 +10,7 @@ _POLICY = get_query_policy()
 _PLANNER_DEFAULTS = _POLICY.runtime_section("planner")
 _SEMANTIC_DEFAULTS = _POLICY.runtime_section("semantics")
 _CANDIDATE_DEFAULTS = _POLICY.runtime_section("candidates")
+_CANDIDATE_SOURCE_DEFAULTS = _POLICY.runtime_section("candidate_sources")
 _POSTPROCESS_DEFAULTS = _POLICY.runtime_section("postprocess")
 
 
@@ -37,6 +38,7 @@ def _as_float(
 
 __all__ = [
     "_CANDIDATE_DEFAULTS",
+    "_CANDIDATE_SOURCE_DEFAULTS",
     "_PLANNER_DEFAULTS",
     "_POSTPROCESS_DEFAULTS",
     "_SEMANTIC_DEFAULTS",

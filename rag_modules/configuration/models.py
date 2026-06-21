@@ -93,6 +93,9 @@ class RetrievalSettings(ConfigSection):
     enable_parent_doc_retrieval: bool
     parent_doc_top_n: int
     parent_doc_max_chars: int
+    candidate_source_failure_threshold: int = 1
+    candidate_source_recovery_seconds: float = 30.0
+    candidate_source_degradation_strategy: str = "continue"
 
 
 @dataclass(slots=True)

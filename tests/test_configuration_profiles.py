@@ -18,6 +18,9 @@ class ConfigurationProfilesTests(unittest.TestCase):
                     [
                         "[retrieval]",
                         "top_k = 9",
+                        "candidate_source_failure_threshold = 4",
+                        "candidate_source_recovery_seconds = 8.5",
+                        'candidate_source_degradation_strategy = "fail_fast"',
                         "",
                         "[generation]",
                         "generation_direct_max_tokens = 333",
@@ -36,6 +39,9 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertEqual(Path(config.profile_path), profile_path.resolve())
         self.assertTrue(config.profile_hash)
         self.assertEqual(config.retrieval.top_k, 9)
+        self.assertEqual(config.retrieval.candidate_source_failure_threshold, 4)
+        self.assertEqual(config.retrieval.candidate_source_recovery_seconds, 8.5)
+        self.assertEqual(config.retrieval.candidate_source_degradation_strategy, "fail_fast")
         self.assertEqual(config.generation.generation_direct_max_tokens, 333)
 
     def test_environment_overrides_profile_values(self) -> None:

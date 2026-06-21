@@ -52,6 +52,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                 environ={
                     "TOP_K": "9",
                     "HYBRID_DEFAULT_CANDIDATE_MULTIPLIER": "4",
+                    "RETRIEVAL_CANDIDATE_SOURCE_FAILURE_THRESHOLD": "3",
+                    "RETRIEVAL_CANDIDATE_SOURCE_RECOVERY_SECONDS": "12.5",
+                    "RETRIEVAL_CANDIDATE_SOURCE_DEGRADATION_STRATEGY": "fail_fast",
                     "ENABLE_PARENT_DOC_RETRIEVAL": "false",
                 }
             )
@@ -59,6 +62,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
 
         self.assertEqual(config.retrieval.top_k, 9)
         self.assertEqual(config.retrieval.hybrid_default_candidate_multiplier, 4)
+        self.assertEqual(config.retrieval.candidate_source_failure_threshold, 3)
+        self.assertEqual(config.retrieval.candidate_source_recovery_seconds, 12.5)
+        self.assertEqual(config.retrieval.candidate_source_degradation_strategy, "fail_fast")
         self.assertFalse(config.retrieval.enable_parent_doc_retrieval)
 
     def test_generation_settings_respect_environment_overrides(self) -> None:

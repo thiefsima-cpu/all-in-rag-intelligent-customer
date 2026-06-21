@@ -4,6 +4,7 @@ from .runtime_profile import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
     RetrievalCandidateSizingSettings,
+    RetrievalCandidateSourceSettings,
     RetrievalPostProcessSettings,
     RetrievalRuntimeProfile,
 )
@@ -11,6 +12,7 @@ from .runtime_profile import (
 __all__ = [
     "QueryPlannerRuntimeSettings",
     "QuerySemanticRuntimeSettings",
+    "RetrievalCandidateSourceSettings",
     "RetrievalCandidateSizingSettings",
     "RetrievalPostProcessSettings",
     "RetrievalRuntimeProfile",

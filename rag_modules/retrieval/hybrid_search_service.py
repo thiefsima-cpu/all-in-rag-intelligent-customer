@@ -44,11 +44,23 @@ class HybridSearchService:
         self.candidate_source_factory = (
             candidate_source_factory or DefaultHybridCandidateSourceFactory()
         )
+        candidate_source_settings = getattr(self.retrieval_profile, "candidate_sources", None)
         self.candidate_generator = candidate_generator or RetrievalCandidateGenerator(
             sources=self.candidate_source_factory.build(
                 runtime=runtime,
                 constraint_retriever=constraint_retriever,
-            )
+            ),
+            source_failure_threshold=getattr(candidate_source_settings, "failure_threshold", 1),
+            source_recovery_timeout_seconds=getattr(
+                candidate_source_settings,
+                "recovery_timeout_seconds",
+                30.0,
+            ),
+            source_degradation_strategy=getattr(
+                candidate_source_settings,
+                "degradation_strategy",
+                "continue",
+            ),
         )
 
     def build_request(

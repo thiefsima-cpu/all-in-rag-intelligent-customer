@@ -258,6 +258,10 @@ def load_retrieval_settings(
     defaults: Mapping[str, Any] | None = None,
 ) -> RetrievalSettings:
     retrieval_defaults = _mapping_defaults(defaults)
+    candidate_source_degradation_strategy = source.get_str(
+        "RETRIEVAL_CANDIDATE_SOURCE_DEGRADATION_STRATEGY",
+        str(retrieval_defaults.get("candidate_source_degradation_strategy", "continue")),
+    ).strip().lower()
     return RetrievalSettings(
         top_k=source.get_int("TOP_K", int(retrieval_defaults.get("top_k", 5))),
         vector_search_ef=source.get_int(
@@ -316,6 +320,23 @@ def load_retrieval_settings(
         parent_doc_max_chars=source.get_int(
             "PARENT_DOC_MAX_CHARS",
             int(retrieval_defaults.get("parent_doc_max_chars", 4000)),
+        ),
+        candidate_source_failure_threshold=max(
+            1,
+            source.get_int(
+                "RETRIEVAL_CANDIDATE_SOURCE_FAILURE_THRESHOLD",
+                int(retrieval_defaults.get("candidate_source_failure_threshold", 1)),
+            ),
+        ),
+        candidate_source_recovery_seconds=max(
+            0.1,
+            source.get_float(
+                "RETRIEVAL_CANDIDATE_SOURCE_RECOVERY_SECONDS",
+                float(retrieval_defaults.get("candidate_source_recovery_seconds", 30.0)),
+            ),
+        ),
+        candidate_source_degradation_strategy=(
+            candidate_source_degradation_strategy or "continue"
         ),
     )
 
