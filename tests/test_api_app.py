@@ -823,8 +823,15 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("QueryTraceEventResponseModel", schemas)
         generation_schema = schemas["GenerationSnapshotResponseModel"]
         self.assertIn("token_usage_source", generation_schema["properties"])
+        token_usage_schema = generation_schema["properties"]["token_usage_source"]
+        self.assertEqual(token_usage_schema["type"], "string")
+        self.assertEqual(token_usage_schema["default"], "")
         trace_event_schema = schemas["QueryTraceEventResponseModel"]
         self.assertIn("diagnostics", trace_event_schema["properties"])
+        self.assertEqual(
+            trace_event_schema["properties"]["diagnostics"]["$ref"],
+            "#/components/schemas/QueryDiagnosticsResponseModel",
+        )
         stream_post = schema["paths"]["/answers/stream"]["post"]
         self.assertEqual(
             stream_post["responses"]["200"]["content"].keys(),
