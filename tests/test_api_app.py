@@ -6,15 +6,33 @@ import time
 import unittest
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
 from rag_modules.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
-from rag_modules.interfaces.api.models import MAX_QUESTION_CHARS, AnswerStreamEventType
+from rag_modules.interfaces.api.models import (
+    MAX_QUESTION_CHARS,
+    AnswerResponseModel,
+    AnswerStreamEventType,
+)
 from rag_modules.interfaces.api.service import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
+)
+from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.runtime import (
+    AnswerContext,
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    QueryAnalysis,
+    QueryDiagnostics,
+    QueryTraceEvent,
+    RetrievalOutcome,
+    RetrievalTraceSnapshot,
+    RouteResolution,
+    RouteSnapshot,
 )
 
 _API_TOKEN = "test-api-access-token"
@@ -108,6 +126,131 @@ def _diagnostics(
     )
 
 
+def _answer_payload(question: str, *, stream: bool = False) -> dict:
+    route_trace = RouteSnapshot(
+        query=question,
+        strategy="hybrid_traditional",
+        requested_top_k=5,
+        total_latency_ms=3.5,
+        final_doc_count=1,
+    )
+    evidence_document = EvidenceDocument(
+        content="Mapo tofu is a tofu dish.",
+        recipe_name="mapo tofu",
+        score=0.93,
+        search_type="hybrid",
+        search_method="vector",
+        source="vector",
+        route_strategy="hybrid_traditional",
+    )
+    retrieval = RetrievalOutcome(
+        query=question,
+        strategy="hybrid_traditional",
+        evidence_documents=[evidence_document],
+        route_trace=route_trace,
+    )
+    analysis = QueryAnalysis(
+        query_complexity=0.2,
+        relationship_intensity=0.1,
+        recommended_strategy="hybrid_traditional",
+        confidence=0.8,
+        reasoning="simple factual cooking question",
+    )
+    answer_context = AnswerContext(
+        question=question,
+        retrieval=retrieval,
+        analysis=analysis,
+        metadata={"stream": stream},
+    )
+    route_resolution = RouteResolution(
+        retrieval=retrieval,
+        metadata={"route_strategy": "hybrid_traditional"},
+    )
+    graph_trace = GraphRetrievalSnapshot()
+    generation_trace = GenerationSnapshot(
+        status="success",
+        mode="direct",
+        total_evidence_items=1,
+        selected_evidence_items=1,
+        total_latency_ms=4.2,
+        provider_latency_ms=2.7,
+        prompt_tokens=11,
+        completion_tokens=7,
+        total_tokens=18,
+        estimated_cost_usd=0.001,
+        token_usage_source="test",
+    )
+    diagnostics = QueryDiagnostics(
+        retrieval_bucket="ok",
+        generation_bucket="ok",
+        overall_bucket="ok",
+    )
+    trace_event = QueryTraceEvent(
+        query_id="trace-test",
+        timestamp=1,
+        query=question,
+        strategy="hybrid_traditional",
+        latency_ms=12.3,
+        retrieval=RetrievalTraceSnapshot(
+            doc_count=1,
+            evidence=[evidence_document.to_dict()],
+            route_trace=route_trace,
+            graph_trace=graph_trace,
+        ),
+        generation=generation_trace,
+        diagnostics=diagnostics,
+    )
+
+    return {
+        "summary": {
+            "answer": f"answer:{question}",
+            "status": "success",
+            "strategy": "hybrid_traditional",
+            "latency_ms": 12.3,
+            "doc_count": 1,
+            "has_evidence": True,
+            "fallback_used": False,
+            "failure_code": "",
+            "provider_latency_ms": generation_trace.provider_latency_ms,
+            "prompt_tokens": generation_trace.prompt_tokens,
+            "completion_tokens": generation_trace.completion_tokens,
+            "total_tokens": generation_trace.total_tokens,
+            "estimated_cost_usd": generation_trace.estimated_cost_usd,
+            "token_usage_source": generation_trace.token_usage_source,
+            "error": "",
+        },
+        "grounding": {
+            "retrieval_outcome": retrieval.to_dict(),
+            "answer_context": answer_context.to_dict(),
+            "route_resolution": route_resolution.to_dict(),
+            "evidence_documents": [evidence_document.to_dict()],
+        },
+        "diagnostics": {
+            "analysis": analysis.to_dict(),
+            "diagnostics": diagnostics.to_dict(),
+        },
+        "traces": {
+            "route_trace": route_trace.to_dict(),
+            "graph_trace": graph_trace.to_dict(),
+            "generation_trace": generation_trace.to_dict(),
+            "trace_event": trace_event.to_dict(),
+        },
+    }
+
+
+def _payload_without_new_summary_fields(question: str) -> dict:
+    payload = _answer_payload(question)
+    for field_name in (
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_usd",
+        "token_usage_source",
+    ):
+        payload["summary"].pop(field_name)
+    return payload
+
+
 class _DummyAnswerResponse:
     def __init__(self, question: str, explain_routing: bool, stream: bool) -> None:
         self.question = question
@@ -115,32 +258,7 @@ class _DummyAnswerResponse:
         self.stream = stream
 
     def to_dict(self) -> dict:
-        return {
-            "summary": {
-                "answer": f"answer:{self.question}",
-                "strategy": "hybrid_traditional",
-                "latency_ms": 12.3,
-                "doc_count": 1,
-                "has_evidence": True,
-                "error": "",
-            },
-            "grounding": {
-                "retrieval_outcome": {"query": self.question},
-                "answer_context": {"question": self.question},
-                "route_resolution": {"query": self.question},
-                "evidence_documents": [{"recipe_name": "mapo tofu"}],
-            },
-            "diagnostics": {
-                "analysis": {"strategy_name": "hybrid_traditional"},
-                "diagnostics": {"explained": self.explain_routing, "stream": self.stream},
-            },
-            "traces": {
-                "route_trace": {"query": self.question},
-                "graph_trace": {},
-                "generation_trace": {"mode": "direct"},
-                "trace_event": {},
-            },
-        }
+        return _answer_payload(self.question, stream=self.stream)
 
 
 class _FakeApiSystem:
@@ -547,8 +665,78 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(system.answer_calls, [("Can I cook tofu?", False, True)])
         answer_payload = answer_response.json()["response"]
         self.assertEqual(answer_payload["summary"]["answer"], "answer:Can I cook tofu?")
-        self.assertTrue(answer_payload["diagnostics"]["diagnostics"]["explained"])
-        self.assertFalse(answer_payload["diagnostics"]["diagnostics"]["stream"])
+        self.assertEqual(
+            answer_payload["diagnostics"]["diagnostics"]["overall_bucket"],
+            "ok",
+        )
+        self.assertEqual(answer_payload["summary"]["prompt_tokens"], 11)
+        self.assertEqual(answer_payload["summary"]["total_tokens"], 18)
+
+    def test_answer_response_model_accepts_runtime_shaped_payload(self) -> None:
+        payload = _answer_payload("Can I cook tofu?")
+
+        model = AnswerResponseModel.model_validate({"response": payload})
+
+        dumped = model.model_dump()
+        self.assertEqual(dumped["response"]["summary"]["answer"], "answer:Can I cook tofu?")
+        self.assertEqual(dumped["response"]["summary"]["prompt_tokens"], 11)
+        self.assertEqual(
+            dumped["response"]["grounding"]["retrieval_outcome"]["evidence_documents"][0][
+                "recipe_name"
+            ],
+            "mapo tofu",
+        )
+        self.assertEqual(
+            dumped["response"]["diagnostics"]["diagnostics"]["overall_bucket"],
+            "ok",
+        )
+        self.assertEqual(
+            dumped["response"]["traces"]["generation_trace"]["token_usage_source"],
+            "test",
+        )
+
+    def test_answer_response_model_rejects_unknown_stable_fields(self) -> None:
+        accepted_locations: list[tuple[str, ...]] = []
+
+        def check_rejects_extra_field(payload: dict, expected_location: tuple[str, ...]) -> None:
+            try:
+                AnswerResponseModel.model_validate({"response": payload})
+            except ValidationError as exc:
+                self.assertIn(
+                    expected_location,
+                    {tuple(error["loc"]) for error in exc.errors()},
+                )
+            else:
+                accepted_locations.append(expected_location)
+
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
+        payload["summary"]["unexpected"] = True
+
+        check_rejects_extra_field(payload, ("response", "summary", "unexpected"))
+
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
+        payload["traces"]["generation_trace"]["unexpected"] = True
+
+        check_rejects_extra_field(payload, ("response", "traces", "generation_trace", "unexpected"))
+
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
+        payload["diagnostics"]["diagnostics"]["explained"] = True
+
+        check_rejects_extra_field(payload, ("response", "diagnostics", "diagnostics", "explained"))
+        self.assertEqual([], accepted_locations)
+
+    def test_answer_response_schema_exposes_summary_token_fields(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        summary_schema = schema["components"]["schemas"]["AnswerSummaryModel"]
+        self.assertIn("prompt_tokens", summary_schema["properties"])
+        self.assertIn("completion_tokens", summary_schema["properties"])
+        self.assertIn("total_tokens", summary_schema["properties"])
+        self.assertIn("estimated_cost_usd", summary_schema["properties"])
+        self.assertIn("token_usage_source", summary_schema["properties"])
 
     def test_answer_stream_uses_sse_surface(self) -> None:
         system = _FakeApiSystem()
@@ -593,6 +781,16 @@ class ApiAppTests(unittest.TestCase):
             events["result"][0]["response"]["summary"]["answer"],
             "answer:Can I cook tofu?",
         )
+        result_payload = events["result"][0]["response"]
+        self.assertEqual(result_payload["summary"]["prompt_tokens"], 11)
+        self.assertEqual(
+            result_payload["traces"]["generation_trace"]["token_usage_source"],
+            "test",
+        )
+        self.assertEqual(
+            result_payload["diagnostics"]["diagnostics"]["overall_bucket"],
+            "ok",
+        )
         self.assertEqual(events["done"][0]["ok"], True)
 
     def test_explicit_answer_stream_route_uses_sse_surface(self) -> None:
@@ -620,6 +818,20 @@ class ApiAppTests(unittest.TestCase):
 
         schema = openapi_response.json()
         self.assertIn("/answers/stream", schema["paths"])
+        schemas = schema["components"]["schemas"]
+        self.assertIn("GenerationSnapshotResponseModel", schemas)
+        self.assertIn("QueryTraceEventResponseModel", schemas)
+        generation_schema = schemas["GenerationSnapshotResponseModel"]
+        self.assertIn("token_usage_source", generation_schema["properties"])
+        token_usage_schema = generation_schema["properties"]["token_usage_source"]
+        self.assertEqual(token_usage_schema["type"], "string")
+        self.assertEqual(token_usage_schema["default"], "")
+        trace_event_schema = schemas["QueryTraceEventResponseModel"]
+        self.assertIn("diagnostics", trace_event_schema["properties"])
+        self.assertEqual(
+            trace_event_schema["properties"]["diagnostics"]["$ref"],
+            "#/components/schemas/QueryDiagnosticsResponseModel",
+        )
         stream_post = schema["paths"]["/answers/stream"]["post"]
         self.assertEqual(
             stream_post["responses"]["200"]["content"].keys(),
