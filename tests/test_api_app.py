@@ -781,6 +781,16 @@ class ApiAppTests(unittest.TestCase):
             events["result"][0]["response"]["summary"]["answer"],
             "answer:Can I cook tofu?",
         )
+        result_payload = events["result"][0]["response"]
+        self.assertEqual(result_payload["summary"]["prompt_tokens"], 11)
+        self.assertEqual(
+            result_payload["traces"]["generation_trace"]["token_usage_source"],
+            "test",
+        )
+        self.assertEqual(
+            result_payload["diagnostics"]["diagnostics"]["overall_bucket"],
+            "ok",
+        )
         self.assertEqual(events["done"][0]["ok"], True)
 
     def test_explicit_answer_stream_route_uses_sse_surface(self) -> None:
@@ -808,6 +818,13 @@ class ApiAppTests(unittest.TestCase):
 
         schema = openapi_response.json()
         self.assertIn("/answers/stream", schema["paths"])
+        schemas = schema["components"]["schemas"]
+        self.assertIn("GenerationSnapshotResponseModel", schemas)
+        self.assertIn("QueryTraceEventResponseModel", schemas)
+        generation_schema = schemas["GenerationSnapshotResponseModel"]
+        self.assertIn("token_usage_source", generation_schema["properties"])
+        trace_event_schema = schemas["QueryTraceEventResponseModel"]
+        self.assertIn("diagnostics", trace_event_schema["properties"])
         stream_post = schema["paths"]["/answers/stream"]["post"]
         self.assertEqual(
             stream_post["responses"]["200"]["content"].keys(),
