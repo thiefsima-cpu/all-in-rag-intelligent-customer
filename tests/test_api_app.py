@@ -238,6 +238,19 @@ def _answer_payload(question: str, *, stream: bool = False) -> dict:
     }
 
 
+def _payload_without_new_summary_fields(question: str) -> dict:
+    payload = _answer_payload(question)
+    for field_name in (
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_usd",
+        "token_usage_source",
+    ):
+        payload["summary"].pop(field_name)
+    return payload
+
+
 class _DummyAnswerResponse:
     def __init__(self, question: str, explain_routing: bool, stream: bool) -> None:
         self.question = question
@@ -683,23 +696,34 @@ class ApiAppTests(unittest.TestCase):
         )
 
     def test_answer_response_model_rejects_unknown_stable_fields(self) -> None:
-        payload = _answer_payload("Can I cook tofu?")
+        accepted_locations: list[tuple[str, ...]] = []
+
+        def check_rejects_extra_field(payload: dict, expected_location: tuple[str, ...]) -> None:
+            try:
+                AnswerResponseModel.model_validate({"response": payload})
+            except ValidationError as exc:
+                self.assertIn(
+                    expected_location,
+                    {tuple(error["loc"]) for error in exc.errors()},
+                )
+            else:
+                accepted_locations.append(expected_location)
+
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
         payload["summary"]["unexpected"] = True
 
-        with self.assertRaises(ValidationError):
-            AnswerResponseModel.model_validate({"response": payload})
+        check_rejects_extra_field(payload, ("response", "summary", "unexpected"))
 
-        payload = _answer_payload("Can I cook tofu?")
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
         payload["traces"]["generation_trace"]["unexpected"] = True
 
-        with self.assertRaises(ValidationError):
-            AnswerResponseModel.model_validate({"response": payload})
+        check_rejects_extra_field(payload, ("response", "traces", "generation_trace", "unexpected"))
 
-        payload = _answer_payload("Can I cook tofu?")
+        payload = _payload_without_new_summary_fields("Can I cook tofu?")
         payload["diagnostics"]["diagnostics"]["explained"] = True
 
-        with self.assertRaises(ValidationError):
-            AnswerResponseModel.model_validate({"response": payload})
+        check_rejects_extra_field(payload, ("response", "diagnostics", "diagnostics", "explained"))
+        self.assertEqual([], accepted_locations)
 
     def test_answer_response_schema_exposes_summary_token_fields(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
