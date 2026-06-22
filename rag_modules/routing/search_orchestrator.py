@@ -7,12 +7,12 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
 from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
+from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..retrieval_post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..runtime import QueryAnalysis, SearchStrategy
 from ..runtime.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort

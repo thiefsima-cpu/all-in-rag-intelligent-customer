@@ -6,11 +6,11 @@ import logging
 import time
 from typing import List, Optional
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding.service import QueryUnderstandingService
 from ..retrieval.contracts import EvidenceDocument
+from ..retrieval.post_processor import RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..retrieval_post_processor import RetrievalPostProcessor
 from ..runtime import (
     QueryAnalysis,
     QueryUnderstandingSnapshot,

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..artifacts import (
+from ..runtime.artifact_ports import ArtifactManifestStorePort
+from ..runtime.artifacts import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_STAGE_BUILDING,
     ARTIFACT_STAGE_FAILED,
@@ -12,7 +13,6 @@ from ..artifacts import (
     ArtifactManifest,
     utc_now_iso,
 )
-from ..runtime.artifact_ports import ArtifactManifestStorePort
 
 
 class KnowledgeBaseManifestLifecycle:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
-from ..artifacts import ArtifactManifest
 from ..configuration.models import GraphRAGConfig
+from ..runtime.artifacts import ArtifactManifest
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
     QuestionAnswerer,

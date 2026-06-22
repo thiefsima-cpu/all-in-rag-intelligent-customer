@@ -6,8 +6,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
-from .artifact_json import json_safe
-from .semantic_schema import SEMANTIC_SCHEMA_VERSION
+from ...domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from .json import json_safe
 
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "graph-rag-artifact-manifest-v2"
 ARTIFACT_STAGE_MISSING = "missing"

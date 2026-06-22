@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ...artifacts import ArtifactManifest
 from ...build_pipeline.contracts import DocumentArtifactBuilderPort, SemanticGraphSchemaSyncPort
 from ...build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from ...runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
+from ...runtime.artifacts import ArtifactManifest
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 
 ProgressCallback = Optional[Callable[[str], None]]

@@ -9,6 +9,7 @@ from rag_modules.app.services.answer_models import QuestionAnswerResult
 from rag_modules.app.services.answer_pipeline import NO_EVIDENCE_ANSWER
 from rag_modules.app.services.question_answer_service import QuestionAnswerService
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.observability.tracing import QueryTracer
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
     GenerationSnapshot,
@@ -22,7 +23,6 @@ from rag_modules.runtime import (
     RouteStageSnapshot,
     SearchStrategy,
 )
-from rag_modules.tracing import QueryTracer
 
 
 def _build_resolution(

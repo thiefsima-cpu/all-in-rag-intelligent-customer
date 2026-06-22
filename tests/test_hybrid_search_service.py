@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.query_constraints import QueryConstraints
+from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
     CandidateSet,
     CandidateSourceDegradation,

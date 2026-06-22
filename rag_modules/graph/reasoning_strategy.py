@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Sequence
 
-from ..semantic_schema import SEMANTIC_NODE_LABELS_SET
+from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET
 from .retrieval_types import KnowledgeSubgraph
 
 

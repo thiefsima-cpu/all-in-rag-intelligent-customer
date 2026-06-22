@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.observability.tracing import QueryTracer
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
@@ -12,7 +13,6 @@ from rag_modules.runtime import (
     RetrievalOutcome,
     RouteResolution,
 )
-from rag_modules.tracing import QueryTracer
 
 
 class RuntimeWorkflowModelTests(unittest.TestCase):

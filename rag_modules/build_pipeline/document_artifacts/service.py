@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ...artifacts import ARTIFACT_STAGE_DOCUMENTS_READY
 from ...runtime.artifact_ports import DocumentArtifactCachePort
+from ...runtime.artifacts import ARTIFACT_STAGE_DOCUMENTS_READY
 from .cache import DocumentIndexCache
 from .models import DocumentArtifactResult
 from .settings import DocumentArtifactSettings

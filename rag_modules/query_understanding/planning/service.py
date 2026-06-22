@@ -6,7 +6,7 @@ import logging
 from concurrent.futures import Future
 from copy import deepcopy
 
-from ...query_constraints import QueryConstraints, loads_json_object
+from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
 from ...retrieval.runtime_profile import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from ...runtime_contracts import LLMClientPort
 from ..planner_models import QueryPlan

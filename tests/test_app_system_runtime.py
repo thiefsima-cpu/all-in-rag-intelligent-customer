@@ -37,11 +37,11 @@ from rag_modules.app.services.question_answer_service import QuestionAnswerServi
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.system import AdvancedGraphRAGSystem
-from rag_modules.artifacts import ArtifactManifest
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.generation.service import GenerationWorkflowService
 from rag_modules.query_understanding.service import QueryUnderstandingService
 from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfile
+from rag_modules.runtime.artifacts import ArtifactManifest
 
 
 class _FakeClosable:

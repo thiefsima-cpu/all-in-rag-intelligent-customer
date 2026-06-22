@@ -10,9 +10,9 @@ from typing import Optional
 from uuid import uuid4
 
 from ....app.application_protocol import GraphRAGApplication
-from ....artifact_registry import ArtifactRegistry
-from ....artifacts import ArtifactManifestStore
 from ....configuration.models import GraphRAGConfig
+from ....runtime.artifacts import ArtifactManifestStore
+from ....runtime.artifacts.registry import ArtifactRegistry
 from ..build_job_store import (
     FileBuildJobStore,
     PersistentBuildJobRegistry,

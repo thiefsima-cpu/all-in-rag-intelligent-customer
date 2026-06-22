@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Optional
 
-from ...query_constraints import QueryConstraints
+from ...domain.shared.query_constraints import QueryConstraints
 from ...query_understanding import QueryPlan
 from ._common import coerce_str
 

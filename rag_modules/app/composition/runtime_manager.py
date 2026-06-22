@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ...artifacts import ArtifactManifest
 from ...configuration.models import GraphRAGConfig
+from ...runtime.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService

@@ -4,25 +4,25 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ...artifacts import ArtifactManifestStore
 from ...build_pipeline.document_artifacts import DocumentIndexCache
 from ...build_pipeline.graph_preparation import GraphDataPreparationModule
 from ...configuration.models import GraphRAGConfig
 from ...infra.milvus import MilvusIndexConstructionModule
 from ...neo4j_pool import Neo4jConnectionManager
+from ...observability.tracing import QueryTracer
+from ...observability.tracing_sinks import (
+    JsonlQueryTraceSinkFactory,
+    NullQueryTraceSink,
+    QueryTraceSink,
+    QueryTraceSinkFactory,
+)
 from ...runtime.artifact_adapters import DefaultRuntimeArtifactAccess
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,
     DocumentArtifactCachePort,
     RuntimeArtifactAccessPort,
 )
-from ...tracing import QueryTracer
-from ...tracing_sinks import (
-    JsonlQueryTraceSinkFactory,
-    NullQueryTraceSink,
-    QueryTraceSink,
-    QueryTraceSinkFactory,
-)
+from ...runtime.artifacts import ArtifactManifestStore
 from ..runtime_contracts import (
     GraphDataModulePort,
     Neo4jManagerPort,

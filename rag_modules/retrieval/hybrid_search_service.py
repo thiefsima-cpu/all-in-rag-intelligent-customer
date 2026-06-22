@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import List, Optional, Union
 
+from ..domain.shared.query_constraints import QueryConstraints
 from ..fusion import FusionRanker
-from ..query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
 from .adapters import ConstraintRetriever
 from .candidate_generator import RetrievalCandidateGenerator

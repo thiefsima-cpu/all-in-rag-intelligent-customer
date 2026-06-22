@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..artifacts import ArtifactManifest
 from ..configuration.models import GraphRAGConfig
 from ..graph.retrieval import GraphRAGRetrieval
 from ..retrieval import HybridRetrievalModule
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..routing import RoutingWorkflowProtocol
+from ..runtime.artifacts import ArtifactManifest
 from .runtime_contracts import (
     GraphDataModulePort,
     Neo4jManagerPort,

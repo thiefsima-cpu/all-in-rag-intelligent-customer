@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Union
 
 from langchain_core.documents import Document
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest, to_langchain_documents
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile

@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, List, Optional
 
-from ...query_constraints import RecipeConstraintMatcher
+from ...domain.shared.query_constraints import RecipeConstraintMatcher
 from ..contracts import EvidenceDocument, RetrievalRequest, from_langchain_documents
 
 logger = logging.getLogger(__name__)

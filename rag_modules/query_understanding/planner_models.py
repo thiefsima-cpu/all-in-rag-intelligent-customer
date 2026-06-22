@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
+from ..domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
-from ..semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .graph_intent import infer_query_semantic_profile
 from .registry import (
     GRAPH_QUERY_TYPES,

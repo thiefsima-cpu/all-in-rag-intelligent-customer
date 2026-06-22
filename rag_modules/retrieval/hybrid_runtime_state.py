@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
-from ..query_constraints import RecipeConstraintMatcher
+from ..domain.shared.query_constraints import RecipeConstraintMatcher
 from ..runtime_contracts import Neo4jDriverPort
 from .adapters import VectorRetriever
 from .dual_level_retriever import DualLevelRetriever

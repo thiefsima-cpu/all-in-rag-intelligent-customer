@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Protocol, Sequence
 
+from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from ..retrieval.contracts import EvidenceDocument
-from ..semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 
 
 class GraphPathLike(Protocol):

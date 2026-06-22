@@ -8,9 +8,9 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Dict, List, Optional
 
-from .retrieval.contracts import EvidenceDocument, ensure_evidence_documents
-from .retrieval_observability import summarize_documents
-from .runtime import (
+from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from ..retrieval_observability import summarize_documents
+from ..runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
     GenerationSnapshot,
@@ -23,13 +23,13 @@ from .runtime import (
     RouteSnapshot,
     analysis_strategy_name,
 )
-from .runtime.json_types import JsonObject, coerce_json_object
-from .runtime.snapshot_utils import (
+from ..runtime.json_types import JsonObject, coerce_json_object
+from ..runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
-from .trace_privacy import TraceSanitizer
+from ..trace_privacy import TraceSanitizer
 from .tracing_sinks import JsonlQueryTraceSink, NullQueryTraceSink, QueryTraceSink
 
 logger = logging.getLogger(__name__)

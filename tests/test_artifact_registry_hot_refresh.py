@@ -4,10 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rag_modules.artifact_registry import ArtifactRegistry
-from rag_modules.artifacts import ARTIFACT_STAGE_READY, ArtifactManifest, ArtifactManifestStore
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api.service import GraphRAGServingApiService
+from rag_modules.runtime.artifacts import (
+    ARTIFACT_STAGE_READY,
+    ArtifactManifest,
+    ArtifactManifestStore,
+)
+from rag_modules.runtime.artifacts.registry import ArtifactRegistry
 
 
 class _ServingSystem:

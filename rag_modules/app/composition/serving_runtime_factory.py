@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...artifacts import ArtifactManifest
 from ...configuration.models import GraphRAGConfig
+from ...runtime.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from .shared import (
     ProgressCallback,

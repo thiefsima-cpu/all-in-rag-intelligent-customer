@@ -8,7 +8,7 @@ from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ..retrieval.hybrid_outcome import HybridRetrievalOutcome

@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, Mapping
 
-from .artifact_json import canonical_json_bytes, json_safe
-from .semantic_schema import SEMANTIC_SCHEMA_VERSION
+from ...domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from .json import canonical_json_bytes, json_safe
 
 
 def compute_graph_signature(data_module) -> str:

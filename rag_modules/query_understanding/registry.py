@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
 from ..query_policy import flatten_term_groups, get_query_policy
-from ..semantic_schema import SEMANTIC_RELATION_TYPES
 
 POLICY = get_query_policy()
 

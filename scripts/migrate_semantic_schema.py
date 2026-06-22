@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from neo4j import GraphDatabase
 
 from rag_modules.configuration import load_config
-from rag_modules.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from rag_modules.domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 
 
 def _run(dry_run: bool, cleanup_stale: bool) -> dict:

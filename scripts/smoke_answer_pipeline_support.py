@@ -13,9 +13,9 @@ from rag_modules.generation import (
     GenerationPromptBuilder,
     GenerationSettings,
 )
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import QueryTraceSink
 from rag_modules.runtime import AnswerContext, GenerationSnapshot
-from rag_modules.tracing import QueryTracer
-from rag_modules.tracing_sinks import QueryTraceSink
 
 
 class CaptureSink(QueryTraceSink):

@@ -6,8 +6,8 @@ import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Mapping
 
-from .artifact_json import canonical_json_bytes, json_safe, write_json_atomic
-from .text_document import TextDocument
+from ...text_document import TextDocument
+from .json import canonical_json_bytes, json_safe, write_json_atomic
 
 
 def serialize_document(document: TextDocument) -> Dict[str, Any]:

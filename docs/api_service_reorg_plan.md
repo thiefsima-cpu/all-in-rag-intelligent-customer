@@ -5,6 +5,12 @@
 Reshape the project around API/service entrypoints without rewriting the
 retrieval core in one step.
 
+The next architecture phase is boundary hardening around the packages that now
+exist in the codebase. It is not a literal migration to new `domain/` or
+`pipelines/` directories. Domain responsibilities stay in the existing
+subsystem packages, and offline pipeline work stays under `build_pipeline/`
+unless a future design explicitly reopens that directory-level migration.
+
 ## Current Delivery Split
 
 - `main.py`
@@ -21,33 +27,40 @@ and rebuild operations are available through the build API only.
 
 ```text
 main.py
-config.py
+main_build_service.py
 
 rag_modules/
+  configuration/
   interfaces/
     api/
   app/
     bootstrap.py
     runtime.py
     system.py
+    composition/
+    provider_components/
     services/
       knowledge_base_service.py
       question_answer_service.py
-  domain/                     # future
-    query/
-    retrieval/
-    graph/
-    generation/
-    runtime/
-  infra/                      # future
-    graph/
-    vector/
-    model/
-    cache/
-    tracing/
-  pipelines/                  # future
-    indexing/
+  runtime/
+  retrieval/
+  graph/
+  generation/
+  query_understanding/
+  routing/
+  build_pipeline/
+    graph_preparation/
+    document_artifacts/
+  infra/
+    milvus/
+    semantic_graph_writer.py
+    resilience.py
 ```
+
+`domain/` and `pipelines/` are no longer the next target layout. They are
+deferred naming options only. Creating them should require a separate design
+that proves the benefit over the current package boundaries and includes a
+focused migration plan.
 
 ## Layer Rules
 
@@ -55,21 +68,36 @@ rag_modules/
    - Only owns API delivery surfaces.
    - No retrieval, indexing, or model orchestration logic.
 
-2. `app`
+2. `configuration`
+   - Owns profile loading, environment parsing, typed settings, and section
+     assembly.
+   - Runtime behavior should read configuration through typed settings instead
+     of root-level compatibility modules or ad hoc environment lookups.
+
+3. `app`
    - Owns bootstrap, dependency wiring, runtime state, and use-case services.
    - Coordinates domain modules but does not become a new god object.
 
-3. `domain`
-   - Owns contracts, retrieval planning, graph reasoning, evidence, and
-     generation policies.
-   - Should stay free of CLI and infrastructure-specific side effects.
+4. `runtime`
+   - Owns typed cross-layer contracts, request/response models, trace models,
+     artifact ports, and runtime DTOs.
+   - Should not own orchestration, concrete adapters, or API route behavior.
 
-4. `infra`
+5. Domain subsystem packages
+   - `query_understanding`, `routing`, `retrieval`, `graph`, and `generation`
+     own query planning, retrieval orchestration, graph reasoning, evidence,
+     and grounded generation policy.
+   - They should stay free of API delivery behavior and infrastructure-specific
+     side effects except through explicit adapters or ports.
+
+6. `build_pipeline`
+   - Owns offline build workflows such as document artifact preparation, graph
+     preparation, indexing workflow, manifest lifecycle, and build statistics.
+   - This is the canonical pipeline package for the current architecture.
+
+7. `infra`
    - Owns concrete adapters for Neo4j, Milvus, model clients, tracing storage,
      and caches.
-
-5. `pipelines`
-   - Owns offline build workflows such as indexing and schema materialization.
 
 ## Mapping From Current Code
 
@@ -77,19 +105,34 @@ rag_modules/
   - serving API entrypoint backed by `rag_modules.interfaces.api`.
 - `main_build_service.py`
   - build API entrypoint backed by `rag_modules.interfaces.api`.
-- `rag_modules/application.py`
-  - replace with compatibility wrapper to `rag_modules.app.system`.
-- `rag_modules/knowledge_base_service.py`
-  - move implementation to `rag_modules.app.services.knowledge_base_service`.
-- `rag_modules/question_answer_service.py`
-  - move implementation to `rag_modules.app.services.question_answer_service`.
-- retrieval, graph, and generation internals
-  - stay in place during batch 1; move in later batches once entrypoints and
-    runtime contracts are stable.
+- `rag_modules.configuration`
+  - typed configuration package for profiles, environment values, defaults, and
+    section loaders.
+- `rag_modules.app.system`
+  - application facade for runtime lifecycle and answering use cases.
+- `rag_modules.app.composition`
+  - composition-root helpers for runtime assembly and lifecycle wiring.
+- `rag_modules.app.provider_components`
+  - provider wiring internals used by assembly code.
+- `rag_modules.app.services`
+  - application use-case services, answer workflow, lifecycle diagnostics, and
+    runtime shutdown behavior.
+- `rag_modules.runtime`
+  - shared typed contracts and runtime models.
+- `rag_modules.query_understanding`, `rag_modules.routing`,
+  `rag_modules.retrieval`, `rag_modules.graph`, and `rag_modules.generation`
+  - canonical domain subsystem packages; keep behavior here instead of moving
+    it under a new `domain/` tree.
+- `rag_modules.build_pipeline`
+  - canonical offline pipeline package; keep indexing and build workflow here
+    instead of moving it under a new `pipelines/` tree.
+- `rag_modules.infra`
+  - canonical infrastructure package for concrete storage, graph, model,
+    tracing, and vector-store adapters.
 
 ## Batch Plan
 
-### Batch 1
+### Batch 1 - Complete
 
 - Introduce `interfaces/` and `app/`.
 - Create `SystemRuntime`, `GraphRAGBootstrapper`, and the new
@@ -98,16 +141,25 @@ rag_modules/
   `app/services/`.
 - Keep old import paths as compatibility wrappers.
 
-### Batch 2
+### Batch 2 - Current Next Phase
 
-- Move query planning and semantic analysis into `domain/query/`.
-- Move graph retrieval orchestration into `domain/graph/`.
-- Pull concrete Neo4j and Milvus integration behind `infra/` adapters.
+- Harden the existing domain subsystem packages instead of introducing
+  `domain/`.
+- Keep query planning and semantic analysis in `query_understanding` and
+  `routing`.
+- Keep retrieval orchestration in `retrieval` and graph reasoning in `graph`.
+- Keep generation policy and execution in `generation`.
+- Pull remaining concrete Neo4j, Milvus, model, tracing, and cache integration
+  behind `infra/` adapters or explicit ports.
+- Keep shared cross-layer models in `runtime` or package-local `contracts`
+  modules rather than ad hoc dictionaries.
 
-### Batch 3
+### Batch 3 - Pipeline Hardening
 
-- Move offline indexing flow into `pipelines/indexing/`.
-- Separate online serving runtime from offline build runtime.
+- Treat `build_pipeline/` as the canonical offline pipeline package instead of
+  introducing `pipelines/indexing/`.
+- Keep online serving runtime and offline build runtime separate.
+- Keep build workflow dependencies behind build-pipeline ports where practical.
 - Introduce explicit request/response DTOs for future API handlers.
 
 ## Batch 1 Design Notes

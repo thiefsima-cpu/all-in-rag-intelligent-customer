@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..artifacts import ArtifactManifest
 from ..configuration.models import GraphRAGConfig
+from ..runtime.artifacts import ArtifactManifest
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view_builder import SystemRuntimeViewBuilder
 from .runtime_views import (

@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from langchain_core.documents import Document
 
-from ..query_constraints import QueryConstraints
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding import QueryPlan, QuerySemanticProfile
 from ..retrieval.contracts import EvidenceDocument
 from .analysis_models import QueryAnalysis, SearchStrategy, ensure_query_analysis

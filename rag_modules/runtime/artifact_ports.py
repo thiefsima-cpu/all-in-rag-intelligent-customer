@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from ..artifacts import ArtifactManifest
+from .artifacts import ArtifactManifest
 
 if TYPE_CHECKING:
     from ..build_pipeline.document_artifacts.models import DocumentArtifactResult

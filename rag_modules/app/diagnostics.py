@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ..artifacts import ArtifactManifest, artifact_health
+from ..runtime.artifacts import ArtifactManifest, artifact_health
 
 
 @dataclass(slots=True)

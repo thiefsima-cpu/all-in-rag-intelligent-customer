@@ -13,12 +13,12 @@ from typing import Any, Dict, Iterable, List
 
 from neo4j import GraphDatabase
 
-from ..neo4j_pool import Neo4jConnectionManager
-from ..semantic_schema import (
+from ..domain.shared.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
     SEMANTIC_SCHEMA_VERSION,
 )
+from ..neo4j_pool import Neo4jConnectionManager
 from ..text_document import TextDocument
 
 logger = logging.getLogger(__name__)

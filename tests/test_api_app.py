@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
-from rag_modules.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
 from rag_modules.interfaces.api.models import (
@@ -34,6 +33,7 @@ from rag_modules.runtime import (
     RouteResolution,
     RouteSnapshot,
 )
+from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 
 _API_TOKEN = "test-api-access-token"
 _API_CONFIG = build_test_config({"api": {"access_token": _API_TOKEN}})

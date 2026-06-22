@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from rag_modules.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.build_pipeline.contracts import SemanticGraphSchemaSyncResult
 from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.milvus_index_construction import MilvusIndexConstructionModule
+from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.text_document import TextDocument
 
 

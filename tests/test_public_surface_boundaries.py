@@ -22,6 +22,22 @@ ALLOWED_ROOT_WRAPPERS = {f"{entry.module_name}.py" for entry in ROOT_PUBLIC_SURF
 PROHIBITED_ROOT_MODULES = root_facade_module_names()
 PROHIBITED_REPO_ROOT_MODULES = repo_root_facade_module_names()
 LEGACY_FACADE_MODULES = PROHIBITED_ROOT_MODULES | PROHIBITED_REPO_ROOT_MODULES
+MIGRATED_ROOT_SHARED_MODULE_FILES = frozenset(
+    {
+        "artifact_documents.py",
+        "artifact_json.py",
+        "artifact_manifest.py",
+        "artifact_manifest_store.py",
+        "artifact_registry.py",
+        "artifact_signatures.py",
+        "artifacts.py",
+        "query_constraints.py",
+        "retrieval_post_processor.py",
+        "semantic_schema.py",
+        "tracing.py",
+        "tracing_sinks.py",
+    }
+)
 RETIRED_LEGACY_FACADE_MODULES = frozenset(
     {
         "config",
@@ -81,6 +97,15 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             return module
         relative_name = "." * node.level + module
         return resolve_name(relative_name, cls._package_name_for_path(path))
+
+    def test_migrated_shared_modules_are_not_at_rag_modules_root(self) -> None:
+        remaining = {
+            path.name
+            for path in RAG_MODULES_DIR.glob("*.py")
+            if path.name in MIGRATED_ROOT_SHARED_MODULE_FILES
+        }
+
+        self.assertEqual(set(), remaining)
 
     def test_internal_modules_do_not_depend_on_compat_or_root_facades(self) -> None:
         violations: list[str] = []

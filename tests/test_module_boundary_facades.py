@@ -10,23 +10,19 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         for name in section_loaders.__all__:
             self.assertIs(getattr(section_loaders, name), getattr(sections, name))
 
-    def test_artifacts_facade_reexports_responsibility_modules(self) -> None:
-        from rag_modules import (
-            artifact_documents,
-            artifact_manifest,
-            artifact_manifest_store,
-            artifact_signatures,
-            artifacts,
+    def test_runtime_artifacts_package_reexports_responsibility_modules(self) -> None:
+        from rag_modules.runtime import artifacts
+        from rag_modules.runtime.artifacts import (
+            documents,
+            manifest,
+            manifest_store,
+            signatures,
         )
 
-        self.assertIs(artifacts.ArtifactManifest, artifact_manifest.ArtifactManifest)
-        self.assertIs(
-            artifacts.ArtifactManifestStore, artifact_manifest_store.ArtifactManifestStore
-        )
-        self.assertIs(artifacts.write_documents, artifact_documents.write_documents)
-        self.assertIs(
-            artifacts.compute_index_signature, artifact_signatures.compute_index_signature
-        )
+        self.assertIs(artifacts.ArtifactManifest, manifest.ArtifactManifest)
+        self.assertIs(artifacts.ArtifactManifestStore, manifest_store.ArtifactManifestStore)
+        self.assertIs(artifacts.write_documents, documents.write_documents)
+        self.assertIs(artifacts.compute_index_signature, signatures.compute_index_signature)
 
     def test_query_planner_facade_reexports_planning_service(self) -> None:
         from rag_modules.query_understanding import planner_service

@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List
 
 from neo4j import Driver
 
-from ...semantic_schema import infer_recipe_semantics
+from ...domain.shared.semantic_schema import infer_recipe_semantics
 from ...text_document import TextDocument
 from .models import GraphNode
 

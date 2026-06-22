@@ -7,7 +7,7 @@ from typing import Iterable
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ...artifacts import artifact_health
+from ...runtime.artifacts import artifact_health
 from .models import (
     AnswerResponseModel,
     AnswerStreamEventModel,

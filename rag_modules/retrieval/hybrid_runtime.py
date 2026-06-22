@@ -9,9 +9,9 @@ from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
 from ..configuration.models import GraphRAGConfig
+from ..domain.shared.query_constraints import RecipeConstraintMatcher
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
-from ..query_constraints import RecipeConstraintMatcher
 from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .contracts import EvidenceDocument, RetrievalRequest

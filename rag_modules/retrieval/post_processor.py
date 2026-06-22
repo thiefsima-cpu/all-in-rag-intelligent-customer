@@ -14,15 +14,15 @@ from typing import Iterable, List, Optional
 
 from langchain_core.documents import Document
 
-from .dashscope_clients import DashScopeRerankClient
-from .evidence_processing import EvidenceUnitRanker, normalize_evidence_document
-from .retrieval.contracts import (
+from ..dashscope_clients import DashScopeRerankClient
+from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
+from ..runtime_contracts import RerankClientPort
+from .contracts import (
     EvidenceDocument,
     ensure_evidence_documents,
     to_langchain_documents,
 )
-from .retrieval.runtime_profile import RetrievalPostProcessSettings
-from .runtime_contracts import RerankClientPort
+from .runtime_profile import RetrievalPostProcessSettings
 
 logger = logging.getLogger(__name__)
 

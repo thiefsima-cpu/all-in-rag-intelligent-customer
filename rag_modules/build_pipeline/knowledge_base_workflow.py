@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from ..artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest, ArtifactManifestStore
 from ..runtime.artifact_adapters import DefaultRuntimeArtifactAccess
 from ..runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
 from ..runtime.artifact_validation import vector_artifact_mismatch_reason
+from ..runtime.artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest, ArtifactManifestStore
 from ..runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ..runtime.stats_ports import RuntimeStatsAccessPort
 from .contracts import (

@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.app.composition.build_runtime_assembler import BuildRuntimeAssembler
-from rag_modules.artifacts import ArtifactManifest
+from rag_modules.runtime.artifacts import ArtifactManifest
 
 
 class _FakeKnowledgeBaseService:

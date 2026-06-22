@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from .retrieval.runtime_profile import QuerySemanticRuntimeSettings
+from ...retrieval.runtime_profile import QuerySemanticRuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ class QueryConstraintExtractor:
         self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
 
     def extract(self, query: str) -> QueryConstraints:
-        from .query_understanding import infer_query_semantic_profile
+        from ...query_understanding import infer_query_semantic_profile
 
         profile = infer_query_semantic_profile(
             query,

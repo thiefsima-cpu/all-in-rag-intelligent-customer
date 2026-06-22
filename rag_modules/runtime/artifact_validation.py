@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..artifacts import ArtifactManifest
+from .artifacts import ArtifactManifest
 
 
 def vector_artifact_mismatch_reason(

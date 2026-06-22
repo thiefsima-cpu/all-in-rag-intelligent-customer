@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Tuple
 
+from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
 from ..query_understanding import dedupe_preserve_order, relation_index_terms
-from ..semantic_schema import SEMANTIC_RELATION_TYPES
 from .models import EntityKeyValue, RelationKeyValue
 from .store import GraphIndexStore
 

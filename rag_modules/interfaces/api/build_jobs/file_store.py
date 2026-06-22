@@ -9,7 +9,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Iterator, Mapping
 
-from ....artifact_json import write_json_atomic
+from ....runtime.artifacts import write_json_atomic
 from .locks import _InterprocessFileLock
 from .models import BUILD_JOB_STORE_SCHEMA_VERSION
 

@@ -6,8 +6,8 @@ import json
 import os
 from typing import Any, List, Mapping
 
-from .artifact_json import write_json_atomic
-from .artifact_manifest import (
+from .json import write_json_atomic
+from .manifest import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_STAGE_MANIFEST_UNREADABLE,
     ArtifactManifest,

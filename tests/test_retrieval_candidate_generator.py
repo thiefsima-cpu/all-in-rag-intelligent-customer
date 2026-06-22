@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.query_constraints import QueryConstraints
+from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.candidate_generator import RetrievalCandidateGenerator
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec

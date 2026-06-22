@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
+from ..domain.shared.query_constraints import RecipeConstraintMatcher
 from ..parent_doc_enricher import ParentDocumentEnricher
-from ..query_constraints import RecipeConstraintMatcher
 from ..retrieval_cache import RetrievalCacheStore
 from .adapters import BM25Retriever
 

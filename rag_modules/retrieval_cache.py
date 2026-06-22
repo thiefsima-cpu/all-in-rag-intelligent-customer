@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from langchain_core.documents import Document
 
-from .artifacts import write_json_atomic
+from .domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .graph_index.snapshot import GRAPH_INDEX_VERSION
-from .semantic_schema import SEMANTIC_SCHEMA_VERSION
+from .runtime.artifacts import write_json_atomic
 
 logger = logging.getLogger(__name__)
 

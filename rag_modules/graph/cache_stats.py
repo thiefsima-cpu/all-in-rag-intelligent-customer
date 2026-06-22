@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from ..artifacts import ArtifactManifestStore
+from ..runtime.artifacts import ArtifactManifestStore
 
 GRAPH_CACHE_STATS_SCHEMA_VERSION = "graph-cache-stats-v1"
 

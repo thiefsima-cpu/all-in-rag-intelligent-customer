@@ -1,18 +1,18 @@
-"""Compatibility facade for artifact manifest and cache helpers."""
+"""Artifact manifest and cache helpers."""
 
 from __future__ import annotations
 
-from .artifact_documents import (
+from .documents import (
     compute_documents_digest,
     deserialize_document,
     read_documents,
     serialize_document,
     write_documents,
 )
-from .artifact_json import canonical_json_bytes as _canonical_json_bytes
-from .artifact_json import json_safe as _json_safe
-from .artifact_json import write_json_atomic
-from .artifact_manifest import (
+from .json import canonical_json_bytes as _canonical_json_bytes
+from .json import json_safe as _json_safe
+from .json import write_json_atomic
+from .manifest import (
     ARTIFACT_HEALTH_FAILED,
     ARTIFACT_HEALTH_IN_PROGRESS,
     ARTIFACT_HEALTH_MISSING,
@@ -34,8 +34,8 @@ from .artifact_manifest import (
     artifact_health,
     utc_now_iso,
 )
-from .artifact_manifest_store import ArtifactManifestStore
-from .artifact_signatures import (
+from .manifest_store import ArtifactManifestStore
+from .signatures import (
     compute_document_signature,
     compute_embedding_signature,
     compute_graph_signature,

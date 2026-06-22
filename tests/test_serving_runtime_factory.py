@@ -19,9 +19,9 @@ from rag_modules.app.composition.serving_runtime_lifecycle_service import (
     ServingRuntimeLifecycleService,
 )
 from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
-from rag_modules.artifacts import ArtifactManifest
 from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.runtime.artifacts import ArtifactManifest
 from rag_modules.text_document import TextDocument
 
 

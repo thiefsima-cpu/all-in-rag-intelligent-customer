@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ...artifacts import ARTIFACT_STAGE_STALE, ArtifactManifest
 from ...langchain_document_adapter import to_langchain_text_documents
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,
@@ -10,6 +9,7 @@ from ...runtime.artifact_ports import (
     RuntimeArtifactAccessPort,
 )
 from ...runtime.artifact_validation import vector_artifact_mismatch_reason
+from ...runtime.artifacts import ARTIFACT_STAGE_STALE, ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from .shared import ProgressCallback, emit_progress
 

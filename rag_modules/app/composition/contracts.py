@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from ...artifacts import ArtifactManifest
 from ...configuration.models import GraphRAGConfig
+from ...runtime.artifacts import ArtifactManifest
 from ..diagnostics import StartupDiagnostics
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime

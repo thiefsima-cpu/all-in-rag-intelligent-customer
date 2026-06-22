@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from neo4j import Driver
 
-from ..semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
+from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)

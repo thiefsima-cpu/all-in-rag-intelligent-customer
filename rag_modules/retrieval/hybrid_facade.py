@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_core.documents import Document
 
+from ..domain.shared.query_constraints import QueryConstraints, RecipeConstraintMatcher
 from ..fusion import FusionRanker
-from ..query_constraints import QueryConstraints, RecipeConstraintMatcher
 from ..query_understanding import QueryPlan
 from ..runtime_contracts import Neo4jManagerPort
 from .adapters import tokenize_chinese

@@ -7,7 +7,8 @@ import logging
 import os
 from typing import Optional
 
-from ...artifacts import (
+from ...runtime.artifact_ports import ArtifactManifestStorePort
+from ...runtime.artifacts import (
     ARTIFACT_STAGE_DOCUMENTS_READY,
     ArtifactManifest,
     ArtifactManifestStore,
@@ -15,7 +16,6 @@ from ...artifacts import (
     read_documents,
     write_documents,
 )
-from ...runtime.artifact_ports import ArtifactManifestStorePort
 from .manifest import DocumentArtifactManifestAssembler
 from .models import DocumentArtifactResult
 from .settings import DocumentArtifactSettings

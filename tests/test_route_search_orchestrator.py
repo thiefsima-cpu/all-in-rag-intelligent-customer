@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.query_constraints import QueryConstraints
+from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from rag_modules.retrieval.contracts import EvidenceDocument

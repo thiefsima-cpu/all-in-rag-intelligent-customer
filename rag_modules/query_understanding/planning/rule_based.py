@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...query_constraints import QueryConstraints
+from ...domain.shared.query_constraints import QueryConstraints
 from ...retrieval.runtime_profile import QuerySemanticRuntimeSettings
 from ..features import fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile

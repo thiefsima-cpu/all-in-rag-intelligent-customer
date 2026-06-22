@@ -9,8 +9,8 @@ import queue
 import threading
 from typing import Protocol
 
-from .runtime import QueryTraceEvent
-from .trace_privacy import TraceSanitizer
+from ..runtime import QueryTraceEvent
+from ..trace_privacy import TraceSanitizer
 
 logger = logging.getLogger(__name__)
 
