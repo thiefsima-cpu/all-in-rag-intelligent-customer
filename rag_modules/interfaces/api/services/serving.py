@@ -13,7 +13,7 @@ from ....app.application_protocol import GraphRAGApplication
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
-from ..models import AnswerStreamEventModel
+from ..answer_models import AnswerStreamEventModel
 from .base import _BaseGraphRAGApiService
 from .errors import ApiBackpressureError, SystemNotReadyError, _StreamCancelledError
 

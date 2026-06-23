@@ -438,6 +438,26 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
 
 
 class ApiAppTests(unittest.TestCase):
+    def test_api_model_split_keeps_compat_exports(self) -> None:
+        import rag_modules.interfaces.api.answer_models as answer_models
+        import rag_modules.interfaces.api.build_models as build_models
+        import rag_modules.interfaces.api.diagnostics_models as diagnostics_models
+        import rag_modules.interfaces.api.models as compat_models
+
+        self.assertIs(compat_models.AnswerResponseModel, answer_models.AnswerResponseModel)
+        self.assertIs(compat_models.AnswerStreamEventType, answer_models.AnswerStreamEventType)
+        self.assertIs(compat_models.MAX_QUESTION_CHARS, answer_models.MAX_QUESTION_CHARS)
+        self.assertIs(compat_models.BuildJobResponseModel, build_models.BuildJobResponseModel)
+        self.assertIs(
+            compat_models.ArtifactRegistryResponseModel,
+            build_models.ArtifactRegistryResponseModel,
+        )
+        self.assertIs(
+            compat_models.DiagnosticsResponseModel,
+            diagnostics_models.DiagnosticsResponseModel,
+        )
+        self.assertIs(compat_models.HealthResponseModel, diagnostics_models.HealthResponseModel)
+
     def test_api_service_canonical_and_compat_imports_match(self) -> None:
         from rag_modules.interfaces.api import service as compat_service
         from rag_modules.interfaces.api.services import (

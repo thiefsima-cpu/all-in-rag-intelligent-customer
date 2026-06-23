@@ -5,13 +5,17 @@ from __future__ import annotations
 from fastapi import FastAPI, Path, Request
 from fastapi.responses import StreamingResponse
 
-from .models import (
+from .answer_models import (
     AnswerRequestModel,
     AnswerResponseModel,
     AnswerStreamRequestModel,
+)
+from .build_models import (
     ArtifactRegistryResponseModel,
     BuildJobListResponseModel,
     BuildJobResponseModel,
+)
+from .diagnostics_models import (
     DiagnosticsMode,
     DiagnosticsResponseModel,
     HealthResponseModel,
