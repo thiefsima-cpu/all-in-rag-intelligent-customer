@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
 from rag_modules.configuration.models import GraphRAGConfig
@@ -78,6 +79,19 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertFalse(config.api.docs_public)
         self.assertFalse(config.api.openapi_public)
         self.assertFalse(config.observability.prometheus_public)
+
+    def test_dimension_mismatch_reports_both_field_paths(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            GraphRAGConfig.from_dict(
+                {
+                    "storage": {"milvus_dimension": 512},
+                    "models": {"embedding_dimension": 1024},
+                }
+            )
+
+        message = str(context.exception)
+        self.assertIn("storage.milvus_dimension", message)
+        self.assertIn("models.embedding_dimension", message)
 
 
 if __name__ == "__main__":

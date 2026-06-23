@@ -4,12 +4,26 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rag_modules.configuration import ConfigProfile, default_profiles_dir, load_profile
+from rag_modules.configuration import (
+    ConfigProfile,
+    ConfigurationError,
+    default_profiles_dir,
+    load_profile,
+)
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
 
 
 class ConfigurationProfilesTests(unittest.TestCase):
+    def assertConfigErrorMentions(
+        self,
+        error: ConfigurationError,
+        *expected_fragments: str,
+    ) -> None:
+        message = str(error)
+        for fragment in expected_fragments:
+            self.assertIn(fragment, message)
+
     def test_profile_path_applies_toml_defaults_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "tiny.toml"
@@ -118,6 +132,66 @@ class ConfigurationProfilesTests(unittest.TestCase):
     def test_profile_helpers_are_publicly_exported(self) -> None:
         self.assertEqual(default_profiles_dir().name, "profiles")
         self.assertIs(ConfigProfile, ConfigProfile)
+
+    def test_profile_unknown_nested_field_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text("[retrieval]\ntopkk = 4\n", encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.topkk",
+            "extra",
+        )
+
+    def test_profile_wrong_scalar_type_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text('[retrieval]\ntop_k = "fast"\n', encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.top_k",
+            "integer",
+        )
+
+    def test_profile_scalar_for_nested_section_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text('[query_understanding]\nplanner = "fast"\n', encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "query_understanding.planner",
+            "dictionary",
+        )
 
 
 if __name__ == "__main__":
