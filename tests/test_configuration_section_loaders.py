@@ -107,6 +107,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "QUERY_TRACE_PATH": "storage/test-traces/query_trace.jsonl",
                     "QUERY_TRACE_MAX_QUEUE_SIZE": "32",
                     "QUERY_TRACE_FINGERPRINT_SALT": "test-trace-salt",
+                    "PROMETHEUS_METRICS_PUBLIC": "true",
                 }
             )
         )
@@ -121,6 +122,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
             config.observability.query_trace_fingerprint_salt,
             "test-trace-salt",
         )
+        self.assertTrue(config.observability.prometheus_public)
 
     def test_api_settings_respect_environment_overrides(self) -> None:
         config = load_config(
@@ -128,6 +130,10 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                 environ={
                     "API_AUTH_ENABLED": "false",
                     "API_ACCESS_TOKEN": "test-access-token",
+                    "API_DOCS_ENABLED": "true",
+                    "API_OPENAPI_ENABLED": "true",
+                    "API_DOCS_PUBLIC": "true",
+                    "API_OPENAPI_PUBLIC": "true",
                     "API_MAX_REQUEST_BODY_BYTES": "32768",
                     "API_MAX_CONCURRENT_ANSWERS": "3",
                     "API_ANSWER_ACQUIRE_TIMEOUT_SECONDS": "0.5",
@@ -139,6 +145,10 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
 
         self.assertFalse(config.api.auth_enabled)
         self.assertEqual(config.api.access_token, "test-access-token")
+        self.assertTrue(config.api.docs_enabled)
+        self.assertTrue(config.api.openapi_enabled)
+        self.assertTrue(config.api.docs_public)
+        self.assertTrue(config.api.openapi_public)
         self.assertEqual(config.api.max_request_body_bytes, 32768)
         self.assertEqual(config.api.max_concurrent_answers, 3)
         self.assertEqual(config.api.answer_acquire_timeout_seconds, 0.5)

@@ -71,6 +71,10 @@ def load_observability_settings(
             "ENABLE_PROMETHEUS",
             bool(observability_defaults.get("enable_prometheus", True)),
         ),
+        prometheus_public=source.get_bool(
+            "PROMETHEUS_METRICS_PUBLIC",
+            bool(observability_defaults.get("prometheus_public", False)),
+        ),
     )
 
 

@@ -11,6 +11,17 @@ Prometheus export is enabled by default:
 ENABLE_PROMETHEUS=true
 ```
 
+That registers `GET /metrics`. The endpoint requires the configured API
+credentials by default:
+
+```text
+PROMETHEUS_METRICS_PUBLIC=false
+```
+
+Set `ENABLE_PROMETHEUS=false` to leave `/metrics` unregistered. Set
+`PROMETHEUS_METRICS_PUBLIC=true` only when ingress, network policy, or a
+service mesh already restricts scraper access to trusted infrastructure.
+
 Key metrics:
 
 - `graphrag_queries_total`
@@ -19,10 +30,6 @@ Key metrics:
 - `graphrag_generation_provider_latency_seconds`
 - `graphrag_generation_tokens_total`
 - `graphrag_generation_cost_usd_total`
-
-The `/metrics` endpoint is intentionally public so a cluster-local scraper can
-read it without API credentials. Restrict network access at the ingress or
-service-mesh layer.
 
 ## OpenTelemetry
 

@@ -276,12 +276,17 @@ class ObservabilitySettings(ConfigSection):
     otel_exporter_otlp_endpoint: str = ""
     otel_trace_sample_ratio: float = 1.0
     enable_prometheus: bool = True
+    prometheus_public: bool = False
 
 
 @dataclass(slots=True)
 class ApiSettings(ConfigSection):
     auth_enabled: bool = True
     access_token: str = field(default="", repr=False)
+    docs_enabled: bool = False
+    openapi_enabled: bool = False
+    docs_public: bool = False
+    openapi_public: bool = False
     max_request_body_bytes: int = 16 * 1024
     max_concurrent_answers: int = 0
     answer_acquire_timeout_seconds: float = 0.25

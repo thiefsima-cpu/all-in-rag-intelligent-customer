@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 
-from ...configuration.models import ApiSettings
+from ...configuration.models import ApiSettings, ObservabilitySettings
 from ...telemetry import get_runtime_telemetry
 from .routes import (
     register_api_backpressure_handler,
@@ -36,6 +36,24 @@ def _resolve_api_settings(*, system, config) -> ApiSettings:
     return settings if isinstance(settings, ApiSettings) else ApiSettings()
 
 
+def _resolve_observability_settings(*, system, config) -> ObservabilitySettings | None:
+    resolved_config = config or getattr(system, "config", None)
+    settings = getattr(resolved_config, "observability", None)
+    return settings if isinstance(settings, ObservabilitySettings) else None
+
+
+def _docs_url(api_settings: ApiSettings) -> str | None:
+    return "/docs" if api_settings.docs_enabled and api_settings.openapi_enabled else None
+
+
+def _redoc_url(api_settings: ApiSettings) -> str | None:
+    return "/redoc" if api_settings.docs_enabled and api_settings.openapi_enabled else None
+
+
+def _openapi_url(api_settings: ApiSettings) -> str | None:
+    return "/openapi.json" if api_settings.openapi_enabled else None
+
+
 def _register_metrics_endpoint(app: FastAPI, *, system, config) -> None:
     resolved_config = config or getattr(system, "config", None)
     observability = getattr(resolved_config, "observability", None)
@@ -57,6 +75,11 @@ def _register_metrics_endpoint(app: FastAPI, *, system, config) -> None:
 
 def create_serving_api_app(*, system=None, config=None) -> FastAPI:
     api_service = GraphRAGServingApiService(system=system, config=config)
+    api_settings = _resolve_api_settings(system=api_service.system, config=config)
+    observability_settings = _resolve_observability_settings(
+        system=api_service.system,
+        config=config,
+    )
     auto_initialize_serving = _env_flag("API_AUTO_INITIALIZE_SERVING", default=False)
 
     @asynccontextmanager
@@ -73,14 +96,21 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
         version="1.0.0",
         summary="FastAPI service for online question answering over prepared artifacts.",
         lifespan=lifespan,
+        docs_url=_docs_url(api_settings),
+        redoc_url=_redoc_url(api_settings),
+        openapi_url=_openapi_url(api_settings),
     )
-    api_settings = _resolve_api_settings(system=api_service.system, config=config)
     app.add_middleware(
         ApiSecurityMiddleware,
         settings=api_settings,
+        observability_settings=observability_settings,
     )
     if api_settings.auth_enabled:
-        configure_openapi_security(app)
+        configure_openapi_security(
+            app,
+            api_settings=api_settings,
+            observability_settings=observability_settings,
+        )
     register_api_backpressure_handler(app)
     register_system_not_ready_handler(app)
     register_serving_routes(app, api_service)
@@ -91,6 +121,11 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
 
 def create_build_api_app(*, system=None, config=None) -> FastAPI:
     api_service = GraphRAGBuildApiService(system=system, config=config)
+    api_settings = _resolve_api_settings(system=api_service.system, config=config)
+    observability_settings = _resolve_observability_settings(
+        system=api_service.system,
+        config=config,
+    )
     auto_initialize_build = _env_flag("BUILD_API_AUTO_INITIALIZE", default=False)
 
     @asynccontextmanager
@@ -107,14 +142,21 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
         version="1.0.0",
         summary="FastAPI service for offline knowledge-base artifact preparation.",
         lifespan=lifespan,
+        docs_url=_docs_url(api_settings),
+        redoc_url=_redoc_url(api_settings),
+        openapi_url=_openapi_url(api_settings),
     )
-    api_settings = _resolve_api_settings(system=api_service.system, config=config)
     app.add_middleware(
         ApiSecurityMiddleware,
         settings=api_settings,
+        observability_settings=observability_settings,
     )
     if api_settings.auth_enabled:
-        configure_openapi_security(app)
+        configure_openapi_security(
+            app,
+            api_settings=api_settings,
+            observability_settings=observability_settings,
+        )
     register_build_job_handlers(app)
     register_build_routes(app, api_service)
     _register_metrics_endpoint(app, system=api_service.system, config=config)

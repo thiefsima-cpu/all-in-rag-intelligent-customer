@@ -23,6 +23,22 @@ def load_api_settings(
             bool(api_defaults.get("auth_enabled", True)),
         ),
         access_token=access_token,
+        docs_enabled=source.get_bool(
+            "API_DOCS_ENABLED",
+            bool(api_defaults.get("docs_enabled", False)),
+        ),
+        openapi_enabled=source.get_bool(
+            "API_OPENAPI_ENABLED",
+            bool(api_defaults.get("openapi_enabled", False)),
+        ),
+        docs_public=source.get_bool(
+            "API_DOCS_PUBLIC",
+            bool(api_defaults.get("docs_public", False)),
+        ),
+        openapi_public=source.get_bool(
+            "API_OPENAPI_PUBLIC",
+            bool(api_defaults.get("openapi_public", False)),
+        ),
         max_request_body_bytes=max(
             1024,
             source.get_int(

@@ -70,6 +70,15 @@ class ConfigurationDefaultTests(unittest.TestCase):
             os.path.join("storage/explicit-indexes", "artifact_manifest.json"),
         )
 
+    def test_default_management_surfaces_are_production_safe(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        self.assertFalse(config.api.docs_enabled)
+        self.assertFalse(config.api.openapi_enabled)
+        self.assertFalse(config.api.docs_public)
+        self.assertFalse(config.api.openapi_public)
+        self.assertFalse(config.observability.prometheus_public)
+
 
 if __name__ == "__main__":
     unittest.main()

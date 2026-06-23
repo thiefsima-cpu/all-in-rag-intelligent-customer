@@ -746,7 +746,15 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual([], accepted_locations)
 
     def test_answer_response_schema_exposes_summary_token_fields(self) -> None:
-        app = create_serving_api_app(system=_FakeApiSystem())
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
 
         with _client(app) as client:
             schema = client.get("/openapi.json").json()
@@ -816,7 +824,15 @@ class ApiAppTests(unittest.TestCase):
     def test_explicit_answer_stream_route_uses_sse_surface(self) -> None:
         system = _FakeApiSystem()
         system.system_ready = True
-        app = create_serving_api_app(system=system)
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=system, config=config)
 
         with _client(app) as client:
             with client.stream(
@@ -1117,6 +1133,81 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(events[3].data.response.summary.answer, "answer:Typed stream")
         self.assertTrue(events[4].data.ok)
 
+    def test_docs_and_openapi_are_disabled_by_default(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem(), config=_API_CONFIG)
+
+        with TestClient(app) as client:
+            docs_response = client.get("/docs")
+            redoc_response = client.get("/redoc")
+            openapi_response = client.get("/openapi.json")
+
+        self.assertEqual(docs_response.status_code, 404)
+        self.assertEqual(redoc_response.status_code, 404)
+        self.assertEqual(openapi_response.status_code, 404)
+
+    def test_enabled_docs_and_openapi_require_credentials_by_default(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "docs_enabled": True,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with TestClient(app) as anonymous:
+            docs_unauthorized = anonymous.get("/docs")
+            openapi_unauthorized = anonymous.get("/openapi.json")
+        with _client(app) as authenticated:
+            docs_authorized = authenticated.get("/docs")
+            openapi_authorized = authenticated.get("/openapi.json")
+
+        self.assertEqual(docs_unauthorized.status_code, 401)
+        self.assertEqual(openapi_unauthorized.status_code, 401)
+        self.assertEqual(docs_authorized.status_code, 200)
+        self.assertEqual(openapi_authorized.status_code, 200)
+
+    def test_docs_and_openapi_can_be_made_public(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "docs_enabled": True,
+                    "openapi_enabled": True,
+                    "docs_public": True,
+                    "openapi_public": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with TestClient(app) as client:
+            docs_response = client.get("/docs")
+            openapi_response = client.get("/openapi.json")
+
+        self.assertEqual(docs_response.status_code, 200)
+        self.assertEqual(openapi_response.status_code, 200)
+
+    def test_openapi_security_metadata_only_clears_public_paths(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        self.assertEqual(schema["security"], [{"BearerAuth": []}, {"ApiKeyAuth": []}])
+        self.assertEqual(schema["paths"]["/health"]["get"]["security"], [])
+        self.assertNotEqual(schema["paths"]["/stats"]["get"].get("security"), [])
+
     def test_protected_routes_require_api_credentials(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
 
@@ -1200,15 +1291,47 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(oversized_question.status_code, 422)
         self.assertEqual(blank_question.status_code, 422)
 
-    def test_prometheus_metrics_endpoint_is_public(self) -> None:
+    def test_prometheus_metrics_endpoint_requires_credentials_by_default(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem(), config=_API_CONFIG)
+
+        with TestClient(app) as anonymous:
+            unauthorized = anonymous.get("/metrics")
+        with _client(app) as authenticated:
+            authorized = authenticated.get("/metrics")
+
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(authorized.status_code, 200)
+        self.assertIn("graphrag_queries_total", authorized.text)
+        self.assertTrue(authorized.headers["content-type"].startswith("text/plain"))
+
+    def test_prometheus_metrics_endpoint_can_be_made_public(self) -> None:
+        config = build_test_config(
+            {
+                "api": {"access_token": _API_TOKEN},
+                "observability": {"prometheus_public": True},
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
 
         with TestClient(app) as client:
             response = client.get("/metrics")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("graphrag_queries_total", response.text)
-        self.assertTrue(response.headers["content-type"].startswith("text/plain"))
+
+    def test_prometheus_metrics_endpoint_can_be_disabled(self) -> None:
+        config = build_test_config(
+            {
+                "api": {"access_token": _API_TOKEN},
+                "observability": {"enable_prometheus": False},
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            response = client.get("/metrics")
+
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

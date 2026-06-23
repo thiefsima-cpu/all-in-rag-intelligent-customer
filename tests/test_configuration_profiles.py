@@ -101,6 +101,15 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertEqual(updated.profile_hash, config.profile_hash)
         self.assertEqual(updated.retrieval.top_k, 8)
 
+    def test_dev_profile_opts_into_public_management_surfaces(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}), profile="dev")
+
+        self.assertTrue(config.api.docs_enabled)
+        self.assertTrue(config.api.openapi_enabled)
+        self.assertTrue(config.api.docs_public)
+        self.assertTrue(config.api.openapi_public)
+        self.assertTrue(config.observability.prometheus_public)
+
     def test_missing_named_profile_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(FileNotFoundError):
