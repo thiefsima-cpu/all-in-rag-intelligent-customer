@@ -4,7 +4,6 @@ from .client import GenerationClientAdapter, build_openai_client, resolve_api_ke
 from .decision import decide_generation_mode
 from .execution import GenerationExecutionEngine
 from .fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
-from .integration import GenerationIntegrationModule
 from .models import (
     AnswerPlan,
     GenerationDecision,
@@ -18,7 +17,6 @@ from .service import GenerationWorkflowService
 
 __all__ = [
     "AnswerPlan",
-    "GenerationIntegrationModule",
     "GenerationWorkflowService",
     "GenerationClientAdapter",
     "GenerationDecision",

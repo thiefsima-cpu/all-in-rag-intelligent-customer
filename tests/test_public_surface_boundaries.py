@@ -41,9 +41,13 @@ MIGRATED_ROOT_SHARED_MODULE_FILES = frozenset(
 RETIRED_LEGACY_FACADE_MODULES = frozenset(
     {
         "config",
+        "rag_modules.app.runtime_service_resolver",
+        "rag_modules.app.services.question_answer_service",
+        "rag_modules.generation.integration",
         "rag_modules.graph_data_preparation",
         "rag_modules.graph_indexing",
         "rag_modules.intelligent_query_router",
+        "rag_modules.retrieval.hybrid_facade",
     }
 )
 PROHIBITED_LEGACY_FACADE_MODULES = LEGACY_FACADE_MODULES | RETIRED_LEGACY_FACADE_MODULES
@@ -397,15 +401,25 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
     def test_retired_legacy_facade_files_are_removed(self) -> None:
         retired_paths = {
             ROOT / "config.py",
+            RAG_MODULES_DIR / "app" / "runtime_service_resolver.py",
+            RAG_MODULES_DIR / "app" / "services" / "question_answer_service.py",
+            RAG_MODULES_DIR / "generation" / "integration.py",
             RAG_MODULES_DIR / "graph_data_preparation.py",
             RAG_MODULES_DIR / "graph_indexing.py",
             RAG_MODULES_DIR / "intelligent_query_router.py",
+            RAG_MODULES_DIR / "retrieval" / "hybrid_facade.py",
         }
 
         self.assertEqual(
             set(),
             {path.relative_to(ROOT) for path in retired_paths if path.exists()},
         )
+
+    def test_retired_facade_import_paths_fail_instead_of_forwarding(self) -> None:
+        for module_name in sorted(RETIRED_LEGACY_FACADE_MODULES):
+            with self.subTest(module_name=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
 
     def test_runtime_metadata_does_not_advertise_retired_facade_modules(self) -> None:
         violations: list[str] = []
@@ -555,11 +569,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
     def test_internal_generation_assembly_uses_workflow_service_not_legacy_facade(self) -> None:
         violations: list[str] = []
         allowed_files = {
-            RAG_MODULES_DIR / "__init__.py",
             RAG_MODULES_DIR / "generation_integration.py",
             RAG_MODULES_DIR / "compat" / "generation_integration.py",
-            RAG_MODULES_DIR / "generation" / "__init__.py",
-            RAG_MODULES_DIR / "generation" / "integration.py",
         }
 
         for path in RAG_MODULES_DIR.rglob("*.py"):
@@ -603,9 +614,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "build_answer_plan",
             "build_answer_plan_from_documents",
         }
-        allowed_files = {
-            RAG_MODULES_DIR / "generation" / "integration.py",
-        }
+        allowed_files: set[Path] = set()
         violations: list[str] = []
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
@@ -675,11 +684,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             importlib.import_module("rag_modules.app.services.query_understanding_service")
 
     def test_internal_question_answering_imports_use_workflow_or_contracts(self) -> None:
-        allowed_files = {
-            RAG_MODULES_DIR / "app" / "services" / "__init__.py",
-            RAG_MODULES_DIR / "app" / "services" / "question_answer_service.py",
-            RAG_MODULES_DIR / "app" / "runtime_service_resolver.py",
-        }
+        allowed_files: set[Path] = set()
         violations: list[str] = []
 
         for path in RAG_MODULES_DIR.rglob("*.py"):
@@ -1572,7 +1577,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_system_answering_uses_question_answer_service_contract(self) -> None:
+    def test_system_answering_uses_answer_workflow_contract(self) -> None:
         path = RAG_MODULES_DIR / "app" / "system.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -1605,7 +1610,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         )
         self.assertFalse(
             violations,
-            "Found system answering logic that should route through answering_service/question_answer_service contract:\n"
+            "Found system answering logic that should route through answering_service/answer workflow contract:\n"
             + "\n".join(violations),
         )
 

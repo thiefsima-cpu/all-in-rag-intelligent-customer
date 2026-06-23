@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.graph.retrieval import GraphRAGRetrieval, GraphRetrievalComponents
-from rag_modules.retrieval import HybridRetrievalModule
+from rag_modules.retrieval import HybridRetrievalService
 from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
@@ -234,7 +234,7 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
         )
         retrieval_profile = SimpleNamespace(semantics=SimpleNamespace())
 
-        module = HybridRetrievalModule(
+        module = HybridRetrievalService(
             config=config,
             milvus_module=SimpleNamespace(),
             data_module=SimpleNamespace(),

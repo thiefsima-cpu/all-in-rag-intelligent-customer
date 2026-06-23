@@ -451,10 +451,6 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         )
         services = SimpleNamespace(
             provide_answer_workflow=lambda **kwargs: answer_workflow,
-            provide_question_answer_service=lambda **kwargs: SimpleNamespace(
-                name="question-answer-service",
-                workflow=kwargs["answer_workflow"],
-            ),
         )
 
         class _RootProvider:
@@ -497,8 +493,7 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         self.assertIs(runtime.query_understanding_service, understanding_service)
         self.assertIs(runtime.query_router, router)
         self.assertIs(runtime.answer_workflow, answer_workflow)
-        self.assertEqual(runtime.question_answer_service.name, "question-answer-service")
-        self.assertIs(runtime.question_answer_service.workflow, answer_workflow)
+        self.assertFalse(hasattr(runtime, "question_answer_service"))
 
     def test_assembler_requires_canonical_routing_workflow_provider(self) -> None:
         config = build_test_config()
@@ -539,10 +534,6 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
             ),
             services=SimpleNamespace(
                 provide_answer_workflow=lambda **kwargs: SimpleNamespace(name="workflow"),
-                provide_question_answer_service=lambda **kwargs: SimpleNamespace(
-                    name="question-answer-service",
-                    workflow=kwargs["answer_workflow"],
-                ),
             ),
         )
 

@@ -8,7 +8,7 @@ from .runtime_state_store import RuntimeStateStore
 
 
 class SystemAnsweringService:
-    """Answer user questions through the runtime-backed question-answer contract."""
+    """Answer user questions through the runtime-backed answer workflow."""
 
     def __init__(
         self,
@@ -28,8 +28,8 @@ class SystemAnsweringService:
         message_callback=None,
         chunk_callback=None,
     ) -> QuestionAnswerResult:
-        answer_service = self.require_question_answer_service()
-        result = answer_service.answer_question(
+        answer_workflow = self.require_answer_workflow()
+        result = answer_workflow.answer_question(
             question=question,
             stream=stream,
             explain_routing=explain_routing,
@@ -47,8 +47,8 @@ class SystemAnsweringService:
         message_callback=None,
         chunk_callback=None,
     ) -> QuestionAnswerResponse:
-        answer_service = self.require_question_answer_service()
-        response = answer_service.answer_question_response(
+        answer_workflow = self.require_answer_workflow()
+        response = answer_workflow.answer_question_response(
             question=question,
             stream=stream,
             explain_routing=explain_routing,
@@ -57,17 +57,15 @@ class SystemAnsweringService:
         )
         return response
 
-    def require_question_answer_service(self):
+    def require_answer_workflow(self):
         if not self.backend.is_serving_initialized():
             self.backend.initialize_serving_runtime()
         self.backend.require_ready()
         serving_runtime = self.runtime_state_store.serving_runtime
-        answer_service = (
-            serving_runtime.question_answer_service if serving_runtime is not None else None
-        )
-        if answer_service is None:
-            raise ValueError("Question-answer service is not initialized.")
-        return answer_service
+        answer_workflow = serving_runtime.answer_workflow if serving_runtime is not None else None
+        if answer_workflow is None:
+            raise ValueError("Answer workflow is not initialized.")
+        return answer_workflow
 
 
 __all__ = ["SystemAnsweringService"]

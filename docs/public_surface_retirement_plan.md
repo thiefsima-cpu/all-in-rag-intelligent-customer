@@ -78,7 +78,12 @@ grouped runtime views.
   facades retired in favor of `rag_modules.app.system` and
   `rag_modules.app.services.*`.
 - `generation_integration` and `hybrid_retrieval` facades retired in favor of
-  `rag_modules.generation.integration` and `rag_modules.retrieval.hybrid_facade`.
+  `rag_modules.generation.service` and `rag_modules.retrieval.hybrid_service`.
+- `QuestionAnswerService` retired in favor of `AnswerWorkflow`.
+- `GenerationIntegrationModule` retired in favor of `GenerationWorkflowService`.
+- `HybridRetrievalModule`, `HybridLegacyResultTranslator`, and `RetrievalResult`
+  retired in favor of `HybridRetrievalService` and evidence-native retrieval
+  contracts.
 - Root `graph_*` wrappers retired in favor of `rag_modules.graph.*`.
 - `indexing_pipeline` facades retired in favor of
   `rag_modules.build_pipeline.document_artifacts`.

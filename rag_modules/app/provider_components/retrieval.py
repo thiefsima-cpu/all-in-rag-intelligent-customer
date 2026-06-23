@@ -5,7 +5,7 @@ from __future__ import annotations
 from ...configuration.models import GraphRAGConfig
 from ...graph.retrieval import GraphRAGRetrieval
 from ...query_understanding.service import QueryUnderstandingService
-from ...retrieval import HybridRetrievalModule
+from ...retrieval import HybridRetrievalService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
 from ..runtime_contracts import (
@@ -28,8 +28,8 @@ class DefaultRetrievalComponentProvider:
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
-    ) -> HybridRetrievalModule:
-        return HybridRetrievalModule(
+    ) -> HybridRetrievalService:
+        return HybridRetrievalService(
             config=config,
             milvus_module=milvus_module,
             data_module=data_module,
@@ -57,7 +57,7 @@ class DefaultRetrievalComponentProvider:
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalModule,
+        traditional_retrieval: HybridRetrievalService,
         graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,

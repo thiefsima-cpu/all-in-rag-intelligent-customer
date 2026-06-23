@@ -64,9 +64,6 @@ class SystemRuntimeViewBuilder:
         return SystemServicesView(
             generation_service=(serving_runtime.generation_service if serving_runtime else None),
             answer_workflow=(serving_runtime.answer_workflow if serving_runtime else None),
-            question_answer_service=(
-                serving_runtime.question_answer_service if serving_runtime else None
-            ),
             knowledge_base_service=(
                 build_runtime.knowledge_base_service if build_runtime else None
             ),

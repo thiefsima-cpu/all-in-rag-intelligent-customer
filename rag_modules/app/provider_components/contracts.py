@@ -13,7 +13,7 @@ from ...generation.service import GenerationWorkflowService
 from ...graph.retrieval import GraphRAGRetrieval
 from ...observability.tracing_sinks import QueryTraceSink
 from ...query_understanding.service import QueryUnderstandingService
-from ...retrieval import HybridRetrievalModule
+from ...retrieval import HybridRetrievalService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import (
@@ -29,7 +29,6 @@ from ..runtime_contracts import (
     QueryTracerPort,
     VectorIndexModulePort,
 )
-from ..services import QuestionAnswerService
 from ..services.answer_workflow import AnswerWorkflow
 from ..services.knowledge_base_service import KnowledgeBaseService
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
@@ -179,7 +178,7 @@ class RetrievalComponentProvider(Protocol):
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
-    ) -> HybridRetrievalModule: ...
+    ) -> HybridRetrievalService: ...
 
     def provide_graph_rag_retrieval(
         self,
@@ -194,7 +193,7 @@ class RetrievalComponentProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalModule,
+        traditional_retrieval: HybridRetrievalService,
         graph_rag_retrieval: GraphRAGRetrieval,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
@@ -227,16 +226,6 @@ class ApplicationServiceComponentProvider(Protocol):
         generation_module: GenerationWorkflowService,
         query_tracer: QueryTracerPort,
     ) -> AnswerWorkflow: ...
-
-    def provide_question_answer_service(
-        self,
-        *,
-        config: GraphRAGConfig,
-        query_router: RoutingWorkflowProtocol,
-        generation_module: GenerationWorkflowService,
-        query_tracer: QueryTracerPort,
-        answer_workflow: AnswerWorkflow,
-    ) -> QuestionAnswerService: ...
 
 
 class RuntimeComponentProvider(Protocol):

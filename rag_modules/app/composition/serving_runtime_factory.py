@@ -126,13 +126,6 @@ class ServingRuntimeFactory:
             generation_module=generation_service,
             query_tracer=tracer,
         )
-        question_answer_service = services.provide_question_answer_service(
-            config=config,
-            query_router=query_router,
-            generation_module=generation_service,
-            query_tracer=tracer,
-            answer_workflow=answer_workflow,
-        )
         artifact_manifest = (
             shared_runtime.artifact_manifest
             if shared_runtime
@@ -151,7 +144,6 @@ class ServingRuntimeFactory:
             graph_rag_retrieval=graph_rag_retrieval,
             query_router=query_router,
             answer_workflow=answer_workflow,
-            question_answer_service=question_answer_service,
             artifact_manifest=artifact_manifest,
             retrieval_engines_initialized=False,
         )

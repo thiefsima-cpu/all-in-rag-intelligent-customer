@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from rag_modules.app.services.answer_models import QuestionAnswerResult
 from rag_modules.app.services.answer_pipeline import NO_EVIDENCE_ANSWER
-from rag_modules.app.services.question_answer_service import QuestionAnswerService
+from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.retrieval.contracts import EvidenceDocument
@@ -178,16 +178,7 @@ class _FakeQueryRouter:
         return f"explain:{question}"
 
 
-class _CapturingWorkflow:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def answer_question(self, **kwargs):
-        self.calls.append(kwargs)
-        return QuestionAnswerServiceTests.make_result(kwargs["question"])
-
-
-class QuestionAnswerServiceTests(unittest.TestCase):
+class AnswerWorkflowTests(unittest.TestCase):
     @staticmethod
     def make_result(question: str) -> QuestionAnswerResult:
         return QuestionAnswerResult(answer=f"result:{question}", analysis=None)
@@ -205,7 +196,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -253,7 +244,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
             ),
         )
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -307,7 +298,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
                 selected_evidence_items=1,
             ),
         )
-        service = QuestionAnswerService(
+        service = AnswerWorkflow(
             self.config,
             _FakeQueryRouter(
                 resolution=_build_resolution(
@@ -367,7 +358,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
             },
             final_doc_count=1,
         )
-        service = QuestionAnswerService(
+        service = AnswerWorkflow(
             self.config,
             _FakeQueryRouter(
                 resolution=_build_resolution(question, documents=documents),
@@ -426,7 +417,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         )
         generation = _FakeGenerationService(answer="scoped answer")
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -452,7 +443,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
             trace=GenerationSnapshot(mode="direct", total_evidence_items=1),
         )
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -471,7 +462,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         )
         tracer = _FakeQueryTracer()
         chunks: list[str] = []
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -496,7 +487,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
             stream_trace=GenerationSnapshot(mode="direct", total_evidence_items=2),
         )
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -519,7 +510,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         )
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -588,7 +579,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
                     ),
                 )
 
-        service = QuestionAnswerService(
+        service = AnswerWorkflow(
             self.config,
             _ConcurrentRouter(),
             _ConcurrentGeneration(),
@@ -647,7 +638,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
                 return "legacy answer"
 
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(
+        service = AnswerWorkflow(
             self.config,
             _LegacyRouter(),
             _LegacyGeneration(),
@@ -669,7 +660,7 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         )
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
-        service = QuestionAnswerService(self.config, router, generation, tracer)
+        service = AnswerWorkflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -677,46 +668,6 @@ class QuestionAnswerServiceTests(unittest.TestCase):
         self.assertIsNone(result.analysis)
         self.assertEqual(len(tracer.calls), 1)
         self.assertEqual(result.trace_event.error, "router exploded")
-
-    def test_question_answer_service_delegates_to_injected_workflow(self) -> None:
-        workflow = _CapturingWorkflow()
-        service = QuestionAnswerService(
-            self.config,
-            query_router=SimpleNamespace(),
-            generation_module=SimpleNamespace(),
-            query_tracer=SimpleNamespace(),
-            answer_workflow=workflow,
-        )
-
-        result = service.answer_question(
-            "delegated question",
-            stream=True,
-            explain_routing=True,
-        )
-
-        self.assertEqual(result.answer, "result:delegated question")
-        self.assertEqual(len(workflow.calls), 1)
-        self.assertTrue(workflow.calls[0]["stream"])
-        self.assertTrue(workflow.calls[0]["explain_routing"])
-
-    def test_question_answer_service_response_falls_back_to_result_response(self) -> None:
-        workflow = _CapturingWorkflow()
-        service = QuestionAnswerService(
-            self.config,
-            query_router=SimpleNamespace(),
-            generation_module=SimpleNamespace(),
-            query_tracer=SimpleNamespace(),
-            answer_workflow=workflow,
-        )
-
-        response = service.answer_question_response("delegated question")
-        payload = response.to_dict()
-
-        self.assertEqual(response.answer, "result:delegated question")
-        self.assertEqual(response.strategy, "")
-        self.assertEqual(payload["summary"]["answer"], "result:delegated question")
-        self.assertEqual(payload["grounding"]["evidence_documents"], [])
-        self.assertEqual(len(workflow.calls), 1)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,6 @@ from ..runtime_contracts import (
     QueryTracerPort,
     VectorIndexModulePort,
 )
-from ..services import QuestionAnswerService
 from ..services.answer_workflow import AnswerWorkflow
 from ..services.knowledge_base_service import KnowledgeBaseService
 
@@ -66,21 +65,4 @@ class DefaultApplicationServiceComponentProvider:
             query_router=query_router,
             generation_module=generation_module,
             query_tracer=query_tracer,
-        )
-
-    def provide_question_answer_service(
-        self,
-        *,
-        config: GraphRAGConfig,
-        query_router: RoutingWorkflowProtocol,
-        generation_module: GenerationWorkflowService,
-        query_tracer: QueryTracerPort,
-        answer_workflow: AnswerWorkflow,
-    ) -> QuestionAnswerService:
-        return QuestionAnswerService(
-            config=config,
-            query_router=query_router,
-            generation_module=generation_module,
-            query_tracer=query_tracer,
-            answer_workflow=answer_workflow,
         )

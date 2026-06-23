@@ -81,6 +81,36 @@ class PublicApiManifestTests(unittest.TestCase):
             LEGACY_PUBLIC_SURFACE_SCAN_RULES,
         )
 
+    def test_retired_facade_class_names_are_not_package_exports(self) -> None:
+        import rag_modules
+        import rag_modules.app.services as app_services
+        import rag_modules.generation as generation
+        import rag_modules.retrieval as retrieval
+
+        retired_exports = {
+            rag_modules: {
+                "GenerationIntegrationModule",
+                "HybridRetrievalModule",
+                "QuestionAnswerService",
+            },
+            app_services: {"QuestionAnswerService"},
+            generation: {"GenerationIntegrationModule"},
+            retrieval: {
+                "HybridLegacyResultTranslator",
+                "HybridRetrievalModule",
+                "RetrievalResult",
+            },
+        }
+
+        for module, names in retired_exports.items():
+            for name in names:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertNotIn(name, getattr(module, "__all__", ()))
+                    self.assertFalse(hasattr(module, name))
+
+        self.assertIn("HybridRetrievalService", retrieval.__all__)
+        self.assertTrue(hasattr(retrieval, "HybridRetrievalService"))
+
     def test_internal_only_packages_declare_internal_contract(self) -> None:
         import rag_modules.app.composition as composition
         import rag_modules.app.provider_components as provider_components

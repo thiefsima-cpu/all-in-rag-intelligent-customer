@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..graph.retrieval import GraphRAGRetrieval
-from ..retrieval import HybridRetrievalModule
+from ..retrieval import HybridRetrievalService
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..routing import RoutingWorkflowProtocol
 from .runtime_contracts import (
@@ -19,7 +19,6 @@ from .runtime_contracts import (
 if TYPE_CHECKING:
     from ..generation.service import GenerationWorkflowService
     from ..query_understanding.service import QueryUnderstandingService
-    from .services import QuestionAnswerService
     from .services.answer_workflow import AnswerWorkflow
     from .services.knowledge_base_service import KnowledgeBaseService
 
@@ -40,7 +39,7 @@ class SystemRetrievalView:
 
     retrieval_runtime_profile: RetrievalRuntimeProfile | None = None
     query_understanding_service: QueryUnderstandingService | None = None
-    traditional_retrieval: HybridRetrievalModule | None = None
+    traditional_retrieval: HybridRetrievalService | None = None
     graph_rag_retrieval: GraphRAGRetrieval | None = None
     routing_workflow: RoutingWorkflowProtocol | None = None
 
@@ -51,7 +50,6 @@ class SystemServicesView:
 
     generation_service: GenerationWorkflowService | None = None
     answer_workflow: AnswerWorkflow | None = None
-    question_answer_service: QuestionAnswerService | None = None
     knowledge_base_service: KnowledgeBaseService | None = None
 
 

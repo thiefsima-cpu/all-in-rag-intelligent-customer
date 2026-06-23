@@ -33,7 +33,6 @@ from rag_modules.app.runtime_view import (
     SystemServicesView,
 )
 from rag_modules.app.services.answer_models import QuestionAnswerResult
-from rag_modules.app.services.question_answer_service import QuestionAnswerService
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.system import AdvancedGraphRAGSystem
@@ -215,13 +214,6 @@ def _serving_runtime(config) -> ServingRuntime:
     query_router = SimpleNamespace(get_route_statistics=lambda: {"total_queries": 0})
     generation_module = SimpleNamespace()
     query_tracer = _FakeClosable()
-    question_answer_service = QuestionAnswerService(
-        config=config,
-        query_router=query_router,
-        generation_module=generation_module,
-        query_tracer=query_tracer,
-        answer_workflow=answer_workflow,
-    )
     return ServingRuntime(
         config=config,
         neo4j_manager=SimpleNamespace(close=lambda: None),
@@ -235,7 +227,6 @@ def _serving_runtime(config) -> ServingRuntime:
         graph_rag_retrieval=_FakeClosable(),
         query_router=query_router,
         answer_workflow=answer_workflow,
-        question_answer_service=question_answer_service,
         artifact_manifest=ArtifactManifest.missing(
             manifest_path="storage/indexes/artifact_manifest.json"
         ),
@@ -383,7 +374,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIs(services.facade_support.runtime_state_store, runtime_state_store)
 
     def test_system_answering_service_does_not_refresh_runtime_after_answer(self) -> None:
-        answer_service = SimpleNamespace(
+        answer_workflow = SimpleNamespace(
             answer_question=lambda **kwargs: QuestionAnswerResult(
                 answer=f"answer:{kwargs['question']}",
                 analysis=None,
@@ -394,7 +385,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
             ).to_response(),
         )
         runtime_state_store = _CountingRuntimeStateStore(
-            serving_runtime=SimpleNamespace(question_answer_service=answer_service)
+            serving_runtime=SimpleNamespace(answer_workflow=answer_workflow)
         )
         service = SystemAnsweringService(
             backend=SimpleNamespace(
@@ -903,7 +894,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         self.assertEqual(result.answer, "workflow-ok")
 
-    def test_system_exposes_lazy_question_answer_service_compat_wrapper(self) -> None:
+    def test_system_services_exposes_answer_workflow_without_compat_wrapper(self) -> None:
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(build_runtime.config)
         system = AdvancedGraphRAGSystem(
@@ -913,11 +904,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
         system.initialize_system()
 
-        service = system.services.question_answer_service
-
-        self.assertIsNotNone(service)
-        self.assertEqual(service.answer_question("compat question").answer, "workflow-ok")
-        self.assertIs(service, system.services.question_answer_service)
+        self.assertIs(system.services.answer_workflow, serving_runtime.answer_workflow)
+        self.assertFalse(hasattr(system.services, "question_answer_service"))
 
     def test_flat_runtime_attributes_are_retired_in_favor_of_grouped_views(self) -> None:
         build_runtime = _build_runtime()
@@ -937,10 +925,6 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIsInstance(runtime.services, SystemServicesView)
         self.assertIs(system.retrieval.routing_workflow, serving_runtime.query_router)
         self.assertIs(system.services.generation_service, serving_runtime.generation_module)
-        self.assertIs(
-            system.services.question_answer_service,
-            serving_runtime.question_answer_service,
-        )
         self.assertIs(runtime.infrastructure.data_module, serving_runtime.data_module)
         self.assertIs(runtime.retrieval.routing_workflow, serving_runtime.query_router)
         self.assertIs(runtime.services.answer_workflow, serving_runtime.answer_workflow)
@@ -949,6 +933,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
             (system, "query_router"),
             (system, "generation_service"),
             (system, "question_answer_service"),
+            (system.services, "question_answer_service"),
             (runtime, "data_module"),
             (runtime, "query_router"),
             (runtime, "answer_workflow"),

@@ -1,8 +1,7 @@
-"""Canonical hybrid retrieval facade over the retrieval package runtime stack."""
+"""Canonical hybrid retrieval service over the retrieval package runtime stack."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_core.documents import Document
@@ -27,35 +26,8 @@ from .runtime_profile import RetrievalRuntimeProfile
 _DEFAULT_RRF_K = 60
 
 
-@dataclass
-class RetrievalResult:
-    """Legacy compatibility result for older dual-level helper methods."""
-
-    content: str
-    node_id: str
-    node_type: str
-    relevance_score: float
-    retrieval_level: str
-    metadata: Dict[str, Any]
-
-
-class HybridLegacyResultTranslator:
-    """Translate evidence-native retrieval results into legacy payloads."""
-
-    @staticmethod
-    def to_legacy_result(doc: EvidenceDocument) -> RetrievalResult:
-        return RetrievalResult(
-            content=doc.content,
-            node_id=doc.node_id,
-            node_type=doc.node_type,
-            relevance_score=doc.score,
-            retrieval_level=doc.retrieval_level,
-            metadata=dict(doc.metadata or {}),
-        )
-
-
-class HybridRetrievalModule:
-    """Thin public facade over the hybrid retrieval executor/service stack."""
+class HybridRetrievalService:
+    """Application-facing service over the hybrid retrieval executor stack."""
 
     def __init__(
         self,
@@ -89,7 +61,6 @@ class HybridRetrievalModule:
             adapter_factory=adapter_factory,
         )
         self._executor = self._components.executor
-        self._legacy_translator = HybridLegacyResultTranslator()
 
     @property
     def components(self) -> HybridRetrievalComponents:
@@ -194,26 +165,6 @@ class HybridRetrievalModule:
     @staticmethod
     def _dedupe_terms(terms: List[str]) -> List[str]:
         return HybridRetrievalExecutor.dedupe_terms(terms)
-
-    def entity_level_retrieval(
-        self,
-        entity_keywords: List[str],
-        top_k: int = 5,
-    ) -> List[RetrievalResult]:
-        return [
-            self._legacy_translator.to_legacy_result(doc)
-            for doc in self._executor.entity_level_results(entity_keywords, top_k=top_k)
-        ]
-
-    def topic_level_retrieval(
-        self,
-        topic_keywords: List[str],
-        top_k: int = 5,
-    ) -> List[RetrievalResult]:
-        return [
-            self._legacy_translator.to_legacy_result(doc)
-            for doc in self._executor.topic_level_results(topic_keywords, top_k=top_k)
-        ]
 
     def dual_level_retrieval(
         self,
@@ -356,7 +307,5 @@ class HybridRetrievalModule:
 
 
 __all__ = [
-    "HybridLegacyResultTranslator",
-    "HybridRetrievalModule",
-    "RetrievalResult",
+    "HybridRetrievalService",
 ]
