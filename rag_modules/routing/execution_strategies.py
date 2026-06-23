@@ -291,6 +291,7 @@ class CombinedRouteStrategy:
     ) -> None:
         self._executor = executor
         self._executor_lock = threading.Lock()
+        self._owns_executor = executor is None
         self._max_workers = max_workers
         self._thread_name_prefix = thread_name_prefix
 
@@ -398,6 +399,15 @@ class CombinedRouteStrategy:
                     )
                 self._executor = executor
         return executor
+
+    def close(self) -> None:
+        if not self._owns_executor:
+            return
+        with self._executor_lock:
+            executor = self._executor
+            self._executor = None
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _elapsed_ms(start: float) -> float:

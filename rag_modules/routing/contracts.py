@@ -30,5 +30,7 @@ class RoutingWorkflowProtocol(Protocol):
 
     def get_route_statistics(self) -> JsonObject: ...
 
+    def close(self) -> None: ...
+
 
 __all__ = ["RoutingWorkflowProtocol"]

@@ -71,6 +71,15 @@ class _StubStrategy:
         )
 
 
+class _ClosableStrategy(_StubStrategy):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class RouteSearchOrchestratorTests(unittest.TestCase):
     def test_execute_delegates_to_strategy_registry_and_records_trace(self) -> None:
         strategy = _StubStrategy()
@@ -207,6 +216,20 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             request.retrieval_request.metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY],
             ["bm25"],
         )
+
+    def test_close_closes_owned_route_strategies(self) -> None:
+        strategy = _ClosableStrategy()
+        orchestrator = RouteSearchOrchestrator(
+            traditional_retrieval=_FakeTraditionalRetrieval(),
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=SimpleNamespace(candidates=SimpleNamespace()),
+            post_processor=_FakePostProcessor(),
+            strategies=[strategy],
+        )
+
+        orchestrator.close()
+
+        self.assertTrue(strategy.closed)
 
 
 if __name__ == "__main__":

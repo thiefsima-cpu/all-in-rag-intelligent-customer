@@ -143,6 +143,11 @@ class RoutingWorkflowService:
     def get_route_statistics(self) -> JsonObject:
         return self.route_stats.summary()
 
+    def close(self) -> None:
+        close = getattr(self.search_orchestrator, "close", None)
+        if callable(close):
+            close()
+
     def _build_execution_request(
         self,
         *,

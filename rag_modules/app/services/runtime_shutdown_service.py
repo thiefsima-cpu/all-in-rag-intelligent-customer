@@ -10,6 +10,7 @@ class RuntimeShutdownService:
         serving_runtime = runtime.serving_runtime
         if serving_runtime is not None:
             self._close_if_present(runtime.infrastructure.query_tracer)
+            self._close_if_present(getattr(runtime.retrieval, "routing_workflow", None))
             self._close_if_present(runtime.retrieval.traditional_retrieval)
             self._close_if_present(runtime.retrieval.graph_rag_retrieval)
             serving_runtime.retrieval_engines_initialized = False

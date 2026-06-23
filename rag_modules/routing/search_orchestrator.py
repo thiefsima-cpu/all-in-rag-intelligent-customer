@@ -70,6 +70,17 @@ class RouteSearchOrchestrator:
         ]
         self.strategy_registry = {strategy.strategy: strategy for strategy in strategy_list}
 
+    def close(self) -> None:
+        closed_strategy_ids: set[int] = set()
+        for strategy in self.strategy_registry.values():
+            strategy_id = id(strategy)
+            if strategy_id in closed_strategy_ids:
+                continue
+            closed_strategy_ids.add(strategy_id)
+            close = getattr(strategy, "close", None)
+            if callable(close):
+                close()
+
     def execute(
         self,
         request: RouteExecutionRequest,

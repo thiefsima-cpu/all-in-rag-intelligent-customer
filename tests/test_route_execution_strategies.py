@@ -382,6 +382,55 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(len(created_executors[0].submit_calls), 4)
         self.assertEqual(created_executors[0].shutdown_calls, [])
 
+    def test_combined_strategy_close_shuts_down_owned_default_executor(self) -> None:
+        created_executors = []
+
+        def build_executor(*args, **kwargs):
+            executor = _SynchronousExecutor(*args, **kwargs)
+            created_executors.append(executor)
+            return executor
+
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy()
+
+        with patch(
+            "rag_modules.routing.execution_strategies.ThreadPoolExecutor",
+            side_effect=build_executor,
+        ):
+            strategy.execute(
+                _request(
+                    query="owned combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+            strategy.close()
+            strategy.close()
+            strategy.execute(
+                _request(
+                    query="recreated combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+
+        self.assertEqual(len(created_executors), 2)
+        self.assertEqual(
+            created_executors[0].shutdown_calls,
+            [{"wait": False, "cancel_futures": True}],
+        )
+        self.assertEqual(created_executors[1].shutdown_calls, [])
+
     def test_combined_strategy_accepts_injected_executor(self) -> None:
         executor = _SynchronousExecutor()
         services = RouteRetrievalServices(
@@ -406,6 +455,14 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
 
         self.assertFalse(factory.called)
         self.assertEqual(len(executor.submit_calls), 2)
+        self.assertEqual(executor.shutdown_calls, [])
+
+    def test_combined_strategy_close_does_not_shutdown_injected_executor(self) -> None:
+        executor = _SynchronousExecutor()
+        strategy = CombinedRouteStrategy(executor=executor)
+
+        strategy.close()
+
         self.assertEqual(executor.shutdown_calls, [])
 
     def test_build_route_retrieval_request_keeps_query_plan_and_strategy(self) -> None:
