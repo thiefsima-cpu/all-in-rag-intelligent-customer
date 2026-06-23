@@ -92,6 +92,9 @@ class ConfigurationDefaultTests(unittest.TestCase):
         message = str(context.exception)
         self.assertIn("storage.milvus_dimension", message)
         self.assertIn("models.embedding_dimension", message)
+        self.assertIn("overrides", message)
+        self.assertIn("GraphRAGConfig.from_dict", message)
+        self.assertIn("must match", message)
 
 
 if __name__ == "__main__":
