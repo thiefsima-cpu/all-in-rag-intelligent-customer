@@ -19,6 +19,13 @@ Activate it before running local engineering commands:
 conda activate graphrag-c9-dev
 ```
 
+Install the repository Git hook once from the activated development
+environment:
+
+```powershell
+python -m pre_commit install
+```
+
 Copy the committed environment template to your private local `.env` file before
 running services:
 
@@ -59,7 +66,7 @@ graph-rag-verify-env
 
 ```powershell
 python -m pytest -q
-pre-commit run --all-files
+python -m pre_commit run --all-files
 python scripts/release_gate.py
 python scripts/pressure_api_service.py --json
 ```

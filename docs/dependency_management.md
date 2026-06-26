@@ -33,6 +33,17 @@ Activate the development environment before running local commands:
 conda activate graphrag-c9-dev
 ```
 
+Install the repository Git hook once from the activated development
+environment:
+
+```powershell
+python -m pre_commit install
+```
+
+The hook uses the local development environment and runs the same pinned tools
+declared by this project: Ruff check with fixes, Ruff format, and mypy with
+`pyproject.toml`.
+
 Create a production-parity runtime environment or isolate the legacy agent:
 
 ```powershell
