@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ..configuration.models import GraphRAGConfig
 from .diagnostics import StartupDiagnostics
 from .services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 
 
 class GraphRAGApplication(Protocol):
     """Thin application contract for CLI and future service adapters."""
+
+    config: GraphRAGConfig
 
     @property
     def system_ready(self) -> bool: ...
