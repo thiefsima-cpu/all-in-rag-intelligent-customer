@@ -40,10 +40,10 @@ class StorageSettings(ConfigSection):
     milvus_dimension: int = Field(default=1024, ge=0)
     enable_index_cache: bool = True
     index_cache_dir: str = "storage/indexes"
-    artifact_manifest_path: str = os.path.join("storage/indexes", "artifact_manifest.json")
+    artifact_manifest_path: str = ""
     milvus_blue_green_enabled: bool = True
     milvus_collection_alias_suffix: str = "__active"
-    build_job_store_path: str = os.path.join("storage/indexes", "build_jobs.json")
+    build_job_store_path: str = ""
     neo4j_max_connection_pool_size: int = Field(default=50, ge=1)
     neo4j_connection_acquisition_timeout_seconds: float = 30.0
     neo4j_max_connection_lifetime_seconds: float = 3600.0
