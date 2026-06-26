@@ -383,6 +383,32 @@ SECTION_FIELD_NAMES = {
 }
 
 
+def default_domain_payload() -> Dict[str, Dict[str, Any]]:
+    return {
+        section_name: section_type().to_dict()
+        for section_name, section_type in SECTION_TYPES.items()
+    }
+
+
+def _clear_storage_derived_paths_for_overrides(
+    domain_payload: Dict[str, Dict[str, Any]],
+    overrides: Mapping[str, Any],
+) -> None:
+    storage_overrides = overrides.get("storage")
+    storage_payload = domain_payload.get("storage")
+    if not isinstance(storage_overrides, Mapping) or not isinstance(storage_payload, dict):
+        return
+
+    index_cache_changed = "index_cache_dir" in storage_overrides
+    artifact_manifest_changed = "artifact_manifest_path" in storage_overrides
+    if index_cache_changed and not artifact_manifest_changed:
+        storage_payload["artifact_manifest_path"] = ""
+    if (index_cache_changed or artifact_manifest_changed) and (
+        "build_job_store_path" not in storage_overrides
+    ):
+        storage_payload["build_job_store_path"] = ""
+
+
 class GraphRAGConfig(BaseModel):
     """Root configuration with true nested domain sections."""
 
@@ -471,6 +497,7 @@ class GraphRAGConfig(BaseModel):
         from .assembly import apply_overrides
 
         merged = self.to_domain_dict()
+        _clear_storage_derived_paths_for_overrides(merged, overrides)
         apply_overrides(merged, overrides)
         try:
             return self.__class__.model_validate(
@@ -500,7 +527,7 @@ class GraphRAGConfig(BaseModel):
             key: str(payload.pop(key, ""))
             for key in ("profile_name", "profile_path", "profile_hash")
         }
-        merged = cls().to_domain_dict()
+        merged = default_domain_payload()
         apply_overrides(merged, payload)
         try:
             return cls.model_validate({**merged, **profile_metadata})

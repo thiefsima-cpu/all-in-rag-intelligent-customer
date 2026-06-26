@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration import load_config
+from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
 
 
@@ -58,12 +58,15 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
             0.77,
         )
 
-        with self.assertRaisesRegex(KeyError, "query_plan_cache_size"):
+        with self.assertRaises(ConfigurationError) as flat_context:
             config.with_overrides({"query_plan_cache_size": 32})
-        with self.assertRaisesRegex(
-            KeyError,
-            "query_understanding.query_semantic_combined_strategy_complexity_threshold",
-        ):
+        flat_message = str(flat_context.exception)
+        self.assertIn("overrides", flat_message)
+        self.assertIn("GraphRAGConfig.with_overrides", flat_message)
+        self.assertIn("query_plan_cache_size", flat_message)
+        self.assertIn("extra", flat_message)
+
+        with self.assertRaises(ConfigurationError) as nested_context:
             config.with_overrides(
                 {
                     "query_understanding": {
@@ -71,6 +74,13 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
                     }
                 }
             )
+        nested_message = str(nested_context.exception)
+        self.assertIn("overrides", nested_message)
+        self.assertIn(
+            "query_understanding.query_semantic_combined_strategy_complexity_threshold",
+            nested_message,
+        )
+        self.assertIn("extra", nested_message)
 
     def test_milvus_dimension_must_match_embedding_dimension(self) -> None:
         config = load_config()

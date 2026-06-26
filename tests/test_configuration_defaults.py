@@ -71,6 +71,23 @@ class ConfigurationDefaultTests(unittest.TestCase):
             os.path.join("storage/explicit-indexes", "artifact_manifest.json"),
         )
 
+    def test_with_overrides_recomputes_derived_storage_paths(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        updated = config.with_overrides(
+            {"storage": {"index_cache_dir": "storage/override-indexes"}}
+        )
+
+        self.assertEqual(updated.storage.index_cache_dir, "storage/override-indexes")
+        self.assertEqual(
+            updated.storage.artifact_manifest_path,
+            os.path.join("storage/override-indexes", "artifact_manifest.json"),
+        )
+        self.assertEqual(
+            updated.storage.build_job_store_path,
+            os.path.join("storage/override-indexes", "build_jobs.json"),
+        )
+
     def test_default_management_surfaces_are_production_safe(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
 

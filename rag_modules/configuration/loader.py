@@ -8,12 +8,12 @@ from dotenv import load_dotenv
 
 from .assembly import apply_overrides, build_config_from_domain_dict
 from .env import EnvConfigSource, build_env_overrides, default_env_source
-from .models import GraphRAGConfig
+from .models import GraphRAGConfig, default_domain_payload
 from .profiles import load_profile
 
 
 def _default_domain_payload() -> dict[str, dict[str, Any]]:
-    return GraphRAGConfig().to_domain_dict()
+    return default_domain_payload()
 
 
 def load_config(
@@ -46,13 +46,28 @@ def load_config(
     )
     if resolved_profile.overrides:
         apply_overrides(domain_payload, resolved_profile.overrides)
+        build_config_from_domain_dict(
+            domain_payload,
+            source_kind="profile",
+            source=resolved_profile.path or resolved_profile.name,
+        )
 
     env_overrides = build_env_overrides(env_source)
     if env_overrides:
         apply_overrides(domain_payload, env_overrides)
+        build_config_from_domain_dict(
+            domain_payload,
+            source_kind="environment",
+            source="",
+        )
 
     if overrides:
         apply_overrides(domain_payload, overrides)
+        build_config_from_domain_dict(
+            domain_payload,
+            source_kind="overrides",
+            source="load_config",
+        )
 
     config = build_config_from_domain_dict(
         domain_payload,
