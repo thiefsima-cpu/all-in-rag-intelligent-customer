@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
-from ..client import generation_failure_code
+from ..clients import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
 from .contracts import _GenerationExecutionHost

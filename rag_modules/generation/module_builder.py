@@ -7,7 +7,7 @@ from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder
 from ..runtime_contracts import LLMClientPort
-from .client import GenerationClientAdapter, build_openai_client, resolve_api_key
+from .clients import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .execution import GenerationExecutionEngine
 from .models import GenerationSettings
 from .planner import GenerationPlanner

@@ -6,7 +6,7 @@ from typing import List
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
-from .client import GenerationClientAdapter
+from .clients import GenerationClientAdapter
 from .models import AnswerPlan, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
 

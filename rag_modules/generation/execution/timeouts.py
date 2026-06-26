@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from ..client import GenerationLatencyBudgetExceeded
+from ..clients import GenerationLatencyBudgetExceeded
 from .contracts import _GenerationExecutionHost
 
 

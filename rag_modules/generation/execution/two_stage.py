@@ -8,7 +8,7 @@ import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnswerContext, GenerationSnapshot
-from ..client import generation_failure_code
+from ..clients import generation_failure_code
 from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
 from ..models import AnswerPlan
 from .contracts import _GenerationExecutionHost

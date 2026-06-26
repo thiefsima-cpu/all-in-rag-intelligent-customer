@@ -1,6 +1,6 @@
 """Generation submodules for decision, planning, prompting, and fallback."""
 
-from .client import GenerationClientAdapter, build_openai_client, resolve_api_key
+from .clients import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .decision import decide_generation_mode
 from .execution import GenerationExecutionEngine
 from .fallback import build_evidence_only_fallback_answer, should_skip_model_fallback

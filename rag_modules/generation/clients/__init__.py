@@ -1,16 +1,15 @@
-"""Compatibility exports for generation client helpers."""
+"""Canonical generation client exports."""
 
 from __future__ import annotations
 
-from .clients import (
-    GenerationClientAdapter,
+from .adapter import GenerationClientAdapter
+from .errors import (
     GenerationLatencyBudgetExceeded,
     GenerationProviderResponseError,
-    build_openai_client,
     generation_failure_code,
     is_retryable_generation_error,
-    resolve_api_key,
 )
+from .factory import build_openai_client, resolve_api_key
 
 __all__ = [
     "GenerationClientAdapter",
