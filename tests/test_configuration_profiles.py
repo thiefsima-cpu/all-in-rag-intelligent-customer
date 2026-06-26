@@ -133,6 +133,22 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertEqual(default_profiles_dir().name, "profiles")
         self.assertIs(ConfigProfile, ConfigProfile)
 
+    def test_load_profile_validates_payload_at_read_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text("[retrieval]\ntopkk = 4\n", encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_profile(profile_path=str(profile_path), profiles_dir=tmpdir)
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.topkk",
+            "extra",
+        )
+
     def test_profile_unknown_nested_field_reports_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "bad.toml"
