@@ -17,7 +17,7 @@ def load_section_from_schema(
     payload = default_domain_payload()
     if defaults:
         apply_overrides(payload, {section_name: dict(defaults)})
-    env_overrides = build_env_overrides(source)
+    env_overrides = build_env_overrides(source, section_name=section_name)
     if env_overrides:
         apply_overrides(payload, env_overrides)
     config = build_config_from_domain_dict(

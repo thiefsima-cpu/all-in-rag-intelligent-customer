@@ -842,12 +842,18 @@ def _assign_path(payload: dict[str, Any], path: tuple[str, ...], value: Any) -> 
     target[path[-1]] = value
 
 
-def build_env_overrides(source: EnvConfigSource) -> dict[str, Any]:
+def build_env_overrides(
+    source: EnvConfigSource,
+    *,
+    section_name: str | None = None,
+) -> dict[str, Any]:
     """Build strict nested configuration overrides from supported environment variables."""
 
     payload: dict[str, Any] = {}
     seen_specs: set[EnvFieldSpec] = set()
     for spec in ENV_FIELD_SPECS.values():
+        if section_name is not None and spec.path[:1] != (section_name,):
+            continue
         if spec in seen_specs:
             continue
         seen_specs.add(spec)

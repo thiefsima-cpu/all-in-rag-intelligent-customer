@@ -6,6 +6,7 @@ import unittest
 from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
+from rag_modules.configuration.sections import load_api_settings
 
 
 class ConfigurationSectionLoaderTests(unittest.TestCase):
@@ -223,6 +224,18 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
             "graph.entity_linker_query_type_label_priorities",
             "JSON object",
         )
+
+    def test_section_loader_ignores_invalid_environment_values_for_other_sections(self) -> None:
+        api_settings = load_api_settings(
+            EnvConfigSource(
+                environ={
+                    "API_AUTH_ENABLED": "false",
+                    "TOP_K": "many",
+                }
+            )
+        )
+
+        self.assertFalse(api_settings.auth_enabled)
 
 
 if __name__ == "__main__":
