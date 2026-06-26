@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Mapping, Self
+from typing import Any, Dict, List, Mapping, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -359,7 +359,7 @@ class ApiSettings(ConfigSection):
     serving_hot_refresh_interval_seconds: float = Field(default=2.0, ge=0.1)
 
 
-SECTION_TYPES = {
+SECTION_TYPES: Dict[str, type[ConfigSection]] = {
     "storage": StorageSettings,
     "models": ModelSettings,
     "retrieval": RetrievalSettings,
@@ -371,7 +371,7 @@ SECTION_TYPES = {
 }
 SECTION_ORDER = tuple(SECTION_TYPES.keys())
 SECTION_FIELD_NAMES = {
-    section_name: tuple(section_type.model_fields)
+    section_name: tuple(cast(Any, section_type).model_fields)
     for section_name, section_type in SECTION_TYPES.items()
 }
 
@@ -436,14 +436,12 @@ class GraphRAGConfig(BaseModel):
                     {
                         "type": "value_error",
                         "loc": ("storage", "milvus_dimension"),
-                        "msg": message,
                         "input": configured_milvus_dimension,
                         "ctx": {"error": ValueError(message)},
                     },
                     {
                         "type": "value_error",
                         "loc": ("models", "embedding_dimension"),
-                        "msg": message,
                         "input": embedding_dimension,
                         "ctx": {"error": ValueError(message)},
                     },

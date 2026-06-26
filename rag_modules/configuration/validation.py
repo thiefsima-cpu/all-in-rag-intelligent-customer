@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
@@ -44,7 +44,7 @@ def raise_validation_error(
     exc: ValidationError,
     source_kind: str,
     source: str,
-) -> None:
+) -> NoReturn:
     details = [
         ConfigErrorDetail(
             source_kind=source_kind,
@@ -62,7 +62,7 @@ def raise_parser_error(
     source: str,
     path: str,
     message: str,
-) -> None:
+) -> NoReturn:
     raise ConfigurationError(
         [
             ConfigErrorDetail(
