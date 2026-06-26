@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from ..query_understanding import QueryPlan
 from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ..runtime import RouteSnapshot, RouteStageSnapshot
-from .execution_strategies import RouteExecutionOutcome, RouteExecutionStageResult
+from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
 
 class RouteTraceRecorder:

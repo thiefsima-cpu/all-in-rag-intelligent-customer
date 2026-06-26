@@ -16,7 +16,7 @@ from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import QueryAnalysis, SearchStrategy
 from ..runtime.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
-from .execution_strategies import (
+from .strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
     HybridRouteStrategy,

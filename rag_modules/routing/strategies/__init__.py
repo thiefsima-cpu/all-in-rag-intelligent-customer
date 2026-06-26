@@ -1,11 +1,8 @@
-"""Compatibility exports for route execution strategies."""
+"""Canonical route execution strategy exports."""
 
 from __future__ import annotations
 
-from .strategies import (
-    CombinedRouteStrategy,
-    GraphRouteStrategy,
-    HybridRouteStrategy,
+from .base import (
     RouteExecutionOutcome,
     RouteExecutionRequestPort,
     RouteExecutionStageResult,
@@ -15,6 +12,9 @@ from .strategies import (
     interleave_route_documents,
     merge_route_documents,
 )
+from .combined import CombinedRouteStrategy
+from .graph import GraphRouteStrategy
+from .hybrid import HybridRouteStrategy
 
 __all__ = [
     "CombinedRouteStrategy",

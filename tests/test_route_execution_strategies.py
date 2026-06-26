@@ -365,7 +365,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         strategy = CombinedRouteStrategy()
 
         with patch(
-            "rag_modules.routing.execution_strategies.ThreadPoolExecutor",
+            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
             side_effect=build_executor,
         ):
             for query in ("first combined route", "second combined route"):
@@ -402,7 +402,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         strategy = CombinedRouteStrategy()
 
         with patch(
-            "rag_modules.routing.execution_strategies.ThreadPoolExecutor",
+            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
             side_effect=build_executor,
         ):
             strategy.execute(
@@ -443,7 +443,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             retrieval_profile=_FakeRetrievalProfile(),
         )
 
-        with patch("rag_modules.routing.execution_strategies.ThreadPoolExecutor") as factory:
+        with patch("rag_modules.routing.strategies.combined.ThreadPoolExecutor") as factory:
             CombinedRouteStrategy(executor=executor).execute(
                 _request(
                     query="injected combined route",
