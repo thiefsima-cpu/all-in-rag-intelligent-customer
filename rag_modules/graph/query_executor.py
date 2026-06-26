@@ -7,9 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from neo4j import Driver
-
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
+from ..runtime_contracts import Neo4jDriverPort
 from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 class GraphQueryExecutor:
     """Execute graph retrieval plans and return raw records."""
 
-    def __init__(self, driver: Optional[Driver], database: str = "neo4j"):
+    def __init__(self, driver: Optional[Neo4jDriverPort], database: str = "neo4j"):
         self.driver = driver
         self.database = database
 

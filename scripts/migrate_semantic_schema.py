@@ -13,18 +13,18 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from neo4j import GraphDatabase
-
 from rag_modules.configuration import load_config
 from rag_modules.domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from rag_modules.infra.neo4j import create_neo4j_driver
 
 
 def _run(dry_run: bool, cleanup_stale: bool) -> dict:
     config = load_config()
     storage = config.storage
-    driver = GraphDatabase.driver(
+    driver = create_neo4j_driver(
         storage.neo4j_uri,
-        auth=(storage.neo4j_user, storage.neo4j_password),
+        storage.neo4j_user,
+        storage.neo4j_password,
     )
     try:
         with driver.session(database=storage.neo4j_database) as session:

@@ -509,6 +509,71 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "Found refactored compatibility modules with local logic:\n" + "\n".join(violations),
         )
 
+    def test_graph_database_driver_creation_stays_in_neo4j_infra_adapter(self) -> None:
+        allowed_dir = RAG_MODULES_DIR / "infra" / "neo4j"
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
+            for path in base_dir.rglob("*.py"):
+                if "__pycache__" in path.parts or path.is_relative_to(allowed_dir):
+                    continue
+
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+                rel = path.relative_to(ROOT)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom) and node.module == "neo4j":
+                        if any(alias.name == "GraphDatabase" for alias in node.names):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Name) and node.id == "GraphDatabase":
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                    elif isinstance(node, ast.Attribute) and node.attr == "GraphDatabase":
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+
+        self.assertFalse(
+            violations,
+            "Found direct GraphDatabase usage outside rag_modules.infra.neo4j:\n"
+            + "\n".join(violations),
+        )
+
+    def test_neo4j_driver_library_imports_stay_in_neo4j_infra_adapter(self) -> None:
+        allowed_dir = RAG_MODULES_DIR / "infra" / "neo4j"
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
+            for path in base_dir.rglob("*.py"):
+                if "__pycache__" in path.parts or path.is_relative_to(allowed_dir):
+                    continue
+
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+                rel = path.relative_to(ROOT)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        if module_name == "neo4j" or module_name.startswith("neo4j."):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == "neo4j" or alias.name.startswith("neo4j."):
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found Neo4j driver package imports outside rag_modules.infra.neo4j:\n"
+            + "\n".join(violations),
+        )
+
     def test_composer_modules_are_grouped_by_composition_root(self) -> None:
         composition_dir = RAG_MODULES_DIR / "app" / "composition"
         composer_modules = {path.name for path in composition_dir.glob("*composer.py")}

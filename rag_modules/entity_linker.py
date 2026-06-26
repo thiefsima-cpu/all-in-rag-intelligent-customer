@@ -12,14 +12,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-from neo4j import Driver
-
 from .configuration.models import GraphSettings
 from .query_understanding import (
     DEFAULT_ENTITY_LINKER_PREFERRED_LABELS,
     default_entity_linker_query_type_priorities,
     default_entity_linker_relation_priorities,
 )
+from .runtime_contracts import Neo4jDriverPort
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ class EntityLinker:
 
     def __init__(
         self,
-        driver: Optional[Driver],
+        driver: Optional[Neo4jDriverPort],
         database: str = "neo4j",
         graph_settings: Optional[GraphSettings] = None,
     ):

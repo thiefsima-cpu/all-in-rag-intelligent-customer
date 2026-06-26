@@ -11,15 +11,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List
 
-from neo4j import GraphDatabase
-
 from ..domain.shared.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
     SEMANTIC_SCHEMA_VERSION,
 )
-from ..neo4j_pool import Neo4jConnectionManager
 from ..text_document import TextDocument
+from .neo4j import Neo4jConnectionManager, create_neo4j_driver
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +49,10 @@ class SemanticGraphSchemaWriter:
         if self.neo4j_manager is not None:
             self.driver = self.neo4j_manager.driver
         else:
-            self.driver = GraphDatabase.driver(
+            self.driver = create_neo4j_driver(
                 self.storage.neo4j_uri,
-                auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                self.storage.neo4j_user,
+                self.storage.neo4j_password,
             )
             self._owns_driver = True
         return self
@@ -79,9 +78,10 @@ class SemanticGraphSchemaWriter:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = GraphDatabase.driver(
+                self.driver = create_neo4j_driver(
                     self.storage.neo4j_uri,
-                    auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                    self.storage.neo4j_user,
+                    self.storage.neo4j_password,
                 )
                 self._owns_driver = True
                 opened_here = True

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from .domain.shared.query_constraints import QueryConstraints
@@ -33,13 +33,19 @@ class Neo4jSessionPort(Protocol):
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
-    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> object: ...
+    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> Any: ...
+
+    def execute_read(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    def execute_write(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
 
 
 class Neo4jDriverPort(Protocol):
     """Neo4j driver behavior used by retrieval adapters."""
 
     def session(self, **kwargs: object) -> Neo4jSessionPort: ...
+
+    def close(self) -> None: ...
 
 
 class Neo4jManagerPort(Protocol):

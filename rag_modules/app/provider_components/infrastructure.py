@@ -8,7 +8,7 @@ from ...build_pipeline.document_artifacts import DocumentIndexCache
 from ...build_pipeline.graph_preparation import GraphDataPreparationModule
 from ...configuration.models import GraphRAGConfig
 from ...infra.milvus import MilvusIndexConstructionModule
-from ...neo4j_pool import Neo4jConnectionManager
+from ...infra.neo4j import Neo4jConnectionManager
 from ...observability.tracing import QueryTracer
 from ...observability.tracing_sinks import (
     JsonlQueryTraceSinkFactory,

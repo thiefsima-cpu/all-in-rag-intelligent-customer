@@ -7,8 +7,7 @@ import os
 import time
 from typing import Any, Dict, List
 
-from neo4j import GraphDatabase
-
+from ..infra.neo4j import create_neo4j_driver
 from ..runtime import GraphRetrievalSnapshot
 
 logger = logging.getLogger(__name__)
@@ -54,9 +53,10 @@ class GraphRetrievalExecutor:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = GraphDatabase.driver(
+                self.driver = create_neo4j_driver(
                     self.storage.neo4j_uri,
-                    auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                    self.storage.neo4j_user,
+                    self.storage.neo4j_password,
                 )
                 self._owns_driver = True
 

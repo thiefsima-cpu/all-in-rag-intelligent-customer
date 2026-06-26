@@ -6,8 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from neo4j import Driver
-
+from ...runtime_contracts import Neo4jDriverPort
 from .models import GraphNode
 
 logger = logging.getLogger(__name__)
@@ -72,7 +71,7 @@ class LoadedGraphData:
 class Neo4jGraphDataLoader:
     """Load recipe, ingredient, and cooking-step nodes from Neo4j."""
 
-    def load(self, driver: Driver, *, database: str) -> LoadedGraphData:
+    def load(self, driver: Neo4jDriverPort, *, database: str) -> LoadedGraphData:
         logger.info("Loading graph data from Neo4j...")
         with driver.session(database=database) as session:
             recipes = self._load_recipes(session)

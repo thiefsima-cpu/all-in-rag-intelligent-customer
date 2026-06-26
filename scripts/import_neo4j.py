@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from neo4j import GraphDatabase
 
 from rag_modules.configuration import load_config
+from rag_modules.infra.neo4j import create_neo4j_driver
 
 
 def split_cypher(script: str) -> list[str]:
@@ -36,9 +36,10 @@ def main() -> None:
     script = script.replace("file:///relationships.csv", "file:///cypher/relationships.csv")
     statements = split_cypher(script)
     storage = config.storage
-    driver = GraphDatabase.driver(
+    driver = create_neo4j_driver(
         storage.neo4j_uri,
-        auth=(storage.neo4j_user, storage.neo4j_password),
+        storage.neo4j_user,
+        storage.neo4j_password,
     )
     try:
         with driver.session(database=storage.neo4j_database) as session:

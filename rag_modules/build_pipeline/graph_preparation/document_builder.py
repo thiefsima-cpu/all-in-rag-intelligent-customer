@@ -6,9 +6,8 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List
 
-from neo4j import Driver
-
 from ...domain.shared.semantic_schema import infer_recipe_semantics
+from ...runtime_contracts import Neo4jDriverPort
 from ...text_document import TextDocument
 from .models import GraphNode
 
@@ -49,7 +48,7 @@ class RecipeDocumentBuilder:
     def build(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipes: Iterable[GraphNode],
     ) -> List[TextDocument]:
@@ -93,7 +92,7 @@ class RecipeDocumentBuilder:
     def _load_ingredients_by_recipe(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipe_ids: List[str],
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -106,7 +105,7 @@ class RecipeDocumentBuilder:
     def _load_steps_by_recipe(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipe_ids: List[str],
     ) -> Dict[str, List[Dict[str, Any]]]:
