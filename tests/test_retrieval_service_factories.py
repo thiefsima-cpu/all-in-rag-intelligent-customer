@@ -275,16 +275,32 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
         )
 
         results = module.graph_rag_evidence_search("Explain the layered flavor path", top_k=3)
-        module.entity_cache = {"entity": 1}
 
         self.assertEqual(results[0].recipe_name, "Explain the layered flavor path")
-        self.assertEqual(module.understand_graph_query("query"), {"understood": "query"})
-        self.assertEqual(module.entity_cache, {"entity": 1})
-        self.assertIs(module.components.executor, factory.executor)
         with self.assertRaises(AttributeError):
-            _ = module.orchestrator
-        self.assertIs(module.components.orchestrator, factory.orchestrator)
+            _ = module.understand_graph_query
+        with self.assertRaises(AttributeError):
+            _ = module.components
+        self.assertEqual(factory.executor.calls[0].query, "Explain the layered flavor path")
         self.assertEqual(factory.calls[0]["database_name"], "recipes")
+
+    def test_graph_rag_retrieval_keeps_only_service_api_and_lifecycle(self) -> None:
+        defined_surface = {
+            name
+            for name, value in vars(GraphRAGRetrieval).items()
+            if not name.startswith("__") and (callable(value) or isinstance(value, property))
+        }
+
+        self.assertEqual(
+            defined_surface,
+            {
+                "close",
+                "graph_query_from_plan",
+                "graph_rag_evidence_search",
+                "graph_rag_evidence_search_with_trace",
+                "initialize",
+            },
+        )
 
 
 if __name__ == "__main__":
