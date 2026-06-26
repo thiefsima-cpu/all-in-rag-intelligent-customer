@@ -174,9 +174,7 @@ class QuerySemanticRoutingSettings(ConfigSection):
     high_relationship_routing_threshold: float = float(
         _SEMANTIC_DEFAULTS.get("high_relationship_routing_threshold", 0.7)
     )
-    multi_hop_hint_entity_count: int = int(
-        _SEMANTIC_DEFAULTS.get("multi_hop_hint_entity_count", 2)
-    )
+    multi_hop_hint_entity_count: int = int(_SEMANTIC_DEFAULTS.get("multi_hop_hint_entity_count", 2))
     multi_hop_hint_relationship_threshold: float = float(
         _SEMANTIC_DEFAULTS.get("multi_hop_hint_relationship_threshold", 0.55)
     )
@@ -198,9 +196,7 @@ class QuerySemanticRoutingSettings(ConfigSection):
 
 
 class QuerySemanticTraversalSettings(ConfigSection):
-    entity_relation_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.get("entity_relation_max_depth", 1)
-    )
+    entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.get("entity_relation_max_depth", 1))
     path_finding_max_depth: int = int(_SEMANTIC_DEFAULTS.get("path_finding_max_depth", 3))
     path_finding_high_intensity_max_depth: int = int(
         _SEMANTIC_DEFAULTS.get("path_finding_high_intensity_max_depth", 4)
@@ -228,9 +224,7 @@ class QuerySemanticTraversalSettings(ConfigSection):
     subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("subgraph_max_nodes", 80))
     clustering_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("clustering_max_nodes", 60))
     default_max_nodes: int = int(_SEMANTIC_DEFAULTS.get("default_max_nodes", 50))
-    graph_query_max_depth_cap: int = int(
-        _SEMANTIC_DEFAULTS.get("graph_query_max_depth_cap", 4)
-    )
+    graph_query_max_depth_cap: int = int(_SEMANTIC_DEFAULTS.get("graph_query_max_depth_cap", 4))
     graph_query_fallback_name_chars: int = int(
         _SEMANTIC_DEFAULTS.get("graph_query_fallback_name_chars", 16)
     )
@@ -259,9 +253,7 @@ class QuerySemanticAdaptiveTraversalSettings(ConfigSection):
 
 
 class QuerySemanticSettings(ConfigSection):
-    scoring: QuerySemanticScoringSettings = Field(
-        default_factory=QuerySemanticScoringSettings
-    )
+    scoring: QuerySemanticScoringSettings = Field(default_factory=QuerySemanticScoringSettings)
     extraction: QuerySemanticExtractionSettings = Field(
         default_factory=QuerySemanticExtractionSettings
     )
@@ -379,7 +371,8 @@ SECTION_TYPES = {
 }
 SECTION_ORDER = tuple(SECTION_TYPES.keys())
 SECTION_FIELD_NAMES = {
-    section_name: tuple(section_type.model_fields) for section_name, section_type in SECTION_TYPES.items()
+    section_name: tuple(section_type.model_fields)
+    for section_name, section_type in SECTION_TYPES.items()
 }
 
 

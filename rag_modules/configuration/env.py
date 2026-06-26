@@ -248,7 +248,9 @@ _ENV_FIELD_SPEC_GROUPS = (
         ("graph", "entity_linker_relation_label_priorities"),
         "json_dict",
     ),
-    _spec(("DASHSCOPE_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY"), ("models", "api_key"), "str"),
+    _spec(
+        ("DASHSCOPE_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY"), ("models", "api_key"), "str"
+    ),
     _spec("LLM_BASE_URL", ("models", "llm_base_url"), "str"),
     _spec("EMBEDDING_BASE_URL", ("models", "embedding_base_url"), "str"),
     _spec("RERANK_BASE_URL", ("models", "rerank_base_url"), "str"),
