@@ -3,11 +3,22 @@ from __future__ import annotations
 import os
 import unittest
 
+from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
+from rag_modules.configuration.sections import load_api_settings
 
 
 class ConfigurationSectionLoaderTests(unittest.TestCase):
+    def assertConfigErrorMentions(
+        self,
+        error: ConfigurationError,
+        *expected_fragments: str,
+    ) -> None:
+        message = str(error)
+        for fragment in expected_fragments:
+            self.assertIn(fragment, message)
+
     def test_storage_settings_respect_environment_overrides(self) -> None:
         config = load_config(
             source=EnvConfigSource(
@@ -173,6 +184,58 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(payload["storage"]["neo4j_password"], "***")
         self.assertEqual(payload["api"]["access_token"], "***")
         self.assertEqual(payload["observability"]["query_trace_fingerprint_salt"], "***")
+
+    def test_invalid_environment_int_reports_variable_and_field_path(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(source=EnvConfigSource(environ={"TOP_K": "many"}))
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "environment",
+            "TOP_K",
+            "retrieval.top_k",
+            "integer",
+        )
+
+    def test_invalid_environment_bool_reports_variable_and_field_path(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(source=EnvConfigSource(environ={"API_AUTH_ENABLED": "sometimes"}))
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "environment",
+            "API_AUTH_ENABLED",
+            "api.auth_enabled",
+            "boolean",
+        )
+
+    def test_invalid_environment_json_reports_variable_and_field_path(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={"ENTITY_LINKER_QUERY_TYPE_LABEL_PRIORITIES": "not-json"}
+                )
+            )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "environment",
+            "ENTITY_LINKER_QUERY_TYPE_LABEL_PRIORITIES",
+            "graph.entity_linker_query_type_label_priorities",
+            "JSON object",
+        )
+
+    def test_section_loader_ignores_invalid_environment_values_for_other_sections(self) -> None:
+        api_settings = load_api_settings(
+            EnvConfigSource(
+                environ={
+                    "API_AUTH_ENABLED": "false",
+                    "TOP_K": "many",
+                }
+            )
+        )
+
+        self.assertFalse(api_settings.auth_enabled)
 
 
 if __name__ == "__main__":

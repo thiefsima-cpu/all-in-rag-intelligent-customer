@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from .assembly import apply_overrides, build_config_from_domain_dict
+from .models import default_domain_payload
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -56,7 +59,19 @@ def _read_profile_file(path: Path) -> dict[str, Any]:
         payload = tomllib.load(file)
     if not isinstance(payload, dict):
         raise ValueError(f"Profile at {path} must decode to a TOML table.")
-    return dict(payload)
+    result = dict(payload)
+    _validate_profile_payload(path, result)
+    return result
+
+
+def _validate_profile_payload(path: Path, payload: Mapping[str, Any]) -> None:
+    domain_payload = default_domain_payload()
+    apply_overrides(domain_payload, payload)
+    build_config_from_domain_dict(
+        domain_payload,
+        source_kind="profile",
+        source=str(path),
+    )
 
 
 def _profile_path(*, profile: str, profiles_dir: Path) -> Path:
