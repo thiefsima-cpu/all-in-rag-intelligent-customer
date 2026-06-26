@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from .errors import ConfigErrorDetail, ConfigurationError
 from .loader import load_config
 from .models import (
     ApiSettings,
@@ -41,6 +42,8 @@ def reset_default_config_cache() -> None:
 
 __all__ = [
     "ApiSettings",
+    "ConfigErrorDetail",
+    "ConfigurationError",
     "ConfigProfile",
     "GenerationSettings",
     "GraphRAGConfig",
