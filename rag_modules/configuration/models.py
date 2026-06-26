@@ -98,6 +98,15 @@ class RetrievalSettings(ConfigSection):
     candidate_source_recovery_seconds: float = Field(default=30.0, ge=0.1)
     candidate_source_degradation_strategy: str = "continue"
 
+    @model_validator(mode="after")
+    def normalize_degradation_strategy(self) -> Self:
+        object.__setattr__(
+            self,
+            "candidate_source_degradation_strategy",
+            self.candidate_source_degradation_strategy.strip().lower() or "continue",
+        )
+        return self
+
 
 class QueryPlannerSettings(ConfigSection):
     cache_size: int = int(_PLANNER_DEFAULTS.get("cache_size", 128))
