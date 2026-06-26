@@ -8,7 +8,7 @@ import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnswerContext, GenerationSnapshot
-from ..client import generation_failure_code
+from ..clients import generation_failure_code
 from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
 from ..models import AnswerPlan
 
@@ -57,9 +57,7 @@ class _TwoStageCompletionMixin:
                     trace.fallback_reason = "two_stage_to_direct_model"
                     trace.direct_latency_ms = direct_latency_ms
                     trace.provider_latency_ms = (
-                        trace.plan_latency_ms
-                        + trace.compose_latency_ms
-                        + direct_latency_ms
+                        trace.plan_latency_ms + trace.compose_latency_ms + direct_latency_ms
                     )
                     trace.request_retries += max(0, attempts_used - 1)
                     trace.total_latency_ms = self._elapsed_ms(total_start)
@@ -97,7 +95,7 @@ class _TwoStageCompletionMixin:
             timeout_seconds=self._remaining_timeout(
                 deadline,
                 self.settings.timeout_seconds,
-            )
+            ),
         )
         compose_latency_ms = self._elapsed_ms(compose_start)
         retries_used += self._consume_retry_count()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from ..client import GenerationLatencyBudgetExceeded
+from ..clients import GenerationLatencyBudgetExceeded
 
 
 class _GenerationTimeoutMixin:
@@ -15,9 +15,7 @@ class _GenerationTimeoutMixin:
     def _remaining_timeout(deadline: float, configured_timeout: int) -> float:
         remaining = deadline - time.perf_counter()
         if remaining <= 0:
-            raise GenerationLatencyBudgetExceeded(
-                "Generation latency budget was exhausted."
-            )
+            raise GenerationLatencyBudgetExceeded("Generation latency budget was exhausted.")
         return max(0.1, min(float(configured_timeout), remaining))
 
     @staticmethod

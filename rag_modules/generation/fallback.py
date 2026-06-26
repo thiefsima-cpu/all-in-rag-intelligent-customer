@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..answer_evidence_builder import AnswerEvidencePackage
-from .client import generation_failure_code
+from .clients import generation_failure_code
 
 
 def build_evidence_only_fallback_answer(

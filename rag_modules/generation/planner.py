@@ -6,7 +6,7 @@ from typing import List
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
-from .client import GenerationClientAdapter
+from .clients import GenerationClientAdapter
 from .models import AnswerPlan, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
 
@@ -57,11 +57,7 @@ class GenerationPlanner:
             prompt=rendered_prompt.text,
             temperature=self.settings.planner_temperature,
             max_tokens=self.settings.planner_max_tokens,
-            timeout=(
-                self.settings.timeout_seconds
-                if timeout_seconds is None
-                else timeout_seconds
-            ),
+            timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
         )
         plan_data = self.client_adapter.load_json_payload(
             self.client_adapter.response_text(response)
@@ -92,9 +88,7 @@ class GenerationPlanner:
     ) -> AnswerPlan:
         answer_type = self.prompt_builder.infer_answer_type(question)
         has_graph_claims = any(
-            unit.get("is_graph_evidence")
-            for item in package.items
-            for unit in item.evidence_units
+            unit.get("is_graph_evidence") for item in package.items for unit in item.evidence_units
         )
         reasoning_mode = "grounded_with_limited_inference" if has_graph_claims else "grounded"
         outline = [
@@ -132,7 +126,10 @@ class GenerationPlanner:
             )
 
         missing_information: List[str] = []
-        if self.prompt_builder.question_needs_relation_explanation(question) and not has_graph_claims:
+        if (
+            self.prompt_builder.question_needs_relation_explanation(question)
+            and not has_graph_claims
+        ):
             missing_information.append("当前证据缺少足够的图谱关系来完整解释关系链。")
         if len(package.items) < 2 and answer_type in {"recommendation", "comparison"}:
             missing_information.append("当前候选证据较少，覆盖面有限。")
