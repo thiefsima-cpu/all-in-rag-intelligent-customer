@@ -12,7 +12,7 @@ RUN python -m pip install --upgrade pip==26.1.1 wheel==0.47.0 \
     && python -m pip install -r requirements.txt
 
 COPY pyproject.toml ./
-COPY config.py main.py main_build_service.py ./
+COPY main.py main_build_service.py ./
 COPY rag_modules ./rag_modules
 COPY scripts ./scripts
 COPY profiles ./profiles

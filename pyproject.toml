@@ -53,7 +53,7 @@ graph-rag-verify-env = "scripts.verify_environment:main"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["config", "main", "main_build_service"]
+py-modules = ["main", "main_build_service"]
 
 [tool.setuptools.packages.find]
 include = ["rag_modules*", "scripts*"]

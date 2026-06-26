@@ -55,7 +55,7 @@ services:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/plugins:/plugins
       - ${DOCKER_VOLUME_DIRECTORY:-.}/cypher:/import/cypher
     ports:
-      - "7474:7474"
+      - "7575:7575"
       - "7687:7687"
 
   api:
@@ -67,6 +67,9 @@ services:
     environment:
       GRAPH_RAG_PROFILE: dev
       API_AUTH_ENABLED: "false"
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       SERVING_API_HOST: 0.0.0.0
       SERVING_API_PORT: 8000
       NEO4J_URI: bolt://neo4j:7687

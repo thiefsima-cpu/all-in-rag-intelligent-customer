@@ -74,5 +74,10 @@ docker compose --profile api up --build
 ```
 
 The API container is built from `Dockerfile.api` and joins the Milvus and Neo4j
-services declared in the same compose file.
+services declared in the same compose file. Define `DASHSCOPE_API_KEY` in the
+project `.env` file before starting the API profile; Compose forwards that
+value into the API container. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
+forwarded as fallback provider keys. The serving API validates this lightweight
+model-provider requirement during startup so a missing key fails fast with a
+clear error instead of surfacing as the first `/answers` request.
 

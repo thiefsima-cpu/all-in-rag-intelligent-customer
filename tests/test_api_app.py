@@ -492,6 +492,14 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "ok")
         self.assertFalse(response.json()["system_ready"])
 
+    def test_owned_serving_api_fails_startup_when_model_api_key_is_missing(self) -> None:
+        config = build_test_config({"models": {"api_key": ""}})
+        app = create_serving_api_app(config=config)
+
+        with self.assertRaisesRegex(ValueError, "DASHSCOPE_API_KEY"):
+            with TestClient(app):
+                pass
+
     def test_serving_readiness_returns_503_until_system_is_ready(self) -> None:
         system = _FakeApiSystem()
         app = create_serving_api_app(system=system)

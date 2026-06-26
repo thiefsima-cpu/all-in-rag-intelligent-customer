@@ -61,6 +61,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         config: Optional[GraphRAGConfig] = None,
         artifact_registry: ArtifactRegistry | None = None,
     ) -> None:
+        self._validate_startup_config = system is None
         super().__init__(system=system, config=config)
         self._stream_executor: ThreadPoolExecutor | None = None
         self._stream_executor_lock = threading.Lock()
@@ -99,6 +100,18 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         )
         self._last_hot_refresh_check = 0.0
         self._hot_refresh_check_lock = threading.Lock()
+
+    def _validate_required_model_api_key(self) -> None:
+        if not self._validate_startup_config:
+            return
+        api_key = str(getattr(self.system.config.models, "api_key", "") or "").strip()
+        if api_key:
+            return
+        raise ValueError(
+            "Missing model provider API key. Set DASHSCOPE_API_KEY, OPENAI_API_KEY, "
+            "or MOONSHOT_API_KEY before starting graph-rag-api. When using Docker Compose, "
+            "define the key in the project .env file so the api service can receive it."
+        )
 
     def _ensure_serving_runtime_initialized(self) -> None:
         self._ensure_runtime_initialized(
@@ -142,6 +155,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         return True
 
     def startup(self, *, auto_initialize_serving: bool = False) -> None:
+        self._validate_required_model_api_key()
         if not auto_initialize_serving:
             return
         self._ensure_serving_runtime_initialized()
