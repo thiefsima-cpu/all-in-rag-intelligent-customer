@@ -1,13 +1,27 @@
 # Offline Evaluation Release Gate
 
-The release gate is deterministic and does not call DashScope, Milvus, Neo4j,
-or any other external service.
+The default release gate runs only deterministic offline smoke suites. It does
+not call DashScope, Milvus, Neo4j, or any other external service.
 
 ## Run
 
-From `code/C9`:
+Run the fast deterministic gate:
 
 ```powershell
+python scripts/release_gate.py
+```
+
+Explicitly include the quality stage when its external dependencies and
+credentials are ready:
+
+```powershell
+python scripts/release_gate.py --include-quality-eval
+```
+
+The equivalent environment opt-in is:
+
+```powershell
+$env:RELEASE_GATE_INCLUDE_QUALITY_EVAL = "true"
 python scripts/release_gate.py
 ```
 
@@ -38,6 +52,22 @@ longer pass the gate by preserving only the expected strategy and answer text.
 The route corpus covers direct recipe lookup, recommendation, time and
 exclusion constraints, classification, multi-hop reasoning, path finding,
 subgraph retrieval, clustering, and combined retrieval.
+
+## Quality Stage Policy
+
+The default policy defines `quality_eval` as an optional stage. It uses the
+`eval_quality` profile with `top_k=6` and answer generation enabled. When the
+stage is selected, the gate requires:
+
+- at least 6 quality cases;
+- a 100% quality-suite pass rate;
+- Recall@K, faithfulness, and citation accuracy of at least `0.8`;
+- P95 latency no greater than `2000 ms`;
+- estimated total cost no greater than `$1.00`.
+
+The quality stage may initialize model, Milvus, and Neo4j dependencies. It is
+never selected implicitly, so the default release gate remains a fast,
+deterministic smoke check.
 
 ## Quality Metrics
 
