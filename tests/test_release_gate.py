@@ -113,6 +113,11 @@ class ReleaseGateTests(unittest.TestCase):
     def test_activate_quality_stage_rejects_collisions_and_malformed_runner(
         self,
     ) -> None:
+        malformed_optional_stages = load_policy(DEFAULT_POLICY_PATH)
+        malformed_optional_stages["optional_stages"] = []
+        with self.assertRaisesRegex(ValueError, "optional_stages"):
+            activate_optional_stages(malformed_optional_stages, ["quality_eval"])
+
         duplicate_suite = load_policy(DEFAULT_POLICY_PATH)
         duplicate_suite["optional_stages"]["quality_eval"]["suite"] = "route_semantics"
         with self.assertRaisesRegex(ValueError, "already required"):
@@ -124,6 +129,11 @@ class ReleaseGateTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "duplicates metric thresholds"):
             activate_optional_stages(duplicate_metric, ["quality_eval"])
+
+        malformed_thresholds = load_policy(DEFAULT_POLICY_PATH)
+        malformed_thresholds["optional_stages"]["quality_eval"]["metric_thresholds"] = []
+        with self.assertRaisesRegex(ValueError, "metric thresholds"):
+            activate_optional_stages(malformed_thresholds, ["quality_eval"])
 
         malformed_runner = load_policy(DEFAULT_POLICY_PATH)
         malformed_runner["optional_stages"]["quality_eval"]["runner"] = {"top_k": 0}

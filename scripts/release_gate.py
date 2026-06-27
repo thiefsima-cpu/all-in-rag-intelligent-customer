@@ -76,7 +76,9 @@ def activate_optional_stages(
     active = copy.deepcopy(policy)
     if not stage_names:
         return active
-    optional_stages = active.get("optional_stages") or {}
+    optional_stages = active.get("optional_stages")
+    if optional_stages is None:
+        optional_stages = {}
     if not isinstance(optional_stages, dict):
         raise ValueError("Release gate optional_stages must be a JSON object.")
 
@@ -106,8 +108,10 @@ def activate_optional_stages(
                 f"Optional release-gate stage has invalid runner settings: {stage_name}"
             )
 
-        raw_thresholds = stage.get("metric_thresholds") or {}
-        if not isinstance(raw_thresholds, dict):
+        raw_thresholds = stage.get("metric_thresholds")
+        if raw_thresholds is None:
+            raw_thresholds = {}
+        elif not isinstance(raw_thresholds, dict):
             raise ValueError(
                 f"Optional release-gate stage has invalid metric thresholds: {stage_name}"
             )
