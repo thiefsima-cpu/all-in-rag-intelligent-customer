@@ -8,6 +8,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping
 
@@ -164,6 +165,30 @@ def run_suites(
                 "suite_error": f"{type(exc).__name__}: {exc}",
             }
     return reports
+
+
+def _run_quality_eval(stage: dict[str, Any]) -> dict[str, Any]:
+    from scripts.eval_queries import evaluate_queries
+
+    runner = dict(stage.get("runner") or {})
+    report = evaluate_queries(
+        top_k=int(runner.get("top_k") or 3),
+        generate=bool(runner.get("generate", False)),
+        profile=str(runner.get("profile") or "") or None,
+    )
+    metrics = dict(report.get("metrics") or {})
+    results = [dict(item) for item in (report.get("results") or [])]
+    failures = [dict(item) for item in (report.get("failures") or [])]
+    case_count = max(0, int(metrics.get("case_count") or len(results)))
+    passed_count = sum(1 for item in results if item.get("passed"))
+    return {
+        "case_count": case_count,
+        "passed_count": min(case_count, passed_count),
+        "metrics": metrics,
+        "results": results,
+        "failures": failures,
+        "profile": dict(report.get("profile") or {}),
+    }
 
 
 def _suite_metrics(report: dict[str, Any]) -> dict[str, Any]:
@@ -431,14 +456,28 @@ def run_release_gate(
     *,
     policy_path: str | Path = DEFAULT_POLICY_PATH,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    include_quality_eval: bool = False,
 ) -> dict[str, Any]:
+    resolved_policy_path = Path(policy_path).resolve()
     policy = load_policy(policy_path)
+    included_optional_stages = [QUALITY_EVAL_STAGE] if include_quality_eval else []
+    try:
+        active_policy = activate_optional_stages(policy, included_optional_stages)
+    except ValueError as exc:
+        raise ValueError(f"Invalid release gate policy at {resolved_policy_path}: {exc}") from exc
+
     required_suites = [
-        str(item) for item in (policy.get("required_suites") or []) if str(item).strip()
+        str(item) for item in (active_policy.get("required_suites") or []) if str(item).strip()
     ]
-    suite_reports = run_suites(required_suites)
-    report = evaluate_gate(policy, suite_reports)
-    report["policy_path"] = str(Path(policy_path).resolve())
+    runners = dict(SUITE_RUNNERS)
+    if include_quality_eval:
+        stage = active_policy["optional_stages"][QUALITY_EVAL_STAGE]
+        suite_name = str(stage["suite"])
+        runners[suite_name] = partial(_run_quality_eval, stage)
+    suite_reports = run_suites(required_suites, runners=runners)
+    report = evaluate_gate(active_policy, suite_reports)
+    report["included_optional_stages"] = included_optional_stages
+    report["policy_path"] = str(resolved_policy_path)
     report_path, summary_path = write_report(report, output_dir)
     report["report_path"] = str(report_path)
     report["summary_path"] = str(summary_path)

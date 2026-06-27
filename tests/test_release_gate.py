@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
+import re
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from scripts.release_gate import (
     DEFAULT_POLICY_PATH,
     INCLUDE_QUALITY_EVAL_ENV,
     _environment_flag,
+    _run_quality_eval,
     activate_optional_stages,
     evaluate_gate,
     load_policy,
+    run_release_gate,
     run_suites,
     write_report,
 )
@@ -41,6 +47,42 @@ def _real_route_suite_report(case_count: int, metric_value: float = 1.0) -> dict
     report = _suite_report(case_count)
     report["metrics"] = _real_route_metrics(metric_value)
     return report
+
+
+def _quality_metrics() -> dict:
+    return {
+        "case_count": 6,
+        "pass_rate": 1.0,
+        "recall_at_k": 0.8,
+        "faithfulness": 0.8,
+        "citation_accuracy": 0.8,
+        "p95_latency_ms": 2000.0,
+        "estimated_cost_usd": 1.0,
+    }
+
+
+def _quality_suite_report() -> dict:
+    return {
+        "case_count": 6,
+        "passed_count": 6,
+        "metrics": _quality_metrics(),
+        "results": [{"query": str(index), "passed": True} for index in range(6)],
+        "failures": [],
+    }
+
+
+def _passing_reports_for_policy(policy: dict) -> dict:
+    return {
+        "route_semantics": {
+            **_suite_report(24),
+            "category_counts": {category: 1 for category in policy["required_route_categories"]},
+        },
+        "answer_pipeline": _suite_report(3),
+        "answer_pipeline_real_route": _real_route_suite_report(3),
+        "generation_plans": _suite_report(3),
+        "generation_prompts": _suite_report(6),
+        "quality_eval": _quality_suite_report(),
+    }
 
 
 class ReleaseGateTests(unittest.TestCase):
@@ -174,6 +216,89 @@ class ReleaseGateTests(unittest.TestCase):
                 "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0},
             },
         )
+
+    def test_quality_runner_normalizes_structured_eval_report(self) -> None:
+        eval_report = {
+            "metrics": _quality_metrics(),
+            "results": [{"query": str(index), "passed": True} for index in range(6)],
+            "failures": [],
+            "profile": {"name": "eval_quality"},
+        }
+        stage = load_policy(DEFAULT_POLICY_PATH)["optional_stages"]["quality_eval"]
+
+        with patch("scripts.eval_queries.evaluate_queries", return_value=eval_report) as evaluate:
+            report = _run_quality_eval(stage)
+
+        evaluate.assert_called_once_with(
+            top_k=6,
+            generate=True,
+            profile="eval_quality",
+        )
+        self.assertEqual(report["case_count"], 6)
+        self.assertEqual(report["passed_count"], 6)
+        self.assertEqual(report["metrics"]["recall_at_k"], 0.8)
+        self.assertEqual(report["profile"], {"name": "eval_quality"})
+
+    def test_run_release_gate_includes_quality_suite_only_when_requested(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+                report = run_release_gate(
+                    output_dir=temp_dir,
+                    include_quality_eval=True,
+                )
+
+        suite_names = run.call_args.args[0]
+        self.assertIn("quality_eval", suite_names)
+        self.assertIn("quality_eval", run.call_args.kwargs["runners"])
+        self.assertEqual(report["included_optional_stages"], ["quality_eval"])
+        self.assertEqual(report["metrics"]["suite_count"], 6)
+        self.assertEqual(report["metrics"]["case_count"], 45)
+        self.assertTrue(report["passed"])
+
+    def test_run_release_gate_default_does_not_register_quality_runner(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports.pop("quality_eval")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+                report = run_release_gate(output_dir=temp_dir)
+
+        self.assertNotIn("quality_eval", run.call_args.args[0])
+        self.assertNotIn("quality_eval", run.call_args.kwargs["runners"])
+        self.assertEqual(report["included_optional_stages"], [])
+        self.assertEqual(report["metrics"]["case_count"], 39)
+
+    def test_quality_runner_failure_becomes_failed_suite_report(self) -> None:
+        def fail_quality_eval() -> dict:
+            raise RuntimeError("quality backend unavailable")
+
+        reports = run_suites(
+            ["quality_eval"],
+            runners={"quality_eval": fail_quality_eval},
+        )
+
+        self.assertIn(
+            "RuntimeError: quality backend unavailable",
+            reports["quality_eval"]["suite_error"],
+        )
+
+    def test_run_release_gate_policy_error_includes_policy_path(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy["optional_stages"]["quality_eval"]["runner"] = {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            policy_path = Path(temp_dir) / "release_gate.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))):
+                run_release_gate(
+                    policy_path=policy_path,
+                    output_dir=temp_dir,
+                    include_quality_eval=True,
+                )
 
     def test_gate_fails_when_route_coverage_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
