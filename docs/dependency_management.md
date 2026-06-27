@@ -72,20 +72,20 @@ bootstrap a clean conda environment, and run the complete test suite. Direct
 global `pip install` commands outside the selected conda environment are not a
 supported project setup.
 
-## Known lifecycle tasks
+## Lifecycle warning controls
 
-The current test suite has two third-party deprecation warnings that are
-accepted for short-term development, but must be tracked during dependency
-upgrade cycles:
+The dependency lifecycle warnings that were accepted during short-term
+development are now handled by dependency replacement instead of broad warning
+filters:
 
-- `jieba==0.42.1` imports `pkg_resources`, which setuptools has deprecated and
-  scheduled for removal. Evaluate a maintained jieba release, an alternative
-  tokenizer, or a temporary setuptools compatibility pin before raising the
-  runtime lock or bootstrap `setuptools` pin.
-- `fastapi.testclient` emits Starlette's `httpx2` migration warning. Upgrade
-  FastAPI, Starlette, and `httpx` together, then rerun the API test suite before
-  removing the warning from the accepted list.
+- `jieba-py==0.46.12` replaces `jieba==0.42.1`. It is the maintained Python
+  3.10+ distribution, keeps the existing `jieba` import and API, and no longer
+  imports the deprecated `pkg_resources` module. The main bootstrap profiles
+  remove the obsolete `jieba` distribution before installing the new lock so a
+  reused environment cannot retain both packages.
+- `fastapi.testclient` uses Starlette's new `httpx2` path in the development
+  environment. Keep `httpx2` in the `dev` extra and `requirements-dev.txt`; keep
+  it out of the runtime lock unless production code starts importing it.
 
-Do not add broad warning filters for these items unless the warning noise starts
-to hide new project warnings. The preferred resolution is an intentional
-dependency upgrade with regenerated locks and full test verification.
+Do not add broad warning filters for these items. If either warning returns,
+fix the dependency declaration or lock file and rerun the API test suite.

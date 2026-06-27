@@ -60,7 +60,7 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertTrue(
             {
                 "fastapi",
-                "jieba",
+                "jieba-py",
                 "langchain-core",
                 "neo4j",
                 "numpy",
@@ -80,6 +80,32 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertTrue(
             runtime_names.isdisjoint({"mypy", "pip-tools", "pre-commit", "pytest", "ruff"})
         )
+
+    def test_development_lock_includes_httpx2_for_starlette_testclient(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        dev_names = _requirement_names(pyproject["project"]["optional-dependencies"]["dev"])
+
+        runtime_lock = (root / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (root / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertIn("httpx2", dev_names)
+        self.assertNotIn("httpx2==", runtime_lock)
+        self.assertIn("httpx2==2.5.0", dev_lock)
+
+    def test_runtime_lock_uses_maintained_jieba_distribution(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        runtime_names = _requirement_names(pyproject["project"]["dependencies"])
+        runtime_lock = (root / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (root / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertIn("jieba-py", runtime_names)
+        self.assertNotIn("jieba", runtime_names)
+        self.assertIn("jieba-py==0.46.12", runtime_lock)
+        self.assertIn("jieba-py==0.46.12", dev_lock)
+        self.assertNotIn("jieba==0.42.1", runtime_lock)
+        self.assertNotIn("jieba==0.42.1", dev_lock)
 
     def test_current_runtime_lock_contains_no_development_only_packages(self) -> None:
         from scripts.verify_environment import find_runtime_lock_violations
@@ -158,6 +184,13 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertIn('"run" "--name"', script)
         self.assertIn("--expected-conda-env", script)
         self.assertNotIn('"-m" "venv"', script)
+
+    def test_bootstrap_removes_obsolete_jieba_distribution(self) -> None:
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn('if ($Profile -ne "agent")', script)
+        self.assertIn('"uninstall" "--yes" "jieba"', script)
 
     def test_bootstrap_agent_path_is_windows_powershell_safe(self) -> None:
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"

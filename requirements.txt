@@ -49,7 +49,7 @@ idna==3.18
     #   anyio
     #   httpx
     #   requests
-jieba==0.42.1
+jieba-py==0.46.12
     # via graph-rag-c9 (pyproject.toml)
 jiter==0.15.0
     # via openai
@@ -106,8 +106,8 @@ protobuf==6.33.6
     #   pymilvus
 pydantic==2.13.4
     # via
-    #   graph-rag-c9 (pyproject.toml)
     #   fastapi
+    #   graph-rag-c9 (pyproject.toml)
     #   langchain-core
     #   langsmith
     #   openai

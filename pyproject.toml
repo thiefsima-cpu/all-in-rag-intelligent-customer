@@ -17,7 +17,7 @@ dependencies = [
   "numpy==2.4.6",
   "pymilvus==2.5.11",
   "neo4j==6.2.0",
-  "jieba==0.42.1",
+  "jieba-py==0.46.12",
   "rank-bm25==0.2.2",
   "langchain-core==0.3.71",
   "fastapi==0.136.3",
@@ -42,6 +42,7 @@ dev = [
   "ruff==0.15.17",
   "mypy==2.1.0",
   "pre-commit==4.6.0",
+  "httpx2==2.5.0",
 ]
 
 [project.scripts]

@@ -11,6 +11,7 @@ annotated-types==0.7.0
 anyio==4.13.0
     # via
     #   httpx
+    #   httpx2
     #   openai
     #   starlette
 ast-serialize==0.5.0
@@ -43,7 +44,9 @@ distro==1.9.0
 fastapi==0.136.3
     # via graph-rag-c9 (pyproject.toml)
 filelock==3.29.4
-    # via virtualenv
+    # via
+    #   python-discovery
+    #   virtualenv
 googleapis-common-protos==1.75.0
     # via opentelemetry-exporter-otlp-proto-http
 grpcio==1.67.1
@@ -51,23 +54,29 @@ grpcio==1.67.1
 h11==0.16.0
     # via
     #   httpcore
+    #   httpcore2
     #   uvicorn
 httpcore==1.0.9
     # via httpx
+httpcore2==2.5.0
+    # via httpx2
 httpx==0.28.1
     # via
     #   langsmith
     #   openai
+httpx2==2.5.0
+    # via graph-rag-c9 (pyproject.toml)
 identify==2.6.19
     # via pre-commit
 idna==3.18
     # via
     #   anyio
     #   httpx
+    #   httpx2
     #   requests
 iniconfig==2.3.0
     # via pytest
-jieba==0.42.1
+jieba-py==0.46.12
     # via graph-rag-c9 (pyproject.toml)
 jiter==0.15.0
     # via openai
@@ -131,7 +140,9 @@ pathspec==1.1.1
 pip-tools==7.5.3
     # via graph-rag-c9 (pyproject.toml)
 platformdirs==4.10.0
-    # via virtualenv
+    # via
+    #   python-discovery
+    #   virtualenv
 pluggy==1.6.0
     # via pytest
 pre-commit==4.6.0
@@ -145,8 +156,8 @@ protobuf==6.33.6
     #   pymilvus
 pydantic==2.13.4
     # via
-    #   graph-rag-c9 (pyproject.toml)
     #   fastapi
+    #   graph-rag-c9 (pyproject.toml)
     #   langchain-core
     #   langsmith
     #   openai
@@ -198,10 +209,15 @@ tenacity==9.1.4
     # via langchain-core
 tqdm==4.68.2
     # via openai
+truststore==0.10.4
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.15.0
     # via
     #   anyio
     #   fastapi
+    #   httpx2
     #   langchain-core
     #   mypy
     #   openai

@@ -85,6 +85,10 @@ if ($Version.Trim() -ne "3.11") {
 
 Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" "--upgrade" `
     "pip==26.1.1" "setuptools==80.9.0" "wheel==0.47.0"
+if ($Profile -ne "agent") {
+    Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" `
+        "uninstall" "--yes" "jieba"
+}
 Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" `
     "--requirement" $RequirementsPath
 
