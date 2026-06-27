@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from scripts.release_gate import (
     activate_optional_stages,
     evaluate_gate,
     load_policy,
+    main,
     run_release_gate,
     run_suites,
     write_report,
@@ -299,6 +301,97 @@ class ReleaseGateTests(unittest.TestCase):
                     output_dir=temp_dir,
                     include_quality_eval=True,
                 )
+
+    def test_quality_thresholds_pass_at_boundaries_and_fail_outside_them(self) -> None:
+        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        boundary_report = evaluate_gate(policy, _passing_reports_for_policy(policy))
+        self.assertTrue(boundary_report["passed"])
+
+        failing_values = {
+            "recall_at_k": 0.79,
+            "faithfulness": 0.79,
+            "citation_accuracy": 0.79,
+            "p95_latency_ms": 2000.1,
+            "estimated_cost_usd": 1.01,
+        }
+        for metric_name, failing_value in failing_values.items():
+            with self.subTest(metric=metric_name):
+                reports = _passing_reports_for_policy(policy)
+                reports["quality_eval"]["metrics"][metric_name] = failing_value
+                report = evaluate_gate(policy, reports)
+                self.assertFalse(report["passed"])
+                self.assertTrue(
+                    any(metric_name in check["name"] for check in report["failed_checks"])
+                )
+
+    def test_gate_reports_non_numeric_quality_metric_as_failed_check(self) -> None:
+        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"]["metrics"]["recall_at_k"] = "unknown"
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        self.assertIn(
+            "metric_numeric:quality_eval.metrics.recall_at_k",
+            {item["name"] for item in report["failed_checks"]},
+        )
+
+    def test_main_enables_quality_eval_from_environment(self) -> None:
+        with (
+            patch.dict(os.environ, {INCLUDE_QUALITY_EVAL_ENV: "true"}, clear=True),
+            patch.object(sys, "argv", ["release_gate.py", "--json"]),
+            patch(
+                "scripts.release_gate.run_release_gate",
+                return_value={"passed": True},
+            ) as run,
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(run.call_args.kwargs["include_quality_eval"])
+
+    def test_main_cli_flag_enables_quality_eval(self) -> None:
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(
+                sys,
+                "argv",
+                ["release_gate.py", "--include-quality-eval", "--json"],
+            ),
+            patch(
+                "scripts.release_gate.run_release_gate",
+                return_value={"passed": True},
+            ) as run,
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(run.call_args.kwargs["include_quality_eval"])
+
+    def test_main_rejects_invalid_quality_environment_value(self) -> None:
+        with (
+            patch.dict(os.environ, {INCLUDE_QUALITY_EVAL_ENV: "sometimes"}, clear=True),
+            patch.object(sys, "argv", ["release_gate.py", "--json"]),
+            patch("scripts.release_gate.run_release_gate") as run,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main()
+
+        self.assertEqual(raised.exception.code, 2)
+        run.assert_not_called()
+
+    def test_gate_summary_lists_included_optional_stages(self) -> None:
+        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        report = evaluate_gate(policy, _passing_reports_for_policy(policy))
+        report["included_optional_stages"] = ["quality_eval"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _, summary_path = write_report(report, temp_dir)
+            summary = summary_path.read_text(encoding="utf-8")
+
+        self.assertIn("optional_stages: quality_eval", summary)
+        self.assertIn("| quality_eval | 6 | 6 | 1.0000 |", summary)
 
     def test_gate_fails_when_route_coverage_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)

@@ -256,7 +256,17 @@ def _evaluate_metric_thresholds(
                 actual=None,
             )
             continue
-        numeric_actual = float(actual)
+        try:
+            numeric_actual = float(actual)
+        except (TypeError, ValueError):
+            _check(
+                checks,
+                name=f"metric_numeric:{metric_path}",
+                passed=False,
+                expected="numeric_metric",
+                actual=actual,
+            )
+            continue
         if "minimum" in limits:
             minimum = float(limits["minimum"])
             _check(
@@ -420,11 +430,14 @@ def write_report(
 
     metrics = report.get("metrics") or {}
     status = "PASS" if report.get("passed") else "FAIL"
+    optional_stages = [str(item) for item in (report.get("included_optional_stages") or [])]
+    optional_stage_label = ", ".join(optional_stages) if optional_stages else "none"
     lines = [
         "# Offline Evaluation Release Gate",
         "",
         f"- status: {status}",
         f"- generated_at: {report.get('generated_at', '')}",
+        f"- optional_stages: {optional_stage_label}",
         f"- suites: {metrics.get('suite_count', 0)}",
         f"- cases: {metrics.get('passed_count', 0)}/{metrics.get('case_count', 0)}",
         f"- pass_rate: {metrics.get('pass_rate', 0.0):.4f}",
@@ -492,11 +505,22 @@ def main() -> int:
     parser.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--include-quality-eval",
+        action="store_true",
+        help="Include the policy-configured quality evaluation stage.",
+    )
     args = parser.parse_args()
+
+    try:
+        environment_requested = _environment_flag(INCLUDE_QUALITY_EVAL_ENV)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     report = run_release_gate(
         policy_path=args.policy,
         output_dir=args.output_dir,
+        include_quality_eval=args.include_quality_eval or environment_requested,
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
