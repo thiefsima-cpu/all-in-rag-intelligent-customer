@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -92,19 +93,27 @@ def activate_optional_stages(
         stage = optional_stages.get(stage_name)
         if not isinstance(stage, dict):
             raise ValueError(f"Optional release-gate stage is not configured: {stage_name}")
-        suite_name = str(stage.get("suite") or "").strip()
-        if not suite_name:
+        suite_value = stage.get("suite")
+        if not isinstance(suite_value, str) or not suite_value.strip():
             raise ValueError(f"Optional release-gate stage has no suite: {stage_name}")
+        suite_name = suite_value.strip()
         if suite_name in required_suites:
             raise ValueError(f"Optional release-gate suite is already required: {suite_name}")
 
         runner = stage.get("runner")
         if not isinstance(runner, dict):
             raise ValueError(f"Optional release-gate stage has no runner object: {stage_name}")
-        profile = str(runner.get("profile") or "").strip()
-        top_k = int(runner.get("top_k") or 0)
+        profile = runner.get("profile")
+        top_k = runner.get("top_k")
         generate = runner.get("generate")
-        if not profile or top_k <= 0 or not isinstance(generate, bool):
+        if (
+            not isinstance(profile, str)
+            or not profile.strip()
+            or isinstance(top_k, bool)
+            or not isinstance(top_k, int)
+            or top_k <= 0
+            or not isinstance(generate, bool)
+        ):
             raise ValueError(
                 f"Optional release-gate stage has invalid runner settings: {stage_name}"
             )
@@ -117,15 +126,64 @@ def activate_optional_stages(
                 f"Optional release-gate stage has invalid metric thresholds: {stage_name}"
             )
         stage_thresholds = dict(raw_thresholds)
+        for metric_path, threshold in stage_thresholds.items():
+            if not isinstance(metric_path, str) or not metric_path.strip():
+                raise ValueError(
+                    f"Optional release-gate stage has invalid metric path: {stage_name}"
+                )
+            if not isinstance(threshold, dict) or not {
+                "minimum",
+                "maximum",
+            }.intersection(threshold):
+                raise ValueError(
+                    f"Optional release-gate stage has invalid metric threshold rule: "
+                    f"{stage_name}.{metric_path}"
+                )
+            for limit_name in ("minimum", "maximum"):
+                if limit_name not in threshold:
+                    continue
+                limit = threshold[limit_name]
+                if isinstance(limit, bool):
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    )
+                try:
+                    numeric_limit = float(limit)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    ) from exc
+                if not math.isfinite(numeric_limit):
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    )
         duplicate_metrics = sorted(set(metric_thresholds).intersection(stage_thresholds))
         if duplicate_metrics:
             raise ValueError(
                 f"Optional release-gate stage duplicates metric thresholds: {duplicate_metrics}"
             )
 
+        minimum_case_count = stage.get("suite_minimum_cases", 0)
+        minimum_pass_rate = stage.get("suite_minimum_pass_rate", 1.0)
+        if (
+            isinstance(minimum_case_count, bool)
+            or not isinstance(minimum_case_count, int)
+            or minimum_case_count < 0
+            or isinstance(minimum_pass_rate, bool)
+            or not isinstance(minimum_pass_rate, (int, float))
+            or not math.isfinite(float(minimum_pass_rate))
+            or not 0.0 <= float(minimum_pass_rate) <= 1.0
+        ):
+            raise ValueError(
+                f"Optional release-gate stage has invalid suite thresholds: {stage_name}"
+            )
+
         required_suites.append(suite_name)
-        minimum_cases[suite_name] = int(stage.get("suite_minimum_cases") or 0)
-        minimum_pass_rates[suite_name] = float(stage.get("suite_minimum_pass_rate", 1.0))
+        minimum_cases[suite_name] = minimum_case_count
+        minimum_pass_rates[suite_name] = float(minimum_pass_rate)
         metric_thresholds.update(stage_thresholds)
 
     active["required_suites"] = required_suites
@@ -264,6 +322,15 @@ def _evaluate_metric_thresholds(
                 name=f"metric_numeric:{metric_path}",
                 passed=False,
                 expected="numeric_metric",
+                actual=actual,
+            )
+            continue
+        if isinstance(actual, bool) or not math.isfinite(numeric_actual):
+            _check(
+                checks,
+                name=f"metric_numeric:{metric_path}",
+                passed=False,
+                expected="finite_numeric_metric",
                 actual=actual,
             )
             continue

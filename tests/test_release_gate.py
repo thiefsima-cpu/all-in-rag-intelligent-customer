@@ -302,6 +302,46 @@ class ReleaseGateTests(unittest.TestCase):
                     include_quality_eval=True,
                 )
 
+    def test_run_release_gate_rejects_malformed_threshold_rule_before_suites(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy["optional_stages"]["quality_eval"]["metric_thresholds"] = {
+            "quality_eval.metrics.recall_at_k": []
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            policy_path = Path(temp_dir) / "release_gate.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with (
+                patch("scripts.release_gate.run_suites") as run,
+                self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
+            ):
+                run_release_gate(
+                    policy_path=policy_path,
+                    output_dir=temp_dir,
+                    include_quality_eval=True,
+                )
+
+        run.assert_not_called()
+
+    def test_run_release_gate_wraps_malformed_top_k_with_policy_path(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy["optional_stages"]["quality_eval"]["runner"]["top_k"] = {"value": 6}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            policy_path = Path(temp_dir) / "release_gate.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with (
+                patch("scripts.release_gate.run_suites") as run,
+                self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
+            ):
+                run_release_gate(
+                    policy_path=policy_path,
+                    output_dir=temp_dir,
+                    include_quality_eval=True,
+                )
+
+        run.assert_not_called()
+
     def test_quality_thresholds_pass_at_boundaries_and_fail_outside_them(self) -> None:
         policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
         boundary_report = evaluate_gate(policy, _passing_reports_for_policy(policy))
@@ -328,6 +368,19 @@ class ReleaseGateTests(unittest.TestCase):
         policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
         reports = _passing_reports_for_policy(policy)
         reports["quality_eval"]["metrics"]["recall_at_k"] = "unknown"
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        self.assertIn(
+            "metric_numeric:quality_eval.metrics.recall_at_k",
+            {item["name"] for item in report["failed_checks"]},
+        )
+
+    def test_gate_reports_non_finite_quality_metric_as_failed_check(self) -> None:
+        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"]["metrics"]["recall_at_k"] = "Infinity"
 
         report = evaluate_gate(policy, reports)
 
