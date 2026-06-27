@@ -91,11 +91,33 @@ separate. Start the API profile with:
 docker compose --profile api up --build
 ```
 
-The API container is built from `Dockerfile.api` and joins the Milvus and Neo4j
+The API profile starts both app surfaces:
+
+- serving API: <http://localhost:8000/docs>
+- build API: <http://localhost:8001/docs>
+
+The API containers are built from `Dockerfile.api` and join the Milvus and Neo4j
 services declared in the same compose file. Define `DASHSCOPE_API_KEY` in the
 project `.env` file before starting the API profile; Compose forwards that
-value into the API container. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
+value into the API containers. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
 forwarded as fallback provider keys. The serving API validates this lightweight
 model-provider requirement during startup so a missing key fails fast with a
 clear error instead of surfacing as the first `/answers` request.
+
+On a fresh `storage/` and `volumes/` state, load the graph and build artifacts
+before sending `/answers` requests:
+
+```powershell
+python scripts/import_neo4j.py
+
+$job = Invoke-RestMethod -Method Post http://localhost:8001/jobs/build
+$job.job.job_id
+
+Invoke-RestMethod http://localhost:8001/jobs/$($job.job.job_id)
+Invoke-RestMethod -Method Post http://localhost:8000/runtime/serving/refresh
+Invoke-RestMethod http://localhost:8000/health/ready
+```
+
+`/answers` returns `409 Conflict` until the build API has produced a ready
+artifact manifest, cached documents, and a Milvus vector collection.
 

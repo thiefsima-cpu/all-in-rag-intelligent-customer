@@ -61,6 +61,29 @@ class DockerApiBuildContextTests(unittest.TestCase):
                 self.assertIn(key_name, api_environment)
                 self.assertEqual(f"${{{key_name}:-}}", api_environment[key_name])
 
+    def test_api_profile_exposes_build_api_surface(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        services = compose["services"]
+        build_api = services["build-api"]
+
+        self.assertEqual(["graph-rag-build-api"], build_api["command"])
+        self.assertEqual({"context": ".", "dockerfile": "Dockerfile.api"}, build_api["build"])
+        self.assertEqual(["8001:8001"], build_api["ports"])
+        self.assertEqual(["api"], build_api["profiles"])
+        self.assertIn("neo4j", build_api["depends_on"])
+        self.assertIn("standalone", build_api["depends_on"])
+        self.assertIn("./storage:/app/storage", build_api["volumes"])
+        self.assertIn("./profiles:/app/profiles", build_api["volumes"])
+
+        environment = build_api["environment"]
+        self.assertEqual("dev", environment["GRAPH_RAG_PROFILE"])
+        self.assertEqual("false", environment["API_AUTH_ENABLED"])
+        self.assertEqual("0.0.0.0", environment["BUILD_API_HOST"])
+        self.assertEqual(8001, environment["BUILD_API_PORT"])
+        self.assertEqual("bolt://neo4j:7687", environment["NEO4J_URI"])
+        self.assertEqual("standalone", environment["MILVUS_HOST"])
+        self.assertEqual("/app/storage/indexes", environment["INDEX_CACHE_DIR"])
+
 
 if __name__ == "__main__":
     unittest.main()
