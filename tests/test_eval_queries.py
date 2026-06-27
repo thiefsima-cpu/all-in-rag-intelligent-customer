@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
+import json
 import unittest
+from contextlib import redirect_stdout
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from rag_modules.configuration.testing import build_test_config
 from scripts.eval_queries import (
@@ -9,7 +13,9 @@ from scripts.eval_queries import (
     EvalCase,
     build_eval_report,
     evaluate_case,
+    evaluate_queries,
     load_eval_cases,
+    run_eval,
 )
 
 
@@ -131,6 +137,64 @@ class _FakeSystem:
 
 
 class EvalQueriesTests(unittest.TestCase):
+    def test_evaluate_queries_returns_report_and_closes_system(self) -> None:
+        config = build_test_config()
+        config.profile_name = "eval_quality"
+        case = EvalCase(query="quality query")
+        item = {"query": case.query, "passed": True}
+        metrics = {"case_count": 1, "pass_rate": 1.0}
+        system = MagicMock()
+
+        with (
+            patch("scripts.eval_queries.load_eval_cases", return_value=[case]),
+            patch("scripts.eval_queries.load_config", return_value=config) as load_config,
+            patch("scripts.eval_queries.AdvancedGraphRAGSystem", return_value=system),
+            patch("scripts.eval_queries.evaluate_case", return_value=item),
+            patch("scripts.eval_queries.calculate_eval_metrics", return_value=metrics),
+        ):
+            report = evaluate_queries(
+                top_k=6,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        load_config.assert_called_once_with(profile="eval_quality", profile_path=None)
+        system.initialize_system.assert_called_once_with()
+        system.build_knowledge_base.assert_called_once_with()
+        system.close.assert_called_once_with()
+        self.assertEqual(report["metrics"]["case_count"], 1)
+        self.assertEqual(report["results"], [item])
+        self.assertEqual(report["failures"], [])
+        self.assertEqual(report["profile"]["name"], "eval_quality")
+        self.assertTrue(report["generate"])
+
+    def test_run_eval_preserves_json_output_and_failure_exit_code(self) -> None:
+        item = {"query": "quality query", "passed": False}
+        report = {
+            "generated_at": "2026-06-27T00:00:00+00:00",
+            "profile": {"name": "eval_quality", "path": "", "hash": ""},
+            "corpus": str(DEFAULT_CORPUS_PATH.resolve()),
+            "top_k": 6,
+            "generate": True,
+            "metrics": {"case_count": 1, "pass_rate": 0.0},
+            "results": [item],
+            "failures": [item],
+        }
+
+        with (
+            patch("scripts.eval_queries.evaluate_queries", return_value=report),
+            redirect_stdout(io.StringIO()) as stdout,
+        ):
+            exit_code = run_eval(
+                top_k=6,
+                as_json=True,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(stdout.getvalue()), report)
+
     def test_curated_eval_corpus_loads_from_fixture(self) -> None:
         self.assertTrue(DEFAULT_CORPUS_PATH.exists())
 

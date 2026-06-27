@@ -577,16 +577,14 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
     return report_path
 
 
-def run_eval(
-    top_k: int,
-    as_json: bool,
-    generate: bool,
+def evaluate_queries(
     *,
+    top_k: int,
+    generate: bool,
     corpus_path: str | Path = DEFAULT_CORPUS_PATH,
     profile: str | None = None,
     profile_path: str | None = None,
-    output_dir: str | Path | None = None,
-) -> int:
+) -> dict[str, Any]:
     cases = load_eval_cases(corpus_path)
     config = load_config(profile=profile, profile_path=profile_path)
     system = AdvancedGraphRAGSystem(config=config)
@@ -609,7 +607,7 @@ def run_eval(
     finally:
         system.close()
 
-    report = build_eval_report(
+    return build_eval_report(
         metrics=calculate_eval_metrics(results),
         results=results,
         failures=failures,
@@ -618,6 +616,27 @@ def run_eval(
         top_k=top_k,
         generate=generate,
     )
+
+
+def run_eval(
+    top_k: int,
+    as_json: bool,
+    generate: bool,
+    *,
+    corpus_path: str | Path = DEFAULT_CORPUS_PATH,
+    profile: str | None = None,
+    profile_path: str | None = None,
+    output_dir: str | Path | None = None,
+) -> int:
+    report = evaluate_queries(
+        top_k=top_k,
+        generate=generate,
+        corpus_path=corpus_path,
+        profile=profile,
+        profile_path=profile_path,
+    )
+    results = report["results"]
+    failures = report["failures"]
     if output_dir is not None:
         report_path = _write_eval_report(report, output_dir)
         if not as_json:
