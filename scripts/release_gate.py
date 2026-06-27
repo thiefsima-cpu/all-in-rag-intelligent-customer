@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Mapping
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -23,6 +24,10 @@ from scripts.smoke_route_queries import run_smoke as run_route_semantics
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "release_gate.json"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "eval" / "reports" / "release_gate"
+INCLUDE_QUALITY_EVAL_ENV = "RELEASE_GATE_INCLUDE_QUALITY_EVAL"
+QUALITY_EVAL_STAGE = "quality_eval"
+_TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
 
 SuiteRunner = Callable[[], dict[str, Any]]
 
@@ -46,6 +51,83 @@ def load_policy(path: str | Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
             f"Unsupported release gate schema_version={payload.get('schema_version')!r}."
         )
     return payload
+
+
+def _environment_flag(
+    name: str,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    values = os.environ if environ is None else environ
+    raw = values.get(name)
+    if raw is None:
+        return False
+    normalized = raw.strip().lower()
+    if normalized in _TRUE_ENV_VALUES:
+        return True
+    if normalized in _FALSE_ENV_VALUES:
+        return False
+    raise ValueError(f"Environment variable {name} must be one of 1/true/yes/on or 0/false/no/off.")
+
+
+def activate_optional_stages(
+    policy: dict[str, Any],
+    stage_names: list[str],
+) -> dict[str, Any]:
+    active = copy.deepcopy(policy)
+    if not stage_names:
+        return active
+    optional_stages = active.get("optional_stages") or {}
+    if not isinstance(optional_stages, dict):
+        raise ValueError("Release gate optional_stages must be a JSON object.")
+
+    required_suites = list(active.get("required_suites") or [])
+    minimum_cases = dict(active.get("suite_minimum_cases") or {})
+    minimum_pass_rates = dict(active.get("suite_minimum_pass_rate") or {})
+    metric_thresholds = dict(active.get("metric_thresholds") or {})
+
+    for stage_name in stage_names:
+        stage = optional_stages.get(stage_name)
+        if not isinstance(stage, dict):
+            raise ValueError(f"Optional release-gate stage is not configured: {stage_name}")
+        suite_name = str(stage.get("suite") or "").strip()
+        if not suite_name:
+            raise ValueError(f"Optional release-gate stage has no suite: {stage_name}")
+        if suite_name in required_suites:
+            raise ValueError(f"Optional release-gate suite is already required: {suite_name}")
+
+        runner = stage.get("runner")
+        if not isinstance(runner, dict):
+            raise ValueError(f"Optional release-gate stage has no runner object: {stage_name}")
+        profile = str(runner.get("profile") or "").strip()
+        top_k = int(runner.get("top_k") or 0)
+        generate = runner.get("generate")
+        if not profile or top_k <= 0 or not isinstance(generate, bool):
+            raise ValueError(
+                f"Optional release-gate stage has invalid runner settings: {stage_name}"
+            )
+
+        raw_thresholds = stage.get("metric_thresholds") or {}
+        if not isinstance(raw_thresholds, dict):
+            raise ValueError(
+                f"Optional release-gate stage has invalid metric thresholds: {stage_name}"
+            )
+        stage_thresholds = dict(raw_thresholds)
+        duplicate_metrics = sorted(set(metric_thresholds).intersection(stage_thresholds))
+        if duplicate_metrics:
+            raise ValueError(
+                f"Optional release-gate stage duplicates metric thresholds: {duplicate_metrics}"
+            )
+
+        required_suites.append(suite_name)
+        minimum_cases[suite_name] = int(stage.get("suite_minimum_cases") or 0)
+        minimum_pass_rates[suite_name] = float(stage.get("suite_minimum_pass_rate", 1.0))
+        metric_thresholds.update(stage_thresholds)
+
+    active["required_suites"] = required_suites
+    active["suite_minimum_cases"] = minimum_cases
+    active["suite_minimum_pass_rate"] = minimum_pass_rates
+    active["metric_thresholds"] = metric_thresholds
+    return active
 
 
 def run_suites(

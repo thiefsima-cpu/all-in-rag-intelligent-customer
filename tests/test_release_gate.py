@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import copy
+import os
 import tempfile
 import unittest
 
 from scripts.release_gate import (
     DEFAULT_POLICY_PATH,
+    INCLUDE_QUALITY_EVAL_ENV,
+    _environment_flag,
+    activate_optional_stages,
     evaluate_gate,
     load_policy,
     run_suites,
@@ -39,6 +44,92 @@ def _real_route_suite_report(case_count: int, metric_value: float = 1.0) -> dict
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_environment_flag_accepts_explicit_boolean_spellings(self) -> None:
+        for value in ("1", "true", "TRUE", "yes", "on"):
+            with self.subTest(value=value):
+                self.assertTrue(
+                    _environment_flag(
+                        INCLUDE_QUALITY_EVAL_ENV,
+                        {INCLUDE_QUALITY_EVAL_ENV: value},
+                    )
+                )
+        for value in ("0", "false", "FALSE", "no", "off"):
+            with self.subTest(value=value):
+                self.assertFalse(
+                    _environment_flag(
+                        INCLUDE_QUALITY_EVAL_ENV,
+                        {INCLUDE_QUALITY_EVAL_ENV: value},
+                    )
+                )
+        self.assertFalse(_environment_flag(INCLUDE_QUALITY_EVAL_ENV, {}))
+        self.assertFalse(
+            _environment_flag(
+                INCLUDE_QUALITY_EVAL_ENV,
+                {
+                    key: value
+                    for key, value in os.environ.items()
+                    if key != INCLUDE_QUALITY_EVAL_ENV
+                },
+            )
+        )
+
+    def test_environment_flag_rejects_ambiguous_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, INCLUDE_QUALITY_EVAL_ENV):
+            _environment_flag(
+                INCLUDE_QUALITY_EVAL_ENV,
+                {INCLUDE_QUALITY_EVAL_ENV: "sometimes"},
+            )
+
+    def test_activate_quality_stage_copies_and_merges_policy(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        original = copy.deepcopy(policy)
+
+        active = activate_optional_stages(policy, ["quality_eval"])
+
+        self.assertEqual(policy, original)
+        self.assertEqual(active["required_suites"][-1], "quality_eval")
+        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 6)
+        self.assertEqual(active["suite_minimum_pass_rate"]["quality_eval"], 1.0)
+        self.assertEqual(
+            active["metric_thresholds"]["quality_eval.metrics.recall_at_k"],
+            {"minimum": 0.8},
+        )
+
+    def test_activate_quality_stage_requires_policy_configuration(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy.pop("optional_stages")
+
+        with self.assertRaisesRegex(ValueError, "quality_eval"):
+            activate_optional_stages(policy, ["quality_eval"])
+
+    def test_activate_optional_stages_leaves_unselected_legacy_policy_unchanged(
+        self,
+    ) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy.pop("optional_stages")
+
+        self.assertEqual(activate_optional_stages(policy, []), policy)
+
+    def test_activate_quality_stage_rejects_collisions_and_malformed_runner(
+        self,
+    ) -> None:
+        duplicate_suite = load_policy(DEFAULT_POLICY_PATH)
+        duplicate_suite["optional_stages"]["quality_eval"]["suite"] = "route_semantics"
+        with self.assertRaisesRegex(ValueError, "already required"):
+            activate_optional_stages(duplicate_suite, ["quality_eval"])
+
+        duplicate_metric = load_policy(DEFAULT_POLICY_PATH)
+        duplicate_metric["optional_stages"]["quality_eval"]["metric_thresholds"] = {
+            "answer_pipeline_real_route.metrics.plan_contract_pass_rate": {"minimum": 1.0}
+        }
+        with self.assertRaisesRegex(ValueError, "duplicates metric thresholds"):
+            activate_optional_stages(duplicate_metric, ["quality_eval"])
+
+        malformed_runner = load_policy(DEFAULT_POLICY_PATH)
+        malformed_runner["optional_stages"]["quality_eval"]["runner"] = {"top_k": 0}
+        with self.assertRaisesRegex(ValueError, "runner"):
+            activate_optional_stages(malformed_runner, ["quality_eval"])
+
     def test_default_offline_release_gate_passes(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         suite_names = list(policy["required_suites"])
