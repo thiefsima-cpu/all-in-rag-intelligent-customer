@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import logging
+from typing import Protocol
 
-from .contracts import SemanticGraphSchemaSyncResult
+from ..configuration.models import GraphRAGConfig
+from ..runtime_contracts import GraphDataModulePort
+from .contracts import SemanticGraphSchemaSyncPort, SemanticGraphSchemaSyncResult
 from .stats_presenter import ProgressCallback
 
 logger = logging.getLogger(__name__)
 
 
-class _KnowledgeBaseSchemaSyncMixin:
+class _KnowledgeBaseSchemaSyncHost(Protocol):
+    config: GraphRAGConfig
+    data_module: GraphDataModulePort
+    semantic_graph_schema_sync: SemanticGraphSchemaSyncPort
+
+    @staticmethod
+    def _emit(progress: ProgressCallback, message: str) -> None: ...
+
+
+class _KnowledgeBaseSchemaSyncMixin(_KnowledgeBaseSchemaSyncHost):
     """Own semantic schema sync and build metadata construction."""
 
     def _sync_semantic_graph_schema(

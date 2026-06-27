@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
 from ..retrieval_observability import summarize_documents
@@ -15,6 +15,7 @@ from ..runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     ModelSuiteSnapshot,
+    QueryDiagnostics,
     QueryTraceEvent,
     RetrievalOutcome,
     RetrievalTraceSnapshot,
@@ -28,7 +29,25 @@ from ..runtime.snapshot_utils import (
 )
 
 
-class _TraceEventBuilderMixin:
+class _TraceModelSettings(Protocol):
+    llm_model: str
+    embedding_model: str
+    rerank_model: str
+
+
+class _TraceEventBuilderHost(Protocol):
+    models: _TraceModelSettings
+
+    def _build_diagnostics(
+        self,
+        documents: List[EvidenceDocument],
+        error: Optional[str],
+        route_trace: RouteSnapshot,
+        generation_trace: GenerationSnapshot,
+    ) -> QueryDiagnostics: ...
+
+
+class _TraceEventBuilderMixin(_TraceEventBuilderHost):
     """Build normalized query trace events."""
 
     def _build_event(

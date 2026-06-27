@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
+from ..runtime.artifact_ports import RuntimeArtifactAccessPort
 from ..runtime.artifact_validation import vector_artifact_mismatch_reason
 from ..runtime.artifacts import ArtifactManifest
+from ..runtime_contracts import VectorIndexModulePort
 from .stats_presenter import ProgressCallback
 
 
-class _KnowledgeBaseVectorReuseMixin:
+class _KnowledgeBaseVectorReuseHost(Protocol):
+    artifact_manifest: ArtifactManifest
+    index_module: VectorIndexModulePort
+    runtime_artifact_access: RuntimeArtifactAccessPort
+
+    @staticmethod
+    def _emit(progress: ProgressCallback, message: str) -> None: ...
+
+
+class _KnowledgeBaseVectorReuseMixin(_KnowledgeBaseVectorReuseHost):
     """Own active collection and manifest reuse decisions."""
 
     def _can_reuse_existing_vector_collection(

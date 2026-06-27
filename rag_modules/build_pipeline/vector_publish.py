@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
+from ..configuration.models import GraphRAGConfig
+from ..runtime.artifact_ports import RuntimeArtifactAccessPort
 from ..runtime.artifacts import ArtifactManifest
+from ..runtime_contracts import VectorIndexModulePort
 
 
-class _KnowledgeBaseVectorPublishMixin:
+class _KnowledgeBaseVectorPublishHost(Protocol):
+    config: GraphRAGConfig
+    index_module: VectorIndexModulePort
+    runtime_artifact_access: RuntimeArtifactAccessPort
+
+
+class _KnowledgeBaseVectorPublishMixin(_KnowledgeBaseVectorPublishHost):
     """Own vector build, publish, rollback, and discard interactions."""
 
     def _prepare_vector_build(

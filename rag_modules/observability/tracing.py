@@ -22,9 +22,9 @@ from .tracing_sinks import JsonlQueryTraceSink, NullQueryTraceSink, QueryTraceSi
 
 
 class QueryTracer(
+    _TraceDiagnosticsMixin,
     _TraceEventBuilderMixin,
     _TraceSinkInteractionMixin,
-    _TraceDiagnosticsMixin,
 ):
     def __init__(self, config, sink: QueryTraceSink | None = None):
         self.config = config
