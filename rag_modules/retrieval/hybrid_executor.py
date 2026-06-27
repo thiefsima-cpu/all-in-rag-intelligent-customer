@@ -220,8 +220,8 @@ class HybridRetrievalExecutor:
     def restore_bm25_retriever(self, payload: Dict[str, object]) -> None:
         self.runtime.restore_bm25_retriever(payload)
 
-    def sync_legacy_bm25_fields(self) -> None:
-        self.runtime.sync_legacy_bm25_fields()
+    def sync_bm25_state(self) -> None:
+        self.runtime.sync_bm25_state()
 
     def tokenize_chinese(self, text: str) -> List[str]:
         return self._bm25_tokenizer(text)

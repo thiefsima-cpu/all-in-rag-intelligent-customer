@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import sys
 import unittest
 from importlib.util import resolve_name
 from pathlib import Path
@@ -51,6 +52,28 @@ RETIRED_LEGACY_FACADE_MODULES = frozenset(
     }
 )
 PROHIBITED_LEGACY_FACADE_MODULES = LEGACY_FACADE_MODULES | RETIRED_LEGACY_FACADE_MODULES
+RETIRED_LATE_MIGRATION_COMPAT_EXPORTS = {
+    "rag_modules.configuration.section_loaders": RAG_MODULES_DIR
+    / "configuration"
+    / "section_loaders.py",
+    "rag_modules.configuration.settings": RAG_MODULES_DIR / "configuration" / "settings.py",
+    "rag_modules.generation.client": RAG_MODULES_DIR / "generation" / "client.py",
+    "rag_modules.generation.executor": RAG_MODULES_DIR / "generation" / "executor.py",
+    "rag_modules.interfaces.api.models": RAG_MODULES_DIR / "interfaces" / "api" / "models.py",
+    "rag_modules.interfaces.api.service": RAG_MODULES_DIR / "interfaces" / "api" / "service.py",
+    "rag_modules.retrieval.bm25_retriever": RAG_MODULES_DIR / "retrieval" / "bm25_retriever.py",
+    "rag_modules.retrieval.constraint_retriever": RAG_MODULES_DIR
+    / "retrieval"
+    / "constraint_retriever.py",
+    "rag_modules.retrieval.graph_kv_retriever": RAG_MODULES_DIR
+    / "retrieval"
+    / "graph_kv_retriever.py",
+    "rag_modules.retrieval.retrieval_contracts": RAG_MODULES_DIR
+    / "retrieval"
+    / "retrieval_contracts.py",
+    "rag_modules.retrieval.runtime_settings": RAG_MODULES_DIR / "retrieval" / "runtime_settings.py",
+    "rag_modules.retrieval.vector_retriever": RAG_MODULES_DIR / "retrieval" / "vector_retriever.py",
+}
 
 
 class PublicSurfaceBoundaryTests(unittest.TestCase):
@@ -319,6 +342,12 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.graph.indexing",
             "rag_modules.routing.intelligent_query_router",
             "retired in favor of",
+            "late-migration compatibility exports",
+            "rag_modules.interfaces.api.models",
+            "rag_modules.interfaces.api.services",
+            "rag_modules.generation.clients",
+            "rag_modules.generation.execution",
+            "rag_modules.retrieval.runtime_profile",
             "rag_modules.compat.*",
             "must not recreate",
             "will fail instead of forwarding",
@@ -421,6 +450,65 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
 
+    def test_late_migration_compat_export_modules_are_removed(self) -> None:
+        existing_paths = [
+            path.relative_to(ROOT)
+            for path in RETIRED_LATE_MIGRATION_COMPAT_EXPORTS.values()
+            if path.exists()
+        ]
+        self.assertEqual(set(), set(existing_paths))
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_LATE_MIGRATION_COMPAT_EXPORTS):
+            with self.subTest(module_name=module_name):
+                sys.modules.pop(module_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_internal_scripts_and_tests_use_canonical_imports_after_compat_retirement(
+        self,
+    ) -> None:
+        retired_modules = set(RETIRED_LATE_MIGRATION_COMPAT_EXPORTS)
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {module_name}
+                        imported_names.update(
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        )
+                        if imported_names & retired_modules:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name in retired_modules:
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found imports of retired late-migration compatibility exports:\n"
+            + "\n".join(violations),
+        )
+
     def test_runtime_metadata_does_not_advertise_retired_facade_modules(self) -> None:
         violations: list[str] = []
 
@@ -452,12 +540,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
     def test_refactored_compat_modules_are_thin_exports(self) -> None:
         expected_imports = {
-            RAG_MODULES_DIR / "interfaces" / "api" / "service.py": {
-                "rag_modules.interfaces.api.services",
-            },
-            RAG_MODULES_DIR / "generation" / "executor.py": {
-                "rag_modules.generation.execution",
-            },
             RAG_MODULES_DIR / "infra" / "milvus_index_construction.py": {
                 "rag_modules.infra.milvus",
             },

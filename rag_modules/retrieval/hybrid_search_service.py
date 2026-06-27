@@ -16,7 +16,7 @@ from .candidate_sources import (
 )
 from .contracts import RetrievalRequest
 from .hybrid_outcome import HybridRetrievalOutcome
-from .runtime_settings import RetrievalRuntimeProfile
+from .runtime_profile import RetrievalRuntimeProfile
 
 logger = logging.getLogger(__name__)
 

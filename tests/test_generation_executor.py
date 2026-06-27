@@ -130,19 +130,15 @@ class _FakeClientAdapter:
 
 
 class GenerationExecutionEngineTests(unittest.TestCase):
-    def test_generation_execution_canonical_and_compat_imports_match(self) -> None:
+    def test_generation_execution_package_exports_canonical_engine(self) -> None:
         from rag_modules.generation.execution import (
             GenerationExecutionEngine as PackageEngine,
         )
         from rag_modules.generation.execution.engine import (
             GenerationExecutionEngine as CanonicalEngine,
         )
-        from rag_modules.generation.executor import (
-            GenerationExecutionEngine as CompatEngine,
-        )
 
         self.assertIs(PackageEngine, CanonicalEngine)
-        self.assertIs(CompatEngine, CanonicalEngine)
 
     def _build_package(self) -> AnswerEvidencePackage:
         return AnswerEvidencePackage(

@@ -239,7 +239,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         self.assertEqual(bm25_retriever.calls[0][0], "build")
         self.assertEqual(bm25_retriever.calls[1], ("spicy tofu", 4))
 
-    def test_sync_legacy_bm25_fields_refreshes_runtime_state_from_retriever(self) -> None:
+    def test_sync_bm25_state_refreshes_runtime_state_from_retriever(self) -> None:
         cached_doc = Document(page_content="cached")
         bm25_retriever = _StubBm25Retriever(ready=True)
         bm25_retriever.bm25 = "restored-bm25"
@@ -254,7 +254,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         runtime.state.bm25 = "stale-bm25"
         runtime.state.bm25_corpus_docs = []
 
-        runtime.sync_legacy_bm25_fields()
+        runtime.sync_bm25_state()
 
         self.assertEqual(runtime.bm25, "restored-bm25")
         self.assertEqual(runtime.bm25_corpus_docs, [cached_doc])

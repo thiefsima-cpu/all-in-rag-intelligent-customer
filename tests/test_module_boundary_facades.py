@@ -4,11 +4,21 @@ import unittest
 
 
 class ModuleBoundaryFacadeTests(unittest.TestCase):
-    def test_configuration_section_loader_facade_reexports_section_loaders(self) -> None:
-        from rag_modules.configuration import section_loaders, sections
+    def test_configuration_sections_package_exports_section_loaders(self) -> None:
+        from rag_modules.configuration import sections
 
-        for name in section_loaders.__all__:
-            self.assertIs(getattr(section_loaders, name), getattr(sections, name))
+        self.assertEqual(
+            set(sections.__all__),
+            {
+                "load_api_settings",
+                "load_generation_settings",
+                "load_graph_settings",
+                "load_model_settings",
+                "load_observability_settings",
+                "load_retrieval_settings",
+                "load_storage_settings",
+            },
+        )
 
     def test_runtime_artifacts_package_reexports_responsibility_modules(self) -> None:
         from rag_modules.runtime import artifacts

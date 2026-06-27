@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
-from ..client import GenerationClientAdapter
+from ..clients import GenerationClientAdapter
 from ..models import AnswerPlan, GenerationDecision, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder

@@ -34,6 +34,18 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | retired in favor of canonical routing imports | `0.2.0` |
 | `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | retired in favor of canonical graph data-preparation imports | `0.2.0` |
 | `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | retired in favor of canonical graph indexing imports | `0.2.0` |
+| `rag_modules.configuration.settings` | `rag_modules.configuration`, `rag_modules.configuration.models`, `rag_modules.configuration.loader` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.configuration.section_loaders` | `rag_modules.configuration.sections` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.interfaces.api.models` | `rag_modules.interfaces.api.answer_models`, `rag_modules.interfaces.api.build_models`, `rag_modules.interfaces.api.diagnostics_models` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.interfaces.api.service` | `rag_modules.interfaces.api.services` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.generation.client` | `rag_modules.generation.clients` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.generation.executor` | `rag_modules.generation.execution` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.bm25_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.constraint_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.graph_kv_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.vector_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.retrieval_contracts` | `rag_modules.retrieval.contracts` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.runtime_settings` | `rag_modules.retrieval.runtime_profile` | late-migration compatibility exports retired | `0.2.0` |
 
 ## Scan Rules
 
@@ -48,8 +60,8 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 ## Internal Freeze Rule
 
 - No internal module, script, or ordinary test may import repo-root `config.py`,
-  `rag_modules.compat.*`, `rag_modules.intelligent_query_router`, or root graph
-  facade modules.
+  `rag_modules.compat.*`, `rag_modules.intelligent_query_router`, root graph
+  facade modules, or late-migration compatibility exports listed above.
 - New implementation lands in canonical packages only.
 - Compatibility tests should assert retirement and canonical replacements, not
   legacy import behavior.
@@ -99,13 +111,22 @@ grouped runtime views.
   `rag_modules.graph.data_preparation`.
 - `rag_modules.graph_indexing` retired in favor of
   `rag_modules.graph.indexing`.
+- Late-migration compatibility exports retired in favor of split canonical
+  packages: `rag_modules.interfaces.api.models` to API model modules,
+  `rag_modules.interfaces.api.service` to `rag_modules.interfaces.api.services`,
+  `rag_modules.generation.client` to `rag_modules.generation.clients`,
+  `rag_modules.generation.executor` to `rag_modules.generation.execution`,
+  retrieval adapter/profile facades to `rag_modules.retrieval.adapters`,
+  `rag_modules.retrieval.contracts`, and `rag_modules.retrieval.runtime_profile`,
+  and configuration facades to `rag_modules.configuration` modules.
 
 ## 0.2.0 Compatibility Note
 
 The final public-surface retirement removes `config.py`,
 `rag_modules.intelligent_query_router`, `rag_modules.graph_data_preparation`,
-and `rag_modules.graph_indexing`. External callers that still import those
-paths must migrate to the canonical replacements listed above. The boundary
-tests keep this final state in place by checking the empty legacy manifest,
-removed files, retired import paths, and metadata that must not recreate old
-facade names.
+`rag_modules.graph_indexing`, and the late-migration compatibility exports
+listed in the status table. External callers that still import those paths must
+migrate to the canonical replacements listed above. The boundary tests keep
+this final state in place by checking the empty legacy manifest, removed files,
+retired import paths, canonical internal imports, and metadata that must not
+recreate old facade names.

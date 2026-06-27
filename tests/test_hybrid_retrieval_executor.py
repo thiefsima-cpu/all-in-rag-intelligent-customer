@@ -69,8 +69,8 @@ class _FakeRuntime:
     def restore_bm25_retriever(self, payload):
         self.calls.append(("restore_bm25_retriever", payload))
 
-    def sync_legacy_bm25_fields(self):
-        self.calls.append(("sync_legacy_bm25_fields", None))
+    def sync_bm25_state(self):
+        self.calls.append(("sync_bm25_state", None))
 
     def build_graph_index(self):
         self.calls.append(("build_graph_index", None))

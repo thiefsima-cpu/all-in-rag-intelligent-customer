@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api.build_job_store import FileBuildJobStore
-from rag_modules.interfaces.api.service import (
+from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
     GraphRAGBuildApiService,
 )

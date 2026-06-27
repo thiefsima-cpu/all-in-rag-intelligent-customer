@@ -147,8 +147,8 @@ class HybridRetrievalService:
     def _tokenize_chinese(text: str) -> List[str]:
         return tokenize_chinese(text)
 
-    def _sync_legacy_bm25_fields(self) -> None:
-        self._executor.sync_legacy_bm25_fields()
+    def _sync_bm25_state(self) -> None:
+        self._executor.sync_bm25_state()
 
     def _restore_bm25_retriever(self, payload: Dict[str, Any]) -> None:
         self._executor.restore_bm25_retriever(payload)

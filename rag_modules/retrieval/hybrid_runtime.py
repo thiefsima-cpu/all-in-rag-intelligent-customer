@@ -142,7 +142,7 @@ class HybridRetrievalRuntime:
         if self.index_service.restore_bm25_retriever(payload):
             self._sync_bm25_state()
 
-    def sync_legacy_bm25_fields(self) -> None:
+    def sync_bm25_state(self) -> None:
         self._sync_bm25_state()
 
     def _sync_bm25_state(self) -> None:

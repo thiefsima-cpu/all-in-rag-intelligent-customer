@@ -24,19 +24,20 @@ def _as_recovery_seconds(value: Any, default: float) -> float:
 
 
 def _normalize_degradation_strategy(value: Any) -> str:
-    default = str(
-        _CANDIDATE_SOURCE_DEFAULTS.get(
-            "degradation_strategy",
-            CANDIDATE_SOURCE_DEGRADATION_CONTINUE,
+    default = (
+        str(
+            _CANDIDATE_SOURCE_DEFAULTS.get(
+                "degradation_strategy",
+                CANDIDATE_SOURCE_DEGRADATION_CONTINUE,
+            )
         )
-    ).strip().lower()
+        .strip()
+        .lower()
+    )
     normalized = str(value or default).strip().lower()
     if normalized not in SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES:
         supported = ", ".join(sorted(SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES))
-        raise ValueError(
-            "candidate_source_degradation_strategy must be one of: "
-            f"{supported}"
-        )
+        raise ValueError(f"candidate_source_degradation_strategy must be one of: {supported}")
     return normalized
 
 

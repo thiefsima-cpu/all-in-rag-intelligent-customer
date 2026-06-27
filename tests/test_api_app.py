@@ -11,12 +11,12 @@ from pydantic import ValidationError
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
-from rag_modules.interfaces.api.models import (
+from rag_modules.interfaces.api.answer_models import (
     MAX_QUESTION_CHARS,
     AnswerResponseModel,
     AnswerStreamEventType,
 )
-from rag_modules.interfaces.api.service import (
+from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
@@ -438,50 +438,6 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
 
 
 class ApiAppTests(unittest.TestCase):
-    def test_api_model_split_keeps_compat_exports(self) -> None:
-        import rag_modules.interfaces.api.answer_models as answer_models
-        import rag_modules.interfaces.api.build_models as build_models
-        import rag_modules.interfaces.api.diagnostics_models as diagnostics_models
-        import rag_modules.interfaces.api.models as compat_models
-
-        self.assertIs(compat_models.AnswerResponseModel, answer_models.AnswerResponseModel)
-        self.assertIs(compat_models.AnswerStreamEventType, answer_models.AnswerStreamEventType)
-        self.assertIs(compat_models.MAX_QUESTION_CHARS, answer_models.MAX_QUESTION_CHARS)
-        self.assertIs(compat_models.BuildJobResponseModel, build_models.BuildJobResponseModel)
-        self.assertIs(
-            compat_models.ArtifactRegistryResponseModel,
-            build_models.ArtifactRegistryResponseModel,
-        )
-        self.assertIs(
-            compat_models.DiagnosticsResponseModel,
-            diagnostics_models.DiagnosticsResponseModel,
-        )
-        self.assertIs(compat_models.HealthResponseModel, diagnostics_models.HealthResponseModel)
-
-    def test_api_service_canonical_and_compat_imports_match(self) -> None:
-        from rag_modules.interfaces.api import service as compat_service
-        from rag_modules.interfaces.api.services import (
-            BuildJobConflictError as CanonicalBuildJobConflictError,
-        )
-        from rag_modules.interfaces.api.services import (
-            BuildJobNotFoundError as CanonicalBuildJobNotFoundError,
-        )
-        from rag_modules.interfaces.api.services import (
-            GraphRAGBuildApiService as CanonicalBuildService,
-        )
-        from rag_modules.interfaces.api.services import (
-            GraphRAGServingApiService as CanonicalServingService,
-        )
-        from rag_modules.interfaces.api.services import (
-            SystemNotReadyError as CanonicalSystemNotReadyError,
-        )
-
-        self.assertIs(compat_service.GraphRAGBuildApiService, CanonicalBuildService)
-        self.assertIs(compat_service.GraphRAGServingApiService, CanonicalServingService)
-        self.assertIs(compat_service.SystemNotReadyError, CanonicalSystemNotReadyError)
-        self.assertIs(compat_service.BuildJobNotFoundError, CanonicalBuildJobNotFoundError)
-        self.assertIs(compat_service.BuildJobConflictError, CanonicalBuildJobConflictError)
-
     def test_serving_liveness_is_public_and_does_not_require_readiness(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
 

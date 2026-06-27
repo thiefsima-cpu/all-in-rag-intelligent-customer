@@ -12,7 +12,7 @@ from ..query_understanding import (
     normalize_graph_sources,
     relation_index_terms,
 )
-from .runtime_settings import QuerySemanticRuntimeSettings
+from .runtime_profile import QuerySemanticRuntimeSettings
 
 logger = logging.getLogger(__name__)
 

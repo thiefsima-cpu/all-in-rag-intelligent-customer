@@ -25,7 +25,7 @@ from .hybrid_runtime import HybridRetrievalRuntime
 from .hybrid_search_service import HybridSearchService
 from .keyword_service import QueryKeywordExtractor
 from .runtime_adapter_factory import DefaultHybridRuntimeAdapterFactory, HybridRuntimeAdapterFactory
-from .runtime_settings import RetrievalRuntimeProfile
+from .runtime_profile import RetrievalRuntimeProfile
 
 
 @dataclass
