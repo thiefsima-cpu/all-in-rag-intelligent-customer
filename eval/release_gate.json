@@ -42,5 +42,24 @@
     "answer_pipeline_real_route.metrics.graph_contract_pass_rate": {"minimum": 1.0},
     "answer_pipeline_real_route.metrics.evidence_contract_pass_rate": {"minimum": 1.0},
     "answer_pipeline_real_route.metrics.offline_planner_guard_pass_rate": {"minimum": 1.0}
+  },
+  "optional_stages": {
+    "quality_eval": {
+      "suite": "quality_eval",
+      "runner": {
+        "profile": "eval_quality",
+        "top_k": 6,
+        "generate": true
+      },
+      "suite_minimum_cases": 6,
+      "suite_minimum_pass_rate": 1.0,
+      "metric_thresholds": {
+        "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
+        "quality_eval.metrics.faithfulness": {"minimum": 0.8},
+        "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+        "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
+        "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0}
+      }
+    }
   }
 }

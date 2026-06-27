@@ -51,6 +51,29 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["route_category_count"], 9)
         self.assertFalse(report["failed_checks"])
 
+    def test_default_policy_configures_quality_eval_as_optional(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+
+        self.assertNotIn("quality_eval", policy["required_suites"])
+        stage = policy["optional_stages"]["quality_eval"]
+        self.assertEqual(stage["suite"], "quality_eval")
+        self.assertEqual(
+            stage["runner"],
+            {"profile": "eval_quality", "top_k": 6, "generate": True},
+        )
+        self.assertEqual(stage["suite_minimum_cases"], 6)
+        self.assertEqual(stage["suite_minimum_pass_rate"], 1.0)
+        self.assertEqual(
+            stage["metric_thresholds"],
+            {
+                "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
+                "quality_eval.metrics.faithfulness": {"minimum": 0.8},
+                "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+                "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
+                "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0},
+            },
+        )
+
     def test_gate_fails_when_route_coverage_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         suite_reports = {
