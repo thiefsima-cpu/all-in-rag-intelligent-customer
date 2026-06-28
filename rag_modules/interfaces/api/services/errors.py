@@ -15,6 +15,10 @@ class SystemNotReadyError(RuntimeError):
         self.diagnostics = diagnostics
 
 
+class AnswerFailedError(RuntimeError):
+    """Raised when an answer result reaches a terminal failed state."""
+
+
 class BuildJobNotFoundError(KeyError):
     """Raised when a build job identifier is unknown to the current API service."""
 
@@ -40,6 +44,7 @@ class ApiBackpressureError(RuntimeError):
 
 __all__ = [
     "ApiBackpressureError",
+    "AnswerFailedError",
     "BuildJobConflictError",
     "BuildJobNotFoundError",
     "SystemNotReadyError",

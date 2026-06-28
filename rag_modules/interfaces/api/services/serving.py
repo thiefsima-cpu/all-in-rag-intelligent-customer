@@ -14,8 +14,15 @@ from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ..answer_models import AnswerStreamEventModel
+from ..error_models import ErrorCode
+from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
-from .errors import ApiBackpressureError, SystemNotReadyError, _StreamCancelledError
+from .errors import (
+    AnswerFailedError,
+    ApiBackpressureError,
+    SystemNotReadyError,
+    _StreamCancelledError,
+)
 
 
 class _StreamEnd:
@@ -207,6 +214,14 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             executor.shutdown(wait=False, cancel_futures=True)
         super().shutdown()
 
+    @staticmethod
+    def _answer_payload(response) -> dict:
+        payload = response.to_dict()
+        summary = dict(payload.get("summary") or {})
+        if str(summary.get("status") or "").lower() == "failed":
+            raise AnswerFailedError()
+        return payload
+
     def answer_question(
         self,
         *,
@@ -225,18 +240,32 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                     stream=stream,
                     explain_routing=explain_routing,
                 )
-                return response.to_dict()
+                return self._answer_payload(response)
 
     def stream_answer_question_events(
         self,
         *,
         question: str,
         explain_routing: bool = False,
+        request_id: str = "",
     ) -> Iterator[AnswerStreamEventModel]:
         self._ensure_serving_runtime_initialized()
         self._refresh_serving_runtime_if_stale()
         self._raise_if_system_not_ready()
+        resolved_request_id = normalize_or_generate_request_id(request_id)
+        return self._iter_stream_answer_question_events(
+            question=question,
+            explain_routing=explain_routing,
+            request_id=resolved_request_id,
+        )
 
+    def _iter_stream_answer_question_events(
+        self,
+        *,
+        question: str,
+        explain_routing: bool = False,
+        request_id: str,
+    ) -> Iterator[AnswerStreamEventModel]:
         event_queue: "queue.Queue[AnswerStreamEventModel | _StreamEnd]" = queue.Queue(
             maxsize=self._stream_queue_max_size
         )
@@ -268,6 +297,10 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         def on_chunk(chunk: str) -> None:
             emit(AnswerStreamEventModel.chunk(str(chunk)))
 
+        def emit_error(code: ErrorCode) -> None:
+            if not stream_closed.is_set():
+                emit(AnswerStreamEventModel.error(code=code, request_id=request_id))
+
         def runner() -> None:
             try:
                 with self._answer_admission.permit():
@@ -280,34 +313,17 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                             message_callback=on_message,
                             chunk_callback=on_chunk,
                         )
-                emit(AnswerStreamEventModel.result(response.to_dict()))
-            except ApiBackpressureError as exc:
-                if not stream_closed.is_set():
-                    emit(
-                        AnswerStreamEventModel.error(
-                            message=str(exc),
-                            error_type="api_backpressure",
-                        )
-                    )
+                emit(AnswerStreamEventModel.result(self._answer_payload(response)))
+            except ApiBackpressureError:
+                emit_error(ErrorCode.RATE_LIMITED)
             except _StreamCancelledError:
                 pass
-            except SystemNotReadyError as exc:
-                if not stream_closed.is_set():
-                    emit(
-                        AnswerStreamEventModel.error(
-                            message=str(exc),
-                            diagnostics=exc.diagnostics,
-                            error_type="system_not_ready",
-                        )
-                    )
-            except Exception as exc:
-                if not stream_closed.is_set():
-                    emit(
-                        AnswerStreamEventModel.error(
-                            message=str(exc),
-                            error_type=exc.__class__.__name__,
-                        )
-                    )
+            except SystemNotReadyError:
+                emit_error(ErrorCode.SYSTEM_NOT_READY)
+            except AnswerFailedError:
+                emit_error(ErrorCode.ANSWER_FAILED)
+            except Exception:
+                emit_error(ErrorCode.ANSWER_FAILED)
             finally:
                 finish_stream()
 

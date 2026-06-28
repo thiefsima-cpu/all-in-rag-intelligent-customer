@@ -9,6 +9,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...runtime.json_types import JsonObject
+from .error_models import ErrorCode, ErrorResponseModel, build_error_model
 
 MAX_QUESTION_CHARS = 4000
 
@@ -401,14 +402,6 @@ class AnswerStreamResultDataModel(BaseModel):
     response: AnswerPayloadModel
 
 
-class AnswerStreamErrorDataModel(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    message: str
-    error_type: str
-    diagnostics: Optional[JsonObject] = None
-
-
 class AnswerStreamDoneDataModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -423,7 +416,7 @@ class AnswerStreamEventModel(BaseModel):
         AnswerStreamMessageDataModel
         | AnswerStreamChunkDataModel
         | AnswerStreamResultDataModel
-        | AnswerStreamErrorDataModel
+        | ErrorResponseModel
         | AnswerStreamDoneDataModel
     )
 
@@ -452,17 +445,12 @@ class AnswerStreamEventModel(BaseModel):
     def error(
         cls,
         *,
-        message: str,
-        error_type: str,
-        diagnostics: Optional[JsonObject] = None,
+        code: ErrorCode,
+        request_id: str,
     ) -> "AnswerStreamEventModel":
         return cls(
             event=AnswerStreamEventType.error,
-            data=AnswerStreamErrorDataModel(
-                message=str(message),
-                error_type=str(error_type),
-                diagnostics=(dict(diagnostics) if diagnostics is not None else None),
-            ),
+            data=build_error_model(code, request_id=request_id),
         )
 
     @classmethod
@@ -483,7 +471,6 @@ __all__ = [
     "AnswerResponseModel",
     "AnswerStreamChunkDataModel",
     "AnswerStreamDoneDataModel",
-    "AnswerStreamErrorDataModel",
     "AnswerStreamEventModel",
     "AnswerStreamEventType",
     "AnswerStreamMessageDataModel",

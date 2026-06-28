@@ -5,8 +5,13 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-from rag_modules.app.services.answer_models import QuestionAnswerResult
+from rag_modules.app.services.answer_models import (
+    AnswerPipelineState,
+    AnswerTraceBundle,
+    QuestionAnswerResult,
+)
 from rag_modules.app.services.answer_pipeline import NO_EVIDENCE_ANSWER
+from rag_modules.app.services.answer_result_factory import QuestionAnswerResultFactory
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.observability.tracing import QueryTracer
@@ -654,9 +659,10 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_route_exception_returns_error_result_and_trace(self) -> None:
         question = "Trigger router failure."
+        secret = "router exploded"
         router = _FakeQueryRouter(
-            route_error=RuntimeError("router exploded"),
-            route_trace=RouteSnapshot(query=question, error="router exploded"),
+            route_error=RuntimeError(secret),
+            route_trace=RouteSnapshot(query=question, error=secret),
         )
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
@@ -664,10 +670,23 @@ class AnswerWorkflowTests(unittest.TestCase):
 
         result = service.answer_question(question)
 
-        self.assertIn("router exploded", result.answer)
+        self.assertEqual(result.answer, "The answer could not be generated.")
+        self.assertNotIn(secret, result.answer)
         self.assertIsNone(result.analysis)
         self.assertEqual(len(tracer.calls), 1)
-        self.assertEqual(result.trace_event.error, "router exploded")
+        self.assertEqual(result.trace_event.error, secret)
+
+    def test_result_factory_from_error_does_not_place_raw_exception_in_answer(self) -> None:
+        secret = "raw provider payload"
+        result = QuestionAnswerResultFactory().from_error(
+            AnswerPipelineState(question="safe question"),
+            latency_ms=12.5,
+            trace_bundle=AnswerTraceBundle(),
+            error=RuntimeError(secret),
+        )
+
+        self.assertEqual(result.answer, "The answer could not be generated.")
+        self.assertNotIn(secret, result.answer)
 
 
 if __name__ == "__main__":

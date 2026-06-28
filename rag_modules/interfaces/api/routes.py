@@ -22,6 +22,7 @@ from .diagnostics_models import (
     OperationResponseModel,
     StatsResponseModel,
 )
+from .request_context import current_request_id
 from .response_builder import (
     build_answer_response,
     build_artifact_registry_response,
@@ -109,10 +110,12 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
     def answer_question(payload: AnswerRequestModel):
         payload_data = payload.model_dump()
         if payload_data.get("stream", False):
+            request_id = current_request_id()
             return build_sse_streaming_response(
                 api_service.stream_answer_question_events(
                     question=payload.question,
                     explain_routing=payload.explain_routing,
+                    request_id=request_id,
                 )
             )
         return build_answer_response(
@@ -144,10 +147,12 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         },
     )
     def stream_answer_question(payload: AnswerStreamRequestModel):
+        request_id = current_request_id()
         return build_sse_streaming_response(
             api_service.stream_answer_question_events(
                 question=payload.question,
                 explain_routing=payload.explain_routing,
+                request_id=request_id,
             )
         )
 

@@ -36,8 +36,9 @@ class QuestionAnswerResultFactory:
         trace_bundle: AnswerTraceBundle,
         error: Exception,
     ) -> QuestionAnswerResult:
+        del error
         return QuestionAnswerResult(
-            answer=f"Sorry, an error occurred while processing the question: {error}",
+            answer="The answer could not be generated.",
             analysis=None,
             retrieval_outcome=state.retrieval_outcome,
             answer_context=state.answer_context,

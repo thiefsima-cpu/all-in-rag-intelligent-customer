@@ -287,6 +287,22 @@ class _DummyAnswerResponse:
         return _answer_payload(self.question, stream=self.stream)
 
 
+class _FailedAnswerResponse(_DummyAnswerResponse):
+    def __init__(self, question: str, secret: str, stream: bool) -> None:
+        super().__init__(question, False, stream)
+        self.secret = secret
+
+    def to_dict(self) -> dict:
+        payload = super().to_dict()
+        payload["summary"].update(
+            status="failed",
+            answer=f"raw failure: {self.secret}",
+            error=self.secret,
+        )
+        payload["traces"]["route_trace"]["error"] = self.secret
+        return payload
+
+
 class _FakeApiSystem:
     def __init__(self) -> None:
         self.config = _API_CONFIG
@@ -364,6 +380,18 @@ class _FakeApiSystem:
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+class _FailedAnswerSystem(_FakeApiSystem):
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self.system_ready = True
+        self.serving_initialized = True
+        self.secret = secret
+
+    def answer_question_response(self, question: str, *, stream=False, **kwargs):
+        del kwargs
+        return _FailedAnswerResponse(question, self.secret, stream)
 
 
 class _BlockingApiSystem(_FakeApiSystem):
@@ -570,6 +598,57 @@ class ApiAppTests(unittest.TestCase):
             validation_schema["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ErrorResponseModel",
         )
+
+    def test_failed_answer_becomes_typed_500_without_raw_exception(self) -> None:
+        secret = "answer-provider-secret"
+        app = create_serving_api_app(system=_FailedAnswerSystem(secret))
+
+        with _client(app) as client:
+            response = client.post(
+                "/answers",
+                json={"question": "safe question"},
+                headers={"X-Request-ID": "answer-failed-42"},
+            )
+
+        payload = _assert_error_response(
+            response,
+            status_code=500,
+            code="ANSWER_FAILED",
+            request_id="answer-failed-42",
+        )
+        self.assertNotIn(secret, json.dumps(payload))
+
+    def test_sse_error_uses_common_contract_and_request_id(self) -> None:
+        secret = "stream-provider-secret"
+        app = create_serving_api_app(system=_FailedAnswerSystem(secret))
+
+        with _client(app) as client:
+            with client.stream(
+                "POST",
+                "/answers/stream",
+                json={"question": "safe question"},
+                headers={"X-Request-ID": "stream-failed-42"},
+            ) as response:
+                body = "".join(response.iter_text())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("event: error", body)
+        self.assertIn('"code": "ANSWER_FAILED"', body)
+        self.assertIn('"request_id": "stream-failed-42"', body)
+        self.assertNotIn("error_type", body)
+        self.assertNotIn(secret, body)
+        self.assertIn("event: done", body)
+
+    def test_stream_preflight_failure_uses_http_error_contract(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            response = client.post(
+                "/answers/stream",
+                json={"question": "safe question"},
+            )
+
+        _assert_error_response(response, status_code=409, code="SYSTEM_NOT_READY")
 
     def test_serving_liveness_is_public_and_does_not_require_readiness(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
@@ -1143,7 +1222,9 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: error", body)
-        self.assertIn('"error_type": "api_backpressure"', body)
+        self.assertIn('"code": "RATE_LIMITED"', body)
+        self.assertIn(f'"request_id": "{response.headers["x-request-id"]}"', body)
+        self.assertNotIn("error_type", body)
         self.assertIn("event: done", body)
 
     def test_build_diagnostics_use_cached_snapshot_while_build_is_in_flight(self) -> None:

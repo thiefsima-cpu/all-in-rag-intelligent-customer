@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .error_models import ErrorCode, build_error_response
 from .request_context import current_request_id
 from .services import (
+    AnswerFailedError,
     ApiBackpressureError,
     BuildJobConflictError,
     BuildJobNotFoundError,
@@ -63,6 +64,13 @@ def register_api_error_handlers(app: FastAPI) -> None:
     async def api_backpressure(_: Request, __: ApiBackpressureError):
         return build_error_response(
             ErrorCode.RATE_LIMITED,
+            request_id=current_request_id(),
+        )
+
+    @app.exception_handler(AnswerFailedError)
+    async def answer_failed(_: Request, __: AnswerFailedError):
+        return build_error_response(
+            ErrorCode.ANSWER_FAILED,
             request_id=current_request_id(),
         )
 
