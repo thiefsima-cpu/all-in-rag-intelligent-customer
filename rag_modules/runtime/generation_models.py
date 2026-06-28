@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict
+
+from .json_types import JsonObject, coerce_json_float, coerce_json_int
 
 
 @dataclass
@@ -30,12 +31,31 @@ class GenerationSnapshot:
     token_usage_source: str = ""
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "GenerationSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "GenerationSnapshot":
         payload = dict(data or {})
-        allowed = {field.name for field in cls.__dataclass_fields__.values()}
-        return cls(**{key: payload[key] for key in allowed if key in payload})
+        return cls(
+            status=str(payload.get("status") or ""),
+            mode=str(payload.get("mode") or ""),
+            decision_reason=str(payload.get("decision_reason") or ""),
+            total_evidence_items=coerce_json_int(payload.get("total_evidence_items")),
+            selected_evidence_items=coerce_json_int(payload.get("selected_evidence_items")),
+            plan_latency_ms=coerce_json_float(payload.get("plan_latency_ms")),
+            compose_latency_ms=coerce_json_float(payload.get("compose_latency_ms")),
+            direct_latency_ms=coerce_json_float(payload.get("direct_latency_ms")),
+            fallback_used=bool(payload.get("fallback_used")),
+            fallback_reason=str(payload.get("fallback_reason") or ""),
+            failure_code=str(payload.get("failure_code") or ""),
+            total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
+            provider_latency_ms=coerce_json_float(payload.get("provider_latency_ms")),
+            request_retries=coerce_json_int(payload.get("request_retries")),
+            prompt_tokens=coerce_json_int(payload.get("prompt_tokens")),
+            completion_tokens=coerce_json_int(payload.get("completion_tokens")),
+            total_tokens=coerce_json_int(payload.get("total_tokens")),
+            estimated_cost_usd=coerce_json_float(payload.get("estimated_cost_usd")),
+            token_usage_source=str(payload.get("token_usage_source") or ""),
+        )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "status": self.status,
             "mode": self.mode,

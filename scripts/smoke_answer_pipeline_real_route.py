@@ -343,8 +343,9 @@ def evaluate_contracts(
         checks[category]["passed"] = False
         checks[category]["failures"].append(reason)
 
-    route_trace = response.route_trace
-    graph_trace = response.graph_trace
+    response_payload = response.to_dict()
+    route_trace = response_payload["traces"]["route_trace"]
+    graph_trace = response_payload["traces"]["graph_trace"]
     route_request = result.route_trace.retrieval_request
     graph_expected = _graph_expected(case)
 
@@ -392,7 +393,7 @@ def evaluate_contracts(
         if route_request.query_plan is None:
             fail("request", "route_request_missing_query_plan")
 
-    trace_event = response.trace_event
+    trace_event = response_payload["traces"]["trace_event"]
     event_plan = dict(event.plan or {})
     route_request_payload = dict(route_trace.get("retrieval_request") or {})
     route_plan_payload = dict(route_request_payload.get("query_plan") or {})
@@ -477,15 +478,17 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     )
     result = service.answer_question(case.question)
     response = result.to_response()
+    response_payload = response.to_dict()
     event = sink.events[-1]
     plan = (
         result.route_trace.retrieval_request.query_plan
         if result.route_trace.retrieval_request
         else None
     )
-    route_trace = response.route_trace
+    route_trace = response_payload["traces"]["route_trace"]
     route_diagnostics = route_trace.get("diagnostics") or {}
-    graph_trace = response.graph_trace
+    graph_trace = response_payload["traces"]["graph_trace"]
+    generation_trace = response_payload["traces"]["generation_trace"]
 
     failures: List[str] = []
     if result.analysis is None:
@@ -513,10 +516,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
         failures.append(
             f"expected_stage_names={case.expected_stage_names} actual_stage_names={stage_names}"
         )
-    if response.generation_trace.get("mode") != case.expected_generation_mode:
+    if generation_trace.get("mode") != case.expected_generation_mode:
         failures.append(
             "expected_generation_mode="
-            f"{case.expected_generation_mode} actual_generation_mode={response.generation_trace.get('mode', '')}"
+            f"{case.expected_generation_mode} actual_generation_mode={generation_trace.get('mode', '')}"
         )
     if route_diagnostics.get("graph_doc_count") != case.expected_graph_doc_count:
         failures.append(
@@ -581,10 +584,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
         "passed": not failures,
         "failures": failures,
         "strategy": response.strategy,
-        "generation_mode": response.generation_trace.get("mode", ""),
+        "generation_mode": generation_trace.get("mode", ""),
         "contract_checks": contract_checks,
         "answer_preview": response.answer[:120],
-        "answer_response": response.to_dict(),
+        "answer_response": response_payload,
     }
 
 

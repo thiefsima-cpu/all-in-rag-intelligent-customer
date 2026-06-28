@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 
 from .generation_models import GenerationSnapshot
 from .graph_models import GraphRetrievalSnapshot
+from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 from .route_models import RouteSnapshot
 
 
@@ -17,28 +17,33 @@ class QueryDiagnostics:
     generation_bucket: str = ""
     overall_bucket: str = ""
     retrieval_degraded: bool = False
-    degraded_sources: List[str] = field(default_factory=list)
-    degraded_candidates: List[Dict[str, Any]] = field(default_factory=list)
+    degraded_sources: list[str] = field(default_factory=list)
+    degraded_candidates: list[JsonObject] = field(default_factory=list)
     circuit_breaker_triggered: bool = False
     answer_impacted: bool = False
-    failure_reasons: List[str] = field(default_factory=list)
+    failure_reasons: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryDiagnostics":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "QueryDiagnostics":
         payload = dict(data or {})
+        raw_candidates = payload.get("degraded_candidates")
         return cls(
-            retrieval_bucket=payload.get("retrieval_bucket", ""),
-            generation_bucket=payload.get("generation_bucket", ""),
-            overall_bucket=payload.get("overall_bucket", ""),
-            retrieval_degraded=payload.get("retrieval_degraded", False),
-            degraded_sources=payload.get("degraded_sources") or [],
-            degraded_candidates=payload.get("degraded_candidates") or [],
-            circuit_breaker_triggered=payload.get("circuit_breaker_triggered", False),
-            answer_impacted=payload.get("answer_impacted", False),
-            failure_reasons=payload.get("failure_reasons") or [],
+            retrieval_bucket=str(payload.get("retrieval_bucket") or ""),
+            generation_bucket=str(payload.get("generation_bucket") or ""),
+            overall_bucket=str(payload.get("overall_bucket") or ""),
+            retrieval_degraded=bool(payload.get("retrieval_degraded", False)),
+            degraded_sources=_string_list(payload.get("degraded_sources")),
+            degraded_candidates=(
+                [coerce_json_object(item) for item in raw_candidates]
+                if isinstance(raw_candidates, list)
+                else []
+            ),
+            circuit_breaker_triggered=bool(payload.get("circuit_breaker_triggered", False)),
+            answer_impacted=bool(payload.get("answer_impacted", False)),
+            failure_reasons=_string_list(payload.get("failure_reasons")),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "retrieval_bucket": self.retrieval_bucket,
             "generation_bucket": self.generation_bucket,
@@ -63,7 +68,7 @@ class ModelSuiteSnapshot:
     rerank: str = ""
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "ModelSuiteSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "ModelSuiteSnapshot":
         payload = dict(data or {})
         return cls(
             llm=str(payload.get("llm") or ""),
@@ -71,7 +76,7 @@ class ModelSuiteSnapshot:
             rerank=str(payload.get("rerank") or ""),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "llm": self.llm,
             "embedding": self.embedding,
@@ -82,14 +87,16 @@ class ModelSuiteSnapshot:
 @dataclass
 class RetrievalTraceSnapshot:
     doc_count: int = 0
-    evidence: List[Dict[str, Any]] = field(default_factory=list)
+    evidence: list[JsonObject] = field(default_factory=list)
     route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
-    graph_trace: Optional[GraphRetrievalSnapshot] = None
-    failure_reasons: List[str] = field(default_factory=list)
+    graph_trace: GraphRetrievalSnapshot | None = None
+    failure_reasons: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.doc_count = max(0, int(self.doc_count or 0))
-        self.evidence = [dict(item) for item in (self.evidence or []) if isinstance(item, dict)]
+        self.evidence = [
+            coerce_json_object(item) for item in (self.evidence or []) if isinstance(item, Mapping)
+        ]
         if isinstance(self.route_trace, dict):
             self.route_trace = RouteSnapshot.from_dict(self.route_trace)
         elif not isinstance(self.route_trace, RouteSnapshot):
@@ -103,22 +110,27 @@ class RetrievalTraceSnapshot:
         ]
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "RetrievalTraceSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "RetrievalTraceSnapshot":
         payload = dict(data or {})
         graph_trace_payload = payload.get("graph_trace")
+        raw_evidence = payload.get("evidence")
         return cls(
-            doc_count=payload.get("doc_count", 0),
-            evidence=payload.get("evidence") or [],
-            route_trace=RouteSnapshot.from_dict(payload.get("route_trace")),
+            doc_count=coerce_json_int(payload.get("doc_count")),
+            evidence=(
+                [coerce_json_object(item) for item in raw_evidence]
+                if isinstance(raw_evidence, list)
+                else []
+            ),
+            route_trace=RouteSnapshot.from_dict(_mapping_or_none(payload.get("route_trace"))),
             graph_trace=(
                 GraphRetrievalSnapshot.from_dict(graph_trace_payload)
-                if graph_trace_payload
+                if isinstance(graph_trace_payload, Mapping)
                 else None
             ),
-            failure_reasons=payload.get("failure_reasons") or [],
+            failure_reasons=_string_list(payload.get("failure_reasons")),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "doc_count": self.doc_count,
             "evidence": [dict(item) for item in self.evidence],
@@ -138,14 +150,14 @@ class AnswerTraceSnapshot:
         self.preview = str(self.preview or "")
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "AnswerTraceSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "AnswerTraceSnapshot":
         payload = dict(data or {})
         return cls(
-            chars=payload.get("chars", 0),
-            preview=payload.get("preview", ""),
+            chars=coerce_json_int(payload.get("chars")),
+            preview=str(payload.get("preview") or ""),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "chars": self.chars,
             "preview": self.preview,
@@ -159,7 +171,7 @@ class QueryTraceEvent:
     query: str = ""
     strategy: str | None = None
     latency_ms: float = 0.0
-    plan: Dict[str, Any] = field(default_factory=dict)
+    plan: JsonObject = field(default_factory=dict)
     models: ModelSuiteSnapshot = field(default_factory=ModelSuiteSnapshot)
     retrieval: RetrievalTraceSnapshot = field(default_factory=RetrievalTraceSnapshot)
     generation: GenerationSnapshot = field(default_factory=GenerationSnapshot)
@@ -188,21 +200,28 @@ class QueryTraceEvent:
             self.answer = AnswerTraceSnapshot.from_dict(self.answer)
         elif not isinstance(self.answer, AnswerTraceSnapshot):
             self.answer = AnswerTraceSnapshot()
-        self.plan = dict(self.plan or {})
+        self.plan = coerce_json_object(self.plan)
         self.error = str(self.error or "")
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryTraceEvent":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "QueryTraceEvent":
         payload = dict(data or {})
-        payload["models"] = ModelSuiteSnapshot.from_dict(payload.get("models"))
-        payload["retrieval"] = RetrievalTraceSnapshot.from_dict(payload.get("retrieval"))
-        payload["generation"] = GenerationSnapshot.from_dict(payload.get("generation"))
-        payload["diagnostics"] = QueryDiagnostics.from_dict(payload.get("diagnostics"))
-        payload["answer"] = AnswerTraceSnapshot.from_dict(payload.get("answer"))
-        allowed = {field.name for field in cls.__dataclass_fields__.values()}
-        return cls(**{key: payload[key] for key in allowed if key in payload})
+        return cls(
+            query_id=str(payload.get("query_id") or ""),
+            timestamp=coerce_json_int(payload.get("timestamp")),
+            query=str(payload.get("query") or ""),
+            strategy=(str(payload["strategy"]) if payload.get("strategy") is not None else None),
+            latency_ms=coerce_json_float(payload.get("latency_ms")),
+            plan=coerce_json_object(payload.get("plan")),
+            models=ModelSuiteSnapshot.from_dict(_mapping_or_none(payload.get("models"))),
+            retrieval=RetrievalTraceSnapshot.from_dict(_mapping_or_none(payload.get("retrieval"))),
+            generation=GenerationSnapshot.from_dict(_mapping_or_none(payload.get("generation"))),
+            diagnostics=QueryDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
+            answer=AnswerTraceSnapshot.from_dict(_mapping_or_none(payload.get("answer"))),
+            error=str(payload.get("error") or ""),
+        )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "query_id": self.query_id,
             "timestamp": self.timestamp,
@@ -217,3 +236,15 @@ class QueryTraceEvent:
             "answer": self.answer.to_dict(),
             "error": self.error,
         }
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _list_or_empty(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    return [str(item).strip() for item in _list_or_empty(value) if str(item).strip()]

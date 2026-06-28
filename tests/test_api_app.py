@@ -8,11 +8,13 @@ import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
+from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
 from rag_modules.interfaces.api.answer_models import (
@@ -178,7 +180,7 @@ def _diagnostics(
     )
 
 
-def _answer_payload(question: str, *, stream: bool = False) -> dict:
+def _answer_result(question: str, *, stream: bool = False) -> QuestionAnswerResult:
     route_trace = RouteSnapshot(
         query=question,
         strategy="hybrid_traditional",
@@ -253,41 +255,26 @@ def _answer_payload(question: str, *, stream: bool = False) -> dict:
         diagnostics=diagnostics,
     )
 
-    return {
-        "summary": {
-            "answer": f"answer:{question}",
-            "status": "success",
-            "strategy": "hybrid_traditional",
-            "latency_ms": 12.3,
-            "doc_count": 1,
-            "has_evidence": True,
-            "fallback_used": False,
-            "failure_code": "",
-            "provider_latency_ms": generation_trace.provider_latency_ms,
-            "prompt_tokens": generation_trace.prompt_tokens,
-            "completion_tokens": generation_trace.completion_tokens,
-            "total_tokens": generation_trace.total_tokens,
-            "estimated_cost_usd": generation_trace.estimated_cost_usd,
-            "token_usage_source": generation_trace.token_usage_source,
-            "error": "",
-        },
-        "grounding": {
-            "retrieval_outcome": retrieval.to_dict(),
-            "answer_context": answer_context.to_dict(),
-            "route_resolution": route_resolution.to_dict(),
-            "evidence_documents": [evidence_document.to_dict()],
-        },
-        "diagnostics": {
-            "analysis": analysis.to_dict(),
-            "diagnostics": diagnostics.to_dict(),
-        },
-        "traces": {
-            "route_trace": route_trace.to_dict(),
-            "graph_trace": graph_trace.to_dict(),
-            "generation_trace": generation_trace.to_dict(),
-            "trace_event": trace_event.to_dict(),
-        },
-    }
+    return QuestionAnswerResult(
+        answer=f"answer:{question}",
+        analysis=analysis,
+        retrieval_outcome=retrieval,
+        answer_context=answer_context,
+        route_resolution=route_resolution,
+        latency_ms=12.3,
+        route_trace=route_trace,
+        graph_trace=graph_trace,
+        generation_trace=generation_trace,
+        trace_event=trace_event,
+    )
+
+
+def _answer_response(question: str, *, stream: bool = False) -> QuestionAnswerResponse:
+    return _answer_result(question, stream=stream).to_response()
+
+
+def _answer_payload(question: str, *, stream: bool = False) -> dict:
+    return _answer_response(question, stream=stream).to_dict()
 
 
 def _payload_without_new_summary_fields(question: str) -> dict:
@@ -308,25 +295,26 @@ class _DummyAnswerResponse:
         self.question = question
         self.explain_routing = explain_routing
         self.stream = stream
+        self._response = _answer_response(question, stream=stream)
+
+    def __getattr__(self, name: str):
+        return getattr(self._response, name)
 
     def to_dict(self) -> dict:
-        return _answer_payload(self.question, stream=self.stream)
+        return self._response.to_dict()
 
 
 class _FailedAnswerResponse(_DummyAnswerResponse):
     def __init__(self, question: str, secret: str, stream: bool) -> None:
         super().__init__(question, False, stream)
         self.secret = secret
+        self._response.summary.status = "failed"
+        self._response.summary.answer = f"raw failure: {self.secret}"
+        self._response.summary.error = self.secret
+        self._response.traces.route_trace.error = self.secret
 
     def to_dict(self) -> dict:
-        payload = super().to_dict()
-        payload["summary"].update(
-            status="failed",
-            answer=f"raw failure: {self.secret}",
-            error=self.secret,
-        )
-        payload["traces"]["route_trace"]["error"] = self.secret
-        return payload
+        return self._response.to_dict()
 
 
 class _FakeApiSystem:
@@ -440,14 +428,13 @@ class _ErrorTraceAnswerResponse(_DummyAnswerResponse):
     def __init__(self, question: str, secret: str) -> None:
         super().__init__(question, False, False)
         self.secret = secret
+        self._response.summary.error = self.secret
+        self._response.traces.route_trace.error = self.secret
+        self._response.traces.graph_trace.error = self.secret
+        self._response.traces.trace_event.error = self.secret
 
     def to_dict(self) -> dict:
-        payload = super().to_dict()
-        payload["summary"]["error"] = self.secret
-        payload["traces"]["route_trace"]["error"] = self.secret
-        payload["traces"]["graph_trace"]["error"] = self.secret
-        payload["traces"]["trace_event"]["error"] = self.secret
-        return payload
+        return self._response.to_dict()
 
 
 class _PublicAnswerErrorSystem(_FakeApiSystem):
@@ -1207,6 +1194,48 @@ class ApiAppTests(unittest.TestCase):
             "ok",
         )
         self.assertEqual(events["done"][0]["ok"], True)
+
+    def test_answer_http_and_sse_paths_do_not_call_application_to_dict(self) -> None:
+        class _TypedResponseApiSystem(_FakeApiSystem):
+            def answer_question_response(
+                self,
+                question: str,
+                *,
+                stream: bool = False,
+                explain_routing: bool = False,
+                message_callback=None,
+                chunk_callback=None,
+            ) -> QuestionAnswerResponse:
+                if stream:
+                    if message_callback:
+                        message_callback("Running query routing...")
+                    if chunk_callback:
+                        chunk_callback("chunk-1")
+                self.answer_calls.append((question, stream, explain_routing))
+                return QuestionAnswerResult(
+                    answer=f"answer:{question}",
+                    analysis=None,
+                    trace_event=QueryTraceEvent(query=question),
+                ).to_response()
+
+        system = _TypedResponseApiSystem()
+        system.system_ready = True
+        system.serving_initialized = True
+        app = create_serving_api_app(system=system, config=_API_CONFIG)
+
+        with patch.object(
+            QuestionAnswerResponse,
+            "to_dict",
+            side_effect=AssertionError("application response serialized internally"),
+        ):
+            with _client(app) as client:
+                answer_response = client.post("/answers", json={"question": "tofu"})
+                stream_response = client.post("/answers/stream", json={"question": "tofu"})
+
+        self.assertEqual(answer_response.status_code, 200)
+        self.assertEqual(answer_response.json()["response"]["summary"]["answer"], "answer:tofu")
+        self.assertEqual(stream_response.status_code, 200)
+        self.assertIn("event: result", stream_response.text)
 
     def test_explicit_answer_stream_route_uses_sse_surface(self) -> None:
         system = _FakeApiSystem()

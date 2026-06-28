@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Iterable, List
 
 from langchain_core.documents import Document
 
@@ -13,13 +12,14 @@ from ..retrieval.contracts import (
     ensure_evidence_documents,
     to_langchain_documents,
 )
+from .json_types import JsonObject, coerce_json_object
 from .route_models import RouteSnapshot
 
 
 def _coerce_evidence_documents(
     evidence_documents: Iterable[EvidenceDocument] | None,
     legacy_documents: Iterable[Document] | None = None,
-) -> List[EvidenceDocument]:
+) -> list[EvidenceDocument]:
     if evidence_documents:
         return [doc for doc in evidence_documents]
     if legacy_documents:
@@ -31,10 +31,10 @@ def _coerce_evidence_documents(
 class RetrievalOutcome:
     query: str = ""
     strategy: str = ""
-    evidence_documents: List[EvidenceDocument] = field(default_factory=list)
+    evidence_documents: list[EvidenceDocument] = field(default_factory=list)
     route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
-    degradation_summary: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    degradation_summary: JsonObject = field(default_factory=dict)
+    metadata: JsonObject = field(default_factory=dict)
     documents_input: InitVar[Iterable[Document] | None] = None
 
     def __post_init__(self, documents_input: Iterable[Document] | None) -> None:
@@ -50,34 +50,37 @@ class RetrievalOutcome:
             self.degradation_summary = _normalize_degradation_summary(self.degradation_summary)
         else:
             self.degradation_summary = _route_degradation_summary(self.route_trace)
-        self.metadata = dict(self.metadata or {})
+        self.metadata = coerce_json_object(self.metadata)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "RetrievalOutcome":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "RetrievalOutcome":
         payload = dict(data or {})
-        raw_evidence = payload.get("evidence_documents") or []
+        raw_evidence = payload.get("evidence_documents")
+        evidence_payloads = raw_evidence if isinstance(raw_evidence, list) else []
         return cls(
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or ""),
             evidence_documents=[
-                item if isinstance(item, EvidenceDocument) else EvidenceDocument.from_dict(item)
-                for item in raw_evidence
+                item
+                if isinstance(item, EvidenceDocument)
+                else EvidenceDocument.from_dict(coerce_json_object(item))
+                for item in evidence_payloads
             ],
-            route_trace=RouteSnapshot.from_dict(payload.get("route_trace")),
-            degradation_summary=payload.get("degradation_summary") or {},
-            metadata=payload.get("metadata") or {},
-            documents_input=payload.get("documents") or [],
+            route_trace=RouteSnapshot.from_dict(_mapping_or_none(payload.get("route_trace"))),
+            degradation_summary=coerce_json_object(payload.get("degradation_summary")),
+            metadata=coerce_json_object(payload.get("metadata")),
+            documents_input=_document_list(payload.get("documents")),
         )
 
     @property
-    def documents(self) -> List[Document]:
+    def documents(self) -> list[Document]:
         return to_langchain_documents(self.evidence_documents)
 
     @property
     def doc_count(self) -> int:
         return len(self.evidence_documents)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "query": self.query,
             "strategy": self.strategy,
@@ -89,7 +92,7 @@ class RetrievalOutcome:
         }
 
 
-def _route_degradation_summary(route_trace: RouteSnapshot) -> Dict[str, Any]:
+def _route_degradation_summary(route_trace: RouteSnapshot) -> JsonObject:
     diagnostics = route_trace.diagnostics
     return {
         "retrieval_degraded": diagnostics.retrieval_degraded,
@@ -100,19 +103,20 @@ def _route_degradation_summary(route_trace: RouteSnapshot) -> Dict[str, Any]:
     }
 
 
-def _normalize_degradation_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
-    payload = dict(summary or {})
+def _normalize_degradation_summary(summary: JsonObject) -> JsonObject:
+    payload = coerce_json_object(summary)
+    raw_sources = payload.get("degraded_sources")
+    raw_candidates = payload.get("degraded_candidates")
     return {
         "retrieval_degraded": bool(payload.get("retrieval_degraded", False)),
         "degraded_sources": [
             str(item).strip()
-            for item in (payload.get("degraded_sources") or [])
+            for item in (raw_sources if isinstance(raw_sources, list) else [])
             if str(item).strip()
         ],
         "degraded_candidates": [
-            dict(item)
-            for item in (payload.get("degraded_candidates") or [])
-            if isinstance(item, dict)
+            coerce_json_object(item)
+            for item in (raw_candidates if isinstance(raw_candidates, list) else [])
         ],
         "circuit_breaker_triggered": bool(payload.get("circuit_breaker_triggered", False)),
         "answer_impacted": bool(payload.get("answer_impacted", False)),
@@ -120,3 +124,13 @@ def _normalize_degradation_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
 
 
 __all__ = ["RetrievalOutcome"]
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _document_list(value: object) -> list[Document]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Document)]

@@ -265,7 +265,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertEqual(response.strategy, "combined")
         self.assertEqual(response.doc_count, 1)
         self.assertTrue(response.has_evidence)
-        self.assertEqual(response.trace_event["query"], question)
+        self.assertEqual(response.trace_event.query, question)
         self.assertEqual(set(payload.keys()), {"summary", "grounding", "diagnostics", "traces"})
         self.assertEqual(payload["summary"]["answer"], response.answer)
         self.assertEqual(payload["summary"]["strategy"], "combined")
@@ -279,6 +279,22 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertEqual(payload["traces"]["route_trace"]["strategy"], "combined")
         self.assertEqual(payload["traces"]["graph_trace"]["doc_count"], 1)
         self.assertEqual(result.to_dict(), response.to_dict())
+
+    def test_response_groups_preserve_typed_runtime_contracts(self) -> None:
+        result = self.make_result("typed response")
+
+        response = result.to_response()
+
+        self.assertIs(response.grounding.retrieval_outcome, result.retrieval_outcome)
+        self.assertIs(response.grounding.answer_context, result.answer_context)
+        self.assertIs(response.grounding.route_resolution, result.route_resolution)
+        self.assertEqual(response.grounding.evidence_documents, result.evidence_documents)
+        self.assertIs(response.diagnostics.analysis, result.analysis)
+        self.assertIs(response.diagnostics.diagnostics, result.trace_event.diagnostics)
+        self.assertIs(response.traces.route_trace, result.route_trace)
+        self.assertIs(response.traces.graph_trace, result.graph_trace)
+        self.assertIs(response.traces.generation_trace, result.generation_trace)
+        self.assertIs(response.traces.trace_event, result.trace_event)
 
     def test_degraded_generation_status_is_exposed_in_response_summary(self) -> None:
         question = "Explain a relation with provider fallback."
@@ -379,11 +395,11 @@ class AnswerWorkflowTests(unittest.TestCase):
         response = service.answer_question_response(question)
         diagnostics = response.diagnostic_payload
 
-        self.assertTrue(diagnostics["retrieval_degraded"])
-        self.assertEqual(diagnostics["degraded_sources"], ["vector"])
-        self.assertTrue(diagnostics["circuit_breaker_triggered"])
-        self.assertFalse(diagnostics["answer_impacted"])
-        self.assertEqual(diagnostics["degraded_candidates"][0]["reason"], "circuit_open")
+        self.assertTrue(diagnostics.retrieval_degraded)
+        self.assertEqual(diagnostics.degraded_sources, ["vector"])
+        self.assertTrue(diagnostics.circuit_breaker_triggered)
+        self.assertFalse(diagnostics.answer_impacted)
+        self.assertEqual(diagnostics.degraded_candidates[0]["reason"], "circuit_open")
 
     def test_result_uses_request_scoped_route_trace_over_router_last_trace(self) -> None:
         question = "Explain the active route trace."

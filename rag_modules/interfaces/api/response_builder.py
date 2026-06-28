@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from ...runtime.artifacts import artifact_health
 from .answer_models import (
+    AnswerPayloadModel,
     AnswerResponseModel,
     AnswerStreamEventModel,
 )
@@ -68,9 +69,8 @@ def build_operation_response(operation_payload: dict) -> OperationResponseModel:
     return OperationResponseModel.model_validate(safe)
 
 
-def build_answer_response(answer_payload: dict) -> AnswerResponseModel:
-    safe = sanitize_public_error_fields(answer_payload, code=ErrorCode.ANSWER_FAILED)
-    return AnswerResponseModel.model_validate({"response": safe})
+def build_answer_response(answer_payload: AnswerPayloadModel) -> AnswerResponseModel:
+    return AnswerResponseModel(response=answer_payload)
 
 
 def build_build_job_response(job_payload: dict) -> BuildJobResponseModel:

@@ -241,19 +241,15 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
     )
     result = service.answer_question(case.question)
     response = result.to_response()
+    response_payload = response.to_dict()
     event = sink.events[-1]
-    route_trace = response.route_trace
+    route_trace = response_payload["traces"]["route_trace"]
     route_diagnostics = route_trace.get("diagnostics") or {}
-    route_resolution = response.route_resolution
-    route_resolution_analysis = (
-        route_resolution.get("understanding", {}).get("analysis", {})
-        if isinstance(route_resolution, dict)
-        else {}
-    )
-    answer_context = response.answer_context
-    answer_understanding = (
-        answer_context.get("understanding", {}) if isinstance(answer_context, dict) else {}
-    )
+    route_resolution = response_payload["grounding"]["route_resolution"]
+    route_resolution_analysis = route_resolution.get("understanding", {}).get("analysis", {})
+    answer_context = response_payload["grounding"]["answer_context"]
+    answer_understanding = answer_context.get("understanding", {})
+    generation_trace = response_payload["traces"]["generation_trace"]
 
     failures: List[str] = []
     if result.analysis is None or response.strategy != case.expected_route_strategy:
@@ -278,10 +274,10 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
             "answer_context_strategy_mismatch="
             f"{answer_understanding.get('analysis', {}).get('recommended_strategy', '')}"
         )
-    if response.generation_trace.get("mode") != case.expected_generation_mode:
+    if generation_trace.get("mode") != case.expected_generation_mode:
         failures.append(
             "expected_generation_mode="
-            f"{case.expected_generation_mode} actual_generation_mode={response.generation_trace.get('mode', '')}"
+            f"{case.expected_generation_mode} actual_generation_mode={generation_trace.get('mode', '')}"
         )
     stage_names = list((route_trace.get("stages") or {}).keys())
     if stage_names != case.expected_stage_names:
@@ -309,9 +305,9 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
         "passed": not failures,
         "failures": failures,
         "strategy": response.strategy,
-        "generation_mode": response.generation_trace.get("mode", ""),
+        "generation_mode": generation_trace.get("mode", ""),
         "answer_preview": response.answer[:120],
-        "answer_response": response.to_dict(),
+        "answer_response": response_payload,
     }
 
 

@@ -58,7 +58,7 @@ class AnswerEvidenceItem:
     content: str = ""
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, object] | None) -> "AnswerEvidenceItem":
+    def from_dict(cls, payload: Mapping[str, object] | None) -> "AnswerEvidenceItem":
         data = dict(payload or {})
         return cls(
             citation=str(data.get("citation") or ""),
@@ -153,7 +153,7 @@ class AnswerEvidencePackage:
     items: List[AnswerEvidenceItem]
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, object] | None) -> "AnswerEvidencePackage":
+    def from_dict(cls, payload: Mapping[str, object] | None) -> "AnswerEvidencePackage":
         data = dict(payload or {})
         items: List[AnswerEvidenceItem] = []
         for item in _iter_values(data.get("items")):

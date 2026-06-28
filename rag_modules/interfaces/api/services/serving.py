@@ -15,8 +15,8 @@ from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ....safe_logging import log_failure
-from ..answer_models import AnswerStreamEventModel
-from ..error_models import ErrorCode, sanitize_public_error_fields
+from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
+from ..error_models import ErrorCode
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
 from .errors import (
@@ -222,10 +222,9 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         super().shutdown()
 
     @staticmethod
-    def _answer_payload(response) -> dict:
-        payload = response.to_dict()
-        summary = dict(payload.get("summary") or {})
-        if str(summary.get("status") or "").lower() == "failed":
+    def _answer_payload(response) -> AnswerPayloadModel:
+        payload = AnswerPayloadModel.from_dto(response)
+        if str(payload.summary.status or "").lower() == "failed":
             raise AnswerFailedError()
         return payload
 
@@ -235,7 +234,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         question: str,
         stream: bool = False,
         explain_routing: bool = False,
-    ) -> dict:
+    ) -> AnswerPayloadModel:
         self._ensure_serving_runtime_initialized()
         self._refresh_serving_runtime_if_stale()
         self._raise_if_system_not_ready()
@@ -320,11 +319,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                             message_callback=on_message,
                             chunk_callback=on_chunk,
                         )
-                safe_payload = sanitize_public_error_fields(
-                    self._answer_payload(response),
-                    code=ErrorCode.ANSWER_FAILED,
-                )
-                emit(AnswerStreamEventModel.result(safe_payload))
+                emit(AnswerStreamEventModel.result(self._answer_payload(response)))
             except ApiBackpressureError:
                 emit_error(ErrorCode.RATE_LIMITED)
             except _StreamCancelledError:

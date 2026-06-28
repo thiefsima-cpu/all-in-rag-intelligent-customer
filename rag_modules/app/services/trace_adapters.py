@@ -50,11 +50,15 @@ class QueryRouterTraceAdapter:
                     **details,
                 }
             else:
-                trace_payload = details.get("graph_trace") or {
-                    "query": details.get("query") or question,
-                    "doc_count": details.get("graph_doc_count", stage.doc_count),
-                    **details,
-                }
+                graph_trace = details.get("graph_trace")
+                if isinstance(graph_trace, dict):
+                    trace_payload = dict(graph_trace)
+                else:
+                    trace_payload = {
+                        "query": details.get("query") or question,
+                        "doc_count": details.get("graph_doc_count", stage.doc_count),
+                        **details,
+                    }
             if not trace_payload:
                 continue
             snapshot = clone_graph_snapshot(trace_payload)

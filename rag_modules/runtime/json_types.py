@@ -31,4 +31,30 @@ def coerce_json_object(value: object) -> JsonObject:
     return {}
 
 
-__all__ = ["JsonObject", "JsonScalar", "JsonValue", "coerce_json_object", "coerce_json_value"]
+def coerce_json_int(value: object, default: int = 0) -> int:
+    if isinstance(value, (bool, int, float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+def coerce_json_float(value: object, default: float = 0.0) -> float:
+    if isinstance(value, (bool, int, float, str)):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+__all__ = [
+    "JsonObject",
+    "JsonScalar",
+    "JsonValue",
+    "coerce_json_float",
+    "coerce_json_int",
+    "coerce_json_object",
+    "coerce_json_value",
+]

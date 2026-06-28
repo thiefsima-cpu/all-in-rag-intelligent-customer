@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 
 from ..retrieval.contracts import RetrievalRequest
+from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 
 
 @dataclass
@@ -14,25 +14,25 @@ class GraphTraceEventSnapshot:
     name: str = ""
     status: str = "ok"
     latency_ms: float = 0.0
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.name = str(self.name or "")
         self.status = str(self.status or "ok")
         self.latency_ms = round(float(self.latency_ms or 0.0), 2)
-        self.details = dict(self.details or {})
+        self.details = coerce_json_object(self.details)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "GraphTraceEventSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "GraphTraceEventSnapshot":
         payload = dict(data or {})
         return cls(
-            name=payload.get("name", ""),
-            status=payload.get("status", "ok"),
-            latency_ms=payload.get("latency_ms", 0.0),
-            details=payload.get("details") or {},
+            name=str(payload.get("name") or ""),
+            status=str(payload.get("status") or "ok"),
+            latency_ms=coerce_json_float(payload.get("latency_ms")),
+            details=coerce_json_object(payload.get("details")),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "name": self.name,
             "status": self.status,
@@ -46,20 +46,20 @@ class GraphRetrievalSnapshot:
     query: str = ""
     strategy: str = "graph_rag"
     requested_top_k: int = 0
-    retrieval_request: Optional[RetrievalRequest] = None
+    retrieval_request: RetrievalRequest | Mapping[str, object] | None = None
     query_type: str = ""
-    source_entities: List[str] = field(default_factory=list)
-    target_entities: List[str] = field(default_factory=list)
-    relation_types: List[str] = field(default_factory=list)
-    sub_questions: List[str] = field(default_factory=list)
+    source_entities: list[str] = field(default_factory=list)
+    target_entities: list[str] = field(default_factory=list)
+    relation_types: list[str] = field(default_factory=list)
+    sub_questions: list[str] = field(default_factory=list)
     path_count: int = 0
     subgraph_count: int = 0
-    reasoning_patterns: List[str] = field(default_factory=list)
+    reasoning_patterns: list[str] = field(default_factory=list)
     reasoning_chain_count: int = 0
     evidence_unit_count: int = 0
     doc_count: int = 0
-    retrieval_plan: Dict[str, Any] = field(default_factory=dict)
-    events: List[GraphTraceEventSnapshot] = field(default_factory=list)
+    retrieval_plan: JsonObject = field(default_factory=dict)
+    events: list[GraphTraceEventSnapshot] = field(default_factory=list)
     total_latency_ms: float = 0.0
     error: str = ""
 
@@ -67,10 +67,10 @@ class GraphRetrievalSnapshot:
         self.query = str(self.query or "")
         self.strategy = str(self.strategy or "graph_rag")
         self.requested_top_k = max(0, int(self.requested_top_k or 0))
-        if isinstance(self.retrieval_request, dict):
-            self.retrieval_request = RetrievalRequest.from_dict(self.retrieval_request)
-        elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
+        if isinstance(self.retrieval_request, Mapping):
             self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
+        elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
+            self.retrieval_request = None
         self.query_type = str(self.query_type or "")
         self.source_entities = [
             str(item).strip() for item in (self.source_entities or []) if str(item).strip()
@@ -92,7 +92,7 @@ class GraphRetrievalSnapshot:
         self.reasoning_chain_count = max(0, int(self.reasoning_chain_count or 0))
         self.evidence_unit_count = max(0, int(self.evidence_unit_count or 0))
         self.doc_count = max(0, int(self.doc_count or 0))
-        self.retrieval_plan = dict(self.retrieval_plan or {})
+        self.retrieval_plan = coerce_json_object(self.retrieval_plan)
         self.events = [
             event
             if isinstance(event, GraphTraceEventSnapshot)
@@ -103,28 +103,30 @@ class GraphRetrievalSnapshot:
         self.error = str(self.error or "")
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "GraphRetrievalSnapshot":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "GraphRetrievalSnapshot":
         payload = dict(data or {})
         return cls(
-            query=payload.get("query", ""),
-            strategy=payload.get("strategy", "graph_rag"),
-            requested_top_k=payload.get("requested_top_k", 0),
-            retrieval_request=payload.get("retrieval_request"),
-            query_type=payload.get("query_type", ""),
-            source_entities=payload.get("source_entities") or [],
-            target_entities=payload.get("target_entities") or [],
-            relation_types=payload.get("relation_types") or [],
-            sub_questions=payload.get("sub_questions") or [],
-            path_count=payload.get("path_count", 0),
-            subgraph_count=payload.get("subgraph_count", 0),
-            reasoning_patterns=payload.get("reasoning_patterns") or [],
-            reasoning_chain_count=payload.get("reasoning_chain_count", 0),
-            evidence_unit_count=payload.get("evidence_unit_count", 0),
-            doc_count=payload.get("doc_count", 0),
-            retrieval_plan=payload.get("retrieval_plan") or {},
-            events=payload.get("events") or [],
-            total_latency_ms=payload.get("total_latency_ms", payload.get("latency_ms", 0.0)),
-            error=payload.get("error", ""),
+            query=str(payload.get("query") or ""),
+            strategy=str(payload.get("strategy") or "graph_rag"),
+            requested_top_k=coerce_json_int(payload.get("requested_top_k")),
+            retrieval_request=_retrieval_request_payload(payload.get("retrieval_request")),
+            query_type=str(payload.get("query_type") or ""),
+            source_entities=_string_list(payload.get("source_entities")),
+            target_entities=_string_list(payload.get("target_entities")),
+            relation_types=_string_list(payload.get("relation_types")),
+            sub_questions=_string_list(payload.get("sub_questions")),
+            path_count=coerce_json_int(payload.get("path_count")),
+            subgraph_count=coerce_json_int(payload.get("subgraph_count")),
+            reasoning_patterns=_string_list(payload.get("reasoning_patterns")),
+            reasoning_chain_count=coerce_json_int(payload.get("reasoning_chain_count")),
+            evidence_unit_count=coerce_json_int(payload.get("evidence_unit_count")),
+            doc_count=coerce_json_int(payload.get("doc_count")),
+            retrieval_plan=coerce_json_object(payload.get("retrieval_plan")),
+            events=_event_list(payload.get("events")),
+            total_latency_ms=coerce_json_float(
+                payload.get("total_latency_ms", payload.get("latency_ms", 0.0))
+            ),
+            error=str(payload.get("error") or ""),
         )
 
     def add_event(
@@ -133,7 +135,7 @@ class GraphRetrievalSnapshot:
         *,
         status: str = "ok",
         latency_ms: float = 0.0,
-        details: Optional[Dict[str, Any]] = None,
+        details: JsonObject | None = None,
     ) -> None:
         if not str(name or "").strip():
             return
@@ -146,8 +148,8 @@ class GraphRetrievalSnapshot:
             )
         )
 
-    def to_stage_details(self) -> Dict[str, Any]:
-        details = {
+    def to_stage_details(self) -> JsonObject:
+        details: JsonObject = {
             "query_type": self.query_type,
             "source_entities": list(self.source_entities or []),
             "target_entities": list(self.target_entities or []),
@@ -161,7 +163,9 @@ class GraphRetrievalSnapshot:
             "evidence_unit_count": self.evidence_unit_count,
             "retrieval_plan": dict(self.retrieval_plan or {}),
             "retrieval_request": (
-                self.retrieval_request.to_dict() if self.retrieval_request else {}
+                coerce_json_object(self.retrieval_request.to_dict())
+                if isinstance(self.retrieval_request, RetrievalRequest)
+                else {}
             ),
             "event_count": len(self.events or []),
             "events": [event.to_dict() for event in self.events],
@@ -172,12 +176,16 @@ class GraphRetrievalSnapshot:
             details["graph_error"] = self.error
         return details
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "query": self.query,
             "strategy": self.strategy,
             "requested_top_k": self.requested_top_k,
-            "retrieval_request": self.retrieval_request.to_dict() if self.retrieval_request else {},
+            "retrieval_request": (
+                coerce_json_object(self.retrieval_request.to_dict())
+                if isinstance(self.retrieval_request, RetrievalRequest)
+                else {}
+            ),
             "query_type": self.query_type,
             "source_entities": list(self.source_entities or []),
             "target_entities": list(self.target_entities or []),
@@ -208,3 +216,32 @@ class GraphRetrievalSnapshot:
                 bool(self.error),
             )
         )
+
+
+def _list_or_empty(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    return [str(item).strip() for item in _list_or_empty(value) if str(item).strip()]
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _retrieval_request_payload(value: object) -> RetrievalRequest | Mapping[str, object] | None:
+    if isinstance(value, RetrievalRequest):
+        return value
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def _event_list(value: object) -> list[GraphTraceEventSnapshot]:
+    return [
+        event
+        if isinstance(event, GraphTraceEventSnapshot)
+        else GraphTraceEventSnapshot.from_dict(_mapping_or_none(event))
+        for event in _list_or_empty(value)
+    ]

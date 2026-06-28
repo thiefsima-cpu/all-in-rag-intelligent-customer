@@ -13,6 +13,7 @@ from ...runtime import (
     RetrievalOutcome,
     ensure_optional_query_analysis,
 )
+from ...runtime.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
@@ -146,7 +147,7 @@ class GenerationExecutionEngine(
         answer_context = AnswerContext(
             question=question,
             retrieval=RetrievalOutcome(query=question),
-            evidence_package=package.to_dict(),
+            evidence_package=coerce_json_object(package.to_dict()),
         )
         return self.compose_from_context(
             answer_context,

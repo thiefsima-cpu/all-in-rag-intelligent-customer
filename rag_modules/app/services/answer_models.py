@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 from langchain_core.documents import Document
 
@@ -13,12 +13,13 @@ from ...runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     QueryAnalysis,
+    QueryDiagnostics,
     QueryTraceEvent,
     RetrievalOutcome,
     RouteResolution,
     RouteSnapshot,
-    analysis_payload,
 )
+from ...runtime.json_types import JsonObject
 
 MessageCallback = Optional[Callable[[str], None]]
 ChunkCallback = Optional[Callable[[str], None]]
@@ -38,11 +39,11 @@ class QuestionAnswerResult:
     trace_event: QueryTraceEvent = field(default_factory=QueryTraceEvent)
 
     @property
-    def evidence_documents(self) -> List[EvidenceDocument]:
+    def evidence_documents(self) -> list[EvidenceDocument]:
         return list(self.retrieval_outcome.evidence_documents or [])
 
     @property
-    def documents(self) -> List[Document]:
+    def documents(self) -> list[Document]:
         return self.retrieval_outcome.documents
 
     @property
@@ -70,7 +71,7 @@ class QuestionAnswerResult:
     def to_response(self) -> "QuestionAnswerResponse":
         return QuestionAnswerResponse.from_result(self)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> JsonObject:
         return self.to_response().to_dict()
 
 
@@ -92,7 +93,7 @@ class QuestionAnswerSummary:
     token_usage_source: str = ""
     error: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "answer": self.answer,
             "status": self.status,
@@ -114,45 +115,45 @@ class QuestionAnswerSummary:
 
 @dataclass
 class QuestionAnswerGrounding:
-    retrieval_outcome: Dict[str, Any] = field(default_factory=dict)
-    answer_context: Dict[str, Any] = field(default_factory=dict)
-    route_resolution: Dict[str, Any] = field(default_factory=dict)
-    evidence_documents: List[Dict[str, Any]] = field(default_factory=list)
+    retrieval_outcome: RetrievalOutcome = field(default_factory=RetrievalOutcome)
+    answer_context: AnswerContext = field(default_factory=AnswerContext)
+    route_resolution: RouteResolution = field(default_factory=RouteResolution)
+    evidence_documents: list[EvidenceDocument] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
-            "retrieval_outcome": dict(self.retrieval_outcome or {}),
-            "answer_context": dict(self.answer_context or {}),
-            "route_resolution": dict(self.route_resolution or {}),
-            "evidence_documents": [dict(item) for item in self.evidence_documents],
+            "retrieval_outcome": self.retrieval_outcome.to_dict(),
+            "answer_context": self.answer_context.to_dict(),
+            "route_resolution": self.route_resolution.to_dict(),
+            "evidence_documents": [item.to_dict() for item in self.evidence_documents],
         }
 
 
 @dataclass
 class QuestionAnswerDiagnostics:
-    analysis: Dict[str, Any] = field(default_factory=dict)
-    diagnostics: Dict[str, Any] = field(default_factory=dict)
+    analysis: QueryAnalysis | None = None
+    diagnostics: QueryDiagnostics = field(default_factory=QueryDiagnostics)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
-            "analysis": dict(self.analysis or {}),
-            "diagnostics": dict(self.diagnostics or {}),
+            "analysis": self.analysis.to_dict() if self.analysis else {},
+            "diagnostics": self.diagnostics.to_dict(),
         }
 
 
 @dataclass
 class QuestionAnswerTraces:
-    route_trace: Dict[str, Any] = field(default_factory=dict)
-    graph_trace: Dict[str, Any] = field(default_factory=dict)
-    generation_trace: Dict[str, Any] = field(default_factory=dict)
-    trace_event: Dict[str, Any] = field(default_factory=dict)
+    route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
+    graph_trace: GraphRetrievalSnapshot = field(default_factory=GraphRetrievalSnapshot)
+    generation_trace: GenerationSnapshot = field(default_factory=GenerationSnapshot)
+    trace_event: QueryTraceEvent = field(default_factory=QueryTraceEvent)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
-            "route_trace": dict(self.route_trace or {}),
-            "graph_trace": dict(self.graph_trace or {}),
-            "generation_trace": dict(self.generation_trace or {}),
-            "trace_event": dict(self.trace_event or {}),
+            "route_trace": self.route_trace.to_dict(),
+            "graph_trace": self.graph_trace.to_dict(),
+            "generation_trace": self.generation_trace.to_dict(),
+            "trace_event": self.trace_event.to_dict(),
         }
 
 
@@ -165,8 +166,6 @@ class QuestionAnswerResponse:
 
     @classmethod
     def from_result(cls, result: QuestionAnswerResult) -> "QuestionAnswerResponse":
-        trace_event = result.trace_event.to_dict()
-        diagnostics = dict((trace_event.get("diagnostics") or {}))
         return cls(
             summary=QuestionAnswerSummary(
                 answer=result.answer,
@@ -186,20 +185,20 @@ class QuestionAnswerResponse:
                 error=result.error,
             ),
             grounding=QuestionAnswerGrounding(
-                retrieval_outcome=result.retrieval_outcome.to_dict(),
-                answer_context=result.answer_context.to_dict(),
-                route_resolution=result.route_resolution.to_dict(),
-                evidence_documents=[doc.to_dict() for doc in result.evidence_documents],
+                retrieval_outcome=result.retrieval_outcome,
+                answer_context=result.answer_context,
+                route_resolution=result.route_resolution,
+                evidence_documents=result.evidence_documents,
             ),
             diagnostics=QuestionAnswerDiagnostics(
-                analysis=analysis_payload(result.analysis),
-                diagnostics=diagnostics,
+                analysis=result.analysis,
+                diagnostics=result.trace_event.diagnostics,
             ),
             traces=QuestionAnswerTraces(
-                route_trace=result.route_trace.to_dict(),
-                graph_trace=result.graph_trace.to_dict(),
-                generation_trace=result.generation_trace.to_dict(),
-                trace_event=trace_event,
+                route_trace=result.route_trace,
+                graph_trace=result.graph_trace,
+                generation_trace=result.generation_trace,
+                trace_event=result.trace_event,
             ),
         )
 
@@ -240,46 +239,46 @@ class QuestionAnswerResponse:
         return self.summary.error
 
     @property
-    def analysis(self) -> Dict[str, Any]:
-        return dict(self.diagnostics.analysis or {})
+    def analysis(self) -> QueryAnalysis | None:
+        return self.diagnostics.analysis
 
     @property
-    def diagnostic_payload(self) -> Dict[str, Any]:
-        return dict(self.diagnostics.diagnostics or {})
+    def diagnostic_payload(self) -> QueryDiagnostics:
+        return self.diagnostics.diagnostics
 
     @property
-    def retrieval_outcome(self) -> Dict[str, Any]:
-        return dict(self.grounding.retrieval_outcome or {})
+    def retrieval_outcome(self) -> RetrievalOutcome:
+        return self.grounding.retrieval_outcome
 
     @property
-    def answer_context(self) -> Dict[str, Any]:
-        return dict(self.grounding.answer_context or {})
+    def answer_context(self) -> AnswerContext:
+        return self.grounding.answer_context
 
     @property
-    def route_resolution(self) -> Dict[str, Any]:
-        return dict(self.grounding.route_resolution or {})
+    def route_resolution(self) -> RouteResolution:
+        return self.grounding.route_resolution
 
     @property
-    def evidence_documents(self) -> List[Dict[str, Any]]:
-        return [dict(item) for item in self.grounding.evidence_documents]
+    def evidence_documents(self) -> list[EvidenceDocument]:
+        return list(self.grounding.evidence_documents)
 
     @property
-    def route_trace(self) -> Dict[str, Any]:
-        return dict(self.traces.route_trace or {})
+    def route_trace(self) -> RouteSnapshot:
+        return self.traces.route_trace
 
     @property
-    def graph_trace(self) -> Dict[str, Any]:
-        return dict(self.traces.graph_trace or {})
+    def graph_trace(self) -> GraphRetrievalSnapshot:
+        return self.traces.graph_trace
 
     @property
-    def generation_trace(self) -> Dict[str, Any]:
-        return dict(self.traces.generation_trace or {})
+    def generation_trace(self) -> GenerationSnapshot:
+        return self.traces.generation_trace
 
     @property
-    def trace_event(self) -> Dict[str, Any]:
-        return dict(self.traces.trace_event or {})
+    def trace_event(self) -> QueryTraceEvent:
+        return self.traces.trace_event
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "summary": self.summary.to_dict(),
             "grounding": self.grounding.to_dict(),
@@ -311,7 +310,7 @@ class AnswerPipelineState:
             self.answer_context = AnswerContext(question=self.question)
 
     @property
-    def evidence_documents(self) -> List[EvidenceDocument]:
+    def evidence_documents(self) -> list[EvidenceDocument]:
         if self.answer_context.evidence_documents:
             return list(self.answer_context.evidence_documents)
         return list(self.retrieval_outcome.evidence_documents or [])

@@ -118,10 +118,12 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             return documents.understanding.query_plan.to_dict()
         if isinstance(documents, RetrievalOutcome):
             metadata = dict(documents.metadata or {})
-            understanding = metadata.get("query_understanding") or {}
-            if understanding:
-                return dict((understanding.get("query_plan") or {}))
-            return dict(metadata.get("query_plan") or {})
+            understanding = metadata.get("query_understanding")
+            if isinstance(understanding, Mapping):
+                query_plan = understanding.get("query_plan")
+                return dict(query_plan) if isinstance(query_plan, Mapping) else {}
+            query_plan = metadata.get("query_plan")
+            return dict(query_plan) if isinstance(query_plan, Mapping) else {}
         if evidence_documents:
             return dict(evidence_documents[0].metadata.get("query_plan") or {})
         return {}
