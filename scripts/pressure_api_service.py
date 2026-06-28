@@ -19,6 +19,8 @@ from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink
 from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_READY
 
+DEFAULT_MAX_CONCURRENT_ANSWERS = 4
+
 
 class _SlowCaptureTraceSink:
     def __init__(self, *, write_delay_ms: float) -> None:
@@ -233,7 +235,7 @@ def run_pressure_test(
         config=build_test_config(
             {
                 "api": {
-                    "max_concurrent_answers": max(0, int(max_concurrent_answers)),
+                    "max_concurrent_answers": max(1, int(max_concurrent_answers)),
                     "answer_acquire_timeout_seconds": max(
                         0.0,
                         float(answer_acquire_timeout_seconds),
@@ -308,7 +310,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--answer-delay-ms", type=float, default=20.0)
     parser.add_argument("--trace-delay-ms", type=float, default=5.0)
     parser.add_argument("--trace-queue-size", type=int, default=32)
-    parser.add_argument("--max-concurrent-answers", type=int, default=0)
+    parser.add_argument(
+        "--max-concurrent-answers",
+        type=int,
+        default=DEFAULT_MAX_CONCURRENT_ANSWERS,
+    )
     parser.add_argument("--answer-acquire-timeout-seconds", type=float, default=0.25)
     parser.add_argument("--json", action="store_true", help="Emit summary as JSON.")
     return parser.parse_args()
@@ -322,7 +328,7 @@ def main() -> None:
         answer_delay_ms=max(0.0, args.answer_delay_ms),
         trace_delay_ms=max(0.0, args.trace_delay_ms),
         trace_queue_size=max(0, args.trace_queue_size),
-        max_concurrent_answers=max(0, args.max_concurrent_answers),
+        max_concurrent_answers=max(1, args.max_concurrent_answers),
         answer_acquire_timeout_seconds=max(0.0, args.answer_acquire_timeout_seconds),
     )
     payload = result.to_dict()

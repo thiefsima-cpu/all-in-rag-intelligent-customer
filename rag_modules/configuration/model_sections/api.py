@@ -15,7 +15,7 @@ class ApiSettings(ConfigSection):
     docs_public: bool = False
     openapi_public: bool = False
     max_request_body_bytes: int = Field(default=16 * 1024, ge=1024)
-    max_concurrent_answers: int = Field(default=0, ge=0)
+    max_concurrent_answers: int = Field(default=4, ge=1)
     answer_acquire_timeout_seconds: float = Field(default=0.25, ge=0.0)
     stream_executor_max_workers: int = Field(default=4, ge=1)
     stream_queue_max_size: int = Field(default=64, ge=1)

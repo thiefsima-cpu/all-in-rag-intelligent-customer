@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -114,6 +115,29 @@ def _wait_for_service_job_status(
         f"Timed out waiting for build job {job_id} to reach {expected_status!r}. "
         f"Last payload: {last_payload}"
     )
+
+
+def _observe_lifecycle_requests(service: GraphRAGServingApiService) -> threading.Event:
+    lifecycle_requested = threading.Event()
+    original_lifecycle_operation = service._locks.lifecycle_operation
+
+    @contextmanager
+    def observed_lifecycle_operation():
+        lifecycle_requested.set()
+        with original_lifecycle_operation():
+            yield
+
+    service._locks.lifecycle_operation = observed_lifecycle_operation
+    return lifecycle_requested
+
+
+def _serving_race_config(**api_overrides: object):
+    api_settings = {
+        "access_token": _API_TOKEN,
+        "serving_hot_refresh_enabled": False,
+    }
+    api_settings.update(api_overrides)
+    return build_test_config({"api": api_settings})
 
 
 def _diagnostics(
@@ -545,6 +569,83 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
             return _DummyAnswerResponse(question, explain_routing, stream)
         finally:
             self.answer_finished.set()
+
+
+class _LifecycleRaceApiSystem(_FakeApiSystem):
+    def __init__(self) -> None:
+        super().__init__()
+        self.system_ready = True
+        self.serving_initialized = True
+        self.first_answer_started = threading.Event()
+        self.second_answer_started = threading.Event()
+        self.release_answers = threading.Event()
+        self.refresh_started = threading.Event()
+        self.close_started = threading.Event()
+        self.refresh_calls = 0
+
+    def answer_question_response(
+        self,
+        question: str,
+        *,
+        stream: bool = False,
+        explain_routing: bool = False,
+        message_callback=None,
+        chunk_callback=None,
+    ):
+        del message_callback, chunk_callback
+        self.answer_calls.append((question, stream, explain_routing))
+        if question == "first tofu":
+            self.first_answer_started.set()
+        if question == "second tofu":
+            self.second_answer_started.set()
+        self.release_answers.wait(timeout=2.0)
+        return _DummyAnswerResponse(question, explain_routing, stream)
+
+    def refresh_serving_runtime(self, progress=None, *, force: bool = True):
+        del progress, force
+        self.refresh_calls += 1
+        self.refresh_started.set()
+
+    def close(self) -> None:
+        super().close()
+        self.system_ready = False
+        self.serving_initialized = False
+        self.close_started.set()
+
+
+class _BlockingStreamApiSystem(_FakeApiSystem):
+    def __init__(self) -> None:
+        super().__init__()
+        self.system_ready = True
+        self.serving_initialized = True
+        self.first_stream_started = threading.Event()
+        self.second_stream_started = threading.Event()
+        self.release_streams = threading.Event()
+
+    def answer_question_response(
+        self,
+        question: str,
+        *,
+        stream: bool = False,
+        explain_routing: bool = False,
+        message_callback=None,
+        chunk_callback=None,
+    ):
+        del chunk_callback
+        if question == "first stream":
+            self.first_stream_started.set()
+        if question == "second stream":
+            self.second_stream_started.set()
+        if stream and message_callback:
+            message_callback(f"stream-started:{question}")
+        self.release_streams.wait(timeout=2.0)
+        self.answer_calls.append((question, stream, explain_routing))
+        return _DummyAnswerResponse(question, explain_routing, stream)
+
+    def close(self) -> None:
+        super().close()
+        self.system_ready = False
+        self.serving_initialized = False
 
 
 class ApiAppTests(unittest.TestCase):
@@ -1386,6 +1487,220 @@ class ApiAppTests(unittest.TestCase):
             system.answer_finished.wait(timeout=1.0),
             "closing the SSE consumer should let the background stream runner exit",
         )
+
+    def test_pending_refresh_blocks_new_answers_until_active_answer_finishes(self) -> None:
+        system = _LifecycleRaceApiSystem()
+        service = GraphRAGServingApiService(system=system, config=_serving_race_config())
+        lifecycle_requested = _observe_lifecycle_requests(service)
+        first_done = threading.Event()
+        refresh_done = threading.Event()
+        second_done = threading.Event()
+        errors: list[BaseException] = []
+
+        def run_first_answer() -> None:
+            try:
+                service.answer_question(question="first tofu")
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                first_done.set()
+
+        def run_refresh() -> None:
+            try:
+                service.refresh_serving_runtime()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                refresh_done.set()
+
+        def run_second_answer() -> None:
+            try:
+                service.answer_question(question="second tofu")
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                second_done.set()
+
+        first_thread = threading.Thread(target=run_first_answer)
+        refresh_thread = threading.Thread(target=run_refresh)
+        second_thread = threading.Thread(target=run_second_answer)
+        first_thread.start()
+        self.assertTrue(system.first_answer_started.wait(timeout=1.0))
+
+        refresh_thread.start()
+        self.assertTrue(lifecycle_requested.wait(timeout=1.0))
+
+        second_thread.start()
+        self.assertFalse(
+            system.second_answer_started.wait(timeout=0.1),
+            "new answers must not enter while a refresh is waiting for lifecycle access",
+        )
+        self.assertFalse(system.refresh_started.is_set())
+
+        system.release_answers.set()
+        first_thread.join(timeout=1.0)
+        refresh_thread.join(timeout=1.0)
+        second_thread.join(timeout=1.0)
+
+        self.assertTrue(first_done.is_set())
+        self.assertTrue(refresh_done.is_set())
+        self.assertTrue(second_done.is_set())
+        self.assertTrue(system.refresh_started.is_set())
+        self.assertEqual(system.refresh_calls, 1)
+        self.assertEqual(errors, [])
+
+    def test_pending_shutdown_blocks_new_answers_until_active_answer_finishes(self) -> None:
+        system = _LifecycleRaceApiSystem()
+        service = GraphRAGServingApiService(system=system, config=_serving_race_config())
+        lifecycle_requested = _observe_lifecycle_requests(service)
+        first_done = threading.Event()
+        shutdown_done = threading.Event()
+        second_done = threading.Event()
+        errors: list[BaseException] = []
+
+        def run_first_answer() -> None:
+            try:
+                service.answer_question(question="first tofu")
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                first_done.set()
+
+        def run_shutdown() -> None:
+            try:
+                service.shutdown()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                shutdown_done.set()
+
+        def run_second_answer() -> None:
+            try:
+                service.answer_question(question="second tofu")
+            except BaseException:
+                pass
+            finally:
+                second_done.set()
+
+        first_thread = threading.Thread(target=run_first_answer)
+        shutdown_thread = threading.Thread(target=run_shutdown)
+        second_thread = threading.Thread(target=run_second_answer)
+        first_thread.start()
+        self.assertTrue(system.first_answer_started.wait(timeout=1.0))
+
+        shutdown_thread.start()
+        self.assertTrue(lifecycle_requested.wait(timeout=1.0))
+
+        second_thread.start()
+        self.assertFalse(
+            system.second_answer_started.wait(timeout=0.1),
+            "new answers must not enter while shutdown is waiting for lifecycle access",
+        )
+
+        system.release_answers.set()
+        first_thread.join(timeout=1.0)
+        shutdown_thread.join(timeout=1.0)
+        second_thread.join(timeout=1.0)
+
+        self.assertTrue(first_done.is_set())
+        self.assertTrue(shutdown_done.is_set())
+        self.assertTrue(second_done.is_set())
+        self.assertTrue(system.close_started.is_set())
+        self.assertFalse(system.second_answer_started.is_set())
+        self.assertEqual(errors, [])
+
+    def test_closing_stream_consumer_allows_pending_shutdown_to_complete(self) -> None:
+        system = _ChunkFloodApiSystem()
+        service = GraphRAGServingApiService(system=system, config=_serving_race_config())
+        lifecycle_requested = _observe_lifecycle_requests(service)
+        events = service.stream_answer_question_events(question="flooded tofu")
+        first_event = next(events)
+        shutdown_done = threading.Event()
+        errors: list[BaseException] = []
+
+        def run_shutdown() -> None:
+            try:
+                service.shutdown()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                shutdown_done.set()
+
+        self.assertEqual(first_event.event, AnswerStreamEventType.message)
+        shutdown_thread = threading.Thread(target=run_shutdown)
+        shutdown_thread.start()
+        self.assertTrue(lifecycle_requested.wait(timeout=1.0))
+        self.assertFalse(shutdown_done.wait(timeout=0.1))
+
+        events.close()
+
+        shutdown_thread.join(timeout=1.0)
+        self.assertTrue(system.answer_finished.wait(timeout=1.0))
+        self.assertTrue(shutdown_done.is_set())
+        self.assertEqual(system.close_calls, 1)
+        self.assertEqual(errors, [])
+
+    def test_shutdown_canceled_queued_sse_runner_finishes_consumer(self) -> None:
+        system = _BlockingStreamApiSystem()
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "serving_hot_refresh_enabled": False,
+                    "stream_executor_max_workers": 1,
+                    "stream_queue_max_size": 4,
+                }
+            }
+        )
+        service = GraphRAGServingApiService(system=system, config=config)
+        first_events = service.stream_answer_question_events(question="first stream")
+        first_event = next(first_events)
+        second_events = service.stream_answer_question_events(question="second stream")
+        second_done = threading.Event()
+        shutdown_done = threading.Event()
+        second_seen = []
+        errors: list[BaseException] = []
+
+        def read_second_stream() -> None:
+            try:
+                second_seen.extend(second_events)
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                second_done.set()
+
+        def run_shutdown() -> None:
+            try:
+                service.shutdown()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                shutdown_done.set()
+
+        self.assertEqual(first_event.event, AnswerStreamEventType.message)
+        self.assertTrue(system.first_stream_started.wait(timeout=1.0))
+        second_thread = threading.Thread(target=read_second_stream, daemon=True)
+        second_thread.start()
+        time.sleep(0.05)
+        self.assertFalse(system.second_stream_started.is_set())
+
+        shutdown_thread = threading.Thread(target=run_shutdown)
+        shutdown_thread.start()
+        system.release_streams.set()
+        shutdown_thread.join(timeout=1.0)
+        first_events.close()
+
+        self.assertTrue(shutdown_done.is_set())
+        self.assertTrue(
+            second_done.wait(timeout=1.0),
+            "SSE consumers should receive a terminal event when shutdown cancels a queued runner",
+        )
+        self.assertEqual(
+            [event.event for event in second_seen],
+            [AnswerStreamEventType.error, AnswerStreamEventType.done],
+        )
+        self.assertFalse(system.second_stream_started.is_set())
+        self.assertEqual(errors, [])
 
     def test_stream_answer_service_emits_typed_events(self) -> None:
         system = _FakeApiSystem()

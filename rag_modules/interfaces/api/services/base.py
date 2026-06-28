@@ -23,16 +23,28 @@ class _GraphRAGApiServiceLocks:
         self._state_changed = threading.Condition(self._state_lock)
         self._active_answers = 0
         self._active_inspections = 0
+        self._pending_lifecycle_operations = 0
         self._lifecycle_active = False
 
     @contextmanager
     def lifecycle_operation(self):
         with self._state_changed:
-            while (
-                self._lifecycle_active or self._active_answers > 0 or self._active_inspections > 0
-            ):
-                self._state_changed.wait()
-            self._lifecycle_active = True
+            self._pending_lifecycle_operations += 1
+            waiting_for_lifecycle = True
+            try:
+                while (
+                    self._lifecycle_active
+                    or self._active_answers > 0
+                    or self._active_inspections > 0
+                ):
+                    self._state_changed.wait()
+                self._pending_lifecycle_operations -= 1
+                waiting_for_lifecycle = False
+                self._lifecycle_active = True
+            finally:
+                if waiting_for_lifecycle:
+                    self._pending_lifecycle_operations -= 1
+                    self._state_changed.notify_all()
         try:
             yield
         finally:
@@ -43,7 +55,7 @@ class _GraphRAGApiServiceLocks:
     @contextmanager
     def answer_operation(self):
         with self._state_changed:
-            while self._lifecycle_active:
+            while self._lifecycle_active or self._pending_lifecycle_operations > 0:
                 self._state_changed.wait()
             self._active_answers += 1
         try:
@@ -57,7 +69,7 @@ class _GraphRAGApiServiceLocks:
     @contextmanager
     def inspection_operation(self):
         with self._state_changed:
-            while self._lifecycle_active:
+            while self._lifecycle_active or self._pending_lifecycle_operations > 0:
                 self._state_changed.wait()
             self._active_inspections += 1
         try:

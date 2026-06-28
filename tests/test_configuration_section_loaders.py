@@ -166,6 +166,21 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.stream_executor_max_workers, 8)
         self.assertEqual(config.api.stream_queue_max_size, 128)
 
+    def test_api_settings_default_answer_concurrency_limit_is_nonzero(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        self.assertGreaterEqual(config.api.max_concurrent_answers, 1)
+
+    def test_api_settings_reject_zero_answer_concurrency_limit(self) -> None:
+        with self.assertRaises(ConfigurationError):
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "API_MAX_CONCURRENT_ANSWERS": "0",
+                    }
+                )
+            )
+
     def test_nested_config_serialization_masks_all_credentials(self) -> None:
         config = load_config(
             source=EnvConfigSource(

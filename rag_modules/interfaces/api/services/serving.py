@@ -28,6 +28,9 @@ from .errors import (
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_MAX_CONCURRENT_ANSWERS = 4
+_STREAM_QUEUE_POLL_SECONDS = 0.1
+
 
 class _StreamEnd:
     pass
@@ -38,20 +41,16 @@ _STREAM_END = _StreamEnd()
 
 class _AnswerAdmissionController:
     def __init__(self, *, max_concurrent_answers: int, acquire_timeout_seconds: float) -> None:
-        self.max_concurrent_answers = max(0, int(max_concurrent_answers or 0))
-        self.acquire_timeout_seconds = max(0.0, float(acquire_timeout_seconds or 0.0))
-        self._semaphore = (
-            threading.BoundedSemaphore(self.max_concurrent_answers)
-            if self.max_concurrent_answers > 0
-            else None
+        self.max_concurrent_answers = max(
+            1,
+            int(max_concurrent_answers or _DEFAULT_MAX_CONCURRENT_ANSWERS),
         )
+        self.acquire_timeout_seconds = max(0.0, float(acquire_timeout_seconds or 0.0))
+        self._semaphore = threading.BoundedSemaphore(self.max_concurrent_answers)
 
     @contextmanager
     def permit(self):
         semaphore = self._semaphore
-        if semaphore is None:
-            yield
-            return
         if not semaphore.acquire(timeout=self.acquire_timeout_seconds):
             raise ApiBackpressureError()
         try:
@@ -79,7 +78,11 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         resolved_config = config or getattr(self.system, "config", None)
         api_settings = getattr(resolved_config, "api", None)
         self._answer_admission = _AnswerAdmissionController(
-            max_concurrent_answers=getattr(api_settings, "max_concurrent_answers", 0),
+            max_concurrent_answers=getattr(
+                api_settings,
+                "max_concurrent_answers",
+                _DEFAULT_MAX_CONCURRENT_ANSWERS,
+            ),
             acquire_timeout_seconds=getattr(
                 api_settings,
                 "answer_acquire_timeout_seconds",
@@ -280,7 +283,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                 if stream_closed.is_set():
                     raise _StreamCancelledError()
                 try:
-                    event_queue.put(event, timeout=0.1)
+                    event_queue.put(event, timeout=_STREAM_QUEUE_POLL_SECONDS)
                     return
                 except queue.Full:
                     continue
@@ -290,7 +293,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                 if stream_closed.is_set():
                     return
                 try:
-                    event_queue.put(_STREAM_END, timeout=0.1)
+                    event_queue.put(_STREAM_END, timeout=_STREAM_QUEUE_POLL_SECONDS)
                     return
                 except queue.Full:
                     continue
@@ -343,11 +346,29 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             finally:
                 finish_stream()
 
-        future: Future[None] = self._resolve_stream_executor().submit(runner)
+        try:
+            future: Future[None] = self._resolve_stream_executor().submit(runner)
+        except RuntimeError:
+            yield AnswerStreamEventModel.error(
+                code=ErrorCode.SYSTEM_NOT_READY,
+                request_id=request_id,
+            )
+            yield AnswerStreamEventModel.done()
+            return
 
         try:
             while True:
-                item = event_queue.get()
+                try:
+                    item = event_queue.get(timeout=_STREAM_QUEUE_POLL_SECONDS)
+                except queue.Empty:
+                    if future.done():
+                        yield AnswerStreamEventModel.error(
+                            code=ErrorCode.SYSTEM_NOT_READY,
+                            request_id=request_id,
+                        )
+                        yield AnswerStreamEventModel.done()
+                        break
+                    continue
                 if isinstance(item, _StreamEnd):
                     yield AnswerStreamEventModel.done()
                     break
