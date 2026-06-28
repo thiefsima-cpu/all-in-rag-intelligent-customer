@@ -70,6 +70,13 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 - New implementation lands in canonical packages only.
 - Compatibility tests should assert retirement and canonical replacements, not
   legacy import behavior.
+- Internal compatibility shells are retired too. Runtime assembly must use
+  `BuildRuntimeFactory.build()` and `ServingRuntimeFactory.build()` directly;
+  `rag_modules.app.composition.build_runtime_assembler`,
+  `rag_modules.app.composition.serving_runtime_assembler`, and
+  `rag_modules.app.runtime` must not be recreated.
+- Retrieval providers must expose `provide_routing_workflow`. The legacy
+  `provide_query_router` provider hook is not a supported fallback.
 - The internal app-layer query-understanding facade
   `rag_modules.app.services.query_understanding_service` is retired. Internal
   code must import `rag_modules.query_understanding.service` or the package
@@ -133,6 +140,12 @@ grouped runtime views.
   `rag_modules.retrieval.runtime_profile.planner_settings`, and
   `rag_modules.retrieval.runtime_profile.semantic_settings` retired in favor of
   the independent `rag_modules.contracts` kernel.
+- Build and serving runtime assembler shims retired in favor of
+  `BuildRuntimeFactory.build()` and `ServingRuntimeFactory.build()`.
+- `rag_modules.app.runtime` retired in favor of direct imports from
+  `rag_modules.app.runtime_state` and `rag_modules.app.runtime_view`.
+- Legacy retrieval provider hook `provide_query_router` retired in favor of
+  `provide_routing_workflow`.
 
 ## 0.2.0 Compatibility Note
 
@@ -144,5 +157,6 @@ or query-understanding now live only in `rag_modules.contracts`. External
 callers that still import retired paths must migrate to the canonical
 replacements listed above. The boundary tests keep this final state in place by
 checking the empty legacy manifest, removed files, retired import paths,
-canonical internal imports, the independent contract kernel, and metadata that
-must not recreate old facade names.
+canonical internal imports, retired internal compatibility shells, the
+independent contract kernel, and metadata that must not recreate old facade
+names.

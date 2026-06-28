@@ -74,6 +74,24 @@ RETIRED_LATE_MIGRATION_COMPAT_EXPORTS = {
     "rag_modules.retrieval.runtime_settings": RAG_MODULES_DIR / "retrieval" / "runtime_settings.py",
     "rag_modules.retrieval.vector_retriever": RAG_MODULES_DIR / "retrieval" / "vector_retriever.py",
 }
+RETIRED_INTERNAL_COMPAT_SHELLS = {
+    "rag_modules.app.composition.build_runtime_assembler": RAG_MODULES_DIR
+    / "app"
+    / "composition"
+    / "build_runtime_assembler.py",
+    "rag_modules.app.composition.serving_runtime_assembler": RAG_MODULES_DIR
+    / "app"
+    / "composition"
+    / "serving_runtime_assembler.py",
+    "rag_modules.app.runtime": RAG_MODULES_DIR / "app" / "runtime.py",
+}
+RETIRED_INTERNAL_COMPAT_NAMES = frozenset(
+    {
+        "BuildRuntimeAssembler",
+        "ServingRuntimeAssembler",
+        "provide_query_router",
+    }
+)
 
 
 class PublicSurfaceBoundaryTests(unittest.TestCase):
@@ -465,6 +483,10 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.generation.execution",
             "rag_modules.contracts",
             "rag_modules.retrieval.runtime_profile",
+            "rag_modules.app.runtime",
+            "rag_modules.app.composition.build_runtime_assembler",
+            "rag_modules.app.composition.serving_runtime_assembler",
+            "provide_query_router",
             "rag_modules.compat.*",
             "contract kernel",
             "must not recreate",
@@ -582,6 +604,73 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 sys.modules.pop(module_name, None)
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
+
+    def test_retired_internal_compat_shells_are_removed(self) -> None:
+        existing_paths = [
+            path.relative_to(ROOT)
+            for path in RETIRED_INTERNAL_COMPAT_SHELLS.values()
+            if path.exists()
+        ]
+        self.assertEqual(set(), set(existing_paths))
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_INTERNAL_COMPAT_SHELLS):
+            with self.subTest(module_name=module_name):
+                sys.modules.pop(module_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_internal_code_and_tests_do_not_reference_retired_internal_compat_names(
+        self,
+    ) -> None:
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        }
+                        if (
+                            module_name in RETIRED_INTERNAL_COMPAT_SHELLS
+                            or imported_names & set(RETIRED_INTERNAL_COMPAT_SHELLS)
+                            or any(
+                                alias.name in RETIRED_INTERNAL_COMPAT_NAMES for alias in node.names
+                            )
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name in RETIRED_INTERNAL_COMPAT_SHELLS:
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+                    elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if node.name in RETIRED_INTERNAL_COMPAT_NAMES:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+
+        self.assertFalse(
+            violations,
+            "Found references to retired internal compatibility shells:\n" + "\n".join(violations),
+        )
 
     def test_internal_scripts_and_tests_use_canonical_imports_after_compat_retirement(
         self,

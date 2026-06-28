@@ -740,45 +740,6 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertEqual(profile.name, "profile")
         self.assertEqual(service.name, "understanding")
 
-    def test_runtime_provider_does_not_fall_back_to_legacy_query_router_provider(self) -> None:
-        legacy_router = SimpleNamespace(name="legacy-router")
-
-        class _StubRetrievalProvider:
-            def provide_query_router(
-                self,
-                *,
-                config,
-                traditional_retrieval,
-                graph_rag_retrieval,
-                llm_client,
-                retrieval_profile,
-                query_understanding_service,
-            ):
-                del (
-                    config,
-                    traditional_retrieval,
-                    graph_rag_retrieval,
-                    llm_client,
-                    retrieval_profile,
-                    query_understanding_service,
-                )
-                return legacy_router
-
-        provider = DefaultRuntimeComponentProvider(
-            retrieval=_StubRetrievalProvider(),
-        )
-
-        self.assertFalse(hasattr(provider, "provide_routing_workflow"))
-        with self.assertRaises(AttributeError):
-            provider.retrieval.provide_routing_workflow(
-                config=build_test_config(),
-                traditional_retrieval=SimpleNamespace(name="traditional"),
-                graph_rag_retrieval=SimpleNamespace(name="graph"),
-                llm_client=SimpleNamespace(name="client"),
-                retrieval_profile=SimpleNamespace(name="profile"),
-                query_understanding_service=SimpleNamespace(name="understanding"),
-            )
-
     def test_system_uses_provider_backed_runtime_diagnostics_service(self) -> None:
         called: list[str] = []
 

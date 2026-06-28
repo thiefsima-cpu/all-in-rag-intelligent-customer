@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...configuration.models import GraphRAGConfig
 from ..runtime_state import BuildRuntime
 from .shared import ProgressCallback, emit_progress, resolve_config
@@ -16,15 +14,12 @@ class BuildRuntimeFactory:
         self,
         *,
         provider,
-        assembler: Any | None = None,
     ) -> None:
         self.provider = provider
-        self.assembler = assembler
-        if assembler is None:
-            self.infrastructure = provider.infrastructure
-            self.build_pipeline = provider.build_pipeline
-            self.diagnostics = provider.diagnostics
-            self.services = provider.services
+        self.infrastructure = provider.infrastructure
+        self.build_pipeline = provider.build_pipeline
+        self.diagnostics = provider.diagnostics
+        self.services = provider.services
 
     def build(
         self,
@@ -35,15 +30,6 @@ class BuildRuntimeFactory:
         index_module=None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
-        if self.assembler is not None:
-            return self.assembler.assemble(
-                resolve_config(config),
-                neo4j_manager=neo4j_manager,
-                data_module=data_module,
-                index_module=index_module,
-                progress=progress,
-            )
-
         config = resolve_config(config)
         infrastructure = self.infrastructure
         build_pipeline = self.build_pipeline

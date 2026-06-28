@@ -16,7 +16,6 @@ from .bootstrapper_composer import (
     ServingBootstrapperComposer,
     SystemRuntimeBootstrapServiceComposer,
 )
-from .build_runtime_assembler import BuildRuntimeAssembler
 from .build_runtime_executor import BuildRuntimeExecutor
 from .build_runtime_factory import BuildRuntimeFactory
 from .build_runtime_lifecycle_service import BuildRuntimeLifecycleService
@@ -35,7 +34,6 @@ from .runtime_manager import SystemRuntimeManager
 from .runtime_readiness_service import RuntimeReadinessService
 from .runtime_refresh_service import ServingRuntimeRefreshService
 from .runtime_state_store import RuntimeStateStore
-from .serving_runtime_assembler import ServingRuntimeAssembler
 from .serving_runtime_factory import ServingRuntimeFactory
 from .serving_runtime_lifecycle_service import ServingRuntimeLifecycleService
 from .serving_runtime_preparer import ServingRuntimePreparer
@@ -74,7 +72,6 @@ __all__ = [
     "SystemOperationsService",
     "SystemRuntimeInfrastructure",
     "SystemRuntimeInfrastructureComposer",
-    "BuildRuntimeAssembler",
     "BuildBootstrapperComponents",
     "BuildBootstrapperComposer",
     "BuildRuntimeExecutor",
@@ -94,7 +91,6 @@ __all__ = [
     "RuntimeReadinessService",
     "ServingRuntimeRefreshService",
     "RuntimeStateStore",
-    "ServingRuntimeAssembler",
     "ServingBootstrapperComponents",
     "ServingBootstrapperComposer",
     "ServingRuntimeFactory",

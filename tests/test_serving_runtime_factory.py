@@ -13,7 +13,6 @@ from rag_modules.app.composition.bootstrapper_composer import (
     ServingBootstrapperComposer,
     SystemRuntimeBootstrapServiceComposer,
 )
-from rag_modules.app.composition.serving_runtime_assembler import ServingRuntimeAssembler
 from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
 from rag_modules.app.composition.serving_runtime_lifecycle_service import (
     ServingRuntimeLifecycleService,
@@ -23,16 +22,6 @@ from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifac
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.runtime.artifacts import ArtifactManifest
 from rag_modules.text_document import TextDocument
-
-
-class _StubAssembler:
-    def __init__(self, runtime):
-        self.runtime = runtime
-        self.calls: list[dict] = []
-
-    def assemble(self, config=None, **kwargs):
-        self.calls.append({"config": config, **kwargs})
-        return self.runtime
 
 
 class _StubPreparer:
@@ -174,33 +163,10 @@ class _FailingGraphRetrieval:
 
 
 class ServingRuntimeFactoryTests(unittest.TestCase):
-    def test_build_only_assembles_runtime(self) -> None:
-        runtime = SimpleNamespace(prepared=False)
-        assembler = _StubAssembler(runtime)
-        preparer = _StubPreparer()
-        factory = ServingRuntimeFactory(
-            provider=SimpleNamespace(),
-            assembler=assembler,
-        )
-
-        result = factory.build(config=SimpleNamespace(name="cfg"), shared_runtime=SimpleNamespace())
-
-        self.assertIs(result, runtime)
-        self.assertEqual(len(assembler.calls), 1)
-        self.assertEqual(preparer.shared_prepare_calls, [])
-        self.assertFalse(runtime.prepared)
-        self.assertFalse(hasattr(factory, "prepare"))
-        self.assertFalse(hasattr(factory, "prepare_with_shared_runtime"))
-        self.assertFalse(hasattr(factory, "build_ready"))
-
     def test_lifecycle_service_prepare_with_shared_runtime_delegates_to_preparer(self) -> None:
         runtime = SimpleNamespace(prepared=False)
         preparer = _StubPreparer()
-        assembler = _StubAssembler(runtime)
-        factory = ServingRuntimeFactory(
-            provider=SimpleNamespace(),
-            assembler=assembler,
-        )
+        factory = _StubServingFactory(runtime)
         lifecycle_service = ServingRuntimeLifecycleService(
             serving_runtime_factory=factory,
             serving_runtime_preparer=preparer,
@@ -216,7 +182,7 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         self.assertTrue(runtime.prepared)
         self.assertEqual(len(preparer.shared_prepare_calls), 1)
         self.assertIs(preparer.shared_prepare_calls[0]["shared_runtime"], shared_runtime)
-        self.assertEqual(assembler.calls, [])
+        self.assertEqual(factory.build_calls, [])
 
     def test_preparer_loads_artifacts_through_infrastructure_provider_boundary(self) -> None:
         ready_manifest = ArtifactManifest(
@@ -410,8 +376,8 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         self.assertEqual(graph_rag_retrieval.initialize_calls, 0)
 
 
-class ServingRuntimeAssemblerTests(unittest.TestCase):
-    def test_assembler_uses_query_understanding_capability_provider(self) -> None:
+class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
+    def test_build_uses_query_understanding_capability_provider(self) -> None:
         config = build_test_config()
         client = SimpleNamespace(name="client")
         llm_client = SimpleNamespace(name="llm-client")
@@ -482,9 +448,9 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
                 return understanding_service
 
         provider = _RootProvider()
-        assembler = ServingRuntimeAssembler(provider=provider)
+        factory = ServingRuntimeFactory(provider=provider)
 
-        runtime = assembler.assemble(config=config)
+        runtime = factory.build(config=config)
 
         self.assertEqual(provider.calls, ["profile", "service"])
         self.assertIs(provider.last_llm_client, llm_client)
@@ -495,7 +461,7 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         self.assertIs(runtime.answer_workflow, answer_workflow)
         self.assertFalse(hasattr(runtime, "question_answer_service"))
 
-    def test_assembler_requires_canonical_routing_workflow_provider(self) -> None:
+    def test_build_requires_canonical_routing_workflow_provider(self) -> None:
         config = build_test_config()
         profile = SimpleNamespace(name="profile")
         understanding_service = SimpleNamespace(name="understanding")
@@ -537,10 +503,10 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
             ),
         )
 
-        assembler = ServingRuntimeAssembler(provider=provider)
+        factory = ServingRuntimeFactory(provider=provider)
 
         with self.assertRaisesRegex(AttributeError, "provide_routing_workflow"):
-            assembler.assemble(config=config)
+            factory.build(config=config)
 
 
 class ServingBootstrapperTests(unittest.TestCase):

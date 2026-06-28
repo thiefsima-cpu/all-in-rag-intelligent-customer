@@ -351,4 +351,3 @@ class QueryPlan:
 
 
 __all__ = ["QueryPlan", "QuerySemanticProfile", "QuerySemanticScoreBreakdown"]
-

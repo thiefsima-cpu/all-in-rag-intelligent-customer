@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...configuration.models import GraphRAGConfig
 from ...runtime.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
@@ -21,16 +19,13 @@ class ServingRuntimeFactory:
         self,
         *,
         provider,
-        assembler: Any | None = None,
     ) -> None:
         self.provider = provider
-        self.assembler = assembler
-        if assembler is None:
-            self.infrastructure = provider.infrastructure
-            self.generation = provider.generation
-            self.query_understanding = provider.query_understanding
-            self.retrieval = provider.retrieval
-            self.services = provider.services
+        self.infrastructure = provider.infrastructure
+        self.generation = provider.generation
+        self.query_understanding = provider.query_understanding
+        self.retrieval = provider.retrieval
+        self.services = provider.services
 
     def build(
         self,
@@ -43,17 +38,6 @@ class ServingRuntimeFactory:
         index_module=None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime:
-        if self.assembler is not None:
-            return self.assembler.assemble(
-                resolve_config(config),
-                shared_runtime=shared_runtime,
-                query_tracer=query_tracer,
-                neo4j_manager=neo4j_manager,
-                data_module=data_module,
-                index_module=index_module,
-                progress=progress,
-            )
-
         config = resolve_config(config)
         infrastructure = self.infrastructure
         generation_provider = self.generation

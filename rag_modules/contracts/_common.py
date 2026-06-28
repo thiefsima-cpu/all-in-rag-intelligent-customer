@@ -38,4 +38,3 @@ def bounded_float(
     except (TypeError, ValueError):
         resolved = default
     return max(minimum, min(maximum, resolved))
-

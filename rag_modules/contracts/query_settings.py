@@ -26,9 +26,7 @@ class QueryPlannerRuntimeSettings:
         self.model_name = str(
             self.model_name or _PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus")
         )
-        self.cache_size = coerce_int(
-            self.cache_size, int(_PLANNER_DEFAULTS.get("cache_size", 128))
-        )
+        self.cache_size = coerce_int(self.cache_size, int(_PLANNER_DEFAULTS.get("cache_size", 128)))
         self.timeout_seconds = coerce_int(
             self.timeout_seconds,
             int(_PLANNER_DEFAULTS.get("timeout_seconds", 20)),
