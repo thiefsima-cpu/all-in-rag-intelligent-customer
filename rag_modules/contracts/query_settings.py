@@ -1,11 +1,73 @@
-"""Semantic runtime profile settings."""
+"""Query planner and semantic runtime settings shared across subsystems."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from .shared import _SEMANTIC_DEFAULTS, _as_float, _as_int
+from ..query_policy import get_query_policy
+from ._common import bounded_float, coerce_int
+
+_POLICY = get_query_policy()
+_PLANNER_DEFAULTS = _POLICY.runtime_section("planner")
+_SEMANTIC_DEFAULTS = _POLICY.runtime_section("semantics")
+
+
+@dataclass
+class QueryPlannerRuntimeSettings:
+    model_name: str = str(_PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus"))
+    cache_size: int = int(_PLANNER_DEFAULTS.get("cache_size", 128))
+    timeout_seconds: int = int(_PLANNER_DEFAULTS.get("timeout_seconds", 20))
+    fast_rule_planning: bool = bool(_PLANNER_DEFAULTS.get("fast_rule_planning", True))
+    llm_temperature: float = float(_PLANNER_DEFAULTS.get("llm_temperature", 0.0))
+    llm_max_tokens: int = int(_PLANNER_DEFAULTS.get("llm_max_tokens", 1200))
+
+    def __post_init__(self) -> None:
+        self.model_name = str(
+            self.model_name or _PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus")
+        )
+        self.cache_size = coerce_int(
+            self.cache_size, int(_PLANNER_DEFAULTS.get("cache_size", 128))
+        )
+        self.timeout_seconds = coerce_int(
+            self.timeout_seconds,
+            int(_PLANNER_DEFAULTS.get("timeout_seconds", 20)),
+            minimum=1,
+        )
+        self.fast_rule_planning = bool(self.fast_rule_planning)
+        self.llm_temperature = bounded_float(
+            self.llm_temperature,
+            float(_PLANNER_DEFAULTS.get("llm_temperature", 0.0)),
+            maximum=2.0,
+        )
+        self.llm_max_tokens = coerce_int(
+            self.llm_max_tokens,
+            int(_PLANNER_DEFAULTS.get("llm_max_tokens", 1200)),
+            minimum=128,
+        )
+
+    @classmethod
+    def from_config(cls, config) -> "QueryPlannerRuntimeSettings":
+        models = config.models
+        planner = config.query_understanding.planner
+        return cls(
+            model_name=models.llm_model or _PLANNER_DEFAULTS.get("model_name", "qwen3.7-plus"),
+            cache_size=planner.cache_size,
+            timeout_seconds=models.llm_timeout_seconds,
+            fast_rule_planning=planner.fast_rule_planning,
+            llm_temperature=planner.llm_temperature,
+            llm_max_tokens=planner.llm_max_tokens,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "model_name": self.model_name,
+            "cache_size": self.cache_size,
+            "timeout_seconds": self.timeout_seconds,
+            "fast_rule_planning": self.fast_rule_planning,
+            "llm_temperature": self.llm_temperature,
+            "llm_max_tokens": self.llm_max_tokens,
+        }
 
 
 @dataclass
@@ -141,66 +203,53 @@ class QuerySemanticRuntimeSettings:
 
     def __post_init__(self) -> None:
         defaults = _SEMANTIC_DEFAULTS
-        self.relation_intensity_reference_ratio = _as_float(
-            self.relation_intensity_reference_ratio,
-            float(defaults.get("relation_intensity_reference_ratio", 0.5)),
-        )
-        self.complexity_relation_hit_weight = _as_float(
-            self.complexity_relation_hit_weight,
-            float(defaults.get("complexity_relation_hit_weight", 0.14)),
-            maximum=5.0,
-        )
-        self.complexity_constraint_hit_weight = _as_float(
-            self.complexity_constraint_hit_weight,
-            float(defaults.get("complexity_constraint_hit_weight", 0.1)),
-            maximum=5.0,
-        )
-        self.complexity_structural_hit_weight = _as_float(
-            self.complexity_structural_hit_weight,
-            float(defaults.get("complexity_structural_hit_weight", 0.12)),
-            maximum=5.0,
-        )
-        self.complexity_length_weight = _as_float(
-            self.complexity_length_weight,
-            float(defaults.get("complexity_length_weight", 0.28)),
-            maximum=5.0,
-        )
-        self.complexity_length_norm_chars = _as_int(
-            self.complexity_length_norm_chars,
-            int(defaults.get("complexity_length_norm_chars", 140)),
-            minimum=1,
-        )
-        self.reasoning_complexity_threshold = _as_float(
-            self.reasoning_complexity_threshold,
-            float(defaults.get("reasoning_complexity_threshold", 0.7)),
-        )
-        self.reasoning_relationship_threshold = _as_float(
-            self.reasoning_relationship_threshold,
-            float(defaults.get("reasoning_relationship_threshold", 0.4)),
-        )
-        self.high_relationship_routing_threshold = _as_float(
-            self.high_relationship_routing_threshold,
-            float(defaults.get("high_relationship_routing_threshold", 0.7)),
-        )
-        self.relation_hit_intensity_boost_base = _as_float(
-            self.relation_hit_intensity_boost_base,
-            float(defaults.get("relation_hit_intensity_boost_base", 0.45)),
-        )
-        self.relation_hit_intensity_boost_step = _as_float(
-            self.relation_hit_intensity_boost_step,
-            float(defaults.get("relation_hit_intensity_boost_step", 0.12)),
-            maximum=5.0,
-        )
-        self.relation_hit_complexity_boost_base = _as_float(
-            self.relation_hit_complexity_boost_base,
-            float(defaults.get("relation_hit_complexity_boost_base", 0.55)),
-        )
-        self.relation_hit_complexity_boost_step = _as_float(
-            self.relation_hit_complexity_boost_step,
-            float(defaults.get("relation_hit_complexity_boost_step", 0.08)),
-            maximum=5.0,
-        )
+        for field_name in (
+            "relation_intensity_reference_ratio",
+            "reasoning_complexity_threshold",
+            "reasoning_relationship_threshold",
+            "high_relationship_routing_threshold",
+            "relation_hit_intensity_boost_base",
+            "relation_hit_complexity_boost_base",
+            "multi_hop_hint_relationship_threshold",
+            "combined_strategy_relationship_threshold",
+            "combined_strategy_complexity_threshold",
+            "source_entity_seed_relationship_threshold",
+            "source_entity_backfill_relationship_threshold",
+            "rule_fallback_confidence",
+            "path_finding_high_intensity_threshold",
+            "subgraph_high_intensity_threshold",
+            "default_high_intensity_threshold",
+            "adaptive_multi_hop_subgraph_threshold",
+            "adaptive_subgraph_multi_hop_threshold",
+            "adaptive_entity_relation_multi_hop_threshold",
+        ):
+            setattr(
+                self,
+                field_name,
+                bounded_float(
+                    getattr(self, field_name),
+                    float(defaults.get(field_name, getattr(self, field_name))),
+                ),
+            )
+        for field_name in (
+            "complexity_relation_hit_weight",
+            "complexity_constraint_hit_weight",
+            "complexity_structural_hit_weight",
+            "complexity_length_weight",
+            "relation_hit_intensity_boost_step",
+            "relation_hit_complexity_boost_step",
+        ):
+            setattr(
+                self,
+                field_name,
+                bounded_float(
+                    getattr(self, field_name),
+                    float(defaults.get(field_name, getattr(self, field_name))),
+                    maximum=5.0,
+                ),
+            )
         for field_name, minimum in (
+            ("complexity_length_norm_chars", 1),
             ("source_entity_limit", 1),
             ("entity_keyword_limit", 1),
             ("semantic_profile_entity_keyword_limit", 1),
@@ -234,32 +283,10 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                _as_int(
+                coerce_int(
                     getattr(self, field_name),
                     int(defaults.get(field_name, getattr(self, field_name))),
                     minimum=minimum,
-                ),
-            )
-        for field_name in (
-            "multi_hop_hint_relationship_threshold",
-            "combined_strategy_relationship_threshold",
-            "combined_strategy_complexity_threshold",
-            "source_entity_seed_relationship_threshold",
-            "source_entity_backfill_relationship_threshold",
-            "rule_fallback_confidence",
-            "path_finding_high_intensity_threshold",
-            "subgraph_high_intensity_threshold",
-            "default_high_intensity_threshold",
-            "adaptive_multi_hop_subgraph_threshold",
-            "adaptive_subgraph_multi_hop_threshold",
-            "adaptive_entity_relation_multi_hop_threshold",
-        ):
-            setattr(
-                self,
-                field_name,
-                _as_float(
-                    getattr(self, field_name),
-                    float(defaults.get(field_name, getattr(self, field_name))),
                 ),
             )
 
@@ -334,4 +361,4 @@ class QuerySemanticRuntimeSettings:
         }
 
 
-__all__ = ["QuerySemanticRuntimeSettings"]
+__all__ = ["QueryPlannerRuntimeSettings", "QuerySemanticRuntimeSettings"]

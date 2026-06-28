@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument
 
 
 class AnswerEvidenceBuilderTests(unittest.TestCase):

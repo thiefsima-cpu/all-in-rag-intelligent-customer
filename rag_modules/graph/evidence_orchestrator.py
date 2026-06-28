@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
+from ..contracts import EvidenceDocument, RetrievalRequest
 from ..safe_logging import log_failure
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan

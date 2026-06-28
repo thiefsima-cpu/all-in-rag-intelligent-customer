@@ -7,8 +7,8 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
+from rag_modules.contracts import QueryPlannerRuntimeSettings
 from rag_modules.query_understanding import QueryPlanner
-from rag_modules.retrieval.runtime_profile import QueryPlannerRuntimeSettings
 
 
 class _BlockingLLMClient:

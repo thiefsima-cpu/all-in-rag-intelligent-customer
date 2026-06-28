@@ -4,8 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.runtime.graph_models import GraphRetrievalSnapshot
 
 

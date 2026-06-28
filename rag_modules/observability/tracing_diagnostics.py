@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from ..runtime import GenerationSnapshot, QueryDiagnostics, RouteSnapshot
 
 

@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,

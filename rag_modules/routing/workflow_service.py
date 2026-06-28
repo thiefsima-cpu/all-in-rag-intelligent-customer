@@ -6,9 +6,9 @@ import logging
 import time
 from typing import List, Optional
 
+from ..contracts import EvidenceDocument
 from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding.service import QueryUnderstandingService
-from ..retrieval.contracts import EvidenceDocument
 from ..retrieval.post_processor import RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import (
@@ -51,7 +51,8 @@ class RoutingWorkflowService:
             query_understanding_service = QueryUnderstandingService(
                 llm_client=llm_client,
                 config=config,
-                retrieval_profile=self.retrieval_profile,
+                planner_settings=self.retrieval_profile.planner,
+                semantic_settings=self.retrieval_profile.semantics,
             )
         self.query_understanding_service = query_understanding_service
         self.query_planner = self.query_understanding_service.query_planner

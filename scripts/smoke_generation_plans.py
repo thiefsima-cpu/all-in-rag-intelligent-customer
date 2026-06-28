@@ -13,13 +13,13 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.generation import (
     GenerationPlanner,
     GenerationPromptBuilder,
     GenerationSettings,
     decide_generation_mode,
 )
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import AnswerContext, QueryAnalysis, RetrievalOutcome
 
 DEFAULT_CORPUS_PATH = (

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from ...contracts import QueryPlan, QuerySemanticRuntimeSettings
 from ...domain.shared.query_constraints import QueryConstraints
-from ...retrieval.runtime_profile import QuerySemanticRuntimeSettings
 from ..features import fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
-from ..planner_models import QueryPlan
 from ..scoring import estimate_query_complexity, estimate_relationship_intensity
 from .calibration import QueryPlanCalibrator
 

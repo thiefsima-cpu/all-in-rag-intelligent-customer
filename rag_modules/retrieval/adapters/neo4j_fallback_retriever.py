@@ -6,9 +6,9 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any, List, cast
 
+from ...contracts import EvidenceDocument
 from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
-from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
 

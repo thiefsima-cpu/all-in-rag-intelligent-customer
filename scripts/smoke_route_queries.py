@@ -13,11 +13,11 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.query_understanding import QueryPlanner
-from rag_modules.retrieval.runtime_profile import (
+from rag_modules.contracts import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
+from rag_modules.query_understanding import QueryPlanner
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "route_smoke_corpus.json"

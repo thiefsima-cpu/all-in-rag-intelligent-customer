@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.configuration import GraphRAGConfig, load_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.evaluation import grounding_metrics, percentile, retrieval_metrics
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval_observability import summarize_documents
 
 DEFAULT_CORPUS_PATH = (

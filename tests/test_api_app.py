@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
 from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
 from rag_modules.interfaces.api.answer_models import (
     MAX_QUESTION_CHARS,
@@ -27,7 +28,6 @@ from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
     AnswerContext,
     GenerationSnapshot,

@@ -12,11 +12,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.interfaces.api.services import GraphRAGServingApiService
 from rag_modules.interfaces.api.services.errors import ApiBackpressureError
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_READY
 
 DEFAULT_MAX_CONCURRENT_ANSWERS = 4

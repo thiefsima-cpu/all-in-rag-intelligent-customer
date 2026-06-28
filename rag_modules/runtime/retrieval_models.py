@@ -7,7 +7,7 @@ from dataclasses import InitVar, dataclass, field
 
 from langchain_core.documents import Document
 
-from ..retrieval.contracts import (
+from ..contracts import (
     EvidenceDocument,
     ensure_evidence_documents,
     to_langchain_documents,

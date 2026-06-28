@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+from ...contracts import QueryPlan, QuerySemanticProfile, QuerySemanticRuntimeSettings
 from ...domain.shared.query_constraints import QueryConstraints
-from ...retrieval.runtime_profile import QuerySemanticRuntimeSettings
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
-from ..planner_models import QueryPlan
-from ..registry import GRAPH_QUERY_TYPES, GRAPH_ROUTING_STRATEGIES, QuerySemanticProfile
+from ..registry import GRAPH_QUERY_TYPES, GRAPH_ROUTING_STRATEGIES
 
 _VALID_STRATEGIES = set(GRAPH_ROUTING_STRATEGIES)
 _VALID_GRAPH_QUERY_TYPES = set(GRAPH_QUERY_TYPES)

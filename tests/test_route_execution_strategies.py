@@ -5,9 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.routing.execution_strategies import (
     CombinedRouteStrategy,

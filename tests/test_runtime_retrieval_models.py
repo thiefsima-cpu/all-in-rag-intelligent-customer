@@ -4,7 +4,7 @@ import unittest
 
 from langchain_core.documents import Document
 
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.runtime import RouteSnapshot, RouteStageSnapshot
 from rag_modules.runtime.retrieval_models import RetrievalOutcome
 from rag_modules.runtime.workflow_models import AnswerContext

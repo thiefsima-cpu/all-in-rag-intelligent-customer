@@ -6,9 +6,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from langchain_core.documents import Document
 
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints, RecipeConstraintMatcher
-from ..query_understanding import QueryPlan
-from .contracts import EvidenceDocument, RetrievalRequest
 from .hybrid_outcome import HybridRetrievalOutcome
 from .keyword_service import QueryKeywordExtractor
 

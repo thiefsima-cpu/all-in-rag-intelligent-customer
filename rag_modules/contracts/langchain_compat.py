@@ -1,4 +1,4 @@
-"""LangChain compatibility adapters for retrieval contracts."""
+"""LangChain compatibility adapters for contract evidence documents."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Iterable, List, Mapping, Protocol, TypeVar, cast
 from langchain_core.documents import Document
 
 from ._common import coerce_float, coerce_str
-from .evidence_models import EvidenceDocument
+from .retrieval import EvidenceDocument
 
 EvidenceDocumentT = TypeVar("EvidenceDocumentT", bound=EvidenceDocument)
 
@@ -126,3 +126,14 @@ def to_langchain_documents(documents: Iterable[EvidenceDocument]) -> List[Docume
 
 def from_langchain_documents(documents: Iterable[Document]) -> List[EvidenceDocument]:
     return [evidence_document_from_langchain(doc) for doc in documents or []]
+
+
+__all__ = [
+    "PageDocumentLike",
+    "ensure_evidence_documents",
+    "evidence_document_from_langchain",
+    "evidence_document_to_langchain",
+    "from_langchain_documents",
+    "to_langchain_documents",
+]
+

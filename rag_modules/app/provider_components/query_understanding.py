@@ -34,7 +34,8 @@ class DefaultQueryUnderstandingComponentProvider:
         return QueryUnderstandingService(
             llm_client=llm_client,
             config=config,
-            retrieval_profile=retrieval_profile,
+            planner_settings=retrieval_profile.planner,
+            semantic_settings=retrieval_profile.semantics,
         )
 
 

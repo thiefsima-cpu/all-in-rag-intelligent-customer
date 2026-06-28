@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.query_understanding import QueryPlan, QuerySemanticProfile
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    QuerySemanticProfile,
+    RetrievalRequest,
+)
 from rag_modules.routing import RouteTraceRecorder
 from rag_modules.routing.execution_strategies import (
     RouteExecutionOutcome,

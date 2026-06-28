@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
     CandidateSet,
@@ -11,7 +12,6 @@ from rag_modules.retrieval.candidate_generator import (
     CandidateSourceResult,
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
 
 

@@ -7,7 +7,7 @@ import time
 from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import List
 
-from ...retrieval.contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
 from ...retrieval.hybrid_outcome import HybridRetrievalOutcome
 from ...runtime import GraphRetrievalSnapshot, SearchStrategy
 from ...runtime.json_types import coerce_json_object

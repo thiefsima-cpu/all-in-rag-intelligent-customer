@@ -7,7 +7,7 @@ from typing import Callable, Optional, Protocol
 
 from langchain_core.documents import Document
 
-from ...retrieval.contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
 from ...runtime import (
     AnswerContext,
     GenerationSnapshot,

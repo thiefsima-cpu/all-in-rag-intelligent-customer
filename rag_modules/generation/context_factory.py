@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
-from ..retrieval.contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
 from ..runtime import (
     AnalysisInput,
     AnswerContext,

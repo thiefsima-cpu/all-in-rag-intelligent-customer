@@ -9,12 +9,12 @@ from rag_modules.app.provider_components.infrastructure import (
 )
 from rag_modules.build_pipeline.document_artifacts import DocumentIndexCache
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.observability.tracing_sinks import (
     AsyncQueryTraceSink,
     JsonlQueryTraceSinkFactory,
     NullQueryTraceSink,
 )
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 

@@ -6,10 +6,9 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from .contracts import EvidenceDocument, QueryPlan, RetrievalRequest
     from .domain.shared.query_constraints import QueryConstraints
     from .graph.retrieval_types import GraphQuery
-    from .query_understanding import QueryPlan
-    from .retrieval.contracts import EvidenceDocument, RetrievalRequest
     from .retrieval.hybrid_outcome import HybridRetrievalOutcome
     from .runtime import (
         AnswerContext,

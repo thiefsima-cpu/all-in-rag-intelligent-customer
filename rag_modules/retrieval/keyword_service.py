@@ -7,12 +7,12 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
+from ..contracts import QuerySemanticRuntimeSettings
 from ..query_understanding import (
     infer_query_semantic_profile,
     normalize_graph_sources,
     relation_index_terms,
 )
-from .runtime_profile import QuerySemanticRuntimeSettings
 
 logger = logging.getLogger(__name__)
 

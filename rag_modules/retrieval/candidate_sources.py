@@ -6,9 +6,9 @@ import logging
 from dataclasses import dataclass
 from typing import List, Protocol, Sequence
 
+from ..contracts import EvidenceDocument, RetrievalRequest
 from ..runtime_contracts import HybridCandidateRuntimePort
 from .adapters import ConstraintRetriever
-from .contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 

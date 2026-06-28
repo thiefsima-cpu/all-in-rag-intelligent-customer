@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 from langchain_core.documents import Document
 
-from .retrieval.contracts import EvidenceDocument
+from .contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
 

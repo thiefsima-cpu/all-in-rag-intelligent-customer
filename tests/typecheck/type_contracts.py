@@ -39,14 +39,13 @@ from rag_modules.app.runtime_views import (
     SystemServicesView,
 )
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.generation.execution.contracts import GenerationExecutionHost
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.graph.retrieval_types import GraphQuery
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.runtime import (
     GenerationSnapshot,

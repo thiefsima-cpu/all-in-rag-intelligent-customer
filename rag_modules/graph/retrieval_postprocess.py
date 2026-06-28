@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from ..contracts import EvidenceDocument
 from ..evidence_processing import extract_evidence_units
-from ..retrieval.contracts import EvidenceDocument
 from ..safe_logging import log_failure
 from .evidence_builder import GraphEvidenceBuilder
 from .path_ranker import GraphDocumentRanker

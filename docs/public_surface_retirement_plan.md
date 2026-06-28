@@ -15,9 +15,10 @@ The machine-readable source of truth is
 
 - Application: `rag_modules.app.*`
 - Configuration: `rag_modules.configuration.*`
+- Contract kernel: `rag_modules.contracts.*`
 - Generation: `rag_modules.generation.*`
 - Retrieval: `rag_modules.retrieval.*`
-- Runtime contracts: `rag_modules.runtime.*`
+- Runtime workflow contracts: `rag_modules.runtime.*`
 - Routing: `rag_modules.routing.*`
 - Query understanding: `rag_modules.query_understanding.*`
 - Graph retrieval: `rag_modules.graph.*`
@@ -44,8 +45,12 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | `rag_modules.retrieval.constraint_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
 | `rag_modules.retrieval.graph_kv_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
 | `rag_modules.retrieval.vector_retriever` | `rag_modules.retrieval.adapters` | late-migration compatibility exports retired | `0.2.0` |
-| `rag_modules.retrieval.retrieval_contracts` | `rag_modules.retrieval.contracts` | late-migration compatibility exports retired | `0.2.0` |
-| `rag_modules.retrieval.runtime_settings` | `rag_modules.retrieval.runtime_profile` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.retrieval_contracts` | `rag_modules.contracts` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.contracts` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
+| `rag_modules.query_understanding.planner_models` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
+| `rag_modules.retrieval.runtime_settings` | `rag_modules.contracts`, `rag_modules.retrieval.runtime_profile` | late-migration compatibility exports retired | `0.2.0` |
+| `rag_modules.retrieval.runtime_profile.planner_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
+| `rag_modules.retrieval.runtime_profile.semantic_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
 
 ## Scan Rules
 
@@ -70,6 +75,9 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
   code must import `rag_modules.query_understanding.service` or the package
   export from `rag_modules.app.services` when it is intentionally using the
   application service package surface.
+- Cross-subsystem DTOs and query runtime settings must be imported from
+  `rag_modules.contracts`. Runtime, retrieval, and query-understanding packages
+  must not own or re-export those shared contracts.
 
 ## Retired Facade Rule
 
@@ -116,17 +124,25 @@ grouped runtime views.
   `rag_modules.interfaces.api.service` to `rag_modules.interfaces.api.services`,
   `rag_modules.generation.client` to `rag_modules.generation.clients`,
   `rag_modules.generation.executor` to `rag_modules.generation.execution`,
-  retrieval adapter/profile facades to `rag_modules.retrieval.adapters`,
-  `rag_modules.retrieval.contracts`, and `rag_modules.retrieval.runtime_profile`,
-  and configuration facades to `rag_modules.configuration` modules.
+  retrieval adapter/profile facades to `rag_modules.retrieval.adapters` and
+  `rag_modules.retrieval.runtime_profile`, shared retrieval/query contracts to
+  `rag_modules.contracts`, and configuration facades to
+  `rag_modules.configuration` modules.
+- `rag_modules.retrieval.contracts`,
+  `rag_modules.query_understanding.planner_models`,
+  `rag_modules.retrieval.runtime_profile.planner_settings`, and
+  `rag_modules.retrieval.runtime_profile.semantic_settings` retired in favor of
+  the independent `rag_modules.contracts` kernel.
 
 ## 0.2.0 Compatibility Note
 
 The final public-surface retirement removes `config.py`,
 `rag_modules.intelligent_query_router`, `rag_modules.graph_data_preparation`,
 `rag_modules.graph_indexing`, and the late-migration compatibility exports
-listed in the status table. External callers that still import those paths must
-migrate to the canonical replacements listed above. The boundary tests keep
-this final state in place by checking the empty legacy manifest, removed files,
-retired import paths, canonical internal imports, and metadata that must not
-recreate old facade names.
+listed in the status table. Shared DTOs/settings previously owned by retrieval
+or query-understanding now live only in `rag_modules.contracts`. External
+callers that still import retired paths must migrate to the canonical
+replacements listed above. The boundary tests keep this final state in place by
+checking the empty legacy manifest, removed files, retired import paths,
+canonical internal imports, the independent contract kernel, and metadata that
+must not recreate old facade names.

@@ -7,7 +7,7 @@ from collections import OrderedDict
 from concurrent.futures import Future
 from copy import deepcopy
 
-from ..planner_models import QueryPlan
+from ...contracts import QueryPlan
 
 
 class QueryPlannerCache:

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from langchain_core.documents import Document
 
-from .contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 
 
 class HybridParentDocumentService:

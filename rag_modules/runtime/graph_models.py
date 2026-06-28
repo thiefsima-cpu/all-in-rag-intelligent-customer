@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from ..retrieval.contracts import RetrievalRequest
+from ..contracts import RetrievalRequest
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 
 

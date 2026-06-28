@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from .helpers import (
     document_content,
     document_metadata,

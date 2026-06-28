@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from langchain_core.documents import Document
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
 

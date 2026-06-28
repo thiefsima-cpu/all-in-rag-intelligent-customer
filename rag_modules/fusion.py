@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
-from .retrieval.contracts import EvidenceDocument
+from .contracts import EvidenceDocument
 
 
 class FusionRanker:

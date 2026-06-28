@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
+from ..contracts import QuerySemanticRuntimeSettings, QuerySemanticScoreBreakdown
 from .features import infer_graph_query_type
 from .registry import (
     CONSTRAINT_MARKERS,
     FAST_RULE_MARKERS,
     RELATION_MARKERS,
     STRUCTURAL_REASONING_MARKERS,
-    QuerySemanticScoreBreakdown,
     marker_hits,
     normalize_query_text,
 )

@@ -6,10 +6,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Sequence, Tuple
 
+from ..contracts import EvidenceDocument, RetrievalRequest
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
 from ..safe_logging import log_failure
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
-from .contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 

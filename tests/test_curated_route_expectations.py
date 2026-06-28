@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.query_understanding import QueryPlanner
-from rag_modules.retrieval.runtime_profile import (
+from rag_modules.contracts import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
+from rag_modules.query_understanding import QueryPlanner
 from scripts.eval_queries import load_eval_cases
 
 

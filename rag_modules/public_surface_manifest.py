@@ -78,6 +78,13 @@ PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
 
 SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     PublicSurfaceEntry(
+        "rag_modules.contracts",
+        "service_api",
+        "rag_modules.contracts",
+        "canonical",
+        "Canonical cross-subsystem contract kernel for shared DTOs and query settings.",
+    ),
+    PublicSurfaceEntry(
         "rag_modules.app.services",
         "service_api",
         "rag_modules.app.services",
@@ -96,7 +103,7 @@ SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "service_api",
         "rag_modules.retrieval",
         "canonical",
-        "Repository-internal retrieval runtime and evidence contracts.",
+        "Repository-internal retrieval runtime. Shared DTOs live in rag_modules.contracts.",
     ),
     PublicSurfaceEntry(
         "rag_modules.generation",

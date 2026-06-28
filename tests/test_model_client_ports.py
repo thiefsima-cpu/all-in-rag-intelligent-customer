@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval.post_processor import (
     RetrievalPostProcessContext,
     RetrievalPostProcessor,

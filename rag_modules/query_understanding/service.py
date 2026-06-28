@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..runtime_contracts import LLMClientPort
 from .planner_service import QueryPlanner
@@ -18,15 +18,19 @@ class QueryUnderstandingService:
         *,
         llm_client: LLMClientPort | None,
         config,
-        retrieval_profile: RetrievalRuntimeProfile | None = None,
+        planner_settings: QueryPlannerRuntimeSettings | None = None,
+        semantic_settings: QuerySemanticRuntimeSettings | None = None,
     ) -> None:
         self.config = config
         self.llm_client = llm_client
-        self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)
+        self.planner_settings = planner_settings or QueryPlannerRuntimeSettings.from_config(config)
+        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings.from_config(
+            config
+        )
         self.query_planner = QueryPlanner(
             llm_client,
-            settings=self.retrieval_profile.planner,
-            semantic_settings=self.retrieval_profile.semantics,
+            settings=self.planner_settings,
+            semantic_settings=self.semantic_settings,
         )
 
     def understand(self, query: str) -> QueryUnderstandingResult:

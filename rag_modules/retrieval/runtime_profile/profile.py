@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
+from ...contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .candidate_settings import RetrievalCandidateSizingSettings
 from .candidate_source_settings import RetrievalCandidateSourceSettings
-from .planner_settings import QueryPlannerRuntimeSettings
 from .postprocess_settings import RetrievalPostProcessSettings
-from .semantic_settings import QuerySemanticRuntimeSettings
 
 
 @dataclass

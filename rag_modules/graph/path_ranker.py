@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..configuration.models import GraphSettings
+from ..contracts import EvidenceDocument
 from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
-from ..retrieval.contracts import EvidenceDocument
 
 
 class GraphDocumentRanker:

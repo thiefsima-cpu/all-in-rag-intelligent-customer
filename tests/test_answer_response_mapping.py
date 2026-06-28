@@ -4,14 +4,15 @@ from contextlib import ExitStack
 from unittest.mock import patch
 
 from rag_modules.app.services.answer_models import QuestionAnswerResult
-from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.interfaces.api.answer_models import AnswerPayloadModel
-from rag_modules.query_understanding import (
+from rag_modules.contracts import (
+    EvidenceDocument,
     QueryPlan,
     QuerySemanticProfile,
     QuerySemanticScoreBreakdown,
+    RetrievalRequest,
 )
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.interfaces.api.answer_models import AnswerPayloadModel
 from rag_modules.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,

@@ -6,9 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol
 
+from ...contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ...domain.shared.query_constraints import QueryConstraints
-from ...query_understanding import QueryPlan
-from ...retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...runtime import QueryAnalysis, SearchStrategy
 from ...runtime.json_types import JsonObject, coerce_json_object, coerce_json_value

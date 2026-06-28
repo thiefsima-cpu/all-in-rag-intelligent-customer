@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+from ...contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .candidate_settings import RetrievalCandidateSizingSettings
 from .candidate_source_settings import RetrievalCandidateSourceSettings
-from .planner_settings import QueryPlannerRuntimeSettings
 from .postprocess_settings import RetrievalPostProcessSettings
 from .profile import RetrievalRuntimeProfile
-from .semantic_settings import QuerySemanticRuntimeSettings
 
 
 class RetrievalRuntimeProfileFactory:

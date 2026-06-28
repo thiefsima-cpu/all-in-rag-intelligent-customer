@@ -125,6 +125,35 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         relative_name = "." * node.level + module
         return resolve_name(relative_name, cls._package_name_for_path(path))
 
+    @classmethod
+    def _iter_resolved_imports(cls, path: Path):
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
+        lines = source.splitlines()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    yield node.lineno, lines[node.lineno - 1].strip(), alias.name, alias.name
+            elif isinstance(node, ast.ImportFrom):
+                module_name = cls._resolve_import_from(path, node)
+                yield node.lineno, lines[node.lineno - 1].strip(), module_name, module_name
+                for alias in node.names:
+                    if alias.name != "*":
+                        yield (
+                            node.lineno,
+                            lines[node.lineno - 1].strip(),
+                            module_name,
+                            f"{module_name}.{alias.name}",
+                        )
+
+    @staticmethod
+    def _module_matches(module_name: str, prohibited: set[str]) -> bool:
+        return any(
+            module_name == prohibited_name or module_name.startswith(f"{prohibited_name}.")
+            for prohibited_name in prohibited
+        )
+
     def test_migrated_shared_modules_are_not_at_rag_modules_root(self) -> None:
         remaining = {
             path.name
@@ -273,6 +302,93 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_contract_kernel_does_not_depend_on_runtime_or_feature_packages(self) -> None:
+        contracts_dir = RAG_MODULES_DIR / "contracts"
+        prohibited = {
+            "rag_modules.app",
+            "rag_modules.generation",
+            "rag_modules.graph",
+            "rag_modules.query_understanding",
+            "rag_modules.retrieval",
+            "rag_modules.routing",
+            "rag_modules.runtime",
+        }
+        violations: list[str] = []
+
+        if not contracts_dir.exists():
+            violations.append("rag_modules/contracts package is missing")
+        else:
+            for path in contracts_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                    if self._module_matches(module_name, prohibited):
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Contract kernel must not import runtime or feature packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_runtime_models_do_not_depend_on_retrieval_or_query_understanding(self) -> None:
+        prohibited = {
+            "rag_modules.query_understanding",
+            "rag_modules.retrieval",
+        }
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "runtime").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if self._module_matches(module_name, prohibited):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Runtime contracts must depend on rag_modules.contracts instead of feature packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_query_understanding_does_not_depend_on_retrieval_package(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "query_understanding").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if self._module_matches(module_name, {"rag_modules.retrieval"}):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Query-understanding must not import retrieval runtime/profile packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_repository_uses_contract_kernel_for_shared_dtos(self) -> None:
+        violations: list[str] = []
+        prohibited_old_contract_modules = {"rag_modules.retrieval.contracts"}
+        prohibited_query_exports = {
+            "rag_modules.query_understanding.QueryPlan",
+            "rag_modules.query_understanding.QuerySemanticProfile",
+        }
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                if "__pycache__" in rel.parts:
+                    continue
+                for lineno, line, module_name, imported_name in self._iter_resolved_imports(path):
+                    if self._module_matches(module_name, prohibited_old_contract_modules):
+                        violations.append(f"{rel}:{lineno}: {line}")
+                    elif imported_name in prohibited_query_exports:
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Shared DTOs/settings must be imported from rag_modules.contracts:\n"
+            + "\n".join(violations),
+        )
+
     def test_scripts_and_non_compat_tests_do_not_import_retired_query_facades(self) -> None:
         violations: list[str] = []
         retired_modules = {
@@ -347,8 +463,10 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.interfaces.api.services",
             "rag_modules.generation.clients",
             "rag_modules.generation.execution",
+            "rag_modules.contracts",
             "rag_modules.retrieval.runtime_profile",
             "rag_modules.compat.*",
+            "contract kernel",
             "must not recreate",
             "will fail instead of forwarding",
         ):

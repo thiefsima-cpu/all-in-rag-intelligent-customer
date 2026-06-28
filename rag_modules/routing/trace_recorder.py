@@ -5,8 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..runtime import RouteSnapshot, RouteStageSnapshot
 from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 

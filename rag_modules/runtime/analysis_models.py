@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict
 
-from ..query_understanding import QuerySemanticProfile
+from ..contracts import QuerySemanticProfile
 
 
 class SearchStrategy(Enum):

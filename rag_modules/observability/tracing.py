@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from ..runtime import (
     AnswerContext,
     GenerationSnapshot,

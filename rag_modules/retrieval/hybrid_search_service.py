@@ -5,16 +5,15 @@ from __future__ import annotations
 import logging
 from typing import List, Optional, Union
 
+from ..contracts import QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
 from ..fusion import FusionRanker
-from ..query_understanding import QueryPlan
 from .adapters import ConstraintRetriever
 from .candidate_generator import RetrievalCandidateGenerator
 from .candidate_sources import (
     DefaultHybridCandidateSourceFactory,
     HybridCandidateSourceFactory,
 )
-from .contracts import RetrievalRequest
 from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_profile import RetrievalRuntimeProfile
 

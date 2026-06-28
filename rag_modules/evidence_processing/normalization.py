@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from .extraction import extract_evidence_units
 from .helpers import (
     document_content,

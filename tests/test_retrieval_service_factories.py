@@ -4,9 +4,9 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.graph.retrieval import GraphRAGRetrieval, GraphRetrievalComponents
 from rag_modules.retrieval import HybridRetrievalService
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+from ..contracts import EvidenceDocument
 from .candidate_generator import CandidateSet
-from .contracts import EvidenceDocument
 
 
 def _unique_strings(values: List[Any]) -> List[str]:

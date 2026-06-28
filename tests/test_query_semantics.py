@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.contracts import (
+    QueryPlannerRuntimeSettings,
+    QuerySemanticRuntimeSettings,
+)
 from rag_modules.query_understanding import (
     QueryPlanner,
     infer_query_constraints,
     infer_query_semantic_profile,
-)
-from rag_modules.retrieval.runtime_profile import (
-    QueryPlannerRuntimeSettings,
-    QuerySemanticRuntimeSettings,
 )
 
 

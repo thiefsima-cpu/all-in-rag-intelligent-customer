@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.dual_level_evidence_service import DualLevelEvidenceService
 from rag_modules.retrieval.dual_level_retriever import DualLevelRetriever
 

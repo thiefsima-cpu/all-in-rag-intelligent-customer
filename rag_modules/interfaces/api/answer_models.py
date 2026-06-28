@@ -15,9 +15,14 @@ from ...app.services.answer_models import (
     QuestionAnswerSummary,
     QuestionAnswerTraces,
 )
+from ...contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    QuerySemanticProfile,
+    QuerySemanticScoreBreakdown,
+    RetrievalRequest,
+)
 from ...domain.shared.query_constraints import QueryConstraints
-from ...query_understanding import QueryPlan, QuerySemanticProfile, QuerySemanticScoreBreakdown
-from ...retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ...runtime import (
     AnswerContext,
     AnswerTraceSnapshot,

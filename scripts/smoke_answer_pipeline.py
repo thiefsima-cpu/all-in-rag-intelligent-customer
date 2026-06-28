@@ -14,8 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, QueryPlan
 from rag_modules.runtime import (
     GraphRetrievalSnapshot,
     QueryAnalysis,

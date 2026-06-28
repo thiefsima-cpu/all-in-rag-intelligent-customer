@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Union
 
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import GraphRetrievalSnapshot
 from ..runtime_contracts import Neo4jManagerPort

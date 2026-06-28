@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Sequence, Tuple
 
-from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
+from ..contracts import QuerySemanticProfile, QuerySemanticRuntimeSettings
 from .features import (
     extract_entity_candidates,
     extract_query_tokens,
@@ -26,7 +26,6 @@ from .registry import (
     RELATION_MARKERS,
     STRUCTURAL_REASONING_MARKERS,
     TEXTURE_EFFECT_TERMS,
-    QuerySemanticProfile,
     dedupe_preserve_order,
     marker_hits,
     normalize_query_text,

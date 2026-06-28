@@ -6,12 +6,15 @@ import logging
 from concurrent.futures import Future
 from copy import deepcopy
 
+from ...contracts import (
+    QueryPlan,
+    QueryPlannerRuntimeSettings,
+    QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
+)
 from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
-from ...retrieval.runtime_profile import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from ...runtime_contracts import LLMClientPort
 from ...safe_logging import log_failure
-from ..planner_models import QueryPlan
-from ..registry import QuerySemanticProfile
 from ..scoring import should_use_fast_rule_plan
 from .cache import QueryPlannerCache
 from .calibration import QueryPlanCalibrator

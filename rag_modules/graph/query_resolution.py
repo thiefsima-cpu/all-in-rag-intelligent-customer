@@ -6,14 +6,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from ..contracts import QueryPlan, QuerySemanticRuntimeSettings
 from ..query_understanding import (
-    QueryPlan,
     estimate_query_complexity,
     infer_graph_max_depth,
     infer_graph_max_nodes,
     infer_query_semantic_profile,
 )
-from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
 from .query_intent import GraphQueryIntent, infer_graph_query_intent
 from .retrieval_types import GraphQuery, QueryType
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.hybrid_executor import HybridRetrievalExecutor
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 

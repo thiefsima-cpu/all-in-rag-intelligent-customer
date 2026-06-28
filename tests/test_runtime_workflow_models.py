@@ -4,9 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.contracts import EvidenceDocument, QueryPlan
 from rag_modules.observability.tracing import QueryTracer
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
     AnswerContext,
     QueryUnderstandingSnapshot,

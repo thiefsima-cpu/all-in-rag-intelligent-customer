@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, List
 
-from .contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 
 
 class DualLevelEvidenceService:

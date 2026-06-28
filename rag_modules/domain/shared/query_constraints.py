@@ -8,11 +8,12 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from ...retrieval.runtime_profile import QuerySemanticRuntimeSettings
+if TYPE_CHECKING:
+    from ...contracts import QuerySemanticRuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +154,13 @@ class QueryConstraintExtractor:
         model_name: str,
         semantic_settings: QuerySemanticRuntimeSettings | None = None,
     ):
+        if semantic_settings is None:
+            from ...contracts import QuerySemanticRuntimeSettings
+
+            semantic_settings = QuerySemanticRuntimeSettings()
         self.llm_client = llm_client
         self.model_name = model_name
-        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
+        self.semantic_settings = semantic_settings
 
     def extract(self, query: str) -> QueryConstraints:
         from ...query_understanding import infer_query_semantic_profile

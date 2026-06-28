@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
+from ..contracts import EvidenceDocument, RetrievalRequest
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
-from .contracts import EvidenceDocument, RetrievalRequest
 from .dual_level_evidence_service import DualLevelEvidenceService
 from .keyword_service import QueryKeywordExtractor
 

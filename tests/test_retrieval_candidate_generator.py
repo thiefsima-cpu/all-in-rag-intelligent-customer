@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.query_understanding import QueryPlan
 from rag_modules.retrieval.candidate_generator import RetrievalCandidateGenerator
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
 
 
 class _StubSource:

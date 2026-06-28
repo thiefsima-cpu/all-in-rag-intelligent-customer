@@ -68,6 +68,14 @@ class PublicApiManifestTests(unittest.TestCase):
             self.assertEqual({kind}, {entry.kind for entry in entries})
             self.assertEqual(modules_for(entries), modules_for(grouped[kind]))
 
+    def test_contract_kernel_is_declared_service_surface(self) -> None:
+        surface = canonical_surface_by_module()
+
+        self.assertIn("rag_modules.contracts", surface)
+        self.assertEqual("service_api", surface["rag_modules.contracts"].kind)
+        self.assertEqual("rag_modules.contracts", surface["rag_modules.contracts"].canonical_module)
+        self.assertIn("contract kernel", surface["rag_modules.contracts"].notes)
+
     def test_legacy_surface_is_empty_after_final_retirement(self) -> None:
         self.assertEqual((), LEGACY_PUBLIC_SURFACE)
         self.assertEqual((), ROOT_PUBLIC_SURFACE)

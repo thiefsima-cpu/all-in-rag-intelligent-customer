@@ -7,9 +7,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ..contracts import QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import RetrievalRequest
 from ..runtime import GraphRetrievalSnapshot
 from .query_resolution import GraphQueryFactory
 from .retrieval_types import GraphQuery

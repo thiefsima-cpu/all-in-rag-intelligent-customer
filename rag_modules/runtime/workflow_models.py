@@ -7,9 +7,8 @@ from dataclasses import dataclass, field, replace
 
 from langchain_core.documents import Document
 
+from ..contracts import EvidenceDocument, QueryPlan, QuerySemanticProfile
 from ..domain.shared.query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan, QuerySemanticProfile
-from ..retrieval.contracts import EvidenceDocument
 from .analysis_models import QueryAnalysis, SearchStrategy, ensure_query_analysis
 from .json_types import JsonObject, coerce_json_object
 from .retrieval_models import RetrievalOutcome

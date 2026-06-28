@@ -6,12 +6,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_core.documents import Document
 
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest, to_langchain_documents
 from ..domain.shared.query_constraints import QueryConstraints, RecipeConstraintMatcher
 from ..fusion import FusionRanker
-from ..query_understanding import QueryPlan
 from ..runtime_contracts import Neo4jManagerPort
 from .adapters import tokenize_chinese
-from .contracts import EvidenceDocument, RetrievalRequest, to_langchain_documents
 from .hybrid_components import (
     DefaultHybridRetrievalComponentFactory,
     HybridRetrievalComponentFactory,

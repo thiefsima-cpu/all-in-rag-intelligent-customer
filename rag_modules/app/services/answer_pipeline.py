@@ -6,7 +6,7 @@ import logging
 from contextlib import nullcontext
 from typing import List
 
-from ...retrieval.contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
 from ...runtime import (
     AnswerContext,
     GenerationSnapshot,

@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Protocol
 
-from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from ..contracts import EvidenceDocument, ensure_evidence_documents
 from ..retrieval_observability import summarize_documents
 from ..runtime import (
     AnswerContext,

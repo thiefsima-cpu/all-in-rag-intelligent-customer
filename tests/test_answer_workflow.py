@@ -14,8 +14,8 @@ from rag_modules.app.services.answer_pipeline import NO_EVIDENCE_ANSWER
 from rag_modules.app.services.answer_result_factory import QuestionAnswerResultFactory
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.observability.tracing import QueryTracer
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,

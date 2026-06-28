@@ -10,8 +10,8 @@ import jieba
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
+from ...contracts import EvidenceDocument
 from ...safe_logging import log_failure
-from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
 
