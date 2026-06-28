@@ -14,7 +14,7 @@ from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ..answer_models import AnswerStreamEventModel
-from ..error_models import ErrorCode
+from ..error_models import ErrorCode, sanitize_public_error_fields
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
 from .errors import (
@@ -313,7 +313,11 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                             message_callback=on_message,
                             chunk_callback=on_chunk,
                         )
-                emit(AnswerStreamEventModel.result(self._answer_payload(response)))
+                safe_payload = sanitize_public_error_fields(
+                    self._answer_payload(response),
+                    code=ErrorCode.ANSWER_FAILED,
+                )
+                emit(AnswerStreamEventModel.result(safe_payload))
             except ApiBackpressureError:
                 emit_error(ErrorCode.RATE_LIMITED)
             except _StreamCancelledError:

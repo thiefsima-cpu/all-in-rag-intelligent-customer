@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
@@ -131,3 +132,29 @@ def error_response_openapi() -> dict[int | str, dict[str, Any]]:
         status: {"model": ErrorResponseModel, "description": description}
         for status, description in descriptions.items()
     }
+
+
+_PUBLIC_ERROR_KEYS = frozenset({"error", "last_error"})
+
+
+def _is_public_error_key(key: str) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_")
+    return normalized in _PUBLIC_ERROR_KEYS or normalized.endswith(("_error", "_exception"))
+
+
+def sanitize_public_error_fields(value: Any, *, code: ErrorCode) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            if _is_public_error_key(key) and item not in (None, "", {}, []):
+                if isinstance(item, Mapping) and {"code", "message"}.issubset(item):
+                    sanitized[key] = sanitize_public_error_fields(item, code=code)
+                else:
+                    sanitized[key] = code.value
+                continue
+            sanitized[key] = sanitize_public_error_fields(item, code=code)
+        return sanitized
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [sanitize_public_error_fields(item, code=code) for item in value]
+    return value

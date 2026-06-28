@@ -28,6 +28,11 @@ class _DummyLLM:
         self.chat = _DummyChat()
 
 
+class _FailingPlannerClient:
+    def create_completion(self, **_: object) -> None:
+        raise RuntimeError("private-planner-error")
+
+
 class QuerySemanticsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.semantic_settings = QuerySemanticRuntimeSettings()
@@ -61,6 +66,17 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertEqual(plan.strategy, "hybrid_traditional")
         self.assertEqual(plan.graph_query_type, "entity_relation")
         self.assertLess(plan.relationship_intensity, 0.7)
+
+    def test_planner_failure_uses_stable_fallback_reason(self) -> None:
+        planner = QueryPlanner(
+            _FailingPlannerClient(),
+            settings=QueryPlannerRuntimeSettings(fast_rule_planning=False),
+            semantic_settings=self.semantic_settings,
+        )
+
+        plan = planner.plan("recommend tofu")
+
+        self.assertEqual(plan.fallback_reason, "query_planning_failed")
 
     def test_constraint_extraction_uses_policy_rules(self) -> None:
         constraints = infer_query_constraints("20分钟内少油的鸡肉菜有哪些？")

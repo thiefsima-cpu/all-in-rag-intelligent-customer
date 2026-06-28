@@ -84,9 +84,9 @@ class _MilvusClientOperations(MilvusOperationHost):
                 "stats": coerce_json_object(stats),
             }
 
-        except Exception as e:
-            logger.error(f"获取集合统计信息失败: {e}")
-            return {"error": str(e)}
+        except Exception:
+            logger.error("Milvus collection stats unavailable.")
+            return {"error": "MILVUS_STATS_UNAVAILABLE"}
 
     def delete_collection(self, collection_name: Optional[str] = None) -> bool:
         """

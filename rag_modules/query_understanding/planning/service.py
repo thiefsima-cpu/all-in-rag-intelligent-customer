@@ -105,7 +105,7 @@ class QueryPlanner:
             logger.warning("Query planning failed, using rule fallback: %s", exc)
             plan = self.rule_based_plan(query)
             self._calibrate_plan(plan)
-            plan.fallback_reason = str(exc)
+            plan.fallback_reason = "query_planning_failed"
             plan.planner_mode = "fallback_rule"
             plan.used_cache = False
             return plan

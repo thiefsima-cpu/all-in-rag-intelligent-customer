@@ -396,6 +396,48 @@ class _FailedAnswerSystem(_FakeApiSystem):
         return _FailedAnswerResponse(question, self.secret, stream)
 
 
+class _PublicManifestErrorSystem(_FakeApiSystem):
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self.secret = secret
+
+    def collect_startup_diagnostics(self, mode: str) -> StartupDiagnostics:
+        diagnostics = super().collect_startup_diagnostics(mode)
+        diagnostics.manifest.last_error = self.secret
+        return diagnostics
+
+    def collect_system_stats(self) -> dict:
+        payload = super().collect_system_stats()
+        payload["artifact_manifest"]["last_error"] = self.secret
+        return payload
+
+
+class _ErrorTraceAnswerResponse(_DummyAnswerResponse):
+    def __init__(self, question: str, secret: str) -> None:
+        super().__init__(question, False, False)
+        self.secret = secret
+
+    def to_dict(self) -> dict:
+        payload = super().to_dict()
+        payload["summary"]["error"] = self.secret
+        payload["traces"]["route_trace"]["error"] = self.secret
+        payload["traces"]["graph_trace"]["error"] = self.secret
+        payload["traces"]["trace_event"]["error"] = self.secret
+        return payload
+
+
+class _PublicAnswerErrorSystem(_FakeApiSystem):
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self.system_ready = True
+        self.serving_initialized = True
+        self.secret = secret
+
+    def answer_question_response(self, question: str, **kwargs):
+        del kwargs
+        return _ErrorTraceAnswerResponse(question, self.secret)
+
+
 class _BlockingApiSystem(_FakeApiSystem):
     def __init__(self) -> None:
         super().__init__()
@@ -766,6 +808,21 @@ class ApiAppTests(unittest.TestCase):
             "recipes",
         )
 
+    def test_manifest_error_is_sanitized_in_diagnostics_and_stats(self) -> None:
+        secret = "private-manifest-error"
+        app = create_serving_api_app(system=_PublicManifestErrorSystem(secret))
+
+        with _client(app) as client:
+            diagnostics = client.get("/diagnostics")
+            stats = client.get("/stats")
+
+        serialized = json.dumps(
+            {"diagnostics": diagnostics.json(), "stats": stats.json()},
+            ensure_ascii=False,
+        )
+        self.assertNotIn(secret, serialized)
+        self.assertIn("BUILD_FAILED", serialized)
+
     def test_serving_answer_returns_409_when_artifacts_are_not_ready(self) -> None:
         system = _FakeApiSystem()
         app = create_serving_api_app(system=system)
@@ -908,6 +965,18 @@ class ApiAppTests(unittest.TestCase):
         )
         self.assertEqual(answer_payload["summary"]["prompt_tokens"], 11)
         self.assertEqual(answer_payload["summary"]["total_tokens"], 18)
+
+    def test_answer_trace_error_fields_are_sanitized_on_success(self) -> None:
+        secret = "private-answer-trace-error"
+        app = create_serving_api_app(system=_PublicAnswerErrorSystem(secret))
+
+        with _client(app) as client:
+            response = client.post("/answers", json={"question": "safe question"})
+
+        self.assertEqual(response.status_code, 200)
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        self.assertNotIn(secret, serialized)
+        self.assertIn("ANSWER_FAILED", serialized)
 
     def test_answer_response_model_accepts_runtime_shaped_payload(self) -> None:
         payload = _answer_payload("Can I cook tofu?")

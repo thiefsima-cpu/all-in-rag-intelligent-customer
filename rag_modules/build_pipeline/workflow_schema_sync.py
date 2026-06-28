@@ -44,12 +44,13 @@ class _KnowledgeBaseSchemaSyncMixin(_KnowledgeBaseSchemaSyncHost):
                 f"semantic_relationships={result.relationships}",
             )
             return result
-        except Exception as exc:
-            logger.warning("Semantic graph schema sync failed: %s", exc)
-            self._emit(
-                progress, f"[WARN] Semantic graph schema sync failed. Continuing startup: {exc}"
+        except Exception:
+            logger.warning("Semantic graph schema sync failed.")
+            self._emit(progress, "[WARN] Semantic graph schema sync failed. Continuing startup.")
+            return SemanticGraphSchemaSyncResult(
+                enabled=True,
+                error="SEMANTIC_SCHEMA_SYNC_FAILED",
             )
-            return SemanticGraphSchemaSyncResult(enabled=True, error=str(exc))
 
     def _build_metadata(
         self, document_result, schema_sync_result: SemanticGraphSchemaSyncResult

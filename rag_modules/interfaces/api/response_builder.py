@@ -19,8 +19,10 @@ from .build_models import (
 )
 from .diagnostics_models import (
     DiagnosticsResponseModel,
+    OperationResponseModel,
     StatsResponseModel,
 )
+from .error_models import ErrorCode, sanitize_public_error_fields
 
 
 def _artifact_manifest_payload(manifest) -> dict:
@@ -36,7 +38,7 @@ def _artifact_manifest_payload(manifest) -> dict:
         "total_chunks": manifest.total_chunks,
         "vector_rows": manifest.vector_rows,
         "cache_hit": manifest.cache_hit,
-        "last_error": manifest.last_error,
+        "last_error": ErrorCode.BUILD_FAILED.value if manifest.last_error else "",
         "build_metadata": dict(manifest.build_metadata),
         "manifest_version": manifest.manifest_version,
         "index_version": manifest.index_version,
@@ -52,23 +54,33 @@ def build_json_response(*, status_code: int, content: dict) -> JSONResponse:
 
 
 def build_stats_response(stats_payload: dict) -> StatsResponseModel:
-    return StatsResponseModel.model_validate({"stats": stats_payload})
+    safe = sanitize_public_error_fields(stats_payload, code=ErrorCode.BUILD_FAILED)
+    return StatsResponseModel.model_validate({"stats": safe})
 
 
 def build_diagnostics_response(diagnostics_payload: dict) -> DiagnosticsResponseModel:
-    return DiagnosticsResponseModel.model_validate({"diagnostics": diagnostics_payload})
+    safe = sanitize_public_error_fields(diagnostics_payload, code=ErrorCode.BUILD_FAILED)
+    return DiagnosticsResponseModel.model_validate({"diagnostics": safe})
+
+
+def build_operation_response(operation_payload: dict) -> OperationResponseModel:
+    safe = sanitize_public_error_fields(operation_payload, code=ErrorCode.BUILD_FAILED)
+    return OperationResponseModel.model_validate(safe)
 
 
 def build_answer_response(answer_payload: dict) -> AnswerResponseModel:
-    return AnswerResponseModel.model_validate({"response": answer_payload})
+    safe = sanitize_public_error_fields(answer_payload, code=ErrorCode.ANSWER_FAILED)
+    return AnswerResponseModel.model_validate({"response": safe})
 
 
 def build_build_job_response(job_payload: dict) -> BuildJobResponseModel:
-    return BuildJobResponseModel.model_validate({"job": job_payload})
+    safe = sanitize_public_error_fields(job_payload, code=ErrorCode.BUILD_FAILED)
+    return BuildJobResponseModel.model_validate({"job": safe})
 
 
 def build_build_job_list_response(job_payloads: list[dict]) -> BuildJobListResponseModel:
-    return BuildJobListResponseModel.model_validate({"jobs": list(job_payloads or [])})
+    safe = sanitize_public_error_fields(list(job_payloads or []), code=ErrorCode.BUILD_FAILED)
+    return BuildJobListResponseModel.model_validate({"jobs": safe})
 
 
 def build_artifact_registry_response(snapshot) -> ArtifactRegistryResponseModel:
@@ -113,6 +125,7 @@ __all__ = [
     "build_build_job_response",
     "build_diagnostics_response",
     "build_json_response",
+    "build_operation_response",
     "build_sse_streaming_response",
     "build_stats_response",
     "encode_sse_event",

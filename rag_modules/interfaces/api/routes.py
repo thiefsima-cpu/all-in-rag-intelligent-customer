@@ -30,6 +30,7 @@ from .response_builder import (
     build_build_job_response,
     build_diagnostics_response,
     build_json_response,
+    build_operation_response,
     build_sse_streaming_response,
     build_stats_response,
 )
@@ -87,11 +88,11 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
 
     @app.post("/runtime/serving/initialize", response_model=OperationResponseModel)
     def initialize_serving_runtime():
-        return api_service.initialize_serving_runtime()
+        return build_operation_response(api_service.initialize_serving_runtime())
 
     @app.post("/runtime/serving/refresh", response_model=OperationResponseModel)
     def refresh_serving_runtime():
-        return api_service.refresh_serving_runtime()
+        return build_operation_response(api_service.refresh_serving_runtime())
 
     @app.post(
         "/answers",
@@ -194,7 +195,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
 
     @app.post("/runtime/build/initialize", response_model=OperationResponseModel)
     def initialize_build_runtime():
-        return api_service.initialize_build_runtime()
+        return build_operation_response(api_service.initialize_build_runtime())
 
     @app.get("/jobs", response_model=BuildJobListResponseModel)
     def list_build_jobs():
