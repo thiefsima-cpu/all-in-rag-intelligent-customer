@@ -9,6 +9,7 @@ from fastapi import FastAPI, Response
 
 from ...configuration.models import ApiSettings, ObservabilitySettings
 from ...telemetry import get_runtime_telemetry
+from .request_context import RequestContextMiddleware
 from .routes import (
     register_api_backpressure_handler,
     register_build_job_handlers,
@@ -105,6 +106,7 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
         settings=api_settings,
         observability_settings=observability_settings,
     )
+    app.add_middleware(RequestContextMiddleware)
     if api_settings.auth_enabled:
         configure_openapi_security(
             app,
@@ -151,6 +153,7 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
         settings=api_settings,
         observability_settings=observability_settings,
     )
+    app.add_middleware(RequestContextMiddleware)
     if api_settings.auth_enabled:
         configure_openapi_security(
             app,

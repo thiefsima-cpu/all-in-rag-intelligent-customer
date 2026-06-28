@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import unittest
@@ -16,6 +17,7 @@ from rag_modules.interfaces.api.answer_models import (
     AnswerResponseModel,
     AnswerStreamEventType,
 )
+from rag_modules.interfaces.api.error_models import ErrorCode, build_error_payload
 from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
@@ -44,6 +46,10 @@ def _client(app: object) -> TestClient:
         app,
         headers={"Authorization": f"Bearer {_API_TOKEN}"},
     )
+
+
+def _assert_request_id(value: str) -> None:
+    assert re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value)
 
 
 def _wait_for_job_status(
@@ -438,6 +444,46 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
 
 
 class ApiAppTests(unittest.TestCase):
+    def test_error_catalog_builds_the_new_breaking_contract(self) -> None:
+        payload = build_error_payload(
+            ErrorCode.VALIDATION_ERROR,
+            request_id="catalog-test",
+            details=[{"field": "body.question", "reason": "string_too_long"}],
+        )
+
+        self.assertEqual(
+            payload,
+            {
+                "ok": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "The request is invalid.",
+                    "details": [{"field": "body.question", "reason": "string_too_long"}],
+                },
+                "request_id": "catalog-test",
+            },
+        )
+
+    def test_valid_client_request_id_is_preserved_on_success(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with TestClient(app) as client:
+            response = client.get("/health", headers={"X-Request-ID": "client.req:42"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["x-request-id"], "client.req:42")
+
+    def test_missing_or_invalid_request_id_is_replaced(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with TestClient(app) as client:
+            missing = client.get("/health")
+            invalid = client.get("/health", headers={"X-Request-ID": "bad/id secret"})
+
+        _assert_request_id(missing.headers["x-request-id"])
+        _assert_request_id(invalid.headers["x-request-id"])
+        self.assertNotEqual(invalid.headers["x-request-id"], "bad/id secret")
+
     def test_serving_liveness_is_public_and_does_not_require_readiness(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
 
