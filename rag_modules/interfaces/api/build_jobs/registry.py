@@ -7,7 +7,7 @@ import threading
 
 from .file_store import FileBuildJobStore
 from .locks import _InterprocessFileLock
-from .models import BUILD_JOB_LOG_LIMIT, BuildJobRecord
+from .models import BUILD_JOB_LOG_LIMIT, BuildJobRecord, build_failure
 
 
 class PersistentBuildJobRegistry:
@@ -35,9 +35,10 @@ class PersistentBuildJobRegistry:
             job = self._active_locked()
             return job.to_dict() if job is not None else None
 
-    def create(self, *, job_id: str, job_type: str, message: str) -> dict:
+    def create(self, *, job_id: str, request_id: str, job_type: str, message: str) -> dict:
         created, job, build_lock = self.create_or_active(
             job_id=job_id,
+            request_id=request_id,
             job_type=job_type,
             message=message,
         )
@@ -53,6 +54,7 @@ class PersistentBuildJobRegistry:
         self,
         *,
         job_id: str,
+        request_id: str,
         job_type: str,
         message: str,
     ) -> tuple[bool, dict | None, _InterprocessFileLock | None]:
@@ -77,6 +79,7 @@ class PersistentBuildJobRegistry:
 
                 job = BuildJobRecord(
                     job_id=job_id,
+                    request_id=request_id,
                     job_type=job_type,
                     status="queued",
                     created_at=self._now(),
@@ -135,14 +138,14 @@ class PersistentBuildJobRegistry:
                 self._clear_active_locked(job_id)
                 self._persist_store_locked()
 
-    def mark_failed(self, job_id: str, *, error: str, result: dict) -> None:
+    def mark_failed(self, job_id: str, *, result: dict) -> None:
         with self._lock:
             with self.store.locked():
                 self._refresh_from_store_locked(recover_interrupted=False)
                 job = self._jobs[job_id]
                 job.status = "failed"
                 job.finished_at = self._now()
-                job.error = str(error)
+                job.error = build_failure(job.request_id)
                 job.message = "Knowledge base build failed."
                 job.result = copy.deepcopy(result)
                 self._clear_active_locked(job_id)
@@ -151,7 +154,7 @@ class PersistentBuildJobRegistry:
     def _load(self, *, recover_interrupted: bool) -> None:
         with self.store.locked():
             recovered = self._refresh_from_store_locked(recover_interrupted=recover_interrupted)
-            if recovered:
+            if recovered or self._jobs:
                 self._persist_store_locked()
 
     def _refresh_from_store_locked(self, *, recover_interrupted: bool) -> bool:
@@ -187,9 +190,9 @@ class PersistentBuildJobRegistry:
     def _mark_interrupted(self, job: BuildJobRecord) -> None:
         job.status = "failed"
         job.finished_at = self._now()
-        job.error = "Build service restarted before the job completed."
+        job.error = build_failure(job.request_id)
         job.message = "Knowledge base build interrupted by service restart."
-        job.logs.append(f"[ERROR] {job.error}")
+        job.logs.append("Build interrupted by service restart.")
 
     def _active_locked(self) -> BuildJobRecord | None:
         if self._active_job_id is None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import time
@@ -74,6 +75,17 @@ class _BlockingBuildSystem(_BuildSystem):
         self.system_ready = True
 
 
+class _FailingBuildSystem(_BuildSystem):
+    def __init__(self, config, secret: str) -> None:
+        super().__init__(config)
+        self.secret = secret
+
+    def build_knowledge_base(self, progress=None) -> None:
+        if progress:
+            progress(f"private progress {self.secret}")
+        raise RuntimeError(self.secret)
+
+
 def _wait_for_service_job_status(
     service: GraphRAGBuildApiService,
     job_id: str,
@@ -129,7 +141,7 @@ class BuildJobPersistenceTests(unittest.TestCase):
 
             restored = restarted.get_build_job(submitted["job_id"])
             self.assertEqual(restored["status"], "succeeded")
-            self.assertEqual(restored["logs"], ["building"])
+            self.assertEqual(restored["logs"], ["Build progress updated."])
 
     def test_incomplete_job_is_marked_failed_during_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -154,7 +166,64 @@ class BuildJobPersistenceTests(unittest.TestCase):
 
             recovered = service.get_build_job("a" * 32)
             self.assertEqual(recovered["status"], "failed")
-            self.assertIn("restarted", recovered["error"])
+            self.assertEqual(recovered["error"]["code"], "BUILD_FAILED")
+            self.assertEqual(recovered["logs"], ["Build interrupted by service restart."])
+
+    def test_failed_job_persists_typed_error_without_raw_exception_or_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            config = build_test_config({"storage": {"build_job_store_path": path}})
+            secret = "build-database-password"
+            service = GraphRAGBuildApiService(
+                system=_FailingBuildSystem(config, secret),
+                job_store=FileBuildJobStore(path),
+            )
+
+            submitted = service.submit_build_job(request_id="build-submit-42")
+            failed = _wait_for_service_job_status(service, submitted["job_id"], "failed")
+            stored_text = Path(path).read_text(encoding="utf-8")
+
+            self.assertEqual(
+                failed["error"],
+                {
+                    "code": "BUILD_FAILED",
+                    "message": "The knowledge-base build failed.",
+                    "request_id": "build-submit-42",
+                },
+            )
+            self.assertEqual(failed["logs"], ["Build progress updated.", "Build failed."])
+            self.assertNotIn(secret, stored_text)
+
+    def test_legacy_raw_job_errors_are_sanitized_on_load(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            store = FileBuildJobStore(path)
+            store.save_all(
+                [
+                    {
+                        "job_id": "a" * 32,
+                        "job_type": "build",
+                        "status": "failed",
+                        "created_at": "2026-06-28T00:00:00Z",
+                        "error": "legacy-secret",
+                        "logs": ["[ERROR] legacy-secret"],
+                    }
+                ]
+            )
+            config = build_test_config({"storage": {"build_job_store_path": path}})
+            service = GraphRAGBuildApiService(
+                system=_BuildSystem(config),
+                job_store=store,
+            )
+
+            restored = service.get_build_job("a" * 32)
+            returned_text = json.dumps(restored, ensure_ascii=False)
+            stored_text = Path(path).read_text(encoding="utf-8")
+
+            self.assertEqual(restored["error"]["code"], "BUILD_FAILED")
+            self.assertEqual(restored["logs"], ["Build failed."])
+            self.assertNotIn("legacy-secret", returned_text)
+            self.assertNotIn("legacy-secret", stored_text)
 
     def test_parallel_service_instances_conflict_on_active_build_job(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

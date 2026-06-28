@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -462,6 +464,18 @@ class _BlockingBuildApiSystem(_FakeApiSystem):
         self.system_ready = True
 
 
+class _FailingBuildApiSystem(_FakeApiSystem):
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self.build_initialized = True
+        self.secret = secret
+
+    def build_knowledge_base(self, progress=None) -> None:
+        if progress:
+            progress(f"private progress {self.secret}")
+        raise RuntimeError(self.secret)
+
+
 class _ChunkFloodApiSystem(_FakeApiSystem):
     def __init__(self) -> None:
         super().__init__()
@@ -838,6 +852,34 @@ class ApiAppTests(unittest.TestCase):
             code="BUILD_JOB_CONFLICT",
         )
         self.assertEqual(conflict_payload["error"]["details"]["job_id"], first_job["job_id"])
+
+    def test_build_http_failed_build_job_keeps_submission_request_id_without_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            secret = "build-http-secret"
+            system = _FailingBuildApiSystem(secret)
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                submitted = client.post(
+                    "/jobs/build",
+                    headers={"X-Request-ID": "build-http-42"},
+                ).json()["job"]
+                failed = _wait_for_job_status(client, submitted["job_id"], "failed")
+
+        self.assertEqual(failed["request_id"], "build-http-42")
+        self.assertEqual(failed["error"]["request_id"], "build-http-42")
+        self.assertEqual(failed["error"]["code"], "BUILD_FAILED")
+        self.assertNotIn(secret, json.dumps(failed, ensure_ascii=False))
 
     def test_answer_flow_uses_serving_api_surface(self) -> None:
         system = _FakeApiSystem()

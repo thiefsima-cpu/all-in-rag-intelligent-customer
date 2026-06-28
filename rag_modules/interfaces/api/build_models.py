@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...runtime.json_types import JsonObject
+from .error_models import ErrorCode
 
 
 class BuildJobType(str, Enum):
@@ -62,17 +63,26 @@ class BuildJobResultModel(BaseModel):
     stats: Optional[JsonObject] = None
 
 
+class BuildJobFailureModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: ErrorCode
+    message: str
+    request_id: str
+
+
 class BuildJobPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
+    request_id: str
     job_type: BuildJobType
     status: BuildJobStatus
     created_at: str
     started_at: str = ""
     finished_at: str = ""
     message: str = ""
-    error: str = ""
+    error: Optional[BuildJobFailureModel] = None
     logs: list[str] = Field(default_factory=list)
     result: Optional[BuildJobResultModel] = None
 
@@ -92,6 +102,7 @@ class BuildJobListResponseModel(BaseModel):
 __all__ = [
     "ArtifactManifestResponseModel",
     "ArtifactRegistryResponseModel",
+    "BuildJobFailureModel",
     "BuildJobListResponseModel",
     "BuildJobPayloadModel",
     "BuildJobResponseModel",

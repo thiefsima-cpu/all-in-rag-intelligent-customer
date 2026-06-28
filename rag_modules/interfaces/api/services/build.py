@@ -18,6 +18,7 @@ from ..build_job_store import (
     PersistentBuildJobRegistry,
     default_build_job_store_path,
 )
+from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
 from .errors import BuildJobConflictError, BuildJobNotFoundError
 
@@ -95,17 +96,19 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             executor.shutdown(wait=False, cancel_futures=True)
         super().shutdown()
 
-    def build_knowledge_base(self, *, rebuild: bool = False) -> dict:
-        return self.submit_build_job(rebuild=rebuild)
+    def build_knowledge_base(self, *, rebuild: bool = False, request_id: str = "") -> dict:
+        return self.submit_build_job(rebuild=rebuild, request_id=request_id)
 
-    def submit_build_job(self, *, rebuild: bool = False) -> dict:
+    def submit_build_job(self, *, rebuild: bool = False, request_id: str = "") -> dict:
         with self._job_submission_lock:
             self.collect_stats()
             self.collect_startup_diagnostics(self._MODE)
             job_type = "rebuild" if rebuild else "build"
             job_id = uuid4().hex
+            resolved_request_id = normalize_or_generate_request_id(request_id)
             created, job, build_lock = self._job_registry.create_or_active(
                 job_id=job_id,
+                request_id=resolved_request_id,
                 job_type=job_type,
                 message=f"Knowledge base {job_type} job queued.",
             )
@@ -172,8 +175,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 ),
             )
 
-            def progress(message: str) -> None:
-                self._append_job_log(job_id, message)
+            def progress(_: str) -> None:
+                self._append_job_log(job_id, "Build progress updated.")
 
             try:
                 with self._exclusive_runtime_operation():
@@ -193,12 +196,11 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                         )
                 result = self._job_result_from_operation(operation_result)
                 self._mark_job_succeeded(job_id, result=result)
-            except Exception as exc:
-                self._append_job_log(job_id, f"[ERROR] {exc}")
+            except Exception:
+                self._append_job_log(job_id, "Build failed.")
                 diagnostics, stats = self._snapshot_after_build_failure()
                 self._mark_job_failed(
                     job_id,
-                    error=str(exc),
                     result={
                         "message": "Knowledge base build failed.",
                         "diagnostics": diagnostics,
@@ -234,8 +236,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
     def _mark_job_succeeded(self, job_id: str, *, result: dict) -> None:
         self._job_registry.mark_succeeded(job_id, result=result)
 
-    def _mark_job_failed(self, job_id: str, *, error: str, result: dict) -> None:
-        self._job_registry.mark_failed(job_id, error=error, result=result)
+    def _mark_job_failed(self, job_id: str, *, result: dict) -> None:
+        self._job_registry.mark_failed(job_id, result=result)
 
 
 __all__ = ["GraphRAGBuildApiService"]

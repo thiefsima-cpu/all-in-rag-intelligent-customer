@@ -219,7 +219,12 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         responses={409: {"description": "Another build job is already in progress."}},
     )
     def queue_build_job():
-        return build_build_job_response(api_service.submit_build_job(rebuild=False))
+        return build_build_job_response(
+            api_service.submit_build_job(
+                rebuild=False,
+                request_id=current_request_id(),
+            )
+        )
 
     @app.post(
         "/jobs/rebuild",
@@ -230,7 +235,12 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         responses={409: {"description": "Another build job is already in progress."}},
     )
     def queue_rebuild_job():
-        return build_build_job_response(api_service.submit_build_job(rebuild=True))
+        return build_build_job_response(
+            api_service.submit_build_job(
+                rebuild=True,
+                request_id=current_request_id(),
+            )
+        )
 
     @app.post(
         "/knowledge-base/build",
@@ -244,7 +254,12 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         responses={409: {"description": "Another build job is already in progress."}},
     )
     def build_knowledge_base():
-        return build_build_job_response(api_service.build_knowledge_base(rebuild=False))
+        return build_build_job_response(
+            api_service.build_knowledge_base(
+                rebuild=False,
+                request_id=current_request_id(),
+            )
+        )
 
     @app.post(
         "/knowledge-base/rebuild",
@@ -258,7 +273,12 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         responses={409: {"description": "Another build job is already in progress."}},
     )
     def rebuild_knowledge_base():
-        return build_build_job_response(api_service.build_knowledge_base(rebuild=True))
+        return build_build_job_response(
+            api_service.build_knowledge_base(
+                rebuild=True,
+                request_id=current_request_id(),
+            )
+        )
 
 
 __all__ = [
