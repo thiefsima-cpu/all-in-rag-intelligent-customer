@@ -16,6 +16,7 @@ from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import QueryAnalysis, SearchStrategy
 from ..runtime.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
+from ..safe_logging import log_failure
 from .strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
@@ -132,9 +133,15 @@ class RouteSearchOrchestrator:
         request: RouteExecutionRequest,
         *,
         trace: RouteTraceRecorder,
-        error: Exception,
+        failure: Exception,
     ) -> List[EvidenceDocument]:
-        logger.error("Query routing failed, falling back to hybrid search: %s", error)
+        log_failure(
+            logger,
+            logging.ERROR,
+            "query_routing_failed",
+            code="QUERY_PROCESSING_FAILED",
+            error=failure,
+        )
         outcome = self._build_exception_fallback_outcome(request, trace=trace)
         trace.record_execution_outcome(outcome)
         return outcome.documents

@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, List, cast
 
 from ...runtime_contracts import Neo4jDriverPort
+from ...safe_logging import log_failure
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,13 @@ class Neo4jFallbackRetriever:
                         )
                     )
         except Exception as exc:
-            logger.error("Neo4j entity fallback failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
         return results
 
     def topic_search(self, keywords: List[str], limit: int) -> List[EvidenceDocument]:
@@ -136,7 +143,13 @@ class Neo4jFallbackRetriever:
                         )
                     )
         except Exception as exc:
-            logger.error("Neo4j topic fallback failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
         return results
 
     def node_neighbors(self, node_id: str, max_neighbors: int = 3) -> List[str]:
@@ -155,5 +168,11 @@ class Neo4jFallbackRetriever:
                 )
                 return [str(record["name"]) for record in records if record["name"]]
         except Exception as exc:
-            logger.error("Neighbor lookup failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return []

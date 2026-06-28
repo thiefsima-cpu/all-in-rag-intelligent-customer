@@ -107,8 +107,8 @@ class RuntimeTelemetry:
             try:
                 yield span
             except Exception as exc:
-                span.record_exception(exc)
-                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.set_attribute("error.type", type(exc).__name__)
+                span.set_status(Status(StatusCode.ERROR, "INTERNAL_ERROR"))
                 raise
 
     def record_answer(self, result) -> None:

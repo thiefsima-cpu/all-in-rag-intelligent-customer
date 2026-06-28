@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Dict, List, cast
 
 from ...runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
+from ...safe_logging import log_failure
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,13 @@ class VectorRetriever:
         try:
             vector_docs = self.milvus_module.similarity_search(query, k=top_k * 2)
         except Exception as exc:
-            logger.error("Vector retrieval failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return []
 
         if not vector_docs:
@@ -115,5 +122,11 @@ class VectorRetriever:
                     for record in records
                 }
         except Exception as exc:
-            logger.error("Batch neighbor lookup failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return {}

@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List
 
 from ...domain.shared.semantic_schema import infer_recipe_semantics
 from ...runtime_contracts import Neo4jDriverPort
+from ...safe_logging import log_failure
 from ...text_document import TextDocument
 from .models import GraphNode
 
@@ -81,11 +82,12 @@ class RecipeDocumentBuilder:
                     )
                 )
             except Exception as exc:
-                logger.warning(
-                    "Failed to build recipe document %s (ID: %s): %s",
-                    recipe.name,
-                    recipe_id,
-                    exc,
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "build_failed",
+                    code="BUILD_FAILED",
+                    error=exc,
                 )
         return documents
 

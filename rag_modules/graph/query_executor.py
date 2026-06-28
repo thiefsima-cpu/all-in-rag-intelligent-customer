@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from ..runtime_contracts import Neo4jDriverPort
+from ..safe_logging import log_failure
 from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,13 @@ class GraphQueryExecutor:
             with driver.session(database=self.database) as session:
                 return list(session.run(query, params))
         except Exception as exc:
-            logger.error("Subgraph query failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return []
 
     @staticmethod
@@ -207,5 +214,11 @@ class GraphQueryExecutor:
             with driver.session(database=self.database) as session:
                 return list(session.run(query, params))
         except Exception as exc:
-            logger.error("Graph path query failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return []

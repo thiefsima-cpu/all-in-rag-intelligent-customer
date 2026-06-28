@@ -101,7 +101,7 @@ class GenerationWorkflowService:
         self.executor = components.executor
         self.context_factory = GenerationContextFactory(self.evidence_builder)
 
-        logger.info("Generation workflow service initialized with model %s", self.model_name)
+        logger.info("Generation workflow service initialized")
 
     @classmethod
     def from_config(cls, config: GraphRAGConfig) -> "GenerationWorkflowService":

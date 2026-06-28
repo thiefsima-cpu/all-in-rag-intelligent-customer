@@ -50,7 +50,7 @@ class GraphDataPreparationModule:
             self._owns_driver = True
             with self.driver.session(database=self.database) as session:
                 session.run("RETURN 1 AS test").single()
-            logger.info("Connected to Neo4j database: %s", uri)
+            logger.info("Neo4j connection established")
 
     @property
     def recipes(self) -> List[GraphNode]:

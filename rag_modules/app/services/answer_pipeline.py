@@ -12,6 +12,7 @@ from ...runtime import (
     GenerationSnapshot,
     QueryAnalysis,
 )
+from ...safe_logging import log_failure
 from .answer_models import AnswerPipelineState, ChunkCallback, MessageCallback
 from .trace_adapters import GenerationTraceAdapter, QueryRouterTraceAdapter
 
@@ -164,7 +165,13 @@ class AnswerPipelineService:
                 chunk_callback("\n")
             return answer, trace
         except Exception as exc:
-            logger.error("Streaming output failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "streaming_output_failed",
+                code="ANSWER_FAILED",
+                error=exc,
+            )
             self._emit(
                 message_callback,
                 "\n[WARN] Streaming output interrupted. Falling back to standard mode...",

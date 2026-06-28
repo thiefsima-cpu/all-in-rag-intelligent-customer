@@ -6,6 +6,7 @@ import logging
 from collections.abc import Mapping
 
 from ...runtime.json_types import JsonObject, JsonValue
+from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,12 @@ class _MilvusSearchOperations(MilvusOperationHost):
 
             return formatted_results
 
-        except Exception as e:
-            logger.error(f"相似度搜索失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return []

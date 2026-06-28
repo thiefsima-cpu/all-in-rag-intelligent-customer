@@ -10,6 +10,7 @@ import threading
 from typing import Protocol
 
 from ..runtime import QueryTraceEvent
+from ..safe_logging import log_failure
 from ..trace_privacy import TraceSanitizer
 
 logger = logging.getLogger(__name__)
@@ -182,7 +183,13 @@ class AsyncQueryTraceSink:
         try:
             self.delegate.close()
         except Exception as exc:
-            logger.warning("Failed to close query trace delegate sink: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "query_trace_sink_failed",
+                code="TRACE_SINK_FAILED",
+                error=exc,
+            )
 
     def stats(self) -> dict[str, int | bool | str]:
         base_stats = {}
@@ -191,7 +198,13 @@ class AsyncQueryTraceSink:
             try:
                 base_stats = dict(stats_getter() or {})
             except Exception as exc:
-                logger.debug("Failed to read delegate trace sink stats: %s", exc)
+                log_failure(
+                    logger,
+                    logging.DEBUG,
+                    "query_trace_sink_failed",
+                    code="TRACE_SINK_FAILED",
+                    error=exc,
+                )
         with self._stats_lock:
             closed = self._closed
             dropped_events = self._dropped_events
@@ -219,7 +232,13 @@ class AsyncQueryTraceSink:
             except Exception as exc:
                 with self._stats_lock:
                     self._failed_events += 1
-                logger.warning("Failed to persist async query trace event: %s", exc)
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "query_trace_sink_failed",
+                    code="TRACE_SINK_FAILED",
+                    error=exc,
+                )
             else:
                 with self._stats_lock:
                     self._written_events += 1

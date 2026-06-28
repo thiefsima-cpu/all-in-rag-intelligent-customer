@@ -9,6 +9,7 @@ from ..runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactA
 from ..runtime.artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest, ArtifactManifestStore
 from ..runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ..runtime.stats_ports import RuntimeStatsAccessPort
+from ..safe_logging import log_failure
 from .contracts import (
     DocumentArtifactBuilderPort,
     SemanticGraphSchemaSyncPort,
@@ -182,7 +183,13 @@ class KnowledgeBaseBuildWorkflow(
                 self._discard_vector_build(build_target["collection_name"])
             self._configure_active_collection(active_manifest)
             self.manifest_lifecycle.mark_failed(exc)
-            logger.exception("Knowledge base build failed")
+            log_failure(
+                logger,
+                logging.ERROR,
+                "build_failed",
+                code="BUILD_FAILED",
+                error=exc,
+            )
             raise
 
     def rebuild(self, progress: ProgressCallback = None) -> ArtifactManifest:

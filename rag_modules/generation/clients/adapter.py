@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from ...infra.resilience import CircuitBreaker
 from ...runtime_contracts import LLMCompletionResponsePort
+from ...safe_logging import log_failure
 from .errors import (
     GenerationLatencyBudgetExceeded,
     GenerationProviderResponseError,
@@ -102,7 +103,14 @@ class GenerationClientAdapter:
                 return cast(LLMCompletionResponsePort, response)
             except Exception as exc:
                 last_exc = exc
-                logger.warning("Completion attempt %s failed: %s", attempt + 1, exc)
+                logger.warning("Completion attempt failed: attempt=%s", attempt + 1)
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "generation_attempt_failed",
+                    code="GENERATION_FAILED",
+                    error=exc,
+                )
                 if attempt < self.request_retries - 1 and is_retryable_generation_error(exc):
                     remaining = request_deadline - time.perf_counter()
                     if remaining <= 0:
@@ -181,10 +189,13 @@ class GenerationClientAdapter:
                 if circuit_started:
                     self.circuit_breaker.record_failure()
                 last_exc = exc
-                logger.warning(
-                    "Streaming generation attempt %s failed: %s",
-                    attempt + 1,
-                    exc,
+                logger.warning("Streaming generation attempt failed: attempt=%s", attempt + 1)
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "generation_attempt_failed",
+                    code="GENERATION_FAILED",
+                    error=exc,
                 )
                 if emitted_content:
                     break

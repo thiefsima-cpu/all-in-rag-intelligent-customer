@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Sequence, Tuple
 
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
+from ..safe_logging import log_failure
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
 from .contracts import EvidenceDocument, RetrievalRequest
 
@@ -228,7 +229,14 @@ class RetrievalCandidateGenerator:
             )
         except Exception as exc:
             breaker.record_failure()
-            logger.warning("Candidate source %s degraded: %s", source.spec.name, exc)
+            logger.warning("Candidate source degraded: name=%s", source.spec.name)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             if self._should_raise_degradation():
                 raise
             return [], self._degradation(

@@ -7,6 +7,7 @@ from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
 from ..runtime_contracts import GraphDataModulePort
+from ..safe_logging import log_failure
 from .contracts import SemanticGraphSchemaSyncPort, SemanticGraphSchemaSyncResult
 from .stats_presenter import ProgressCallback
 
@@ -44,8 +45,14 @@ class _KnowledgeBaseSchemaSyncMixin(_KnowledgeBaseSchemaSyncHost):
                 f"semantic_relationships={result.relationships}",
             )
             return result
-        except Exception:
-            logger.warning("Semantic graph schema sync failed.")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.WARNING,
+                "semantic_schema_sync_failed",
+                code="BUILD_FAILED",
+                error=exc,
+            )
             self._emit(progress, "[WARN] Semantic graph schema sync failed. Continuing startup.")
             return SemanticGraphSchemaSyncResult(
                 enabled=True,

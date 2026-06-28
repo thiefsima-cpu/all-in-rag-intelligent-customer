@@ -10,6 +10,7 @@ import jieba
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
+from ...safe_logging import log_failure
 from ..contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def load_custom_dict(dict_path: str = "storage/jieba_dict.txt") -> None:
         return
     if os.path.isfile(dict_path):
         jieba.load_userdict(dict_path)
-        logger.info("Loaded jieba custom dictionary: %s", dict_path)
+        logger.info("Loaded jieba custom dictionary")
     _CUSTOM_DICT_LOADED = True
 
 
@@ -125,7 +126,7 @@ class BM25Retriever:
                 )
             )
 
-        logger.info("BM25 search complete: returned=%d query_tokens=%s", len(docs), tokenized_query)
+        logger.info("BM25 search complete: returned=%d", len(docs))
         return docs
 
     def to_cache_dict(self) -> dict:
@@ -161,5 +162,11 @@ class BM25Retriever:
             self.bm25 = BM25Okapi(normalized_tokens)
             return True
         except Exception as exc:
-            logger.warning("Failed to restore BM25 cache: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return False

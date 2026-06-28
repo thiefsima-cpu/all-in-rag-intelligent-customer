@@ -165,7 +165,8 @@ class QueryConstraintExtractor:
             settings=self.semantic_settings,
         )
         constraints = QueryConstraints.from_dict(profile.constraints)
-        logger.info("查询约束解析完成: %s", constraints.to_dict())
+        has_constraints = constraints.has_constraints()
+        logger.info("Query constraints parsed: present=%s", has_constraints)
         return constraints
 
 

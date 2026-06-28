@@ -59,7 +59,7 @@ class Neo4jConnectionManager:
             )
             with self._driver.session(database=self.database) as session:
                 session.run("RETURN 1")
-            logger.info("Neo4j connection established: %s (db=%s)", self.uri, self.database)
+            logger.info("Neo4j connection established")
         return self._driver
 
     def session(self, **kwargs):

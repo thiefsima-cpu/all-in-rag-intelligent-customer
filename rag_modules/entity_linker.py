@@ -19,6 +19,7 @@ from .query_understanding import (
     default_entity_linker_relation_priorities,
 )
 from .runtime_contracts import Neo4jDriverPort
+from .safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,13 @@ class EntityLinker:
                 records = session.run(query, text=text, limit=self.limit_per_entity)
                 candidates = [self._from_record(text, record) for record in records]
         except Exception as exc:
-            logger.warning("Entity linking failed for %s: %s", text, exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "entity_linking_failed",
+                code="ENTITY_LINKING_FAILED",
+                error=exc,
+            )
             return []
 
         filtered = [

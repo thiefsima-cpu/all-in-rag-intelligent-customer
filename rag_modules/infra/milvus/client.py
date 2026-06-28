@@ -9,6 +9,7 @@ from pymilvus import MilvusClient
 
 from ...dashscope_clients import DashScopeEmbeddingClient
 from ...runtime.json_types import JsonObject, coerce_json_object
+from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
@@ -19,19 +20,25 @@ class _MilvusClientOperations(MilvusOperationHost):
         """初始化Milvus客户端"""
         try:
             self.client = MilvusClient(uri=f"http://{self.host}:{self.port}")
-            logger.info(f"已连接到Milvus服务器: {self.host}:{self.port}")
+            logger.info("Milvus connection established")
 
             # 测试连接
             collections = self.client.list_collections()
-            logger.info(f"连接成功，当前集合: {collections}")
+            logger.info("Milvus collections listed: count=%s", len(collections))
 
-        except Exception as e:
-            logger.error(f"连接Milvus失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             raise
 
     def _setup_embeddings(self):
         """初始化嵌入模型"""
-        logger.info(f"正在初始化嵌入模型: {self.model_name}")
+        logger.info("Initializing embedding model")
 
         embedding_client = getattr(self, "embedding_client", None)
         if embedding_client is not None:
@@ -84,8 +91,14 @@ class _MilvusClientOperations(MilvusOperationHost):
                 "stats": coerce_json_object(stats),
             }
 
-        except Exception:
-            logger.error("Milvus collection stats unavailable.")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return {"error": "MILVUS_STATS_UNAVAILABLE"}
 
     def delete_collection(self, collection_name: Optional[str] = None) -> bool:
@@ -99,16 +112,22 @@ class _MilvusClientOperations(MilvusOperationHost):
             target_collection = collection_name or self.collection_name
             if self.client.has_collection(target_collection):
                 self.client.drop_collection(target_collection)
-                logger.info(f"集合 {target_collection} 已删除")
+                logger.info("Milvus collection deleted")
                 if target_collection == self.collection_name:
                     self.collection_created = False
                 return True
             else:
-                logger.info(f"集合 {target_collection} 不存在")
+                logger.info("Milvus collection not found")
                 return True
 
-        except Exception as e:
-            logger.error(f"删除集合失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False
 
     def has_collection(self, collection_name: Optional[str] = None) -> bool:
@@ -123,8 +142,14 @@ class _MilvusClientOperations(MilvusOperationHost):
             if target_collection == self.collection_alias:
                 return bool(self.alias_target())
             return self.client.has_collection(target_collection)
-        except Exception as e:
-            logger.error(f"检查集合存在性失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False
 
     def load_collection(self, collection_name: Optional[str] = None) -> bool:
@@ -142,17 +167,23 @@ class _MilvusClientOperations(MilvusOperationHost):
                 else target_collection
             )
             if not load_target or not self.client.has_collection(load_target):
-                logger.error(f"集合 {target_collection} 不存在")
+                logger.error("Milvus collection not found")
                 return False
 
             self.client.load_collection(load_target)
             self.collection_name = target_collection
             self.collection_created = True
-            logger.info(f"集合 {target_collection} 已加载到内存")
+            logger.info("Milvus collection loaded")
             return True
 
-        except Exception as e:
-            logger.error(f"加载集合失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False
 
     def close(self):

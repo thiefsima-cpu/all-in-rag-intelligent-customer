@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ..evidence_processing import extract_evidence_units
 from ..retrieval.contracts import EvidenceDocument
+from ..safe_logging import log_failure
 from .evidence_builder import GraphEvidenceBuilder
 from .path_ranker import GraphDocumentRanker
 from .retrieval_types import GraphPath, KnowledgeSubgraph
@@ -51,7 +52,13 @@ class GraphRetrievalPostProcessor:
                 path_type=path_type,
             )
         except Exception as exc:
-            logger.error("Path parsing failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return None
 
     def build_knowledge_subgraph(self, record: Any) -> KnowledgeSubgraph:
@@ -80,7 +87,13 @@ class GraphRetrievalPostProcessor:
                 reasoning_chains=[],
             )
         except Exception as exc:
-            logger.error("Subgraph materialization failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return self.empty_subgraph()
 
     def merge_subgraphs(self, subgraphs: List[KnowledgeSubgraph]) -> KnowledgeSubgraph:

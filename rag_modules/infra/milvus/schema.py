@@ -7,6 +7,7 @@ from typing import Optional
 
 from pymilvus import CollectionSchema, DataType, FieldSchema
 
+from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)
@@ -61,10 +62,10 @@ class _MilvusSchemaOperations(MilvusOperationHost):
             # 检查集合是否存在
             if self.client.has_collection(target_collection):
                 if force_recreate:
-                    logger.info(f"删除已存在的集合: {target_collection}")
+                    logger.info("Milvus collection dropped before recreation")
                     self.client.drop_collection(target_collection)
                 else:
-                    logger.info(f"集合 {target_collection} 已存在")
+                    logger.info("Milvus collection already exists")
                     self.collection_created = True
                     return True
 
@@ -78,14 +79,20 @@ class _MilvusSchemaOperations(MilvusOperationHost):
                 consistency_level="Strong",
             )
 
-            logger.info(f"成功创建集合: {target_collection}")
+            logger.info("Milvus collection created")
             self.collection_name = target_collection
             self.collection_created = True
 
             return True
 
-        except Exception as e:
-            logger.error(f"创建集合失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False
 
     def create_index(self, *, collection_name: Optional[str] = None) -> bool:
@@ -117,6 +124,12 @@ class _MilvusSchemaOperations(MilvusOperationHost):
             logger.info("向量索引创建成功")
             return True
 
-        except Exception as e:
-            logger.error(f"创建索引失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False

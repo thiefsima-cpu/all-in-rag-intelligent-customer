@@ -8,6 +8,7 @@ import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnswerContext, GenerationSnapshot
+from ...safe_logging import log_failure
 from ..clients import generation_failure_code
 from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
 from ..models import AnswerPlan
@@ -41,7 +42,13 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return answer, self._snapshot_trace(trace)
         except Exception as exc:
-            logger.warning("Two-stage generation failed: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
             trace.request_retries += self._consume_retry_count()
             if not should_skip_model_fallback(
                 exc,
@@ -64,7 +71,13 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return answer, self._snapshot_trace(trace)
                 except Exception as fallback_exc:
-                    logger.warning("Direct model fallback also failed: %s", fallback_exc)
+                    log_failure(
+                        logger,
+                        logging.WARNING,
+                        "generation_fallback_failed",
+                        code="GENERATION_FAILED",
+                        error=fallback_exc,
+                    )
                     trace.request_retries += self._consume_retry_count()
                     exc = fallback_exc
 

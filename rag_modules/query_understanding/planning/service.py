@@ -9,6 +9,7 @@ from copy import deepcopy
 from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
 from ...retrieval.runtime_profile import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from ...runtime_contracts import LLMClientPort
+from ...safe_logging import log_failure
 from ..planner_models import QueryPlan
 from ..registry import QuerySemanticProfile
 from ..scoring import should_use_fast_rule_plan
@@ -50,14 +51,14 @@ class QueryPlanner:
         cached = self._cached_plan(cache_key)
         if cached is not None:
             cached.used_cache = True
-            logger.info("Query plan cache hit: %s", cache_key)
+            logger.info("Query plan cache hit")
             return cached
 
         future, is_owner = self._claim_planning(cache_key)
         if not is_owner:
             plan = deepcopy(future.result())
             plan.used_cache = True
-            logger.info("Query planning joined in-flight request: %s", cache_key)
+            logger.info("Query planning joined in-flight request")
             return plan
 
         try:
@@ -99,10 +100,18 @@ class QueryPlanner:
             self._calibrate_plan(plan)
             plan.planner_mode = "llm"
             plan.used_cache = False
-            logger.info("Query plan created: %s", plan.to_dict())
+            planner_mode = plan.planner_mode
+            strategy = plan.strategy
+            logger.info("Query plan created: mode=%s strategy=%s", planner_mode, strategy)
             return plan
         except Exception as exc:
-            logger.warning("Query planning failed, using rule fallback: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "query_planning_failed",
+                code="QUERY_PROCESSING_FAILED",
+                error=exc,
+            )
             plan = self.rule_based_plan(query)
             self._calibrate_plan(plan)
             plan.fallback_reason = "query_planning_failed"

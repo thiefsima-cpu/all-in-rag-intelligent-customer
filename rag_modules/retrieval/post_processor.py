@@ -17,6 +17,7 @@ from langchain_core.documents import Document
 from ..dashscope_clients import DashScopeRerankClient
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
 from ..runtime_contracts import RerankClientPort
+from ..safe_logging import log_failure
 from .contracts import (
     EvidenceDocument,
     ensure_evidence_documents,
@@ -151,7 +152,13 @@ class RetrievalPostProcessor:
                 top_n=min(top_k, len(documents)),
             )
         except Exception as exc:
-            logger.warning("Rerank failed, keeping retrieval order: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return documents
 
         reranked: List[EvidenceDocument] = []

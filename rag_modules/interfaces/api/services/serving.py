@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -13,6 +14,7 @@ from ....app.application_protocol import GraphRAGApplication
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
+from ....safe_logging import log_failure
 from ..answer_models import AnswerStreamEventModel
 from ..error_models import ErrorCode, sanitize_public_error_fields
 from ..request_context import normalize_or_generate_request_id
@@ -23,6 +25,8 @@ from .errors import (
     SystemNotReadyError,
     _StreamCancelledError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class _StreamEnd:
@@ -326,7 +330,15 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                 emit_error(ErrorCode.SYSTEM_NOT_READY)
             except AnswerFailedError:
                 emit_error(ErrorCode.ANSWER_FAILED)
-            except Exception:
+            except Exception as exc:
+                log_failure(
+                    logger,
+                    logging.ERROR,
+                    "answer_workflow_failed",
+                    code=ErrorCode.ANSWER_FAILED.value,
+                    error=exc,
+                    request_id=request_id,
+                )
                 emit_error(ErrorCode.ANSWER_FAILED)
             finally:
                 finish_stream()

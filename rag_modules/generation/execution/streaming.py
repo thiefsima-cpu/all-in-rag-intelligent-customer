@@ -8,6 +8,7 @@ from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
+from ...safe_logging import log_failure
 from ..clients import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
@@ -103,7 +104,13 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return self._finalize_trace(trace)
         except Exception as exc:
-            logger.warning("Streaming answer generation failed: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
             trace.request_retries += self._consume_retry_count()
             if decision.mode == "two_stage" and not should_skip_model_fallback(
                 exc,
@@ -137,7 +144,13 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return self._finalize_trace(trace)
                 except Exception as fallback_exc:
-                    logger.warning("Streaming direct fallback also failed: %s", fallback_exc)
+                    log_failure(
+                        logger,
+                        logging.WARNING,
+                        "generation_fallback_failed",
+                        code="GENERATION_FAILED",
+                        error=fallback_exc,
+                    )
                     trace.request_retries += self._consume_retry_count()
                     exc = fallback_exc
 

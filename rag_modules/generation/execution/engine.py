@@ -13,6 +13,7 @@ from ...runtime import (
     RetrievalOutcome,
     ensure_optional_query_analysis,
 )
+from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
 from ..models import AnswerPlan, GenerationSettings
@@ -118,7 +119,13 @@ class GenerationExecutionEngine(
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return answer, self._finalize_trace(trace)
         except Exception as exc:
-            logger.warning("Direct answer generation failed: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
             trace.request_retries += self._consume_retry_count()
             answer, trace = self._build_fallback_answer(
                 package=selected_package,

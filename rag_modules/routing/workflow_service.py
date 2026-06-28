@@ -85,7 +85,7 @@ class RoutingWorkflowService:
         query: str,
         top_k: int = 5,
     ) -> tuple[RouteResolution, RouteSnapshot]:
-        logger.info("Routing query: %s", query)
+        logger.info("Query routing started: top_k=%s", top_k)
         route_start = time.perf_counter()
         trace = RouteTraceRecorder(query=query, requested_top_k=top_k)
 
@@ -123,12 +123,12 @@ class RoutingWorkflowService:
             evidence_documents = self.search_orchestrator.execute_exception_fallback(
                 execution_request,
                 trace=trace,
-                error=exc,
+                failure=exc,
             )
             route_trace = trace.finalize(
                 total_start_time=route_start,
                 final_doc_count=len(evidence_documents),
-                error=str(exc),
+                error="QUERY_PROCESSING_FAILED",
             )
             resolution = self._build_resolution(
                 understanding=understanding,

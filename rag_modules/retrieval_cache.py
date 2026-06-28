@@ -14,6 +14,7 @@ from langchain_core.documents import Document
 from .domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .graph_index.snapshot import GRAPH_INDEX_VERSION
 from .runtime.artifacts import write_json_atomic
+from .safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,13 @@ class RetrievalCacheStore:
                 return None
             return artifacts
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            logger.warning("Failed to load hybrid cache; rebuilding indexes: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return None
 
     def save(self, chunks: List[Document], payload: Dict[str, Any]) -> None:
@@ -132,9 +139,15 @@ class RetrievalCacheStore:
                 "artifacts": artifacts,
             }
             write_json_atomic(path, envelope)
-            logger.info("Hybrid index cache saved: %s", path)
+            logger.info("Hybrid index cache saved")
         except (OSError, TypeError, ValueError) as exc:
-            logger.warning("Failed to save hybrid cache: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
 
 
 __all__ = ["HYBRID_CACHE_SCHEMA_VERSION", "RetrievalCacheStore"]

@@ -16,6 +16,7 @@ from ...runtime.artifacts import (
     read_documents,
     write_documents,
 )
+from ...safe_logging import log_failure
 from .manifest import DocumentArtifactManifestAssembler
 from .models import DocumentArtifactResult
 from .settings import DocumentArtifactSettings
@@ -89,7 +90,13 @@ class DocumentIndexCache:
             documents = read_documents(self.documents_path)
             chunks = read_documents(self.chunks_path)
         except Exception as exc:
-            logger.warning("Failed to load document artifact cache. Rebuilding: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "document_cache_load_failed",
+                code="BUILD_FAILED",
+                error=exc,
+            )
             return None
         expected_documents_digest = str(manifest.build_metadata.get("documents_sha256") or "")
         expected_chunks_digest = str(manifest.build_metadata.get("chunks_sha256") or "")
@@ -161,11 +168,8 @@ class DocumentIndexCache:
         save_candidate = getattr(self.manifest_store, "save_candidate", None)
         if callable(save_candidate):
             saved_manifest = save_candidate(manifest)
-            logger.info(
-                "Document artifact candidate manifest saved to %s",
-                getattr(self.manifest_store, "candidate_path", self.manifest_store.manifest_path),
-            )
+            logger.info("Document artifact candidate manifest saved")
         else:
             saved_manifest = self.manifest_store.save(manifest)
-            logger.info("Document artifact manifest saved to %s", self.manifest_store.manifest_path)
+            logger.info("Document artifact manifest saved")
         return saved_manifest

@@ -6,6 +6,7 @@ import logging
 import time
 from typing import List, Optional
 
+from ...safe_logging import log_failure
 from ...text_document import TextDocument
 from .contracts import MilvusOperationHost
 
@@ -114,8 +115,14 @@ class _MilvusWriterOperations(MilvusOperationHost):
             logger.info(f"向量索引构建完成，包含 {len(chunks)} 个向量")
             return True
 
-        except Exception as e:
-            logger.error(f"构建向量索引失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False
 
     def add_documents(self, new_chunks: List[TextDocument]) -> bool:
@@ -169,6 +176,12 @@ class _MilvusWriterOperations(MilvusOperationHost):
             logger.info("新文档添加完成")
             return True
 
-        except Exception as e:
-            logger.error(f"添加新文档失败: {e}")
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "milvus_operation_failed",
+                code="MILVUS_OPERATION_FAILED",
+                error=exc,
+            )
             return False

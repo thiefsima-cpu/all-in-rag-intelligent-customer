@@ -13,6 +13,7 @@ from langchain_core.documents import Document
 from ..domain.shared.query_constraints import RecipeConstraintMatcher
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
+from ..safe_logging import log_failure
 from .adapters import BM25Retriever
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,13 @@ class HybridIndexService:
             if not self.restore_bm25_retriever(payload):
                 return None
         except Exception as exc:
-            logger.warning("Hybrid cache payload is invalid; rebuilding indexes: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return None
 
         artifacts = HybridIndexArtifacts(
@@ -171,7 +178,13 @@ class HybridIndexService:
             self.graph_indexed = True
             logger.info("Graph index ready: %s", self.graph_indexing.get_statistics())
         except Exception as exc:
-            logger.error("Graph index build failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
 
     def _extract_relationships_from_graph(self, driver) -> List[Tuple[str, str, str]]:
         relationships: List[Tuple[str, str, str]] = []
@@ -194,6 +207,12 @@ class HybridIndexService:
                         )
                     )
         except Exception as exc:
-            logger.error("Relationship extraction failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
 
         return relationships

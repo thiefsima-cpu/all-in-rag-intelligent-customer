@@ -7,6 +7,7 @@ from typing import Protocol
 
 from ..runtime import QueryTraceEvent
 from ..runtime.json_types import JsonObject, coerce_json_object
+from ..safe_logging import log_failure
 from .tracing_sinks import QueryTraceSink
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,25 @@ class _TraceSinkInteractionMixin(_TraceSinkInteractionHost):
         try:
             self.sink.write(event)
         except Exception as exc:
-            logger.warning("Failed to write query trace: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "query_trace_sink_failed",
+                code="TRACE_SINK_FAILED",
+                error=exc,
+            )
 
     def close(self) -> None:
         try:
             self.sink.close()
         except Exception as exc:
-            logger.warning("Failed to close query tracer sink: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "query_trace_sink_failed",
+                code="TRACE_SINK_FAILED",
+                error=exc,
+            )
 
     def stats(self) -> JsonObject:
         sink_stats: JsonObject = {}
@@ -42,7 +55,13 @@ class _TraceSinkInteractionMixin(_TraceSinkInteractionHost):
             try:
                 sink_stats = coerce_json_object(sink_stats_getter() or {})
             except Exception as exc:
-                logger.debug("Failed to read query trace sink stats: %s", exc)
+                log_failure(
+                    logger,
+                    logging.DEBUG,
+                    "query_trace_sink_failed",
+                    code="TRACE_SINK_FAILED",
+                    error=exc,
+                )
         return coerce_json_object(
             {
                 "enabled": self.enabled,

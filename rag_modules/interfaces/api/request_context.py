@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from contextvars import ContextVar
 from uuid import uuid4
 
+from ...safe_logging import log_failure
 from .error_models import ErrorCode, build_error_response
+
+logger = logging.getLogger(__name__)
 
 _REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z", flags=re.ASCII)
 _REQUEST_ID: ContextVar[str] = ContextVar("graph_rag_request_id", default="")
@@ -55,7 +59,15 @@ class RequestContextMiddleware:
 
         try:
             await self.app(scope, receive, send_with_request_id)
-        except Exception:
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "api_request_failed",
+                code=ErrorCode.INTERNAL_ERROR.value,
+                error=exc,
+                request_id=request_id,
+            )
             if response_started:
                 raise
             response = build_error_response(

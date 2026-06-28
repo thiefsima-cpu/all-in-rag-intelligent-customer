@@ -135,9 +135,9 @@ class HybridSearchService:
         effective_constraints = request.effective_constraints
 
         logger.info(
-            "Starting hybrid retrieval (dual + vector + bm25, RRF k=%s): %s",
+            "Starting hybrid retrieval: rrf_k=%s top_k=%s",
             self.fusion_ranker.rrf_k,
-            request.query,
+            request.top_k,
         )
 
         candidates = self.candidate_generator.generate(request)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from ...safe_logging import log_failure
 from ...telemetry import get_runtime_telemetry
 from .answer_models import (
     AnswerPipelineState,
@@ -95,7 +96,13 @@ class AnswerWorkflow:
                     trace_bundle=trace_bundle,
                 )
             except Exception as exc:
-                logger.error("Question answering failed: %s", exc)
+                log_failure(
+                    logger,
+                    logging.ERROR,
+                    "answer_workflow_failed",
+                    code="ANSWER_FAILED",
+                    error=exc,
+                )
                 state = self.pipeline.capture_runtime_traces(state)
                 latency_ms = (time.perf_counter() - start_time) * 1000
                 trace_bundle = self.trace_assembler.record(

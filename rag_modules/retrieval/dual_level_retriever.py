@@ -38,7 +38,7 @@ class DualLevelRetriever:
         )
 
     def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        logger.info("Starting dual-level retrieval: %s", request.query)
+        logger.info("Starting dual-level retrieval: candidate_k=%s", request.effective_candidate_k)
         entity_keywords, topic_keywords = self._resolve_keywords(request)
 
         entity_results = self.entity_level_retrieval(
