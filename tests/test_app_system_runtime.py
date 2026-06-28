@@ -15,11 +15,10 @@ from rag_modules.app.composition import (
     RuntimeReadinessService,
     RuntimeStateStore,
     SystemAnsweringService,
-    SystemApplicationServiceComposer,
     SystemBootstrapperSurfaceComposer,
     SystemFacadeSupport,
-    SystemOperationsService,
     SystemRuntimeInfrastructureComposer,
+    SystemRuntimeManager,
 )
 from rag_modules.app.provider_components.generation import DefaultGenerationComponentProvider
 from rag_modules.app.provider_components.query_understanding import (
@@ -356,22 +355,32 @@ class AppSystemRuntimeTests(unittest.TestCase):
             infrastructure.runtime_state_store,
         )
 
-    def test_application_service_composer_assembles_runtime_backed_services(self) -> None:
-        runtime_backend = SimpleNamespace(name="runtime-backend")
-        runtime_state_store = RuntimeStateStore()
+    def test_system_composer_assembles_runtime_backed_services(self) -> None:
+        build_runtime = _build_runtime()
+        serving_runtime = _serving_runtime(build_runtime.config)
 
-        services = SystemApplicationServiceComposer().compose(
-            runtime_backend=runtime_backend,
-            runtime_state_store=runtime_state_store,
+        components = AdvancedGraphRAGSystemComposer().compose(
+            config=build_runtime.config,
+            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
+            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
         )
 
-        self.assertIsInstance(services.operations_service, SystemOperationsService)
-        self.assertIsInstance(services.answering_service, SystemAnsweringService)
-        self.assertIsInstance(services.facade_support, SystemFacadeSupport)
-        self.assertIs(services.operations_service.backend, runtime_backend)
-        self.assertIs(services.answering_service.backend, runtime_backend)
-        self.assertIs(services.answering_service.runtime_state_store, runtime_state_store)
-        self.assertIs(services.facade_support.runtime_state_store, runtime_state_store)
+        self.assertIsInstance(components.operations_service, SystemRuntimeManager)
+        self.assertIsInstance(components.answering_service, SystemAnsweringService)
+        self.assertIsInstance(components.facade_support, SystemFacadeSupport)
+        self.assertIs(
+            components.operations_service.runtime_state_store,
+            components.runtime_state_store,
+        )
+        self.assertIs(components.answering_service.backend, components.operations_service)
+        self.assertIs(
+            components.answering_service.runtime_state_store,
+            components.runtime_state_store,
+        )
+        self.assertIs(
+            components.facade_support.runtime_state_store,
+            components.runtime_state_store,
+        )
 
     def test_system_answering_service_does_not_refresh_runtime_after_answer(self) -> None:
         answer_workflow = SimpleNamespace(
@@ -559,8 +568,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
 
         self.assertIsInstance(components.facade_support, SystemFacadeSupport)
-        manager = components.operations_service.backend
-        self.assertIs(components.answering_service.backend, manager)
+        self.assertIsInstance(components.operations_service, SystemRuntimeManager)
+        self.assertIs(components.answering_service.backend, components.operations_service)
         self.assertFalse(hasattr(components, "runtime_manager"))
 
     def test_system_composer_shares_runtime_state_store(self) -> None:
@@ -575,14 +584,14 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
 
         self.assertIsInstance(components.runtime_state_store, RuntimeStateStore)
-        manager = components.operations_service.backend
+        manager = components.operations_service
         self.assertIs(manager.runtime_state_store, components.runtime_state_store)
         self.assertIs(components.facade_support.runtime_state_store, components.runtime_state_store)
         self.assertIs(
             components.answering_service.runtime_state_store, components.runtime_state_store
         )
 
-    def test_system_composer_produces_operations_service(self) -> None:
+    def test_system_composer_uses_runtime_manager_as_operations_service(self) -> None:
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(build_runtime.config)
         composer = AdvancedGraphRAGSystemComposer()
@@ -593,11 +602,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
             serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
         )
 
-        self.assertIsInstance(components.operations_service, SystemOperationsService)
-        self.assertIs(
-            components.operations_service.backend.runtime_state_store,
-            components.runtime_state_store,
-        )
+        self.assertIsInstance(components.operations_service, SystemRuntimeManager)
+        self.assertIs(components.operations_service.runtime_state_store, components.runtime_state_store)
 
     def test_system_composer_produces_answering_service(self) -> None:
         build_runtime = _build_runtime()
@@ -613,7 +619,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertIsInstance(components.answering_service, SystemAnsweringService)
         self.assertIs(
             components.answering_service.backend,
-            components.operations_service.backend,
+            components.operations_service,
         )
 
     def test_system_composer_does_not_produce_interactive_service(self) -> None:

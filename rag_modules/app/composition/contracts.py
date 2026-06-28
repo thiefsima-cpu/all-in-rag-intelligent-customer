@@ -178,82 +178,6 @@ class SystemOperationsProtocol(Protocol):
     def close(self) -> None: ...
 
 
-class SystemOperationsBackendProtocol(Protocol):
-    """Runtime lifecycle backend consumed by the public operations service."""
-
-    def initialize_build_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        neo4j_manager=None,
-    ) -> BuildRuntime: ...
-
-    def initialize_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> ServingRuntime: ...
-
-    def initialize_system(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> SystemRuntime: ...
-
-    def is_initialized(self) -> bool: ...
-
-    def is_build_initialized(self) -> bool: ...
-
-    def is_serving_initialized(self) -> bool: ...
-
-    def build_knowledge_base(
-        self,
-        *,
-        progress: ProgressCallback = None,
-    ) -> BuildRuntime: ...
-
-    def rebuild_knowledge_base(
-        self,
-        *,
-        progress: ProgressCallback = None,
-    ) -> BuildRuntime: ...
-
-    def refresh_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        force: bool = True,
-    ) -> ServingRuntime: ...
-
-    def collect_system_stats(self) -> dict[str, Any]: ...
-
-    def collect_startup_diagnostics(self, mode: str) -> StartupDiagnostics: ...
-
-    def require_ready(self) -> ServingRuntime: ...
-
-    def close(self) -> None: ...
-
-
-class SystemAnsweringBackendProtocol(Protocol):
-    """Serving-runtime readiness backend consumed by the answering service."""
-
-    def is_serving_initialized(self) -> bool: ...
-
-    def initialize_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> ServingRuntime: ...
-
-    def require_ready(self) -> ServingRuntime: ...
-
-
 class SystemFacadeSupportProtocol(Protocol):
     """Runtime/public-surface adapter exposed to the thin application facade."""
 
@@ -286,9 +210,7 @@ class SystemFacadeSupportProtocol(Protocol):
 
 
 __all__ = [
-    "SystemAnsweringBackendProtocol",
     "SystemFacadeSupportProtocol",
-    "SystemOperationsBackendProtocol",
     "BuildRuntimeExecutorProtocol",
     "BuildRuntimeFactoryProtocol",
     "ServingRuntimeFactoryProtocol",

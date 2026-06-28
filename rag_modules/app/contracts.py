@@ -8,9 +8,7 @@ from .composition.contracts import (
     ServingRuntimeFactoryProtocol,
     ServingRuntimeLifecycleServiceProtocol,
     ServingRuntimePreparerProtocol,
-    SystemAnsweringBackendProtocol,
     SystemFacadeSupportProtocol,
-    SystemOperationsBackendProtocol,
     SystemOperationsProtocol,
 )
 from .provider_components.contracts import RuntimeComponentProvider
@@ -24,8 +22,6 @@ __all__ = [
     "ServingRuntimeFactoryProtocol",
     "ServingRuntimeLifecycleServiceProtocol",
     "ServingRuntimePreparerProtocol",
-    "SystemAnsweringBackendProtocol",
     "SystemFacadeSupportProtocol",
-    "SystemOperationsBackendProtocol",
     "SystemOperationsProtocol",
 ]

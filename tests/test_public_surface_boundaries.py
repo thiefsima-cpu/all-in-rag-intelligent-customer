@@ -2146,7 +2146,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "CLI-only modules should be removed after API-only retirement.",
         )
 
-    def test_system_composer_delegates_to_sub_composers(self) -> None:
+    def test_system_composer_delegates_runtime_assembly_and_wires_app_services(self) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
@@ -2158,15 +2158,13 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         )
         found_bootstrapper_surface_composer = False
         found_runtime_infrastructure_composer = False
-        found_application_service_composer = False
         found_components_field = False
         violations: list[str] = []
         prohibited_calls = {
             "GraphRAGBootstrapper",
             "SystemRuntimeManager",
-            "SystemFacadeSupport",
             "SystemOperationsService",
-            "SystemAnsweringService",
+            "SystemApplicationServiceComposer",
             "SystemInteractiveService",
         }
 
@@ -2180,8 +2178,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     found_bootstrapper_surface_composer = True
                 elif node.func.id == "SystemRuntimeInfrastructureComposer":
                     found_runtime_infrastructure_composer = True
-                elif node.func.id == "SystemApplicationServiceComposer":
-                    found_application_service_composer = True
                 elif node.func.id == "AdvancedGraphRAGSystemComponents":
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
                     found_components_field = "facade_support" in keyword_names
@@ -2209,10 +2205,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "system composer should delegate runtime assembly to SystemRuntimeInfrastructureComposer",
         )
         self.assertTrue(
-            found_application_service_composer,
-            "system composer should delegate app-service assembly to SystemApplicationServiceComposer",
-        )
-        self.assertTrue(
             found_components_field,
             "system components should carry facade_support",
         )
@@ -2222,24 +2214,25 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_application_service_composer_wires_facade_support(self) -> None:
+    def test_system_composer_wires_application_services_inline(self) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
+        class_names = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+        self.assertNotIn("SystemApplicationServiceComposer", class_names)
+        self.assertNotIn("SystemApplicationServices", class_names)
         class_node = next(
             node
             for node in tree.body
-            if isinstance(node, ast.ClassDef) and node.name == "SystemApplicationServiceComposer"
+            if isinstance(node, ast.ClassDef) and node.name == "AdvancedGraphRAGSystemComposer"
         )
         found_support_call = False
-        found_services_bundle = False
         found_support_state_store = False
-        found_operations_call = False
-        found_operations_manager = False
         found_answering_call = False
         found_answering_state_store = False
         found_answering_manager = False
+        found_components_bundle = False
         violations: list[str] = []
 
         for node in ast.walk(class_node):
@@ -2256,12 +2249,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         violations.append(
                             f"{rel}:{node.lineno}: facade support should not take runtime_manager="
                         )
-                elif node.func.id == "SystemOperationsService":
-                    found_operations_call = True
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_operations_manager = "backend" in keyword_names
-                    if "backend" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing operations backend=")
                 elif node.func.id == "SystemAnsweringService":
                     found_answering_call = True
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
@@ -2273,9 +2260,13 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         )
                     if "backend" not in keyword_names:
                         violations.append(f"{rel}:{node.lineno}: missing answering backend=")
-                elif node.func.id == "SystemApplicationServices":
+                elif node.func.id == "SystemOperationsService":
+                    violations.append(
+                        f"{rel}:{node.lineno}: operations should use the runtime manager directly"
+                    )
+                elif node.func.id == "AdvancedGraphRAGSystemComponents":
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_services_bundle = "facade_support" in keyword_names
+                    found_components_bundle = "facade_support" in keyword_names
                     for required in (
                         "operations_service",
                         "answering_service",
@@ -2283,44 +2274,36 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     ):
                         if required not in keyword_names:
                             violations.append(
-                                f"{rel}:{node.lineno}: missing services bundle {required}="
+                                f"{rel}:{node.lineno}: missing components {required}="
                             )
 
         self.assertTrue(
             found_support_call,
-            "application service composer should construct SystemFacadeSupport",
-        )
-        self.assertTrue(
-            found_operations_call,
-            "application service composer should construct SystemOperationsService",
+            "system composer should construct SystemFacadeSupport inline",
         )
         self.assertTrue(
             found_answering_call,
-            "application service composer should construct SystemAnsweringService",
+            "system composer should construct SystemAnsweringService inline",
         )
         self.assertTrue(
             found_support_state_store,
-            "application service composer should wire runtime_state_store into SystemFacadeSupport",
-        )
-        self.assertTrue(
-            found_operations_manager,
-            "application service composer should wire backend into SystemOperationsService",
+            "system composer should wire runtime_state_store into SystemFacadeSupport",
         )
         self.assertTrue(
             found_answering_state_store,
-            "application service composer should wire runtime_state_store into SystemAnsweringService",
+            "system composer should wire runtime_state_store into SystemAnsweringService",
         )
         self.assertTrue(
             found_answering_manager,
-            "application service composer should wire backend into SystemAnsweringService",
+            "system composer should wire backend into SystemAnsweringService",
         )
         self.assertTrue(
-            found_services_bundle,
-            "application service bundle should carry facade_support",
+            found_components_bundle,
+            "system components should carry inline application services",
         )
         self.assertFalse(
             violations,
-            "Found application-service composer wiring gaps:\n" + "\n".join(violations),
+            "Found inline application-service wiring gaps:\n" + "\n".join(violations),
         )
 
     def test_runtime_manager_uses_runtime_state_store(self) -> None:

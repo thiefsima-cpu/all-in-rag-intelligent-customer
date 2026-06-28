@@ -13,7 +13,6 @@ from ..services.runtime_shutdown_service import RuntimeShutdownService
 from .bootstrapper_composer import GraphRAGBootstrapperComposer
 from .contracts import (
     SystemFacadeSupportProtocol,
-    SystemOperationsBackendProtocol,
     SystemOperationsProtocol,
 )
 from .provider_resolution import (
@@ -28,7 +27,6 @@ from .runtime_manager import SystemRuntimeManager
 from .runtime_state_store import RuntimeStateStore
 from .system_answering_service import SystemAnsweringService
 from .system_facade_support import SystemFacadeSupport
-from .system_operations_service import SystemOperationsService
 
 if TYPE_CHECKING:
     from ..bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
@@ -134,51 +132,6 @@ class SystemRuntimeInfrastructureComposer:
 
 
 @dataclass(frozen=True)
-class SystemApplicationServices:
-    """Application-facing services resolved for the public system facade."""
-
-    operations_service: SystemOperationsProtocol
-    answering_service: QuestionAnswerer
-    facade_support: SystemFacadeSupportProtocol
-
-
-class SystemApplicationServiceComposer:
-    """Assemble application-facing services from runtime-backed collaborators."""
-
-    def compose(
-        self,
-        *,
-        runtime_backend: SystemOperationsBackendProtocol,
-        runtime_state_store: RuntimeStateStore,
-        operations_service: SystemOperationsProtocol | None = None,
-        answering_service: QuestionAnswerer | None = None,
-        facade_support: SystemFacadeSupportProtocol | None = None,
-    ) -> SystemApplicationServices:
-        resolved_operations_service: SystemOperationsProtocol = (
-            operations_service
-            if operations_service is not None
-            else SystemOperationsService(backend=runtime_backend)
-        )
-        if answering_service is not None:
-            resolved_answering_service = answering_service
-        else:
-            resolved_answering_service = SystemAnsweringService(
-                backend=runtime_backend,
-                runtime_state_store=runtime_state_store,
-            )
-        resolved_facade_support: SystemFacadeSupportProtocol = (
-            facade_support
-            if facade_support is not None
-            else SystemFacadeSupport(runtime_state_store=runtime_state_store)
-        )
-        return SystemApplicationServices(
-            operations_service=resolved_operations_service,
-            answering_service=resolved_answering_service,
-            facade_support=resolved_facade_support,
-        )
-
-
-@dataclass(frozen=True)
 class AdvancedGraphRAGSystemComponents:
     """Resolved collaborators for the application system facade."""
 
@@ -236,7 +189,6 @@ class AdvancedGraphRAGSystemComposer:
         lifecycle_services: RuntimeLifecycleServiceBundle | None = None,
         lifecycle_service_composer: RuntimeLifecycleServiceComposer | None = None,
         runtime_infrastructure_composer: SystemRuntimeInfrastructureComposer | None = None,
-        application_service_composer: SystemApplicationServiceComposer | None = None,
         runtime_state_store: RuntimeStateStore | None = None,
         operations_service: SystemOperationsProtocol | None = None,
         answering_service: QuestionAnswerer | None = None,
@@ -271,14 +223,14 @@ class AdvancedGraphRAGSystemComposer:
             runtime_state_store=runtime_state_store,
             runtime_manager=runtime_manager,
         )
-        application_services = (
-            application_service_composer or SystemApplicationServiceComposer()
-        ).compose(
-            runtime_backend=runtime_infrastructure.runtime_manager,
+        runtime_backend = runtime_infrastructure.runtime_manager
+        resolved_operations_service: SystemOperationsProtocol = operations_service or runtime_backend
+        resolved_answering_service = answering_service or SystemAnsweringService(
+            backend=runtime_backend,
             runtime_state_store=runtime_infrastructure.runtime_state_store,
-            operations_service=operations_service,
-            answering_service=answering_service,
-            facade_support=facade_support,
+        )
+        resolved_facade_support: SystemFacadeSupportProtocol = facade_support or SystemFacadeSupport(
+            runtime_state_store=runtime_infrastructure.runtime_state_store,
         )
         return AdvancedGraphRAGSystemComponents(
             config=resolved_config,
@@ -291,9 +243,9 @@ class AdvancedGraphRAGSystemComposer:
             shutdown_service=runtime_infrastructure.shutdown_service,
             lifecycle_services=lifecycle_services,
             runtime_state_store=runtime_infrastructure.runtime_state_store,
-            operations_service=application_services.operations_service,
-            answering_service=application_services.answering_service,
-            facade_support=application_services.facade_support,
+            operations_service=resolved_operations_service,
+            answering_service=resolved_answering_service,
+            facade_support=resolved_facade_support,
         )
 
 
@@ -301,8 +253,6 @@ __all__ = [
     "AdvancedGraphRAGBootstrapperSurface",
     "AdvancedGraphRAGSystemComponents",
     "AdvancedGraphRAGSystemComposer",
-    "SystemApplicationServiceComposer",
-    "SystemApplicationServices",
     "SystemBootstrapperSurfaceComposer",
     "SystemRuntimeInfrastructure",
     "SystemRuntimeInfrastructureComposer",

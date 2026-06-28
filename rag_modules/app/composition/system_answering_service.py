@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
-from .contracts import SystemAnsweringBackendProtocol
+from .contracts import SystemOperationsProtocol
 from .runtime_state_store import RuntimeStateStore
 
 
@@ -13,7 +13,7 @@ class SystemAnsweringService:
     def __init__(
         self,
         *,
-        backend: SystemAnsweringBackendProtocol,
+        backend: SystemOperationsProtocol,
         runtime_state_store: RuntimeStateStore,
     ) -> None:
         self.backend = backend
