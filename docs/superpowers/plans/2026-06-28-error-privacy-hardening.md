@@ -33,7 +33,7 @@
 - Modify: `rag_modules/interfaces/api/app.py`
 - Test: `tests/test_api_app.py`
 
-- [ ] **Step 1: Write failing tests for the catalog and request ID policy**
+- [x] **Step 1: Write failing tests for the catalog and request ID policy**
 
 Add imports and these tests to `tests/test_api_app.py`:
 
@@ -91,7 +91,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertNotEqual(invalid.headers["x-request-id"], "bad/id secret")
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -101,7 +101,7 @@ python -m pytest tests/test_api_app.py -q -k "error_catalog or request_id"
 
 Expected: collection fails because `rag_modules.interfaces.api.error_models` does not exist.
 
-- [ ] **Step 3: Implement the typed error catalog**
+- [x] **Step 3: Implement the typed error catalog**
 
 Create `rag_modules/interfaces/api/error_models.py`:
 
@@ -225,7 +225,7 @@ def build_error_response(
 Leave the public-payload sanitizer and OpenAPI helper for Tasks 2 and 5 so this first cycle remains
 focused.
 
-- [ ] **Step 4: Implement request context and outer error guard**
+- [x] **Step 4: Implement request context and outer error guard**
 
 Create `rag_modules/interfaces/api/request_context.py`:
 
@@ -316,7 +316,7 @@ from .request_context import RequestContextMiddleware
 app.add_middleware(RequestContextMiddleware)
 ```
 
-- [ ] **Step 5: Run the focused tests and verify GREEN**
+- [x] **Step 5: Run the focused tests and verify GREEN**
 
 Run:
 
@@ -326,7 +326,7 @@ python -m pytest tests/test_api_app.py -q -k "error_catalog or request_id"
 
 Expected: all selected tests pass.
 
-- [ ] **Step 6: Commit the foundation**
+- [x] **Step 6: Commit the foundation**
 
 ```powershell
 git add rag_modules/interfaces/api/error_models.py rag_modules/interfaces/api/request_context.py rag_modules/interfaces/api/app.py tests/test_api_app.py
@@ -343,7 +343,7 @@ git commit -m "feat: add typed API errors and request context"
 - Modify: `rag_modules/interfaces/api/app.py`
 - Test: `tests/test_api_app.py`
 
-- [ ] **Step 1: Replace existing error assertions and add privacy regressions**
+- [x] **Step 1: Replace existing error assertions and add privacy regressions**
 
 Add this helper near `_client` in `tests/test_api_app.py` and update the existing 409, 429, auth,
 and request-limit assertions to use it:
@@ -452,7 +452,7 @@ _assert_error_response(response, status_code=409, code="SYSTEM_NOT_READY")
 _assert_error_response(response, status_code=429, code="RATE_LIMITED")
 ```
 
-- [ ] **Step 2: Run the HTTP error tests and verify RED**
+- [x] **Step 2: Run the HTTP error tests and verify RED**
 
 Run:
 
@@ -463,7 +463,7 @@ python -m pytest tests/test_api_app.py -q -k "validation_error or unknown_except
 Expected: failures show legacy `detail`, `message`, and `error_type` shapes and the missing common
 OpenAPI schema.
 
-- [ ] **Step 3: Add the OpenAPI error response metadata**
+- [x] **Step 3: Add the OpenAPI error response metadata**
 
 Append to `rag_modules/interfaces/api/error_models.py`:
 
@@ -490,7 +490,7 @@ def error_response_openapi() -> dict[int, dict[str, Any]]:
 Pass `responses=error_response_openapi()` to both `FastAPI(...)` constructors in
 `rag_modules/interfaces/api/app.py`.
 
-- [ ] **Step 4: Implement the FastAPI handler registry**
+- [x] **Step 4: Implement the FastAPI handler registry**
 
 Create `rag_modules/interfaces/api/error_handlers.py`:
 
@@ -584,7 +584,7 @@ Delete the three legacy registration functions from `routes.py`, remove their im
 `app.py`, and call `register_api_error_handlers(app)` for both app factories before registering
 routes.
 
-- [ ] **Step 5: Convert security middleware errors to the common payload**
+- [x] **Step 5: Convert security middleware errors to the common payload**
 
 In `security.py`, import `ERROR_STATUS_CODES`, `ErrorCode`, `build_error_payload`, and
 `current_request_id`. Change `_authentication_error` to return `ErrorCode | None`:
@@ -642,7 +642,7 @@ Use `INVALID_REQUEST` for malformed `Content-Length`, `REQUEST_TOO_LARGE` with
 `details={"max_bytes": max_bytes}`, `UNAUTHORIZED` for credentials, and
 `SERVICE_MISCONFIGURED` for invalid server auth configuration.
 
-- [ ] **Step 6: Run API tests and verify GREEN**
+- [x] **Step 6: Run API tests and verify GREEN**
 
 Run:
 
@@ -652,7 +652,7 @@ python -m pytest tests/test_api_app.py -q
 
 Expected: all API tests pass with the new breaking error contract.
 
-- [ ] **Step 7: Commit HTTP normalization**
+- [x] **Step 7: Commit HTTP normalization**
 
 ```powershell
 git add rag_modules/interfaces/api/error_handlers.py rag_modules/interfaces/api/error_models.py rag_modules/interfaces/api/security.py rag_modules/interfaces/api/routes.py rag_modules/interfaces/api/app.py tests/test_api_app.py
@@ -672,7 +672,7 @@ git commit -m "feat: normalize HTTP API failures"
 - Test: `tests/test_api_app.py`
 - Test: `tests/test_answer_workflow.py`
 
-- [ ] **Step 1: Write failing synchronous and SSE privacy tests**
+- [x] **Step 1: Write failing synchronous and SSE privacy tests**
 
 Add a failed response fixture to `tests/test_api_app.py`:
 
@@ -763,7 +763,7 @@ def test_stream_preflight_failure_uses_http_error_contract(self) -> None:
 In `tests/test_answer_workflow.py`, add a direct result-factory regression asserting a thrown
 message is not placed in the fallback answer.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -774,7 +774,7 @@ python -m pytest tests/test_api_app.py tests/test_answer_workflow.py -q -k "fail
 Expected: failed answers return a legacy status-200 payload, SSE emits `message/error_type`, and the
 fallback answer contains the secret.
 
-- [ ] **Step 3: Add a typed answer failure and handler**
+- [x] **Step 3: Add a typed answer failure and handler**
 
 Add this class to `services/errors.py` and export it from `services/__init__.py`:
 
@@ -794,7 +794,7 @@ async def answer_failed(_: Request, __: AnswerFailedError):
     )
 ```
 
-- [ ] **Step 4: Make sync and streaming services detect failed answer payloads**
+- [x] **Step 4: Make sync and streaming services detect failed answer payloads**
 
 In `services/serving.py`, add:
 
@@ -848,7 +848,7 @@ except Exception:
 
 In both answer routes, capture `current_request_id()` and pass it to the service stream method.
 
-- [ ] **Step 5: Replace the SSE error model with the common typed model**
+- [x] **Step 5: Replace the SSE error model with the common typed model**
 
 In `answer_models.py`, remove the legacy `AnswerStreamErrorDataModel`. Import `ErrorCode`,
 `ErrorResponseModel`, and `build_error_model`; use `ErrorResponseModel` in the event union and replace
@@ -871,7 +871,7 @@ def error(
 Update the existing admission-limit SSE test to assert `RATE_LIMITED`, the response-header request
 ID, and the absence of `error_type`.
 
-- [ ] **Step 6: Remove exception text from internal fallback answers**
+- [x] **Step 6: Remove exception text from internal fallback answers**
 
 Change `QuestionAnswerResultFactory.from_error` to ignore the exception text:
 
@@ -899,7 +899,7 @@ def from_error(
     )
 ```
 
-- [ ] **Step 7: Run answer and SSE tests and verify GREEN**
+- [x] **Step 7: Run answer and SSE tests and verify GREEN**
 
 Run:
 
@@ -909,7 +909,7 @@ python -m pytest tests/test_api_app.py tests/test_answer_workflow.py -q
 
 Expected: all selected files pass.
 
-- [ ] **Step 8: Commit answer-boundary hardening**
+- [x] **Step 8: Commit answer-boundary hardening**
 
 ```powershell
 git add rag_modules/interfaces/api/services/errors.py rag_modules/interfaces/api/services/__init__.py rag_modules/interfaces/api/error_handlers.py rag_modules/interfaces/api/services/serving.py rag_modules/interfaces/api/answer_models.py rag_modules/interfaces/api/routes.py rag_modules/app/services/answer_result_factory.py tests/test_api_app.py tests/test_answer_workflow.py
@@ -927,7 +927,7 @@ git commit -m "feat: sanitize answer and SSE failures"
 - Test: `tests/test_build_job_persistence.py`
 - Test: `tests/test_api_app.py`
 
-- [ ] **Step 1: Write failing persistence and API tests**
+- [x] **Step 1: Write failing persistence and API tests**
 
 Add a failing build system in `tests/test_build_job_persistence.py`:
 
@@ -1050,7 +1050,7 @@ def test_failed_build_job_keeps_submission_request_id_without_secret(self) -> No
         self.assertNotIn(secret, json.dumps(failed, ensure_ascii=False))
 ```
 
-- [ ] **Step 2: Run build-job tests and verify RED**
+- [x] **Step 2: Run build-job tests and verify RED**
 
 Run:
 
@@ -1061,7 +1061,7 @@ python -m pytest tests/test_build_job_persistence.py tests/test_api_app.py -q -k
 Expected: `submit_build_job` rejects `request_id`, persisted `error` is a string, and raw progress
 and exception text appear in the store.
 
-- [ ] **Step 3: Change the build-job record to schema v2**
+- [x] **Step 3: Change the build-job record to schema v2**
 
 In `build_jobs/models.py`, import `Mapping` from `collections.abc`, set
 `BUILD_JOB_STORE_SCHEMA_VERSION = "graph-rag-build-jobs-v2"`, add `request_id: str = ""`, and
@@ -1154,7 +1154,7 @@ def _load(self, *, recover_interrupted: bool) -> None:
             self._persist_store_locked()
 ```
 
-- [ ] **Step 4: Thread request ID through registry and build service**
+- [x] **Step 4: Thread request ID through registry and build service**
 
 Change `PersistentBuildJobRegistry.create` and `create_or_active` to accept `request_id` and store it
 on `BuildJobRecord`. Replace `mark_failed` with:
@@ -1209,7 +1209,7 @@ api_service.submit_build_job(
 
 Apply the same request ID forwarding to rebuild and compatibility aliases.
 
-- [ ] **Step 5: Type the public build failure object**
+- [x] **Step 5: Type the public build failure object**
 
 In `build_models.py`, add:
 
@@ -1225,7 +1225,7 @@ class BuildJobFailureModel(BaseModel):
 Add `request_id: str` to `BuildJobPayloadModel` and change its `error` field to
 `Optional[BuildJobFailureModel] = None`.
 
-- [ ] **Step 6: Run build tests and verify GREEN**
+- [x] **Step 6: Run build tests and verify GREEN**
 
 Run:
 
@@ -1235,7 +1235,7 @@ python -m pytest tests/test_build_job_persistence.py tests/test_api_app.py -q
 
 Expected: both files pass, including v1 read sanitization and v2 persistence.
 
-- [ ] **Step 7: Commit build-job hardening**
+- [x] **Step 7: Commit build-job hardening**
 
 ```powershell
 git add rag_modules/interfaces/api/build_jobs/models.py rag_modules/interfaces/api/build_jobs/registry.py rag_modules/interfaces/api/services/build.py rag_modules/interfaces/api/build_models.py rag_modules/interfaces/api/routes.py tests/test_build_job_persistence.py tests/test_api_app.py
@@ -1254,7 +1254,7 @@ git commit -m "feat: sanitize persisted build failures"
 - Test: `tests/test_api_app.py`
 - Test: `tests/test_query_semantics.py`
 
-- [ ] **Step 1: Write failing diagnostics, answer-trace, and stable fallback tests**
+- [x] **Step 1: Write failing diagnostics, answer-trace, and stable fallback tests**
 
 Add these fixtures and tests to `tests/test_api_app.py`:
 
@@ -1349,7 +1349,7 @@ def test_planner_failure_uses_stable_fallback_reason(self) -> None:
     self.assertEqual(plan.fallback_reason, "query_planning_failed")
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -1359,7 +1359,7 @@ python -m pytest tests/test_api_app.py tests/test_query_semantics.py -q -k "mani
 
 Expected: raw error strings appear and planner fallback reason contains the exception.
 
-- [ ] **Step 3: Add recursive public error-field sanitization**
+- [x] **Step 3: Add recursive public error-field sanitization**
 
 Add `Mapping` and `Sequence` from `collections.abc`, then append to `error_models.py`:
 
@@ -1392,7 +1392,7 @@ def sanitize_public_error_fields(value: Any, *, code: ErrorCode) -> Any:
     return value
 ```
 
-- [ ] **Step 4: Apply sanitization in every response builder**
+- [x] **Step 4: Apply sanitization in every response builder**
 
 In `response_builder.py`:
 
@@ -1462,7 +1462,7 @@ safe_payload = sanitize_public_error_fields(
 emit(AnswerStreamEventModel.result(safe_payload))
 ```
 
-- [ ] **Step 5: Remove raw exception-derived fallback values**
+- [x] **Step 5: Remove raw exception-derived fallback values**
 
 Make these exact replacements:
 
@@ -1484,7 +1484,7 @@ return {"error": "MILVUS_STATS_UNAVAILABLE"}
 Do not change `generation_failure_code`, which inspects exception text internally only to classify a
 known provider failure and does not expose or log that text.
 
-- [ ] **Step 6: Run public-payload tests and verify GREEN**
+- [x] **Step 6: Run public-payload tests and verify GREEN**
 
 Run:
 
@@ -1494,7 +1494,7 @@ python -m pytest tests/test_api_app.py tests/test_query_semantics.py -q
 
 Expected: both files pass and all sentinels are absent.
 
-- [ ] **Step 7: Commit response privacy**
+- [x] **Step 7: Commit response privacy**
 
 ```powershell
 git add rag_modules/interfaces/api/error_models.py rag_modules/interfaces/api/response_builder.py rag_modules/interfaces/api/routes.py rag_modules/query_understanding/planning/service.py rag_modules/build_pipeline/workflow_schema_sync.py rag_modules/infra/milvus/client.py tests/test_api_app.py tests/test_query_semantics.py
@@ -1507,7 +1507,7 @@ git commit -m "feat: sanitize public failure details"
 - Create: `rag_modules/safe_logging.py`
 - Create: `tests/test_safe_logging.py`
 
-- [ ] **Step 1: Write failing helper and AST policy tests**
+- [x] **Step 1: Write failing helper and AST policy tests**
 
 Create `tests/test_safe_logging.py`:
 
@@ -1596,7 +1596,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run the new test and verify RED**
+- [x] **Step 2: Run the new test and verify RED**
 
 Run:
 
@@ -1607,7 +1607,7 @@ python -m pytest tests/test_safe_logging.py -q
 Expected: collection fails because `rag_modules.safe_logging` is missing; after adding only the
 helper, the AST test still reports all current unsafe call sites.
 
-- [ ] **Step 3: Implement the narrow failure logger**
+- [x] **Step 3: Implement the narrow failure logger**
 
 Create `rag_modules/safe_logging.py`:
 
@@ -1641,7 +1641,7 @@ def log_failure(
 __all__ = ["log_failure"]
 ```
 
-- [ ] **Step 4: Run only the helper test and verify GREEN**
+- [x] **Step 4: Run only the helper test and verify GREEN**
 
 Run:
 
@@ -1651,7 +1651,7 @@ python -m pytest tests/test_safe_logging.py::SafeLoggingTests::test_log_failure_
 
 Expected: one test passes.
 
-- [ ] **Step 5: Commit the helper and red static gate**
+- [x] **Step 5: Commit the helper and red static gate**
 
 Do not commit while the repository test is red. Tasks 7 and 8 complete the static gate before the
 next commit; keep these two new files in the working tree.
@@ -1677,7 +1677,7 @@ next commit; keep these two new files in the working tree.
 - Modify: `rag_modules/retrieval_cache.py`
 - Test: `tests/test_safe_logging.py`
 
-- [ ] **Step 1: Add runtime sentinel tests for query and token logs**
+- [x] **Step 1: Add runtime sentinel tests for query and token logs**
 
 Extend `tests/test_safe_logging.py` with a real BM25 test:
 
@@ -1703,7 +1703,7 @@ def test_bm25_log_contains_counts_but_not_query_or_tokens(self) -> None:
     self.assertNotIn(secret, output)
 ```
 
-- [ ] **Step 2: Run the sentinel test and verify RED**
+- [x] **Step 2: Run the sentinel test and verify RED**
 
 Run:
 
@@ -1713,7 +1713,7 @@ python -m pytest tests/test_safe_logging.py -q -k "bm25_log"
 
 Expected: the BM25 log contains `private_query_token_7281`.
 
-- [ ] **Step 3: Replace content-bearing logs with safe metadata**
+- [x] **Step 3: Replace content-bearing logs with safe metadata**
 
 Apply these exact event replacements:
 
@@ -1757,7 +1757,7 @@ subgraph log so the AST policy never receives entity-bearing objects.
 
 Do not remove count, latency, retry-number, boolean-state, or predefined strategy metadata.
 
-- [ ] **Step 4: Run the content sentinel and static tests**
+- [x] **Step 4: Run the content sentinel and static tests**
 
 Run:
 
@@ -1804,7 +1804,7 @@ Expected: the BM25 test passes; remaining failures list exception-object log cal
 - Modify: `rag_modules/interfaces/api/services/serving.py`
 - Test: `tests/test_safe_logging.py`
 
-- [ ] **Step 1: Add a raw-exception sentinel test for representative fallback paths**
+- [x] **Step 1: Add a raw-exception sentinel test for representative fallback paths**
 
 Add these imports, fake, and test to `tests/test_safe_logging.py`:
 
@@ -1840,7 +1840,7 @@ def test_trace_sink_logs_exception_type_without_message(self) -> None:
 
 Keep the AST test as the exhaustive repository gate.
 
-- [ ] **Step 2: Run the failure-log tests and verify RED**
+- [x] **Step 2: Run the failure-log tests and verify RED**
 
 Run:
 
@@ -1851,7 +1851,7 @@ python -m pytest tests/test_safe_logging.py -q
 Expected: the sentinel is logged and the AST test reports direct `exc`, `error`, `e`, and
 `logger.exception` use.
 
-- [ ] **Step 3: Route every caught exception log through `log_failure`**
+- [x] **Step 3: Route every caught exception log through `log_failure`**
 
 For each file listed above, import `log_failure` using the correct relative import and replace the
 direct logger call with this form:
@@ -1909,7 +1909,7 @@ except Exception as exc:
 In the SSE runner's final `except Exception as exc` branch, call `log_failure` with the captured
 stream request ID before emitting the safe `ANSWER_FAILED` event.
 
-- [ ] **Step 4: Remove raw exceptions from OpenTelemetry spans**
+- [x] **Step 4: Remove raw exceptions from OpenTelemetry spans**
 
 Replace the exception branch in `RuntimeTelemetry.span`:
 
@@ -1923,7 +1923,7 @@ except Exception as exc:
 Do not call `span.record_exception(exc)`, because OpenTelemetry serializes the exception message
 and stack trace.
 
-- [ ] **Step 5: Run the privacy gate and verify GREEN**
+- [x] **Step 5: Run the privacy gate and verify GREEN**
 
 Run:
 
@@ -1933,7 +1933,7 @@ python -m pytest tests/test_safe_logging.py -q
 
 Expected: all safe-logging and AST tests pass with no sentinel output.
 
-- [ ] **Step 6: Run subsystem tests touched by the logging edits**
+- [x] **Step 6: Run subsystem tests touched by the logging edits**
 
 Run:
 
@@ -1943,7 +1943,7 @@ python -m pytest tests/test_query_semantics.py tests/test_query_tracer.py tests/
 
 Expected: all selected tests pass; logging-only edits do not alter subsystem results.
 
-- [ ] **Step 7: Commit the complete logging privacy gate**
+- [x] **Step 7: Commit the complete logging privacy gate**
 
 ```powershell
 git add -- rag_modules/safe_logging.py rag_modules/entity_linker.py rag_modules/app/services/answer_pipeline.py rag_modules/app/services/answer_workflow.py rag_modules/build_pipeline/knowledge_base_workflow.py rag_modules/build_pipeline/workflow_schema_sync.py rag_modules/build_pipeline/document_artifacts/cache.py rag_modules/build_pipeline/graph_preparation/document_builder.py rag_modules/build_pipeline/graph_preparation/module.py rag_modules/domain/shared/query_constraints.py rag_modules/generation/service.py rag_modules/generation/clients/adapter.py rag_modules/generation/execution/engine.py rag_modules/generation/execution/streaming.py rag_modules/generation/execution/two_stage.py rag_modules/graph/evidence_orchestrator.py rag_modules/graph/query_executor.py rag_modules/graph/retrieval_executor.py rag_modules/graph/retrieval_postprocess.py rag_modules/infra/milvus/client.py rag_modules/infra/milvus/schema.py rag_modules/infra/milvus/search.py rag_modules/infra/milvus/writer.py rag_modules/infra/neo4j/connection.py rag_modules/interfaces/api/request_context.py rag_modules/interfaces/api/services/serving.py rag_modules/observability/tracing_sink_interaction.py rag_modules/observability/tracing_sinks.py rag_modules/query_understanding/planning/service.py rag_modules/retrieval_cache.py rag_modules/retrieval/adapters/bm25_retriever.py rag_modules/retrieval/adapters/neo4j_fallback_retriever.py rag_modules/retrieval/adapters/vector_retriever.py rag_modules/retrieval/candidate_generator.py rag_modules/retrieval/dual_level_retriever.py rag_modules/retrieval/hybrid_index_service.py rag_modules/retrieval/hybrid_search_service.py rag_modules/retrieval/post_processor.py rag_modules/routing/search_orchestrator.py rag_modules/routing/workflow_service.py rag_modules/telemetry.py tests/test_safe_logging.py
@@ -1962,7 +1962,7 @@ named in Tasks 6 through 8; do not stage unrelated user changes.
 - Test: `tests/test_build_job_persistence.py`
 - Test: `tests/test_safe_logging.py`
 
-- [ ] **Step 1: Update public API and operations documentation**
+- [x] **Step 1: Update public API and operations documentation**
 
 Add an `Error contract and request correlation` section near the API startup documentation in
 `README.md` containing:
@@ -1986,7 +1986,7 @@ messages. Use `request_id` and stable error codes for support correlation.
 Also document that failed build-job resources contain a typed `error` object with code,
 catalog-controlled message, and submission request ID.
 
-- [ ] **Step 2: Run Ruff on changed Python files**
+- [x] **Step 2: Run Ruff on changed Python files**
 
 Run:
 
@@ -1998,7 +1998,7 @@ python -m ruff format --check rag_modules tests/test_api_app.py tests/test_answe
 Expected: both commands exit 0. If formatting is required, run `python -m ruff format` on only the
 reported changed files, inspect the diff, and rerun both checks.
 
-- [ ] **Step 3: Run the complete test suite**
+- [x] **Step 3: Run the complete test suite**
 
 Run:
 
@@ -2008,7 +2008,7 @@ python -m pytest -q
 
 Expected: exit 0 with no failed tests.
 
-- [ ] **Step 4: Run repository hooks**
+- [x] **Step 4: Run repository hooks**
 
 Run:
 
@@ -2019,7 +2019,7 @@ pre-commit run --all-files
 Expected: all hooks pass. Because Ruff may rewrite files, inspect `git diff` and rerun the hook if
 any file changed.
 
-- [ ] **Step 5: Run the release gate**
+- [x] **Step 5: Run the release gate**
 
 Run:
 
@@ -2029,7 +2029,7 @@ python scripts/release_gate.py
 
 Expected: release gate exits 0.
 
-- [ ] **Step 6: Verify privacy requirements directly**
+- [x] **Step 6: Verify privacy requirements directly**
 
 Run:
 
@@ -2041,14 +2041,14 @@ git diff --check
 
 Expected: `rg` prints no unsafe calls, focused tests pass, and `git diff --check` exits 0.
 
-- [ ] **Step 7: Commit documentation and final verification state**
+- [x] **Step 7: Commit documentation and final verification state**
 
 ```powershell
 git add README.md docs/superpowers/plans/2026-06-28-error-privacy-hardening.md
 git commit -m "docs: document API error privacy contract"
 ```
 
-- [ ] **Step 8: Review final requirement coverage**
+- [x] **Step 8: Review final requirement coverage**
 
 Confirm from fresh command output:
 

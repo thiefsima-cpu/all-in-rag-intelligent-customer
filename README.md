@@ -130,3 +130,20 @@ Invoke-RestMethod http://localhost:8001/jobs/$($job.job.job_id)
 `/answers` returns `409 Conflict` until the build API has produced a ready
 artifact manifest, cached documents, and a Milvus vector collection.
 
+### Error contract and request correlation
+
+All HTTP failures use `{"ok": false, "error": {"code": "...", "message": "..."},
+"request_id": "..."}`. Error codes are stable. Messages are safe for display and never contain raw
+exceptions. Validation details include field paths and reasons only, never the rejected input.
+
+Clients may provide `X-Request-ID` using 1–128 ASCII letters, digits, `.`, `_`, `:`, or `-`. When
+the header is missing or invalid, the service generates a replacement. The resolved ID appears in
+the `X-Request-ID` header of every response and in every error body. SSE error events use the same
+payload.
+
+Application logs exclude raw questions, query tokens, prompts, credentials, and exception
+messages. Correlate support activity by `request_id` and stable error code.
+
+Failed build-job resources contain a typed `error` object with a stable code, a catalog-controlled
+message, and the submission request ID.
+
