@@ -133,14 +133,14 @@ class RouteSearchOrchestrator:
         request: RouteExecutionRequest,
         *,
         trace: RouteTraceRecorder,
-        failure: Exception,
+        error: Exception,
     ) -> List[EvidenceDocument]:
         log_failure(
             logger,
             logging.ERROR,
             "query_routing_failed",
             code="QUERY_PROCESSING_FAILED",
-            error=failure,
+            error=error,
         )
         outcome = self._build_exception_fallback_outcome(request, trace=trace)
         trace.record_execution_outcome(outcome)

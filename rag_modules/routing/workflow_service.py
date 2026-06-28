@@ -123,7 +123,7 @@ class RoutingWorkflowService:
             evidence_documents = self.search_orchestrator.execute_exception_fallback(
                 execution_request,
                 trace=trace,
-                failure=exc,
+                error=exc,
             )
             route_trace = trace.finalize(
                 total_start_time=route_start,
