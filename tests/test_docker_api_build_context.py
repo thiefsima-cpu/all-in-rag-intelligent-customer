@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -83,6 +84,62 @@ class DockerApiBuildContextTests(unittest.TestCase):
         self.assertEqual("bolt://neo4j:7687", environment["NEO4J_URI"])
         self.assertEqual("standalone", environment["MILVUS_HOST"])
         self.assertEqual("/app/storage/indexes", environment["INDEX_CACHE_DIR"])
+
+    def test_api_profile_bootstraps_artifacts_before_serving(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        services = compose["services"]
+        api = services["api"]
+        build_api = services["build-api"]
+        bootstrap = services["bootstrap"]
+
+        self.assertIn("cypher-shell", services["neo4j"]["healthcheck"]["test"])
+        self.assertEqual(
+            ["CMD", "curl", "-f", "http://localhost:9091/healthz"],
+            services["standalone"]["healthcheck"]["test"],
+        )
+        self.assertIn("/health/live", build_api["healthcheck"]["test"][-1])
+        self.assertEqual("service_healthy", build_api["depends_on"]["neo4j"]["condition"])
+        self.assertEqual("service_healthy", build_api["depends_on"]["standalone"]["condition"])
+
+        self.assertEqual(["python", "scripts/bootstrap_runtime.py"], bootstrap["command"])
+        self.assertEqual("no", bootstrap["restart"])
+        self.assertEqual(["api"], bootstrap["profiles"])
+        self.assertEqual(
+            "service_healthy",
+            bootstrap["depends_on"]["build-api"]["condition"],
+        )
+        self.assertIn("./storage:/app/storage", bootstrap["volumes"])
+        self.assertIn("./profiles:/app/profiles", bootstrap["volumes"])
+        self.assertEqual(
+            "${AUTO_BOOTSTRAP:-true}",
+            bootstrap["environment"]["AUTO_BOOTSTRAP"],
+        )
+        self.assertEqual(
+            "${FORCE_REBUILD:-false}",
+            bootstrap["environment"]["FORCE_REBUILD"],
+        )
+        self.assertEqual(
+            "service_completed_successfully",
+            api["depends_on"]["bootstrap"]["condition"],
+        )
+        self.assertEqual("true", api["environment"]["API_AUTO_INITIALIZE_SERVING"])
+
+    def test_api_image_includes_cypher_import_assets(self) -> None:
+        dockerfile = (ROOT / "Dockerfile.api").read_text(encoding="utf-8")
+        dockerignore = set((ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines())
+
+        self.assertIn("COPY cypher ./cypher", dockerfile)
+        self.assertIn("!cypher/", dockerignore)
+        self.assertIn("!cypher/**", dockerignore)
+
+    def test_bootstrap_environment_defaults_are_documented(self) -> None:
+        env = dotenv_values(ROOT / ".env.example")
+
+        self.assertEqual("true", env["AUTO_BOOTSTRAP"])
+        self.assertEqual("false", env["FORCE_REBUILD"])
+        self.assertEqual("10", env["BOOTSTRAP_REQUEST_TIMEOUT_SECONDS"])
+        self.assertEqual("1800", env["BOOTSTRAP_BUILD_TIMEOUT_SECONDS"])
+        self.assertEqual("2", env["BOOTSTRAP_POLL_INTERVAL_SECONDS"])
 
 
 if __name__ == "__main__":

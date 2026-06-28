@@ -104,18 +104,27 @@ forwarded as fallback provider keys. The serving API validates this lightweight
 model-provider requirement during startup so a missing key fails fast with a
 clear error instead of surfacing as the first `/answers` request.
 
-On a fresh `storage/` and `volumes/` state, load the graph and build artifacts
-before sending `/answers` requests:
+With the default `AUTO_BOOTSTRAP=true`, the same Compose command also runs a
+one-shot bootstrap service. On fresh state it imports the CSV graph and builds
+the knowledge-base artifacts; on later starts it skips graph import when recipe
+data already exists and lets the build workflow reuse valid artifacts. The
+serving API starts only after bootstrap succeeds and initializes its retrieval
+runtime automatically.
+
+Check startup progress with:
 
 ```powershell
-python scripts/import_neo4j.py
+docker compose logs bootstrap
+```
 
+Set `FORCE_REBUILD=true` in `.env` to submit `/jobs/rebuild` during the next
+bootstrap. Set `AUTO_BOOTSTRAP=false` for production-style deployments where
+graph import and build jobs are managed separately. The build API remains
+available for explicit operations:
+
+```powershell
 $job = Invoke-RestMethod -Method Post http://localhost:8001/jobs/build
-$job.job.job_id
-
 Invoke-RestMethod http://localhost:8001/jobs/$($job.job.job_id)
-Invoke-RestMethod -Method Post http://localhost:8000/runtime/serving/refresh
-Invoke-RestMethod http://localhost:8000/health/ready
 ```
 
 `/answers` returns `409 Conflict` until the build API has produced a ready

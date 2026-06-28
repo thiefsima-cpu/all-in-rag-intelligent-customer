@@ -35,6 +35,12 @@ services:
       MINIO_ADDRESS: minio:9000
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
     ports:
       - "19530:19530"
       - "9191:9091"
@@ -54,6 +60,12 @@ services:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/logs:/logs
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/plugins:/plugins
       - ${DOCKER_VOLUME_DIRECTORY:-.}/cypher:/import/cypher
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
     ports:
       - "7575:7575"
       - "7687:7687"
@@ -72,6 +84,7 @@ services:
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       SERVING_API_HOST: 0.0.0.0
       SERVING_API_PORT: 8000
+      API_AUTO_INITIALIZE_SERVING: "true"
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: password
@@ -86,8 +99,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - neo4j
-      - standalone
+      neo4j:
+        condition: service_healthy
+      standalone:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
     profiles:
       - api
 
@@ -119,7 +136,54 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      - neo4j
-      - standalone
+      neo4j:
+        condition: service_healthy
+      standalone:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live', timeout=5)
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    profiles:
+      - api
+
+  bootstrap:
+    container_name: graphrag-bootstrap
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["python", "scripts/bootstrap_runtime.py"]
+    environment:
+      GRAPH_RAG_PROFILE: dev
+      API_AUTH_ENABLED: "false"
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      BUILD_API_URL: http://build-api:8001
+      AUTO_BOOTSTRAP: ${AUTO_BOOTSTRAP:-true}
+      FORCE_REBUILD: ${FORCE_REBUILD:-false}
+      BOOTSTRAP_REQUEST_TIMEOUT_SECONDS: ${BOOTSTRAP_REQUEST_TIMEOUT_SECONDS:-10}
+      BOOTSTRAP_BUILD_TIMEOUT_SECONDS: ${BOOTSTRAP_BUILD_TIMEOUT_SECONDS:-1800}
+      BOOTSTRAP_POLL_INTERVAL_SECONDS: ${BOOTSTRAP_POLL_INTERVAL_SECONDS:-2}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
+      NEO4J_DATABASE: neo4j
+      MILVUS_HOST: standalone
+      MILVUS_PORT: 19530
+      INDEX_CACHE_DIR: /app/storage/indexes
+    volumes:
+      - ./storage:/app/storage
+      - ./profiles:/app/profiles
+    depends_on:
+      build-api:
+        condition: service_healthy
+    restart: "no"
     profiles:
       - api

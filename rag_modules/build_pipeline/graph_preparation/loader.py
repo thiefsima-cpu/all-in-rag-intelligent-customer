@@ -16,6 +16,7 @@ UNKNOWN_VALUE = "未知"
 RECIPES_QUERY = """
 MATCH (r:Recipe)
 WHERE r.nodeId >= '200000000'
+  AND coalesce(r.createdFrom, '') <> 'semantic_schema'
 OPTIONAL MATCH (r)-[:BELONGS_TO_CATEGORY]->(c:Category)
 WITH r, collect(c.name) AS categories
 RETURN r.nodeId AS nodeId,
@@ -34,6 +35,7 @@ ORDER BY r.nodeId
 INGREDIENTS_QUERY = """
 MATCH (i:Ingredient)
 WHERE i.nodeId >= '200000000'
+  AND coalesce(i.createdFrom, '') <> 'semantic_schema'
 RETURN i.nodeId AS nodeId,
        labels(i) AS labels,
        i.name AS name,
@@ -44,6 +46,7 @@ ORDER BY i.nodeId
 COOKING_STEPS_QUERY = """
 MATCH (s:CookingStep)
 WHERE s.nodeId >= '200000000'
+  AND coalesce(s.createdFrom, '') <> 'semantic_schema'
 RETURN s.nodeId AS nodeId,
        labels(s) AS labels,
        s.name AS name,
