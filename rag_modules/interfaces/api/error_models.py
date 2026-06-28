@@ -112,3 +112,22 @@ def build_error_response(
         content=build_error_payload(code, request_id=request_id, details=details),
         headers=headers,
     )
+
+
+def error_response_openapi() -> dict[int | str, dict[str, Any]]:
+    descriptions = {
+        400: "Invalid request.",
+        401: "Authentication failed.",
+        404: "Resource not found.",
+        405: "Method not allowed.",
+        409: "Request conflicts with current runtime state.",
+        413: "Request body too large.",
+        422: "Request validation failed.",
+        429: "Request admission limit reached.",
+        500: "Internal request failure.",
+        503: "Service unavailable or misconfigured.",
+    }
+    return {
+        status: {"model": ErrorResponseModel, "description": description}
+        for status, description in descriptions.items()
+    }

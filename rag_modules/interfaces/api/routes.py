@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Path, Request
+from fastapi import FastAPI, Path
 from fastapi.responses import StreamingResponse
 
 from .answer_models import (
@@ -33,12 +33,8 @@ from .response_builder import (
     build_stats_response,
 )
 from .services import (
-    ApiBackpressureError,
-    BuildJobConflictError,
-    BuildJobNotFoundError,
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
-    SystemNotReadyError,
 )
 
 _SSE_EXAMPLE = (
@@ -51,55 +47,6 @@ _SSE_EXAMPLE = (
     "event: done\n"
     'data: {"ok":true}\n\n'
 )
-
-
-def register_system_not_ready_handler(app: FastAPI) -> None:
-    @app.exception_handler(SystemNotReadyError)
-    async def handle_system_not_ready(_: Request, exc: SystemNotReadyError):
-        return build_json_response(
-            status_code=409,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "diagnostics": exc.diagnostics,
-            },
-        )
-
-
-def register_build_job_handlers(app: FastAPI) -> None:
-    @app.exception_handler(BuildJobNotFoundError)
-    async def handle_build_job_not_found(_: Request, exc: BuildJobNotFoundError):
-        return build_json_response(
-            status_code=404,
-            content={
-                "ok": False,
-                "message": f"Build job not found: {exc.job_id}",
-            },
-        )
-
-    @app.exception_handler(BuildJobConflictError)
-    async def handle_build_job_conflict(_: Request, exc: BuildJobConflictError):
-        return build_json_response(
-            status_code=409,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "job": exc.job,
-            },
-        )
-
-
-def register_api_backpressure_handler(app: FastAPI) -> None:
-    @app.exception_handler(ApiBackpressureError)
-    async def handle_api_backpressure(_: Request, exc: ApiBackpressureError):
-        return build_json_response(
-            status_code=429,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "error_type": "api_backpressure",
-            },
-        )
 
 
 def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService) -> None:
@@ -310,9 +257,6 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
 
 
 __all__ = [
-    "register_api_backpressure_handler",
     "register_build_routes",
-    "register_build_job_handlers",
     "register_serving_routes",
-    "register_system_not_ready_handler",
 ]

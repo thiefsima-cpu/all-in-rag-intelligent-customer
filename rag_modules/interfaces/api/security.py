@@ -7,6 +7,8 @@ import json
 from typing import Any, Dict
 
 from ...configuration.models import ApiSettings, ObservabilitySettings
+from .error_models import ERROR_STATUS_CODES, ErrorCode, build_error_payload
+from .request_context import current_request_id
 
 _BASE_PUBLIC_PATHS = frozenset({"/", "/health", "/health/live", "/health/ready"})
 _DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
@@ -82,12 +84,10 @@ class ApiSecurityMiddleware:
         if path not in self.unauthenticated_paths:
             auth_error = self._authentication_error(scope)
             if auth_error is not None:
-                status_code, message = auth_error
-                await self._send_json(
+                await self._send_error(
                     send,
-                    status_code=status_code,
-                    payload={"ok": False, "message": message},
-                    authenticate=status_code == 401,
+                    code=auth_error,
+                    authenticate=auth_error is ErrorCode.UNAUTHORIZED,
                 )
                 return
 
@@ -99,24 +99,19 @@ class ApiSecurityMiddleware:
 
         await self.app(scope, receive, send)
 
-    def _authentication_error(self, scope) -> tuple[int, str] | None:
+    def _authentication_error(self, scope) -> ErrorCode | None:
         if not self.settings.auth_enabled:
             return None
         expected = str(self.settings.access_token or "")
-        if not expected:
-            return 503, "API authentication is enabled but no access token is configured."
-        if len(expected) < 16:
-            return 503, "API access token must contain at least 16 characters."
+        if not expected or len(expected) < 16:
+            return ErrorCode.SERVICE_MISCONFIGURED
 
         headers = self._headers(scope)
         authorization = headers.get("authorization", "")
-        bearer = ""
-        if authorization.lower().startswith("bearer "):
-            bearer = authorization[7:].strip()
-        api_key = headers.get("x-api-key", "").strip()
-        provided = bearer or api_key
+        bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        provided = bearer or headers.get("x-api-key", "").strip()
         if not provided or not hmac.compare_digest(provided, expected):
-            return 401, "Invalid or missing API credentials."
+            return ErrorCode.UNAUTHORIZED
         return None
 
     async def _buffer_request_body(self, scope, receive, send):
@@ -126,13 +121,16 @@ class ApiSecurityMiddleware:
         if content_length:
             try:
                 if int(content_length) > max_bytes:
-                    await self._request_too_large(send, max_bytes)
+                    await self._send_error(
+                        send,
+                        code=ErrorCode.REQUEST_TOO_LARGE,
+                        details={"max_bytes": max_bytes},
+                    )
                     return None
             except ValueError:
-                await self._send_json(
+                await self._send_error(
                     send,
-                    status_code=400,
-                    payload={"ok": False, "message": "Invalid Content-Length header."},
+                    code=ErrorCode.INVALID_REQUEST,
                 )
                 return None
 
@@ -147,7 +145,11 @@ class ApiSecurityMiddleware:
                 continue
             total += len(message.get("body") or b"")
             if total > max_bytes:
-                await self._request_too_large(send, max_bytes)
+                await self._send_error(
+                    send,
+                    code=ErrorCode.REQUEST_TOO_LARGE,
+                    details={"max_bytes": max_bytes},
+                )
                 return None
             if not message.get("more_body", False):
                 break
@@ -166,24 +168,19 @@ class ApiSecurityMiddleware:
             for key, value in scope.get("headers") or []
         }
 
-    async def _request_too_large(self, send, max_bytes: int) -> None:
-        await self._send_json(
-            send,
-            status_code=413,
-            payload={
-                "ok": False,
-                "message": f"Request body exceeds the {max_bytes}-byte limit.",
-            },
-        )
-
     @staticmethod
-    async def _send_json(
+    async def _send_error(
         send,
         *,
-        status_code: int,
-        payload: Dict[str, Any],
+        code: ErrorCode,
+        details: Dict[str, Any] | None = None,
         authenticate: bool = False,
     ) -> None:
+        payload = build_error_payload(
+            code,
+            request_id=current_request_id(),
+            details=details,
+        )
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = [
             (b"content-type", b"application/json; charset=utf-8"),
@@ -194,7 +191,7 @@ class ApiSecurityMiddleware:
         await send(
             {
                 "type": "http.response.start",
-                "status": status_code,
+                "status": ERROR_STATUS_CODES[code],
                 "headers": headers,
             }
         )

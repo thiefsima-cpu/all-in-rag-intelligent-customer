@@ -9,13 +9,12 @@ from fastapi import FastAPI, Response
 
 from ...configuration.models import ApiSettings, ObservabilitySettings
 from ...telemetry import get_runtime_telemetry
+from .error_handlers import register_api_error_handlers
+from .error_models import error_response_openapi
 from .request_context import RequestContextMiddleware
 from .routes import (
-    register_api_backpressure_handler,
-    register_build_job_handlers,
     register_build_routes,
     register_serving_routes,
-    register_system_not_ready_handler,
 )
 from .security import ApiSecurityMiddleware, configure_openapi_security
 from .services import (
@@ -100,6 +99,7 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
         docs_url=_docs_url(api_settings),
         redoc_url=_redoc_url(api_settings),
         openapi_url=_openapi_url(api_settings),
+        responses=error_response_openapi(),
     )
     app.add_middleware(
         ApiSecurityMiddleware,
@@ -113,8 +113,7 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
             api_settings=api_settings,
             observability_settings=observability_settings,
         )
-    register_api_backpressure_handler(app)
-    register_system_not_ready_handler(app)
+    register_api_error_handlers(app)
     register_serving_routes(app, api_service)
     _register_metrics_endpoint(app, system=api_service.system, config=config)
 
@@ -147,6 +146,7 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
         docs_url=_docs_url(api_settings),
         redoc_url=_redoc_url(api_settings),
         openapi_url=_openapi_url(api_settings),
+        responses=error_response_openapi(),
     )
     app.add_middleware(
         ApiSecurityMiddleware,
@@ -160,7 +160,7 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
             api_settings=api_settings,
             observability_settings=observability_settings,
         )
-    register_build_job_handlers(app)
+    register_api_error_handlers(app)
     register_build_routes(app, api_service)
     _register_metrics_endpoint(app, system=api_service.system, config=config)
 

@@ -48,6 +48,26 @@ def _client(app: object) -> TestClient:
     )
 
 
+def _assert_error_response(
+    response,
+    *,
+    status_code: int,
+    code: str,
+    request_id: str | None = None,
+) -> dict:
+    assert response.status_code == status_code
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == code
+    assert "message" in payload["error"]
+    assert "message" not in {key for key in payload if key != "error"}
+    assert "error_type" not in payload
+    assert payload["request_id"] == response.headers["x-request-id"]
+    if request_id is not None:
+        assert payload["request_id"] == request_id
+    return payload
+
+
 def _assert_request_id(value: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value)
 
@@ -484,6 +504,73 @@ class ApiAppTests(unittest.TestCase):
         _assert_request_id(invalid.headers["x-request-id"])
         self.assertNotEqual(invalid.headers["x-request-id"], "bad/id secret")
 
+    def test_validation_error_does_not_echo_request_input(self) -> None:
+        secret_question = "PRIVATE-QUESTION-" + "x" * MAX_QUESTION_CHARS
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            response = client.post(
+                "/answers",
+                json={"question": secret_question},
+                headers={"X-Request-ID": "validation-42"},
+            )
+
+        payload = _assert_error_response(
+            response,
+            status_code=422,
+            code="VALIDATION_ERROR",
+            request_id="validation-42",
+        )
+        self.assertNotIn(secret_question, json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(
+            payload["error"]["details"],
+            [{"field": "body.question", "reason": "string_too_long"}],
+        )
+
+    def test_unknown_exception_returns_internal_error_without_raw_text(self) -> None:
+        secret = "provider-secret-error-body"
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        @app.get("/_test/boom")
+        def boom():
+            raise RuntimeError(secret)
+
+        with _client(app) as client:
+            response = client.get("/_test/boom", headers={"X-Request-ID": "boom-42"})
+
+        payload = _assert_error_response(
+            response,
+            status_code=500,
+            code="INTERNAL_ERROR",
+            request_id="boom-42",
+        )
+        self.assertNotIn(secret, json.dumps(payload))
+        self.assertNotIn("RuntimeError", json.dumps(payload))
+
+    def test_not_found_and_method_not_allowed_use_the_common_contract(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            missing = client.get("/does-not-exist")
+            method = client.put("/health")
+
+        _assert_error_response(missing, status_code=404, code="NOT_FOUND")
+        _assert_error_response(method, status_code=405, code="METHOD_NOT_ALLOWED")
+
+    def test_openapi_uses_the_common_error_schema(self) -> None:
+        config = build_test_config({"api": {"access_token": _API_TOKEN, "openapi_enabled": True}})
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        self.assertIn("ErrorResponseModel", schema["components"]["schemas"])
+        validation_schema = schema["paths"]["/answers"]["post"]["responses"]["422"]
+        self.assertEqual(
+            validation_schema["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ErrorResponseModel",
+        )
+
     def test_serving_liveness_is_public_and_does_not_require_readiness(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
 
@@ -593,10 +680,7 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             response = client.post("/answers", json={"question": "Can I cook tofu?"})
 
-        self.assertEqual(response.status_code, 409)
-        payload = response.json()
-        self.assertFalse(payload["ok"])
-        self.assertIn("Build the knowledge base first", payload["message"])
+        _assert_error_response(response, status_code=409, code="SYSTEM_NOT_READY")
         self.assertEqual(system.initialize_serving_calls, 1)
 
     def test_serving_surface_does_not_expose_build_routes(self) -> None:
@@ -669,10 +753,12 @@ class ApiAppTests(unittest.TestCase):
             _wait_for_job_status(client, first_job["job_id"], "succeeded")
 
         self.assertEqual(first_response.status_code, 202)
-        self.assertEqual(conflict_response.status_code, 409)
-        conflict_payload = conflict_response.json()
-        self.assertFalse(conflict_payload["ok"])
-        self.assertEqual(conflict_payload["job"]["job_id"], first_job["job_id"])
+        conflict_payload = _assert_error_response(
+            conflict_response,
+            status_code=409,
+            code="BUILD_JOB_CONFLICT",
+        )
+        self.assertEqual(conflict_payload["error"]["details"]["job_id"], first_job["job_id"])
 
     def test_answer_flow_uses_serving_api_surface(self) -> None:
         system = _FakeApiSystem()
@@ -1010,13 +1096,7 @@ class ApiAppTests(unittest.TestCase):
             first_thread.join(timeout=1.0)
             self.assertTrue(first_done.is_set())
 
-        self.assertEqual(response.status_code, 429)
-        payload = response.json()
-        self.assertEqual(payload["error_type"], "api_backpressure")
-        self.assertEqual(
-            payload["message"],
-            "Serving answer concurrency limit exceeded.",
-        )
+        _assert_error_response(response, status_code=429, code="RATE_LIMITED")
 
     def test_serving_streams_emit_error_events_when_admission_limit_is_full(self) -> None:
         system = _BlockingApiSystem()
@@ -1234,8 +1314,8 @@ class ApiAppTests(unittest.TestCase):
             )
 
         self.assertEqual(health_response.status_code, 200)
-        self.assertEqual(unauthorized_response.status_code, 401)
-        self.assertEqual(invalid_response.status_code, 401)
+        _assert_error_response(unauthorized_response, status_code=401, code="UNAUTHORIZED")
+        _assert_error_response(invalid_response, status_code=401, code="UNAUTHORIZED")
         self.assertEqual(
             unauthorized_response.headers["www-authenticate"],
             "Bearer",
@@ -1249,8 +1329,7 @@ class ApiAppTests(unittest.TestCase):
         with TestClient(app) as client:
             response = client.get("/stats")
 
-        self.assertEqual(response.status_code, 503)
-        self.assertIn("no access token", response.json()["message"])
+        _assert_error_response(response, status_code=503, code="SERVICE_MISCONFIGURED")
 
     def test_authentication_rejects_weak_configured_token(self) -> None:
         config = build_test_config({"api": {"auth_enabled": True, "access_token": "too-short"}})
@@ -1262,8 +1341,7 @@ class ApiAppTests(unittest.TestCase):
                 headers={"Authorization": "Bearer too-short"},
             )
 
-        self.assertEqual(response.status_code, 503)
-        self.assertIn("at least 16 characters", response.json()["message"])
+        _assert_error_response(response, status_code=503, code="SERVICE_MISCONFIGURED")
 
     def test_request_body_and_question_limits_are_enforced(self) -> None:
         system = _FakeApiSystem()
@@ -1297,9 +1375,13 @@ class ApiAppTests(unittest.TestCase):
                 json={"question": "   "},
             )
 
-        self.assertEqual(oversized_body.status_code, 413)
-        self.assertEqual(oversized_question.status_code, 422)
-        self.assertEqual(blank_question.status_code, 422)
+        _assert_error_response(oversized_body, status_code=413, code="REQUEST_TOO_LARGE")
+        _assert_error_response(
+            oversized_question,
+            status_code=422,
+            code="VALIDATION_ERROR",
+        )
+        _assert_error_response(blank_question, status_code=422, code="VALIDATION_ERROR")
 
     def test_prometheus_metrics_endpoint_requires_credentials_by_default(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem(), config=_API_CONFIG)
