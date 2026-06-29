@@ -169,7 +169,8 @@ message, and the submission request ID.
 
 ### Versioned API and debug traces
 
-Use `/v1` for new API clients. The unversioned routes remain compatibility aliases.
+Use `/v1` for new API clients. The unversioned routes remain compatibility
+aliases during the migration window and will be removed in API version `2.0.0`.
 
 Public answer routes (`/v1/answers` and `/v1/answers/stream`) return `summary`,
 `grounding`, and `diagnostics` without the complete `traces` object. Full trace

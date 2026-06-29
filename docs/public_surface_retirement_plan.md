@@ -52,6 +52,22 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | `rag_modules.retrieval.runtime_profile.planner_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
 | `rag_modules.retrieval.runtime_profile.semantic_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
 
+## Active Compatibility Layers
+
+The already-completed `0.2.0` import-facade retirement does not remove every
+compatibility layer. The following adapters remain active only for migration
+windows and are not alternate architecture paths.
+
+| Active layer | Canonical replacement | Status | Removal version |
+| --- | --- | --- | --- |
+| unversioned HTTP API aliases | `/v1` serving and build routes | deprecated compatibility aliases for existing HTTP clients | API version `2.0.0` |
+| `rag_modules.routing.IntelligentQueryRouter` | `rag_modules.routing.RoutingWorkflowService` or the routing workflow protocol | thin service adapter for callers still using the router-shaped API | package version `0.3.0` |
+
+New HTTP clients must use `/v1`. New Python routing code must use
+`RoutingWorkflowService` or the routing workflow protocol. Compatibility tests
+may import or call active adapters only to verify delegation, deprecation
+metadata, and removal-version policy.
+
 ## Scan Rules
 
 - `internal_dependency_guard`: AST scans cover `rag_modules/`, `scripts/`, and

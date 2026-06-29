@@ -7,6 +7,7 @@ import unittest
 from importlib.util import resolve_name
 from pathlib import Path
 
+from rag_modules.interfaces.api.versioning import UNVERSIONED_API_ALIAS_REMOVAL_VERSION
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
@@ -16,6 +17,7 @@ from rag_modules.public_surface_manifest import (
     repo_root_facade_module_names,
     root_facade_module_names,
 )
+from rag_modules.routing import INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
@@ -452,6 +454,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "## Current Policy",
             "## Canonical Packages",
             "## Legacy Bridge Status",
+            "## Active Compatibility Layers",
             "## Scan Rules",
             "## Internal Freeze Rule",
             "## Retired Facade Rule",
@@ -493,6 +496,23 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "will fail instead of forwarding",
         ):
             self.assertIn(expected, content)
+
+    def test_active_compatibility_policy_documents_retirement_versions(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+
+        self.assertIn("Use `/v1` for new API clients", readme)
+        self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, readme)
+
+        for expected in (
+            "## Active Compatibility Layers",
+            "unversioned HTTP API aliases",
+            "rag_modules.routing.IntelligentQueryRouter",
+            UNVERSIONED_API_ALIAS_REMOVAL_VERSION,
+            INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION,
+            "already-completed `0.2.0` import-facade retirement",
+        ):
+            self.assertIn(expected, policy)
 
     def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {
