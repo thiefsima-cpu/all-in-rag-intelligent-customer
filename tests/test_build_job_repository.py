@@ -16,6 +16,59 @@ def _now() -> str:
 
 
 class BuildJobRepositoryTests(unittest.TestCase):
+    def test_repository_rejects_job_file_with_mismatched_payload_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "build_jobs.json"
+            repository = BuildJobRepository(str(legacy_path), now=_now)
+            requested_job_id = "a" * 32
+            payload_job_id = "b" * 32
+            job_path = Path(repository.jobs_dir) / f"{requested_job_id}.json"
+            job_path.write_text(
+                json.dumps(
+                    {
+                        "job_id": payload_job_id,
+                        "request_id": "request-1",
+                        "job_type": "build",
+                        "status": "succeeded",
+                        "created_at": _now(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertIsNone(repository.get(requested_job_id))
+            listed_job_ids = {job["job_id"] for job in repository.list_page(limit=50).jobs}
+            summary = repository.corruption_summary()
+
+            self.assertNotIn(payload_job_id, listed_job_ids)
+            self.assertEqual(summary["warning_count"], 1)
+            self.assertIn("BUILD_JOB_STORE_CORRUPT_RECORD", summary["warning_codes"])
+
+    def test_repository_deduplicates_corruption_warning_for_same_record(self) -> None:
+        detected_at_values = iter(
+            [
+                "2026-06-29T00:00:00Z",
+                "2026-06-29T00:00:01Z",
+            ]
+        )
+
+        def now() -> str:
+            return next(detected_at_values)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "build_jobs.json"
+            repository = BuildJobRepository(str(legacy_path), now=now)
+            job_id = "a" * 32
+            job_path = Path(repository.jobs_dir) / f"{job_id}.json"
+            job_path.write_text("not json", encoding="utf-8")
+
+            self.assertIsNone(repository.get(job_id))
+            self.assertIsNone(repository.get(job_id))
+
+            self.assertEqual(repository.corruption_summary()["warning_count"], 1)
+
     def test_repository_writes_one_job_file_and_preserves_legacy_store(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

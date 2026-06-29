@@ -193,6 +193,9 @@ class BuildJobRepository:
                 self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
                 return None
             job = BuildJobRecord.from_dict(payload)
+            if job.job_id != job_id:
+                self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
+                return None
             return job if job.job_id else None
         except (OSError, TypeError, ValueError):
             self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
@@ -255,7 +258,10 @@ class BuildJobRepository:
             identifier=str(identifier)[:24],
             detected_at=self._now(),
         )
-        if warning not in self._warnings:
+        warning_key = (warning.code, warning.component, warning.identifier)
+        if all(
+            (item.code, item.component, item.identifier) != warning_key for item in self._warnings
+        ):
             self._warnings.append(warning)
 
 
