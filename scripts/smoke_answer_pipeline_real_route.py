@@ -22,6 +22,7 @@ from rag_modules.contracts import (
     RetrievalRequest,
 )
 from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.query_understanding import QueryPlanner
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.retrieval.runtime_profile import (
     RetrievalCandidateSizingSettings,
@@ -29,7 +30,7 @@ from rag_modules.retrieval.runtime_profile import (
     RetrievalRuntimeProfile,
 )
 from rag_modules.routing import IntelligentQueryRouter
-from rag_modules.runtime import GraphRetrievalSnapshot
+from rag_modules.runtime import GraphRetrievalSnapshot, QueryUnderstandingSnapshot
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule,
     build_tracer,
@@ -41,21 +42,6 @@ DEFAULT_CORPUS_PATH = (
     / "fixtures"
     / "answer_pipeline_real_route_corpus.json"
 )
-
-
-class _DummyCompletions:
-    def create(self, **_: object) -> None:
-        raise AssertionError("Offline smoke mode should not call the LLM query planner.")
-
-
-class _DummyChat:
-    def __init__(self) -> None:
-        self.completions = _DummyCompletions()
-
-
-class _DummyLLM:
-    def __init__(self) -> None:
-        self.chat = _DummyChat()
 
 
 @dataclass
@@ -314,6 +300,18 @@ class _StaticGraphRetrieval:
         return snapshot
 
 
+class _OfflineQueryUnderstandingService:
+    def __init__(self, retrieval_profile: RetrievalRuntimeProfile) -> None:
+        self.query_planner = QueryPlanner(
+            None,
+            settings=retrieval_profile.planner,
+            semantic_settings=retrieval_profile.semantics,
+        )
+
+    def understand(self, query: str) -> QueryUnderstandingSnapshot:
+        return QueryUnderstandingSnapshot.from_plan(self.query_planner.rule_based_plan(query))
+
+
 def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
     return RetrievalRuntimeProfile(
         planner=QueryPlannerRuntimeSettings(fast_rule_planning=True),
@@ -373,8 +371,10 @@ def evaluate_contracts(
             )
         if plan.validation_errors:
             fail("plan", f"plan_validation_errors={plan.validation_errors}")
-        if planner_mode not in {"fast_rule", "fallback_rule"}:
+        if planner_mode not in {"fast_rule", "rule_based"}:
             fail("offline_planner", f"planner_mode_not_offline={planner_mode}")
+        if plan.fallback_reason == "query_planning_failed":
+            fail("offline_planner", "planner_used_exception_fallback")
 
     if route_request is None:
         fail("request", "missing_route_retrieval_request")
@@ -467,9 +467,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     router = IntelligentQueryRouter(
         traditional_retrieval=hybrid_retrieval,
         graph_rag_retrieval=graph_retrieval,
-        llm_client=_DummyLLM(),
+        llm_client=None,
         config=config,
         retrieval_profile=retrieval_profile,
+        query_understanding_service=_OfflineQueryUnderstandingService(retrieval_profile),
     )
     generation_module = OfflineGenerationModule([case.answer_text])
     tracer, sink = build_tracer()

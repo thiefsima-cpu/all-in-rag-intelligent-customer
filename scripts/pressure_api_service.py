@@ -11,6 +11,7 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
+from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerSummary
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.interfaces.api.services import GraphRAGServingApiService
@@ -48,24 +49,6 @@ class _SlowCaptureTraceSink:
             "dropped_events": 0,
             "queued_events": 0,
             "closed": self.closed,
-        }
-
-
-class _DummyAnswerResponse:
-    def __init__(self, *, question: str, latency_ms: float) -> None:
-        self.question = question
-        self.latency_ms = latency_ms
-
-    def to_dict(self) -> dict:
-        return {
-            "summary": {
-                "answer": f"answer:{self.question}",
-                "strategy": "hybrid_traditional",
-                "latency_ms": self.latency_ms,
-                "doc_count": 1,
-                "has_evidence": True,
-                "error": "",
-            }
         }
 
 
@@ -159,7 +142,15 @@ class _PressureTestSystem:
             latency_ms=latency_ms,
             answer="ok",
         )
-        return _DummyAnswerResponse(question=question, latency_ms=latency_ms)
+        return QuestionAnswerResponse(
+            summary=QuestionAnswerSummary(
+                answer=f"answer:{question}",
+                strategy="hybrid_traditional",
+                latency_ms=latency_ms,
+                doc_count=1,
+                has_evidence=True,
+            )
+        )
 
     def close(self) -> None:
         self.query_tracer.close()

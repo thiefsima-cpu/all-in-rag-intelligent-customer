@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any, Dict, List, Sequence, Tuple
 
 from .registry import (
@@ -134,7 +135,14 @@ def extract_query_tokens(query: str) -> List[str]:
     normalized = normalize_query_text(query)
     segmented_text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", normalized)
     try:
-        import jieba
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="pkg_resources is deprecated as an API.*",
+                category=UserWarning,
+                module=r"jieba\._compat",
+            )
+            import jieba
 
         raw_tokens = [part.strip() for part in jieba.lcut(segmented_text) if part.strip()]
     except Exception:

@@ -196,6 +196,13 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["route_category_count"], 9)
         self.assertFalse(report["failed_checks"])
 
+    def test_real_route_suite_does_not_hide_planner_attribute_errors(self) -> None:
+        with patch("rag_modules.query_understanding.planning.service.log_failure") as log_failure:
+            reports = run_suites(["answer_pipeline_real_route"])
+
+        self.assertFalse(reports["answer_pipeline_real_route"]["failures"])
+        log_failure.assert_not_called()
+
     def test_default_policy_configures_quality_eval_as_optional(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
 

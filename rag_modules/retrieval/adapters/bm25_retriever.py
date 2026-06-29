@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from typing import List, Optional
 
-import jieba
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="pkg_resources is deprecated as an API.*",
+        category=UserWarning,
+        module=r"jieba\._compat",
+    )
+    import jieba
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
