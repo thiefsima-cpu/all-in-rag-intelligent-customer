@@ -321,7 +321,15 @@ class BuildJobRepository:
                         os.path.basename(self.path),
                     )
                     continue
-                job = BuildJobRecord.from_dict(item)
+                try:
+                    job = BuildJobRecord.from_dict(item)
+                except (TypeError, ValueError):
+                    self._record_warning_unlocked(
+                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                        "legacy",
+                        os.path.basename(self.path),
+                    )
+                    continue
                 if not job.job_id:
                     self._record_warning_unlocked(
                         "BUILD_JOB_STORE_CORRUPT_LEGACY",

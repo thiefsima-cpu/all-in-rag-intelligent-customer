@@ -101,6 +101,45 @@ class BuildJobRepositoryTests(unittest.TestCase):
             self.assertNotIn("legacy-secret-value", dumped_summary)
             self.assertNotIn("another-secret-value", dumped_summary)
 
+    def test_repository_continues_import_after_mapping_legacy_entry_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "build_jobs.json"
+            legacy_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "graph-rag-build-jobs-v2",
+                        "jobs": [
+                            {
+                                "job_id": "e" * 32,
+                                "request_id": "bad-legacy",
+                                "job_type": "build",
+                                "status": "failed",
+                                "created_at": "2026-06-29T00:00:00Z",
+                                "logs": 1,
+                            },
+                            {
+                                "job_id": "f" * 32,
+                                "request_id": "valid-legacy",
+                                "job_type": "build",
+                                "status": "succeeded",
+                                "created_at": "2026-06-29T00:00:01Z",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            repository = BuildJobRepository(str(legacy_path), now=_now)
+            summary = repository.corruption_summary()
+
+            self.assertIsNone(repository.get("e" * 32))
+            self.assertEqual(repository.get("f" * 32)["status"], "succeeded")
+            self.assertEqual(summary["warning_count"], 1)
+            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_LEGACY"])
+            self.assertNotIn("bad-legacy", json.dumps(summary, ensure_ascii=False))
+
     def test_repository_rejects_job_file_with_mismatched_payload_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
