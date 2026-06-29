@@ -960,6 +960,86 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("BUILD_JOB_STORE_CORRUPT_RECORD", payload["warning_codes"])
         self.assertNotIn("secret-diagnostics-value", dumped)
 
+    def test_build_diagnostics_include_corrupt_idempotency_warning_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            idempotency_dir = root / "jobs.d" / "idempotency"
+            idempotency_dir.mkdir(parents=True)
+            (idempotency_dir / "bad-index.json").write_text(
+                '["secret-idempotency-value"]',
+                encoding="utf-8",
+            )
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                response = client.get("/diagnostics")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["diagnostics"]["build_job_store"]
+        dumped = json.dumps(response.json(), ensure_ascii=False)
+        self.assertGreaterEqual(payload["warning_count"], 1)
+        self.assertIn("BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY", payload["warning_codes"])
+        self.assertNotIn("secret-idempotency-value", dumped)
+
+    def test_build_jobs_skip_invalid_job_records_instead_of_returning_500(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            jobs_dir = root / "jobs.d" / "jobs"
+            jobs_dir.mkdir(parents=True)
+            (jobs_dir / f"{'9' * 32}.json").write_text(
+                json.dumps(
+                    {
+                        "job_id": "9" * 32,
+                        "request_id": "secret-invalid-job",
+                        "job_type": "build",
+                        "status": "not-a-status",
+                        "created_at": "2026-06-29T00:00:00Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            app = create_build_api_app(system=system, config=config)
+
+            with TestClient(
+                app,
+                headers={"Authorization": f"Bearer {_API_TOKEN}"},
+                raise_server_exceptions=False,
+            ) as client:
+                jobs_response = client.get("/jobs")
+                diagnostics_response = client.get("/diagnostics")
+
+        self.assertEqual(jobs_response.status_code, 200)
+        self.assertEqual(jobs_response.json()["jobs"], [])
+        payload = diagnostics_response.json()["diagnostics"]["build_job_store"]
+        dumped = json.dumps(
+            {"jobs": jobs_response.json(), "diagnostics": diagnostics_response.json()},
+            ensure_ascii=False,
+        )
+        self.assertIn("BUILD_JOB_STORE_CORRUPT_RECORD", payload["warning_codes"])
+        self.assertNotIn("secret-invalid-job", dumped)
+
     def test_serving_answer_returns_409_when_artifacts_are_not_ready(self) -> None:
         system = _FakeApiSystem()
         app = create_serving_api_app(system=system)

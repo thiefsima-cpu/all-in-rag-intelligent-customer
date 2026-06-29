@@ -28,6 +28,10 @@ from .models import (
 BUILD_JOB_REPOSITORY_SCHEMA_VERSION = "graph-rag-build-job-repository-v1"
 _IDEMPOTENCY_KEY_PATTERN = re.compile(r"[!-~]{1,128}\Z", flags=re.ASCII)
 _IDEMPOTENCY_FORBIDDEN_CHARS = frozenset({"/", "\\"})
+_VALID_JOB_TYPES = frozenset({"build", "rebuild"})
+_VALID_JOB_STATUSES = frozenset({"queued", "running", "succeeded", "failed"})
+_ACTIVE_JOB_STATUSES = frozenset({"queued", "running"})
+_VALID_RESULT_KEYS = frozenset({"message", "diagnostics", "stats"})
 
 
 class BuildJobIdempotencyConflictError(ValueError):
@@ -289,9 +293,16 @@ class BuildJobRepository:
                 self._apply_retention_unlocked()
 
     def corruption_summary(self) -> dict:
-        warnings = [warning.to_dict() for warning in self._warnings]
-        codes = sorted({warning["code"] for warning in warnings})
-        return {"warning_count": len(warnings), "warning_codes": codes, "warnings": warnings}
+        with self._lock:
+            with self.locked():
+                self._scan_for_corruption_unlocked()
+                warnings = [warning.to_dict() for warning in self._warnings]
+                codes = sorted({warning["code"] for warning in warnings})
+                return {
+                    "warning_count": len(warnings),
+                    "warning_codes": codes,
+                    "warnings": warnings,
+                }
 
     def _job_path(self, job_id: str) -> str:
         return os.path.join(self.jobs_dir, f"{job_id}.json")
@@ -306,7 +317,22 @@ class BuildJobRepository:
         try:
             with open(path, "r", encoding="utf-8") as file:
                 payload = json.load(file)
-            return dict(payload) if isinstance(payload, Mapping) else None
+            if not isinstance(payload, Mapping):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
+                    "idempotency",
+                    key_hash[:12],
+                )
+                return None
+            idempotency = dict(payload)
+            if not self._is_valid_idempotency_unlocked(key_hash, idempotency):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
+                    "idempotency",
+                    key_hash[:12],
+                )
+                return None
+            return idempotency
         except (OSError, TypeError, ValueError):
             self._record_warning_unlocked(
                 "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
@@ -363,6 +389,43 @@ class BuildJobRepository:
                 pass
             self._remove_idempotency_for_job_unlocked(job.job_id)
 
+    def _scan_for_corruption_unlocked(self) -> None:
+        self._load_metadata_unlocked()
+        self._load_jobs_unlocked()
+        self._scan_idempotency_unlocked()
+
+    def _scan_idempotency_unlocked(self) -> None:
+        if not os.path.isdir(self.idempotency_dir):
+            return
+        for filename in os.listdir(self.idempotency_dir):
+            if filename.endswith(".json"):
+                self._load_idempotency_unlocked(filename[:-5])
+
+    @staticmethod
+    def _is_valid_idempotency_unlocked(key_hash: str, payload: Mapping[str, Any]) -> bool:
+        return (
+            str(payload.get("key_hash") or "") == key_hash
+            and bool(str(payload.get("job_id") or ""))
+            and str(payload.get("job_type") or "") in _VALID_JOB_TYPES
+        )
+
+    @staticmethod
+    def _is_valid_job_record(job: BuildJobRecord) -> bool:
+        if job.job_type not in _VALID_JOB_TYPES or job.status not in _VALID_JOB_STATUSES:
+            return False
+        if job.result is None:
+            return True
+        if not set(job.result).issubset(_VALID_RESULT_KEYS):
+            return False
+        message = job.result.get("message")
+        if message is not None and not isinstance(message, str):
+            return False
+        for key in ("diagnostics", "stats"):
+            value = job.result.get(key)
+            if value is not None and not isinstance(value, Mapping):
+                return False
+        return True
+
     def _repair_idempotency_from_jobs_unlocked(
         self,
         key_hash: str,
@@ -389,7 +452,7 @@ class BuildJobRepository:
                 self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
                 return None
             job = BuildJobRecord.from_dict(payload)
-            if job.job_id != job_id:
+            if job.job_id != job_id or not self._is_valid_job_record(job):
                 self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
                 return None
             return job if job.job_id else None
@@ -426,7 +489,7 @@ class BuildJobRepository:
                 saw_invalid_entry = True
                 continue
             job = BuildJobRecord.from_dict(item)
-            if not job.job_id:
+            if not job.job_id or not self._is_valid_job_record(job):
                 saw_invalid_entry = True
                 continue
             replacements[job.job_id] = job
@@ -453,13 +516,13 @@ class BuildJobRepository:
 
     def _active_unlocked(self) -> BuildJobRecord | None:
         for job in self._load_jobs_unlocked():
-            if job.status in {"queued", "running"}:
+            if job.status in _ACTIVE_JOB_STATUSES:
                 return job
         return None
 
     def _recover_interrupted_unlocked(self) -> None:
         for job in self._load_jobs_unlocked():
-            if job.status in {"queued", "running"}:
+            if job.status in _ACTIVE_JOB_STATUSES:
                 self._mark_interrupted_unlocked(job)
 
     def _mark_interrupted_unlocked(self, job: BuildJobRecord) -> None:
@@ -514,6 +577,13 @@ class BuildJobRepository:
                     )
                     continue
                 if not job.job_id:
+                    self._record_warning_unlocked(
+                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                        "legacy",
+                        os.path.basename(self.path),
+                    )
+                    continue
+                if not self._is_valid_job_record(job):
                     self._record_warning_unlocked(
                         "BUILD_JOB_STORE_CORRUPT_LEGACY",
                         "legacy",
@@ -595,17 +665,19 @@ class BuildJobRepository:
         )
 
     def _record_warning_unlocked(self, code: str, component: str, identifier: str) -> None:
+        normalized_identifier = str(identifier)[:24]
+        warning_key = (code, component, normalized_identifier)
+        if any(
+            (item.code, item.component, item.identifier) == warning_key for item in self._warnings
+        ):
+            return
         warning = BuildJobCorruptionWarning(
             code=code,
             component=component,
-            identifier=str(identifier)[:24],
+            identifier=normalized_identifier,
             detected_at=self._now(),
         )
-        warning_key = (warning.code, warning.component, warning.identifier)
-        if all(
-            (item.code, item.component, item.identifier) != warning_key for item in self._warnings
-        ):
-            self._warnings.append(warning)
+        self._warnings.append(warning)
 
 
 __all__ = [
