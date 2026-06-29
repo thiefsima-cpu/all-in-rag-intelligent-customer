@@ -16,6 +16,37 @@ def _now() -> str:
 
 
 class BuildJobRepositoryTests(unittest.TestCase):
+    def test_corrupt_job_file_is_skipped_and_reported_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repository = BuildJobRepository(
+                str(root / "build_jobs.json"),
+                now=_now,
+                settings=BuildJobRepositorySettings(),
+            )
+            created, job, build_lock = repository.create_or_active(
+                job_id="4" * 32,
+                request_id="request-4",
+                job_type="build",
+                message="Knowledge base build job queued.",
+                idempotency_key="",
+            )
+            if build_lock is not None:
+                build_lock.release()
+            self.assertTrue(created)
+            corrupt_path = root / "build_jobs.d" / "jobs" / f"{'5' * 32}.json"
+            corrupt_path.write_text("{not json with secret-value", encoding="utf-8")
+
+            page = repository.list_page(limit=10, cursor="")
+            missing = repository.get("5" * 32)
+            summary = repository.corruption_summary()
+
+            self.assertEqual([item["job_id"] for item in page.jobs], [job["job_id"]])
+            self.assertIsNone(missing)
+            self.assertEqual(summary["warning_count"], 1)
+            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_RECORD"])
+            self.assertNotIn("secret-value", json.dumps(summary, ensure_ascii=False))
+
     def test_retention_prunes_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
         timestamps = (f"2026-06-29T00:00:{index:02d}Z" for index in range(20))
 

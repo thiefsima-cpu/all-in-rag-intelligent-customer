@@ -73,6 +73,7 @@ class StartupDiagnosticsPayloadModel(BaseModel):
     system_ready: bool = False
     retrieval_engines_initialized: bool = False
     manifest: ArtifactManifestResponseModel = Field(default_factory=ArtifactManifestResponseModel)
+    build_job_store: JsonObject = Field(default_factory=dict)
 
 
 class DiagnosticsResponseModel(BaseModel):

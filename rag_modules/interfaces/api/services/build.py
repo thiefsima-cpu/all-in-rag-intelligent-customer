@@ -90,6 +90,11 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             ready=bool(diagnostics["build_initialized"]),
         )
 
+    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict:
+        diagnostics = super()._collect_startup_diagnostics_unlocked(mode)
+        diagnostics["build_job_store"] = self._job_registry.corruption_summary()
+        return diagnostics
+
     def initialize_build_runtime(self) -> dict:
         with self._exclusive_runtime_operation():
             if not self.system.is_build_initialized():

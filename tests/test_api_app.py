@@ -928,6 +928,38 @@ class ApiAppTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertIn("BUILD_FAILED", serialized)
 
+    def test_build_diagnostics_include_safe_build_job_store_warning_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            repository_dir = root / "jobs.d" / "jobs"
+            repository_dir.mkdir(parents=True)
+            (repository_dir / f"{'6' * 32}.json").write_text(
+                "{broken secret-diagnostics-value",
+                encoding="utf-8",
+            )
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                response = client.get("/diagnostics")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["diagnostics"]["build_job_store"]
+        dumped = json.dumps(response.json(), ensure_ascii=False)
+        self.assertGreaterEqual(payload["warning_count"], 1)
+        self.assertIn("BUILD_JOB_STORE_CORRUPT_RECORD", payload["warning_codes"])
+        self.assertNotIn("secret-diagnostics-value", dumped)
+
     def test_serving_answer_returns_409_when_artifacts_are_not_ready(self) -> None:
         system = _FakeApiSystem()
         app = create_serving_api_app(system=system)
