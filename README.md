@@ -127,6 +127,26 @@ $job = Invoke-RestMethod -Method Post http://localhost:8001/v1/jobs/build
 Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 ```
 
+### Build job retries and history
+
+Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build`,
+`/v1/jobs/rebuild`, and their compatibility aliases. Reusing the same key for
+the same operation returns the original job. Reusing a key for a different
+operation returns `409 BUILD_JOB_CONFLICT`.
+
+`GET /v1/jobs` returns a bounded page:
+
+```powershell
+curl.exe -H "Authorization: Bearer $env:API_ACCESS_TOKEN" `
+  "http://localhost:8001/v1/jobs?limit=50"
+```
+
+Follow `next_cursor` until it is empty. Build job history is retained according
+to `API_BUILD_JOB_RETENTION_LIMIT`; active jobs are never pruned. If local job
+storage contains a corrupted record, `/v1/diagnostics` reports safe
+`build_job_store.warning_count` and stable warning codes without exposing raw
+file contents.
+
 `/v1/answers` returns `409 Conflict` until the build API has produced a ready
 artifact manifest, cached documents, and a Milvus vector collection.
 

@@ -1088,6 +1088,60 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "INVALID_REQUEST")
         self.assertEqual(payload["error"]["details"]["field"], "cursor")
 
+    def test_v1_build_jobs_accept_idempotency_and_paginated_list_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first = client.post("/v1/jobs/build", headers={"Idempotency-Key": "v1-key"})
+                job_id = first.json()["job"]["job_id"]
+                _wait_for_job_status(client, job_id, "succeeded")
+                repeated = client.post("/v1/jobs/build", headers={"Idempotency-Key": "v1-key"})
+                listed = client.get("/v1/jobs", params={"limit": 1})
+
+        self.assertEqual(repeated.json()["job"]["job_id"], job_id)
+        self.assertIn("next_cursor", listed.json())
+
+    def test_knowledge_base_build_alias_accepts_idempotency_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first = client.post(
+                    "/knowledge-base/build",
+                    headers={"Idempotency-Key": "alias-key"},
+                )
+                job_id = first.json()["job"]["job_id"]
+                _wait_for_job_status(client, job_id, "succeeded")
+                repeated = client.post(
+                    "/knowledge-base/build",
+                    headers={"Idempotency-Key": "alias-key"},
+                )
+
+        self.assertEqual(repeated.json()["job"]["job_id"], job_id)
+
     def test_build_jobs_surface_reuses_idempotency_key_for_same_job_type(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(

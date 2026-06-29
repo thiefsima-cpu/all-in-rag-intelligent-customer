@@ -43,6 +43,7 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
     def test_build_job_store_facade_reexports_build_job_components(self) -> None:
         from rag_modules.interfaces.api import build_job_store, build_jobs
 
+        self.assertIn("BuildJobRepository", build_job_store.__all__)
         for name in build_job_store.__all__:
             self.assertIs(getattr(build_job_store, name), getattr(build_jobs, name))
 
