@@ -15,9 +15,16 @@ if TYPE_CHECKING:
     )
     from .workflow_service import RoutingWorkflowService
 
+INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION = "0.3.0"
+
 
 class IntelligentQueryRouter:
-    """Legacy router-shaped adapter over RoutingWorkflowService."""
+    """Legacy router-shaped adapter over RoutingWorkflowService.
+
+    Canonical replacement: RoutingWorkflowService.
+    Deprecated compatibility adapter. Prefer RoutingWorkflowService for new code.
+    Scheduled for removal in package version 0.3.0.
+    """
 
     def __init__(
         self,
@@ -62,4 +69,4 @@ class IntelligentQueryRouter:
         return resolution.retrieval, resolution.analysis
 
 
-__all__ = ["IntelligentQueryRouter"]
+__all__ = ["INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION", "IntelligentQueryRouter"]

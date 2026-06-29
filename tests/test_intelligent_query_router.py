@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.routing import IntelligentQueryRouter
+from rag_modules.routing import (
+    INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION,
+    IntelligentQueryRouter,
+)
 from rag_modules.runtime import QueryAnalysis, RetrievalOutcome, RouteResolution, RouteSnapshot
 
 
@@ -62,6 +65,13 @@ class IntelligentQueryRouterTests(unittest.TestCase):
         self.assertEqual(workflow.route_calls[-1], ("traced", 4))
         self.assertFalse(hasattr(router, "last_trace"))
         self.assertFalse(hasattr(router, "last_resolution"))
+
+    def test_facade_declares_retirement_metadata(self) -> None:
+        self.assertEqual(INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION, "0.3.0")
+        docstring = IntelligentQueryRouter.__doc__ or ""
+        self.assertIn("RoutingWorkflowService", docstring)
+        self.assertIn("canonical replacement", docstring.lower())
+        self.assertIn(INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION, docstring)
 
 
 if __name__ == "__main__":
