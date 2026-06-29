@@ -9,8 +9,19 @@ from typing import Any, Dict
 from ...configuration.models import ApiSettings, ObservabilitySettings
 from .error_models import ERROR_STATUS_CODES, ErrorCode, build_error_payload
 from .request_context import current_request_id
+from .versioning import API_PREFIX
 
-_BASE_PUBLIC_PATHS = frozenset({"/", "/health", "/health/live", "/health/ready"})
+_BASE_PUBLIC_PATHS = frozenset(
+    {
+        "/",
+        "/health",
+        "/health/live",
+        "/health/ready",
+        f"{API_PREFIX}/health",
+        f"{API_PREFIX}/health/live",
+        f"{API_PREFIX}/health/ready",
+    }
+)
 _DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 

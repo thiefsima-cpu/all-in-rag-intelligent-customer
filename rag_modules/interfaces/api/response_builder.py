@@ -12,6 +12,8 @@ from .answer_models import (
     AnswerPayloadModel,
     AnswerResponseModel,
     AnswerStreamEventModel,
+    PublicAnswerPayloadModel,
+    PublicAnswerResponseModel,
 )
 from .build_models import (
     ArtifactRegistryResponseModel,
@@ -73,6 +75,12 @@ def build_answer_response(answer_payload: AnswerPayloadModel) -> AnswerResponseM
     return AnswerResponseModel(response=answer_payload)
 
 
+def build_public_answer_response(answer_payload: AnswerPayloadModel) -> PublicAnswerResponseModel:
+    return PublicAnswerResponseModel(
+        response=PublicAnswerPayloadModel.from_debug_payload(answer_payload)
+    )
+
+
 def build_build_job_response(job_payload: dict) -> BuildJobResponseModel:
     safe = sanitize_public_error_fields(job_payload, code=ErrorCode.BUILD_FAILED)
     return BuildJobResponseModel.model_validate({"job": safe})
@@ -126,6 +134,7 @@ __all__ = [
     "build_diagnostics_response",
     "build_json_response",
     "build_operation_response",
+    "build_public_answer_response",
     "build_sse_streaming_response",
     "build_stats_response",
     "encode_sse_event",

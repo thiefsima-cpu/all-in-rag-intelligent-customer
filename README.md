@@ -123,11 +123,11 @@ graph import and build jobs are managed separately. The build API remains
 available for explicit operations:
 
 ```powershell
-$job = Invoke-RestMethod -Method Post http://localhost:8001/jobs/build
-Invoke-RestMethod http://localhost:8001/jobs/$($job.job.job_id)
+$job = Invoke-RestMethod -Method Post http://localhost:8001/v1/jobs/build
+Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 ```
 
-`/answers` returns `409 Conflict` until the build API has produced a ready
+`/v1/answers` returns `409 Conflict` until the build API has produced a ready
 artifact manifest, cached documents, and a Milvus vector collection.
 
 ### Error contract and request correlation
@@ -146,4 +146,16 @@ messages. Correlate support activity by `request_id` and stable error code.
 
 Failed build-job resources contain a typed `error` object with a stable code, a catalog-controlled
 message, and the submission request ID.
+
+### Versioned API and debug traces
+
+Use `/v1` for new API clients. The unversioned routes remain compatibility aliases.
+
+Public answer routes (`/v1/answers` and `/v1/answers/stream`) return `summary`,
+`grounding`, and `diagnostics` without the complete `traces` object. Full trace
+payloads are available only through explicit debug routes:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:8000/v1/debug/answers -Body (@{question="..."} | ConvertTo-Json) -ContentType application/json
+```
 

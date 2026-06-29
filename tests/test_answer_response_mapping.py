@@ -12,7 +12,7 @@ from rag_modules.contracts import (
     RetrievalRequest,
 )
 from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.interfaces.api.answer_models import AnswerPayloadModel
+from rag_modules.interfaces.api.answer_models import AnswerPayloadModel, PublicAnswerPayloadModel
 from rag_modules.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
@@ -69,6 +69,30 @@ def test_typed_mapper_matches_compatibility_payload() -> None:
     response = _complete_result().to_response()
 
     assert AnswerPayloadModel.from_dto(response).model_dump() == response.to_dict()
+
+
+def test_public_answer_payload_maps_typed_response_without_traces() -> None:
+    response = _complete_result().to_response()
+
+    payload = PublicAnswerPayloadModel.from_dto(response)
+
+    assert payload.summary.answer == "grounded answer"
+    assert payload.grounding.retrieval_outcome.strategy == "combined"
+    assert payload.diagnostics.diagnostics.overall_bucket == "healthy"
+    assert "traces" not in payload.model_dump()
+
+
+def test_public_answer_payload_can_be_derived_from_debug_payload() -> None:
+    response = _complete_result().to_response()
+    debug_payload = AnswerPayloadModel.from_dto(response)
+
+    payload = PublicAnswerPayloadModel.from_debug_payload(debug_payload)
+
+    assert payload.model_dump() == {
+        "summary": debug_payload.summary.model_dump(),
+        "grounding": debug_payload.grounding.model_dump(),
+        "diagnostics": debug_payload.diagnostics.model_dump(),
+    }
 
 
 def _complete_result() -> QuestionAnswerResult:

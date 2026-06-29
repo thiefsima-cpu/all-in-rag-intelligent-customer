@@ -15,7 +15,11 @@ from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ....safe_logging import log_failure
-from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
+from ..answer_models import (
+    AnswerPayloadModel,
+    AnswerStreamEventModel,
+    PublicAnswerPayloadModel,
+)
 from ..error_models import ErrorCode
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
@@ -254,6 +258,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         question: str,
         explain_routing: bool = False,
         request_id: str = "",
+        include_traces: bool = True,
     ) -> Iterator[AnswerStreamEventModel]:
         self._ensure_serving_runtime_initialized()
         self._refresh_serving_runtime_if_stale()
@@ -263,6 +268,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             question=question,
             explain_routing=explain_routing,
             request_id=resolved_request_id,
+            include_traces=include_traces,
         )
 
     def _iter_stream_answer_question_events(
@@ -271,6 +277,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         question: str,
         explain_routing: bool = False,
         request_id: str,
+        include_traces: bool = True,
     ) -> Iterator[AnswerStreamEventModel]:
         event_queue: "queue.Queue[AnswerStreamEventModel | _StreamEnd]" = queue.Queue(
             maxsize=self._stream_queue_max_size
@@ -319,7 +326,11 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                             message_callback=on_message,
                             chunk_callback=on_chunk,
                         )
-                emit(AnswerStreamEventModel.result(self._answer_payload(response)))
+                answer_payload = self._answer_payload(response)
+                result_payload: AnswerPayloadModel | PublicAnswerPayloadModel = answer_payload
+                if not include_traces:
+                    result_payload = PublicAnswerPayloadModel.from_debug_payload(answer_payload)
+                emit(AnswerStreamEventModel.result(result_payload))
             except ApiBackpressureError:
                 emit_error(ErrorCode.RATE_LIMITED)
             except _StreamCancelledError:

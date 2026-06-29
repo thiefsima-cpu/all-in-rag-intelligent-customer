@@ -224,13 +224,18 @@ class AdvancedGraphRAGSystemComposer:
             runtime_manager=runtime_manager,
         )
         runtime_backend = runtime_infrastructure.runtime_manager
-        resolved_operations_service: SystemOperationsProtocol = operations_service or runtime_backend
+        resolved_operations_service: SystemOperationsProtocol = (
+            operations_service or runtime_backend
+        )
         resolved_answering_service = answering_service or SystemAnsweringService(
             backend=runtime_backend,
             runtime_state_store=runtime_infrastructure.runtime_state_store,
         )
-        resolved_facade_support: SystemFacadeSupportProtocol = facade_support or SystemFacadeSupport(
-            runtime_state_store=runtime_infrastructure.runtime_state_store,
+        resolved_facade_support: SystemFacadeSupportProtocol = (
+            facade_support
+            or SystemFacadeSupport(
+                runtime_state_store=runtime_infrastructure.runtime_state_store,
+            )
         )
         return AdvancedGraphRAGSystemComponents(
             config=resolved_config,

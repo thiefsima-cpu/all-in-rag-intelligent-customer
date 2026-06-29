@@ -28,6 +28,7 @@ from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
+from rag_modules.interfaces.api.versioning import API_VERSION
 from rag_modules.runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -75,6 +76,22 @@ def _assert_error_response(
 
 def _assert_request_id(value: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value)
+
+
+def _parse_sse_events(body: str) -> dict[str, list[dict]]:
+    events: dict[str, list[dict]] = {}
+    for block in body.strip().split("\n\n"):
+        lines = [line for line in block.splitlines() if line]
+        event_name = ""
+        data = None
+        for line in lines:
+            if line.startswith("event: "):
+                event_name = line[len("event: ") :]
+            elif line.startswith("data: "):
+                data = json.loads(line[len("data: ") :])
+        if event_name:
+            events.setdefault(event_name, []).append(data)
+    return events
 
 
 def _wait_for_job_status(
@@ -1053,6 +1070,167 @@ class ApiAppTests(unittest.TestCase):
         )
         self.assertEqual(answer_payload["summary"]["prompt_tokens"], 11)
         self.assertEqual(answer_payload["summary"]["total_tokens"], 18)
+
+    def test_v1_answer_omits_traces_by_default(self) -> None:
+        system = _FakeApiSystem()
+        system.system_ready = True
+        app = create_serving_api_app(system=system)
+
+        with _client(app) as client:
+            response = client.post("/v1/answers", json={"question": "Can I cook tofu?"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["response"]
+        self.assertEqual(payload["summary"]["answer"], "answer:Can I cook tofu?")
+        self.assertNotIn("traces", payload)
+
+    def test_v1_debug_answer_includes_traces(self) -> None:
+        system = _FakeApiSystem()
+        system.system_ready = True
+        app = create_serving_api_app(system=system)
+
+        with _client(app) as client:
+            response = client.post("/v1/debug/answers", json={"question": "Can I cook tofu?"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["response"]
+        self.assertEqual(
+            payload["traces"]["generation_trace"]["token_usage_source"],
+            "test",
+        )
+
+    def test_v1_answer_stream_result_omits_traces_by_default(self) -> None:
+        system = _FakeApiSystem()
+        system.system_ready = True
+        app = create_serving_api_app(system=system)
+
+        with _client(app) as client:
+            with client.stream(
+                "POST",
+                "/v1/answers/stream",
+                json={"question": "Can I cook tofu?"},
+            ) as response:
+                body = "".join(response.iter_text())
+
+        self.assertEqual(response.status_code, 200)
+        result_payload = _parse_sse_events(body)["result"][0]["response"]
+        self.assertEqual(result_payload["summary"]["answer"], "answer:Can I cook tofu?")
+        self.assertNotIn("traces", result_payload)
+
+    def test_v1_debug_answer_stream_result_includes_traces(self) -> None:
+        system = _FakeApiSystem()
+        system.system_ready = True
+        app = create_serving_api_app(system=system)
+
+        with _client(app) as client:
+            with client.stream(
+                "POST",
+                "/v1/debug/answers/stream",
+                json={"question": "Can I cook tofu?"},
+            ) as response:
+                body = "".join(response.iter_text())
+
+        self.assertEqual(response.status_code, 200)
+        result_payload = _parse_sse_events(body)["result"][0]["response"]
+        self.assertEqual(
+            result_payload["traces"]["generation_trace"]["token_usage_source"],
+            "test",
+        )
+
+    def test_serving_and_build_apps_share_api_version_constant(self) -> None:
+        serving_app = create_serving_api_app(system=_FakeApiSystem())
+        build_app = create_build_api_app(system=_FakeApiSystem())
+        app_source = (
+            Path(__file__).resolve().parents[1] / "rag_modules" / "interfaces" / "api" / "app.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(serving_app.version, API_VERSION)
+        self.assertEqual(build_app.version, API_VERSION)
+        self.assertIn("version=API_VERSION", app_source)
+        self.assertNotIn('version="1.0.0"', app_source)
+
+    def test_v1_health_paths_are_public_and_protected_paths_stay_protected(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+
+        with TestClient(app) as client:
+            health = client.get("/v1/health")
+            stats = client.get("/v1/stats")
+            debug = client.post("/v1/debug/answers", json={"question": "tofu"})
+
+        self.assertEqual(health.status_code, 200)
+        _assert_error_response(stats, status_code=401, code="UNAUTHORIZED")
+        _assert_error_response(debug, status_code=401, code="UNAUTHORIZED")
+
+    def test_v1_build_routes_match_unversioned_build_routes(self) -> None:
+        system = _FakeApiSystem()
+        app = create_build_api_app(system=system)
+
+        with _client(app) as client:
+            health = client.get("/v1/health")
+            initialize = client.post("/v1/runtime/build/initialize")
+            build_response = client.post("/v1/jobs/build")
+            build_job = build_response.json().get("job", {})
+            finished_job = _wait_for_job_status(
+                client,
+                build_job.get("job_id", ""),
+                "succeeded",
+            )
+            list_response = client.get("/v1/jobs")
+            artifacts = client.get("/v1/artifacts")
+
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(initialize.status_code, 200)
+        self.assertEqual(build_response.status_code, 202)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(artifacts.status_code, 200)
+        self.assertEqual(list_response.json()["jobs"][0]["job_id"], build_job["job_id"])
+        self.assertEqual(finished_job["result"]["message"], "Knowledge base build completed.")
+
+    def test_openapi_security_metadata_clears_v1_health_and_keeps_debug_protected(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        self.assertEqual(schema["paths"]["/v1/health"]["get"]["security"], [])
+        self.assertNotEqual(schema["paths"]["/v1/debug/answers"]["post"].get("security"), [])
+
+    def test_openapi_distinguishes_public_and_debug_answer_schemas(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        public_response_ref = schema["paths"]["/v1/answers"]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        debug_response_ref = schema["paths"]["/v1/debug/answers"]["post"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]["$ref"]
+
+        self.assertEqual(public_response_ref, "#/components/schemas/PublicAnswerResponseModel")
+        self.assertEqual(debug_response_ref, "#/components/schemas/AnswerResponseModel")
+        self.assertNotIn(
+            "traces",
+            schema["components"]["schemas"]["PublicAnswerPayloadModel"]["properties"],
+        )
+        self.assertIn("traces", schema["components"]["schemas"]["AnswerPayloadModel"]["properties"])
 
     def test_answer_trace_error_fields_are_sanitized_on_success(self) -> None:
         secret = "private-answer-trace-error"

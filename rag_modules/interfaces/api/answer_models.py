@@ -848,10 +848,40 @@ class AnswerPayloadModel(BaseModel):
         )
 
 
+class PublicAnswerPayloadModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AnswerSummaryModel
+    grounding: AnswerGroundingModel
+    diagnostics: AnswerDiagnosticsModel
+
+    @classmethod
+    def from_debug_payload(cls, payload: AnswerPayloadModel) -> "PublicAnswerPayloadModel":
+        return cls(
+            summary=payload.summary,
+            grounding=payload.grounding,
+            diagnostics=payload.diagnostics,
+        )
+
+    @classmethod
+    def from_dto(cls, response: QuestionAnswerResponse) -> "PublicAnswerPayloadModel":
+        return cls(
+            summary=AnswerSummaryModel.from_dto(response.summary),
+            grounding=AnswerGroundingModel.from_dto(response.grounding),
+            diagnostics=AnswerDiagnosticsModel.from_dto(response.diagnostics),
+        )
+
+
 class AnswerResponseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     response: AnswerPayloadModel
+
+
+class PublicAnswerResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response: PublicAnswerPayloadModel
 
 
 class AnswerStreamMessageDataModel(BaseModel):
@@ -869,7 +899,7 @@ class AnswerStreamChunkDataModel(BaseModel):
 class AnswerStreamResultDataModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    response: AnswerPayloadModel
+    response: AnswerPayloadModel | PublicAnswerPayloadModel
 
 
 class AnswerStreamDoneDataModel(BaseModel):
@@ -905,7 +935,10 @@ class AnswerStreamEventModel(BaseModel):
         )
 
     @classmethod
-    def result(cls, response: AnswerPayloadModel) -> "AnswerStreamEventModel":
+    def result(
+        cls,
+        response: AnswerPayloadModel | PublicAnswerPayloadModel,
+    ) -> "AnswerStreamEventModel":
         return cls(
             event=AnswerStreamEventType.result,
             data=AnswerStreamResultDataModel(response=response),
@@ -958,6 +991,8 @@ __all__ = [
     "QueryDiagnosticsResponseModel",
     "QueryTraceEventResponseModel",
     "QueryUnderstandingSnapshotResponseModel",
+    "PublicAnswerPayloadModel",
+    "PublicAnswerResponseModel",
     "RetrievalOutcomeResponseModel",
     "RetrievalTraceSnapshotResponseModel",
     "RouteDiagnosticsResponseModel",

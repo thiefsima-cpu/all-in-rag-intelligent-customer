@@ -603,7 +603,9 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
 
         self.assertIsInstance(components.operations_service, SystemRuntimeManager)
-        self.assertIs(components.operations_service.runtime_state_store, components.runtime_state_store)
+        self.assertIs(
+            components.operations_service.runtime_state_store, components.runtime_state_store
+        )
 
     def test_system_composer_produces_answering_service(self) -> None:
         build_runtime = _build_runtime()

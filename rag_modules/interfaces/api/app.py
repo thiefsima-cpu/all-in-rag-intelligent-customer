@@ -21,6 +21,7 @@ from .services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
+from .versioning import API_VERSION
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -93,7 +94,7 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
 
     app = FastAPI(
         title="GraphRAG Serving API",
-        version="1.0.0",
+        version=API_VERSION,
         summary="FastAPI service for online question answering over prepared artifacts.",
         lifespan=lifespan,
         docs_url=_docs_url(api_settings),
@@ -140,7 +141,7 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
 
     app = FastAPI(
         title="GraphRAG Build API",
-        version="1.0.0",
+        version=API_VERSION,
         summary="FastAPI service for offline knowledge-base artifact preparation.",
         lifespan=lifespan,
         docs_url=_docs_url(api_settings),
