@@ -1033,6 +1033,29 @@ class ApiAppTests(unittest.TestCase):
         )
         self.assertEqual(second_page.json()["next_cursor"], "")
 
+    def test_build_jobs_surface_rejects_invalid_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                response = client.get("/jobs", params={"cursor": "not-a-cursor"})
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["error"]["code"], "INVALID_REQUEST")
+        self.assertEqual(payload["error"]["details"]["field"], "cursor")
+
     def test_build_jobs_surface_reuses_idempotency_key_for_same_job_type(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
