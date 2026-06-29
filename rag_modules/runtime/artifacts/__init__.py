@@ -31,6 +31,7 @@ from .manifest import (
     ARTIFACT_STAGE_REBUILDING,
     ARTIFACT_STAGE_STALE,
     ArtifactManifest,
+    ArtifactStage,
     artifact_health,
     utc_now_iso,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "ARTIFACT_STAGE_STALE",
     "ArtifactManifest",
     "ArtifactManifestStore",
+    "ArtifactStage",
     "_canonical_json_bytes",
     "_json_safe",
     "artifact_health",

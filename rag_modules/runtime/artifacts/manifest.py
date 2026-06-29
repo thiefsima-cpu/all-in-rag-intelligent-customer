@@ -4,20 +4,43 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, Mapping
 
 from ...domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .json import json_safe
 
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "graph-rag-artifact-manifest-v2"
-ARTIFACT_STAGE_MISSING = "missing"
-ARTIFACT_STAGE_DOCUMENTS_READY = "documents_ready"
-ARTIFACT_STAGE_BUILDING = "building"
-ARTIFACT_STAGE_REBUILDING = "rebuilding"
-ARTIFACT_STAGE_READY = "ready"
-ARTIFACT_STAGE_FAILED = "failed"
-ARTIFACT_STAGE_STALE = "stale"
-ARTIFACT_STAGE_MANIFEST_UNREADABLE = "manifest_unreadable"
+
+
+class ArtifactStage(str, Enum):
+    MISSING = "missing"
+    DOCUMENTS_READY = "documents_ready"
+    BUILDING = "building"
+    REBUILDING = "rebuilding"
+    READY = "ready"
+    FAILED = "failed"
+    STALE = "stale"
+    MANIFEST_UNREADABLE = "manifest_unreadable"
+
+
+def _artifact_stage(value: "ArtifactStage | str | None") -> ArtifactStage:
+    if isinstance(value, ArtifactStage):
+        return value
+    try:
+        return ArtifactStage(str(value or ArtifactStage.MISSING.value))
+    except ValueError:
+        return ArtifactStage.MISSING
+
+
+ARTIFACT_STAGE_MISSING = ArtifactStage.MISSING.value
+ARTIFACT_STAGE_DOCUMENTS_READY = ArtifactStage.DOCUMENTS_READY.value
+ARTIFACT_STAGE_BUILDING = ArtifactStage.BUILDING.value
+ARTIFACT_STAGE_REBUILDING = ArtifactStage.REBUILDING.value
+ARTIFACT_STAGE_READY = ArtifactStage.READY.value
+ARTIFACT_STAGE_FAILED = ArtifactStage.FAILED.value
+ARTIFACT_STAGE_STALE = ArtifactStage.STALE.value
+ARTIFACT_STAGE_MANIFEST_UNREADABLE = ArtifactStage.MANIFEST_UNREADABLE.value
 ARTIFACT_HEALTH_READY = "ready"
 ARTIFACT_HEALTH_IN_PROGRESS = "in_progress"
 ARTIFACT_HEALTH_MISSING = "missing"
@@ -26,17 +49,17 @@ ARTIFACT_HEALTH_FAILED = "failed"
 ARTIFACT_HEALTH_UNKNOWN = "unknown"
 ARTIFACT_IN_PROGRESS_STAGES = frozenset(
     {
-        ARTIFACT_STAGE_BUILDING,
-        ARTIFACT_STAGE_REBUILDING,
-        ARTIFACT_STAGE_DOCUMENTS_READY,
+        ArtifactStage.BUILDING,
+        ArtifactStage.REBUILDING,
+        ArtifactStage.DOCUMENTS_READY,
     }
 )
 ARTIFACT_INVALID_STAGES = frozenset(
     {
-        ARTIFACT_STAGE_MISSING,
-        ARTIFACT_STAGE_FAILED,
-        ARTIFACT_STAGE_STALE,
-        ARTIFACT_STAGE_MANIFEST_UNREADABLE,
+        ArtifactStage.MISSING,
+        ArtifactStage.FAILED,
+        ArtifactStage.STALE,
+        ArtifactStage.MANIFEST_UNREADABLE,
     }
 )
 
@@ -65,7 +88,7 @@ class ArtifactManifest:
     schema_version: str = ARTIFACT_MANIFEST_SCHEMA_VERSION
     manifest_version: int = 0
     semantic_schema_version: str = SEMANTIC_SCHEMA_VERSION
-    stage: str = ARTIFACT_STAGE_MISSING
+    stage: ArtifactStage | str = ArtifactStage.MISSING
     updated_at: str = field(default_factory=utc_now_iso)
     published_at: str = ""
     graph_signature: str = ""
@@ -90,21 +113,24 @@ class ArtifactManifest:
     last_error: str = ""
     build_metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.stage = _artifact_stage(self.stage)
+
     @property
     def is_ready(self) -> bool:
-        return self.stage == ARTIFACT_STAGE_READY
+        return self.stage == ArtifactStage.READY
 
     @property
     def is_missing(self) -> bool:
-        return self.stage == ARTIFACT_STAGE_MISSING
+        return self.stage == ArtifactStage.MISSING
 
     @property
     def is_stale(self) -> bool:
-        return self.stage == ARTIFACT_STAGE_STALE
+        return self.stage == ArtifactStage.STALE
 
     @property
     def is_failed(self) -> bool:
-        return self.stage in {ARTIFACT_STAGE_FAILED, ARTIFACT_STAGE_MANIFEST_UNREADABLE}
+        return self.stage in {ArtifactStage.FAILED, ArtifactStage.MANIFEST_UNREADABLE}
 
     @property
     def is_in_progress(self) -> bool:
@@ -119,7 +145,7 @@ class ArtifactManifest:
             "schema_version": self.schema_version,
             "manifest_version": self.manifest_version,
             "semantic_schema_version": self.semantic_schema_version,
-            "stage": self.stage,
+            "stage": _artifact_stage(self.stage).value,
             "updated_at": self.updated_at,
             "published_at": self.published_at,
             "graph_signature": self.graph_signature,
@@ -147,6 +173,8 @@ class ArtifactManifest:
 
     def evolve(self, **changes: Any) -> "ArtifactManifest":
         build_metadata = changes.pop("build_metadata", None)
+        if "stage" in changes:
+            changes["stage"] = _artifact_stage(changes["stage"])
         next_manifest = replace(
             self,
             updated_at=changes.pop("updated_at", utc_now_iso()),
@@ -168,7 +196,7 @@ class ArtifactManifest:
             semantic_schema_version=str(
                 payload.get("semantic_schema_version") or SEMANTIC_SCHEMA_VERSION
             ),
-            stage=str(payload.get("stage") or ARTIFACT_STAGE_MISSING),
+            stage=_artifact_stage(payload.get("stage")),
             updated_at=str(payload.get("updated_at") or utc_now_iso()),
             published_at=str(payload.get("published_at") or ""),
             graph_signature=str(payload.get("graph_signature") or ""),
@@ -207,7 +235,7 @@ class ArtifactManifest:
         collection_base_name: str = "",
     ) -> "ArtifactManifest":
         return cls(
-            stage=ARTIFACT_STAGE_MISSING,
+            stage=ArtifactStage.MISSING,
             documents_path=documents_path,
             chunks_path=chunks_path,
             manifest_path=manifest_path,
@@ -235,6 +263,7 @@ __all__ = [
     "ARTIFACT_STAGE_REBUILDING",
     "ARTIFACT_STAGE_STALE",
     "ArtifactManifest",
+    "ArtifactStage",
     "artifact_health",
     "utc_now_iso",
 ]

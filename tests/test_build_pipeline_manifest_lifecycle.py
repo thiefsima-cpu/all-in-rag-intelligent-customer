@@ -12,6 +12,7 @@ from rag_modules.runtime.artifacts import (
     ARTIFACT_STAGE_REBUILDING,
     ARTIFACT_STAGE_STALE,
     ArtifactManifest,
+    ArtifactStage,
 )
 
 
@@ -49,6 +50,21 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
         self.assertTrue(stale.is_stale)
         self.assertTrue(stale.is_invalid)
         self.assertTrue(unreadable.is_failed)
+
+    def test_artifact_manifest_accepts_enum_stage_and_serializes_string(self) -> None:
+        manifest = ArtifactManifest(stage=ArtifactStage.READY)
+
+        self.assertIs(manifest.stage, ArtifactStage.READY)
+        self.assertTrue(manifest.is_ready)
+        self.assertEqual(manifest.to_dict()["stage"], "ready")
+
+    def test_artifact_manifest_from_dict_and_evolve_normalize_stage(self) -> None:
+        manifest = ArtifactManifest.from_dict({"stage": "documents_ready"})
+        evolved = manifest.evolve(stage="ready")
+
+        self.assertIs(manifest.stage, ArtifactStage.DOCUMENTS_READY)
+        self.assertIs(evolved.stage, ArtifactStage.READY)
+        self.assertEqual(evolved.to_dict()["stage"], "ready")
 
     def test_mark_ready_persists_ready_manifest(self) -> None:
         store = _FakeManifestStore(ArtifactManifest.missing(manifest_path="manifest.json"))
