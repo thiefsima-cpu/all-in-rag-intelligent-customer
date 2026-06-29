@@ -52,9 +52,10 @@ class BuildJobRecord:
     error: dict | None = None
     logs: list[str] = field(default_factory=list)
     result: dict | None = None
+    idempotency_key_hash: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "job_id": self.job_id,
             "request_id": self.request_id,
             "job_type": self.job_type,
@@ -67,6 +68,9 @@ class BuildJobRecord:
             "logs": [_safe_build_log(item) for item in self.logs],
             "result": copy.deepcopy(self.result),
         }
+        if self.idempotency_key_hash:
+            payload["idempotency_key_hash"] = self.idempotency_key_hash
+        return payload
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "BuildJobRecord":
@@ -91,7 +95,44 @@ class BuildJobRecord:
                 if isinstance(payload.get("result"), Mapping)
                 else None
             ),
+            idempotency_key_hash=str(payload.get("idempotency_key_hash") or ""),
         )
 
 
-__all__ = ["BUILD_JOB_LOG_LIMIT", "BUILD_JOB_STORE_SCHEMA_VERSION", "BuildJobRecord"]
+@dataclass(frozen=True, slots=True)
+class BuildJobRepositorySettings:
+    retention_limit: int = 100
+    list_default_limit: int = 50
+    list_max_limit: int = 100
+
+
+@dataclass(frozen=True, slots=True)
+class BuildJobListPage:
+    jobs: list[dict]
+    next_cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BuildJobCorruptionWarning:
+    code: str
+    component: str
+    identifier: str
+    detected_at: str
+
+    def to_dict(self) -> dict:
+        return {
+            "code": self.code,
+            "component": self.component,
+            "identifier": self.identifier,
+            "detected_at": self.detected_at,
+        }
+
+
+__all__ = [
+    "BUILD_JOB_LOG_LIMIT",
+    "BUILD_JOB_STORE_SCHEMA_VERSION",
+    "BuildJobCorruptionWarning",
+    "BuildJobListPage",
+    "BuildJobRecord",
+    "BuildJobRepositorySettings",
+]
