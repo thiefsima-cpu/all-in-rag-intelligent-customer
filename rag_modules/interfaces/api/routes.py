@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Path
+from fastapi import FastAPI, Header, Path
 from fastapi.responses import StreamingResponse
 
 from .answer_models import (
@@ -376,11 +376,14 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         description="Queues an asynchronous knowledge-base build job and returns a job identifier.",
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def queue_build_job():
+    def queue_build_job(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ):
         return build_build_job_response(
             api_service.submit_build_job(
                 rebuild=False,
                 request_id=current_request_id(),
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -400,11 +403,14 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         description="Queues an asynchronous knowledge-base rebuild job and returns a job identifier.",
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def queue_rebuild_job():
+    def queue_rebuild_job(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ):
         return build_build_job_response(
             api_service.submit_build_job(
                 rebuild=True,
                 request_id=current_request_id(),
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -430,11 +436,14 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         ),
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def build_knowledge_base():
+    def build_knowledge_base(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ):
         return build_build_job_response(
             api_service.build_knowledge_base(
                 rebuild=False,
                 request_id=current_request_id(),
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -460,11 +469,14 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         ),
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def rebuild_knowledge_base():
+    def rebuild_knowledge_base(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ):
         return build_build_job_response(
             api_service.build_knowledge_base(
                 rebuild=True,
                 request_id=current_request_id(),
+                idempotency_key=idempotency_key,
             )
         )
 

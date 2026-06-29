@@ -54,7 +54,7 @@ class BuildJobRecord:
     result: dict | None = None
     idempotency_key_hash: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self, *, include_internal: bool = False) -> dict:
         payload = {
             "job_id": self.job_id,
             "request_id": self.request_id,
@@ -68,7 +68,7 @@ class BuildJobRecord:
             "logs": [_safe_build_log(item) for item in self.logs],
             "result": copy.deepcopy(self.result),
         }
-        if self.idempotency_key_hash:
+        if include_internal and self.idempotency_key_hash:
             payload["idempotency_key_hash"] = self.idempotency_key_hash
         return payload
 

@@ -993,6 +993,82 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(list_response.json()["jobs"][0]["job_id"], build_job["job_id"])
         self.assertEqual(finished_job["result"]["message"], "Knowledge base build completed.")
 
+    def test_build_jobs_surface_reuses_idempotency_key_for_same_job_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "retry-key-1"},
+                )
+                first_job = first_response.json()["job"]
+                _wait_for_job_status(client, first_job["job_id"], "succeeded")
+                second_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "retry-key-1"},
+                )
+
+        self.assertEqual(first_response.status_code, 202)
+        self.assertEqual(second_response.status_code, 202)
+        self.assertEqual(second_response.json()["job"]["job_id"], first_job["job_id"])
+        self.assertEqual(system.build_calls, 1)
+
+    def test_build_jobs_surface_rejects_idempotency_key_reused_for_different_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "retry-key-2"},
+                )
+                first_job = first_response.json()["job"]
+                _wait_for_job_status(client, first_job["job_id"], "succeeded")
+                conflict_response = client.post(
+                    "/jobs/rebuild",
+                    headers={"Idempotency-Key": "retry-key-2"},
+                )
+
+        payload = _assert_error_response(
+            conflict_response,
+            status_code=409,
+            code="BUILD_JOB_CONFLICT",
+        )
+        self.assertEqual(payload["error"]["details"]["job_id"], first_job["job_id"])
+        self.assertEqual(payload["error"]["details"]["job_type"], "build")
+
+    def test_build_jobs_surface_rejects_invalid_idempotency_key(self) -> None:
+        app = create_build_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            response = client.post("/jobs/build", headers={"Idempotency-Key": "../bad"})
+
+        payload = _assert_error_response(response, status_code=400, code="INVALID_REQUEST")
+        self.assertEqual(payload["error"]["details"]["field"], "Idempotency-Key")
+
     def test_build_jobs_surface_rejects_parallel_build_submission(self) -> None:
         system = _BlockingBuildApiSystem()
         app = create_build_api_app(system=system)

@@ -11,12 +11,13 @@ from .models import (
 )
 from .paths import default_build_job_store_path
 from .registry import PersistentBuildJobRegistry
-from .repository import BuildJobRepository
+from .repository import BuildJobIdempotencyConflictError, BuildJobRepository
 
 __all__ = [
     "BUILD_JOB_LOG_LIMIT",
     "BUILD_JOB_STORE_SCHEMA_VERSION",
     "BuildJobCorruptionWarning",
+    "BuildJobIdempotencyConflictError",
     "BuildJobListPage",
     "BuildJobRecord",
     "BuildJobRepository",

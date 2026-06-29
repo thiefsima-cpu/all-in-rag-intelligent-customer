@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import re
 import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from typing import Any
 
 from ....runtime.artifacts import write_json_atomic
 from .locks import _InterprocessFileLock
@@ -22,6 +25,16 @@ from .models import (
 )
 
 BUILD_JOB_REPOSITORY_SCHEMA_VERSION = "graph-rag-build-job-repository-v1"
+_IDEMPOTENCY_KEY_PATTERN = re.compile(r"[!-~]{1,128}\Z", flags=re.ASCII)
+_IDEMPOTENCY_FORBIDDEN_CHARS = frozenset({"/", "\\"})
+
+
+class BuildJobIdempotencyConflictError(ValueError):
+    """Raised when an idempotency key points to a different build job type."""
+
+    def __init__(self, job: dict) -> None:
+        super().__init__(f"idempotency key already used for {str(job.get('job_type') or '')}")
+        self.job = dict(job)
 
 
 class BuildJobRepository:
@@ -81,6 +94,24 @@ class BuildJobRepository:
         build_lock.release()
         return False
 
+    @staticmethod
+    def validate_idempotency_key(value: str) -> str:
+        key = str(value or "")
+        if not key:
+            return ""
+        if not _IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
+            raise ValueError("invalid Idempotency-Key")
+        if any(character in key for character in _IDEMPOTENCY_FORBIDDEN_CHARS):
+            raise ValueError("invalid Idempotency-Key")
+        return key
+
+    @staticmethod
+    def idempotency_key_hash(value: str) -> str:
+        key = BuildJobRepository.validate_idempotency_key(value)
+        if not key:
+            return ""
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
     def create_or_active(
         self,
         *,
@@ -90,9 +121,20 @@ class BuildJobRepository:
         message: str,
         idempotency_key: str = "",
     ) -> tuple[bool, dict | None, _InterprocessFileLock | None]:
-        del idempotency_key
         with self._lock:
             with self.locked():
+                key_hash = self.idempotency_key_hash(idempotency_key)
+                if key_hash:
+                    idempotency = self._load_idempotency_unlocked(key_hash)
+                    if idempotency is not None:
+                        existing_job = self._load_job_unlocked(str(idempotency.get("job_id") or ""))
+                        existing_type = str(idempotency.get("job_type") or "")
+                        if existing_job is not None and existing_type == job_type:
+                            payload = existing_job.to_dict()
+                            payload["_idempotency_replayed"] = True
+                            return False, payload, None
+                        if existing_job is not None:
+                            raise BuildJobIdempotencyConflictError(existing_job.to_dict())
                 active_job = self._active_unlocked()
                 if active_job is not None:
                     if self.build_lock_held():
@@ -109,8 +151,15 @@ class BuildJobRepository:
                     status="queued",
                     created_at=self._now(),
                     message=message,
+                    idempotency_key_hash=key_hash,
                 )
                 self._write_job_unlocked(job)
+                if key_hash:
+                    self._write_idempotency_unlocked(
+                        key_hash=key_hash,
+                        job_id=job_id,
+                        job_type=job_type,
+                    )
                 return True, job.to_dict(), build_lock
 
     def active(self) -> dict | None:
@@ -197,6 +246,42 @@ class BuildJobRepository:
     def _job_path(self, job_id: str) -> str:
         return os.path.join(self.jobs_dir, f"{job_id}.json")
 
+    def _idempotency_path(self, key_hash: str) -> str:
+        return os.path.join(self.idempotency_dir, f"{key_hash}.json")
+
+    def _load_idempotency_unlocked(self, key_hash: str) -> dict[str, Any] | None:
+        path = self._idempotency_path(key_hash)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                payload = json.load(file)
+            return dict(payload) if isinstance(payload, Mapping) else None
+        except (OSError, TypeError, ValueError):
+            self._record_warning_unlocked(
+                "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
+                "idempotency",
+                key_hash[:12],
+            )
+            return None
+
+    def _write_idempotency_unlocked(
+        self,
+        *,
+        key_hash: str,
+        job_id: str,
+        job_type: str,
+    ) -> None:
+        write_json_atomic(
+            self._idempotency_path(key_hash),
+            {
+                "key_hash": key_hash,
+                "job_id": job_id,
+                "job_type": job_type,
+                "created_at": self._now(),
+            },
+        )
+
     def _load_job_unlocked(self, job_id: str) -> BuildJobRecord | None:
         path = self._job_path(job_id)
         if not os.path.exists(path):
@@ -235,7 +320,7 @@ class BuildJobRepository:
         return job
 
     def _write_job_unlocked(self, job: BuildJobRecord) -> None:
-        write_json_atomic(self._job_path(job.job_id), job.to_dict())
+        write_json_atomic(self._job_path(job.job_id), job.to_dict(include_internal=True))
 
     def _replace_jobs_unlocked(self, jobs: Sequence[Mapping[str, object]]) -> None:
         replacements: dict[str, BuildJobRecord] = {}
@@ -424,4 +509,8 @@ class BuildJobRepository:
             self._warnings.append(warning)
 
 
-__all__ = ["BUILD_JOB_REPOSITORY_SCHEMA_VERSION", "BuildJobRepository"]
+__all__ = [
+    "BUILD_JOB_REPOSITORY_SCHEMA_VERSION",
+    "BuildJobIdempotencyConflictError",
+    "BuildJobRepository",
+]

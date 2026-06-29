@@ -35,6 +35,14 @@ class BuildJobConflictError(RuntimeError):
         self.job = dict(job)
 
 
+class InvalidApiRequestError(ValueError):
+    """Raised when an API request has invalid non-body parameters."""
+
+    def __init__(self, message: str, *, details: dict):
+        super().__init__(message)
+        self.details = dict(details)
+
+
 class ApiBackpressureError(RuntimeError):
     """Raised when answer admission control rejects a request."""
 
@@ -47,5 +55,6 @@ __all__ = [
     "AnswerFailedError",
     "BuildJobConflictError",
     "BuildJobNotFoundError",
+    "InvalidApiRequestError",
     "SystemNotReadyError",
 ]

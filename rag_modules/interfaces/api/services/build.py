@@ -14,13 +14,14 @@ from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ..build_job_store import (
+    BuildJobIdempotencyConflictError,
     FileBuildJobStore,
     PersistentBuildJobRegistry,
     default_build_job_store_path,
 )
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
-from .errors import BuildJobConflictError, BuildJobNotFoundError
+from .errors import BuildJobConflictError, BuildJobNotFoundError, InvalidApiRequestError
 
 _BUILD_JOB_EXECUTOR_MAX_WORKERS = 1
 
@@ -96,22 +97,56 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             executor.shutdown(wait=False, cancel_futures=True)
         super().shutdown()
 
-    def build_knowledge_base(self, *, rebuild: bool = False, request_id: str = "") -> dict:
-        return self.submit_build_job(rebuild=rebuild, request_id=request_id)
+    def build_knowledge_base(
+        self,
+        *,
+        rebuild: bool = False,
+        request_id: str = "",
+        idempotency_key: str = "",
+    ) -> dict:
+        return self.submit_build_job(
+            rebuild=rebuild,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
 
-    def submit_build_job(self, *, rebuild: bool = False, request_id: str = "") -> dict:
+    def submit_build_job(
+        self,
+        *,
+        rebuild: bool = False,
+        request_id: str = "",
+        idempotency_key: str = "",
+    ) -> dict:
         with self._job_submission_lock:
             self.collect_stats()
             self.collect_startup_diagnostics(self._MODE)
             job_type = "rebuild" if rebuild else "build"
             job_id = uuid4().hex
             resolved_request_id = normalize_or_generate_request_id(request_id)
-            created, job, build_lock = self._job_registry.create_or_active(
-                job_id=job_id,
-                request_id=resolved_request_id,
-                job_type=job_type,
-                message=f"Knowledge base {job_type} job queued.",
-            )
+            try:
+                resolved_idempotency_key = self._job_registry.repository.validate_idempotency_key(
+                    idempotency_key
+                )
+            except ValueError:
+                raise InvalidApiRequestError(
+                    "Invalid Idempotency-Key header.",
+                    details={"field": "Idempotency-Key", "reason": "invalid_format"},
+                ) from None
+            try:
+                created, job, build_lock = self._job_registry.create_or_active(
+                    job_id=job_id,
+                    request_id=resolved_request_id,
+                    job_type=job_type,
+                    message=f"Knowledge base {job_type} job queued.",
+                    idempotency_key=resolved_idempotency_key,
+                )
+            except BuildJobIdempotencyConflictError as exc:
+                raise BuildJobConflictError(
+                    "Idempotency key conflicts with an existing build job.",
+                    job=exc.job,
+                ) from None
+            if job is not None and bool(job.pop("_idempotency_replayed", False)):
+                return job
             if not created or job is None or build_lock is None:
                 active_job = job or self._job_registry.active()
                 if active_job is None:

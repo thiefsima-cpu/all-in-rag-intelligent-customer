@@ -16,6 +16,7 @@ from .services import (
     ApiBackpressureError,
     BuildJobConflictError,
     BuildJobNotFoundError,
+    InvalidApiRequestError,
     SystemNotReadyError,
 )
 
@@ -54,10 +55,20 @@ def register_api_error_handlers(app: FastAPI) -> None:
             "job_id": str(exc.job.get("job_id") or ""),
             "status": str(exc.job.get("status") or ""),
         }
+        if exc.job.get("job_type"):
+            details["job_type"] = str(exc.job.get("job_type") or "")
         return build_error_response(
             ErrorCode.BUILD_JOB_CONFLICT,
             request_id=current_request_id(),
             details=cast(JsonValue, details),
+        )
+
+    @app.exception_handler(InvalidApiRequestError)
+    async def invalid_api_request(_: Request, exc: InvalidApiRequestError):
+        return build_error_response(
+            ErrorCode.INVALID_REQUEST,
+            request_id=current_request_id(),
+            details=cast(JsonValue, exc.details),
         )
 
     @app.exception_handler(ApiBackpressureError)
