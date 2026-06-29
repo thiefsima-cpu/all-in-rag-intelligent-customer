@@ -28,7 +28,10 @@ from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
-from rag_modules.interfaces.api.versioning import API_VERSION
+from rag_modules.interfaces.api.versioning import (
+    API_VERSION,
+    UNVERSIONED_API_ALIAS_REMOVAL_VERSION,
+)
 from rag_modules.runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -1584,6 +1587,89 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(schema["paths"]["/v1/health"]["get"]["security"], [])
         self.assertNotEqual(schema["paths"]["/v1/debug/answers"]["post"].get("security"), [])
+
+    def test_unversioned_serving_openapi_routes_are_deprecated_aliases(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_serving_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        expectations = {
+            ("/", "get"): "/v1/health",
+            ("/health", "get"): "/v1/health",
+            ("/health/live", "get"): "/v1/health/live",
+            ("/health/ready", "get"): "/v1/health/ready",
+            ("/stats", "get"): "/v1/stats",
+            ("/diagnostics", "get"): "/v1/diagnostics",
+            ("/runtime/serving/initialize", "post"): "/v1/runtime/serving/initialize",
+            ("/runtime/serving/refresh", "post"): "/v1/runtime/serving/refresh",
+            ("/answers", "post"): "/v1/answers",
+            ("/answers/stream", "post"): "/v1/answers/stream",
+        }
+
+        for (path, method), canonical_path in expectations.items():
+            operation = schema["paths"][path][method]
+            self.assertTrue(operation.get("deprecated"), path)
+            description = operation.get("description", "")
+            self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, description)
+            self.assertIn(canonical_path, description)
+
+        self.assertFalse(schema["paths"]["/v1/health"]["get"].get("deprecated", False))
+        self.assertFalse(schema["paths"]["/v1/answers"]["post"].get("deprecated", False))
+        self.assertFalse(schema["paths"]["/v1/answers/stream"]["post"].get("deprecated", False))
+
+    def test_unversioned_build_openapi_routes_are_deprecated_aliases(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        expectations = {
+            ("/", "get"): "/v1/health",
+            ("/health", "get"): "/v1/health",
+            ("/health/live", "get"): "/v1/health/live",
+            ("/health/ready", "get"): "/v1/health/ready",
+            ("/stats", "get"): "/v1/stats",
+            ("/diagnostics", "get"): "/v1/diagnostics",
+            ("/runtime/build/initialize", "post"): "/v1/runtime/build/initialize",
+            ("/jobs", "get"): "/v1/jobs",
+            ("/jobs/{job_id}", "get"): "/v1/jobs/{job_id}",
+            ("/jobs/build", "post"): "/v1/jobs/build",
+            ("/jobs/rebuild", "post"): "/v1/jobs/rebuild",
+            ("/artifacts", "get"): "/v1/artifacts",
+            ("/knowledge-base/build", "post"): "/v1/jobs/build",
+            ("/knowledge-base/rebuild", "post"): "/v1/jobs/rebuild",
+        }
+
+        for (path, method), canonical_path in expectations.items():
+            operation = schema["paths"][path][method]
+            self.assertTrue(operation.get("deprecated"), path)
+            description = operation.get("description", "")
+            self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, description)
+            self.assertIn(canonical_path, description)
+
+        self.assertFalse(schema["paths"]["/v1/health"]["get"].get("deprecated", False))
+        self.assertFalse(schema["paths"]["/v1/jobs"]["get"].get("deprecated", False))
+        self.assertFalse(schema["paths"]["/v1/jobs/build"]["post"].get("deprecated", False))
+        self.assertFalse(
+            schema["paths"]["/v1/knowledge-base/build"]["post"].get("deprecated", False)
+        )
 
     def test_openapi_distinguishes_public_and_debug_answer_schemas(self) -> None:
         config = build_test_config(

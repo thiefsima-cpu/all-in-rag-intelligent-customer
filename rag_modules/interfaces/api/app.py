@@ -21,7 +21,7 @@ from .services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
-from .versioning import API_VERSION
+from .versioning import API_VERSION, configure_unversioned_api_alias_metadata
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -117,6 +117,7 @@ def create_serving_api_app(*, system=None, config=None) -> FastAPI:
     register_api_error_handlers(app)
     register_serving_routes(app, api_service)
     _register_metrics_endpoint(app, system=api_service.system, config=config)
+    configure_unversioned_api_alias_metadata(app)
 
     return app
 
@@ -164,6 +165,7 @@ def create_build_api_app(*, system=None, config=None) -> FastAPI:
     register_api_error_handlers(app)
     register_build_routes(app, api_service)
     _register_metrics_endpoint(app, system=api_service.system, config=config)
+    configure_unversioned_api_alias_metadata(app)
 
     return app
 
