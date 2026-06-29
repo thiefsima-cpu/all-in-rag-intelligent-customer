@@ -369,6 +369,48 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_domain_shared_does_not_import_langchain(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "domain" / "shared").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if module_name == "langchain_core" or module_name.startswith("langchain_core."):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Domain shared modules must stay free of LangChain dependencies:\n"
+            + "\n".join(violations),
+        )
+
+    def test_domain_shared_does_not_export_recipe_constraint_matcher(self) -> None:
+        domain_shared = importlib.import_module("rag_modules.domain.shared")
+
+        self.assertFalse(hasattr(domain_shared, "RecipeConstraintMatcher"))
+        self.assertNotIn("RecipeConstraintMatcher", getattr(domain_shared, "__all__", ()))
+
+    def test_recipe_constraint_matcher_is_not_imported_from_domain_shared(self) -> None:
+        violations: list[str] = []
+        old_matcher_import = "rag_modules.domain.shared.query_constraints.RecipeConstraintMatcher"
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                if "__pycache__" in rel.parts:
+                    continue
+                if path == ROOT / "tests" / "test_public_surface_boundaries.py":
+                    continue
+                for lineno, line, _module_name, imported_name in self._iter_resolved_imports(path):
+                    if imported_name == old_matcher_import:
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "RecipeConstraintMatcher must be imported from rag_modules.retrieval.evidence:\n"
+            + "\n".join(violations),
+        )
+
     def test_query_understanding_does_not_depend_on_retrieval_package(self) -> None:
         violations: list[str] = []
 

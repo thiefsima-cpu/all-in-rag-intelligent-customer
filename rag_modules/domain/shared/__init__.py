@@ -3,7 +3,6 @@
 from .query_constraints import (
     QueryConstraintExtractor,
     QueryConstraints,
-    RecipeConstraintMatcher,
     parse_minutes,
 )
 from .semantic_schema import (
@@ -17,7 +16,6 @@ from .semantic_schema import (
 __all__ = [
     "QueryConstraintExtractor",
     "QueryConstraints",
-    "RecipeConstraintMatcher",
     "SEMANTIC_NODE_LABELS",
     "SEMANTIC_NODE_LABELS_SET",
     "SEMANTIC_RELATION_TYPES",

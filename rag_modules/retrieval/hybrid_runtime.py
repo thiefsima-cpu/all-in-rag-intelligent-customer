@@ -10,12 +10,12 @@ from rank_bm25 import BM25Okapi
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument, RetrievalRequest
-from ..domain.shared.query_constraints import RecipeConstraintMatcher
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
+from .evidence import RecipeConstraintMatcher
 from .hybrid_driver_service import HybridDriverService
 from .hybrid_index_service import HybridIndexArtifacts, HybridIndexService
 from .hybrid_parent_document_service import HybridParentDocumentService

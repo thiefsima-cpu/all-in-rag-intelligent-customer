@@ -1,5 +1,5 @@
 """
-Generic query constraint extraction and recipe-level filtering helpers.
+Generic query constraint extraction helpers.
 """
 
 from __future__ import annotations
@@ -8,9 +8,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
-
-from langchain_core.documents import Document
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
 if TYPE_CHECKING:
     from ...contracts import QuerySemanticRuntimeSettings
@@ -173,156 +171,3 @@ class QueryConstraintExtractor:
         has_constraints = constraints.has_constraints()
         logger.info("Query constraints parsed: present=%s", has_constraints)
         return constraints
-
-
-class RecipeConstraintMatcher:
-    def __init__(self, documents: List[Document]):
-        self.documents = documents
-
-    @staticmethod
-    def _haystack(doc: Document) -> str:
-        metadata = doc.metadata or {}
-        pieces = [
-            doc.page_content or "",
-            str(metadata.get("recipe_name", "")),
-            str(metadata.get("category", "")),
-            str(metadata.get("cuisine_type", "")),
-            str(metadata.get("prep_time", "")),
-            str(metadata.get("cook_time", "")),
-            str(metadata.get("servings", "")),
-            " ".join(metadata.get("flavor_tags") or []),
-            " ".join(metadata.get("technique_tags") or []),
-            " ".join(metadata.get("diet_tags") or []),
-            " ".join(metadata.get("health_tags") or []),
-            " ".join(metadata.get("cuisine_style_tags") or []),
-            " ".join(metadata.get("ingredient_category_tags") or []),
-            " ".join(metadata.get("time_profile_tags") or []),
-            " ".join(metadata.get("difficulty_level_tags") or []),
-            str(metadata.get("semantic_relations", "")),
-        ]
-        return "\n".join(pieces)
-
-    @staticmethod
-    def _contains_any(haystack: str, terms: List[str]) -> bool:
-        return any(term and term in haystack for term in terms)
-
-    @staticmethod
-    def _contains_all(haystack: str, terms: List[str]) -> bool:
-        return all(term in haystack for term in terms if term)
-
-    @staticmethod
-    def _recipe_minutes(
-        doc: Document,
-    ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-        metadata = doc.metadata or {}
-        prep = parse_minutes(metadata.get("prep_time"))
-        cook = parse_minutes(metadata.get("cook_time"))
-        total = None
-        if prep is not None and cook is not None:
-            total = prep + cook
-        return prep, cook, total
-
-    def score(
-        self,
-        doc: Document,
-        constraints: QueryConstraints,
-    ) -> Tuple[bool, float, List[str]]:
-        if not constraints or not constraints.has_constraints():
-            return True, 0.0, []
-
-        text = self._haystack(doc)
-        metadata = doc.metadata or {}
-        cuisine = str(metadata.get("cuisine_type", ""))
-        category = str(metadata.get("category", ""))
-        prep, cook, total = self._recipe_minutes(doc)
-
-        if self._contains_any(
-            text,
-            constraints.exclude_terms + constraints.excluded_ingredients,
-        ):
-            return False, 0.0, ["命中排除词"]
-        if constraints.excluded_cuisine_terms and self._contains_any(
-            cuisine,
-            constraints.excluded_cuisine_terms,
-        ):
-            return False, 0.0, ["命中排除菜系"]
-        if (
-            constraints.max_prep_minutes is not None
-            and prep is not None
-            and prep > constraints.max_prep_minutes
-        ):
-            return False, 0.0, ["准备时间超限"]
-        if (
-            constraints.max_cook_minutes is not None
-            and cook is not None
-            and cook > constraints.max_cook_minutes
-        ):
-            return False, 0.0, ["烹饪时间超限"]
-        if (
-            constraints.max_total_minutes is not None
-            and total is not None
-            and total > constraints.max_total_minutes
-        ):
-            return False, 0.0, ["总时间超限"]
-
-        score = 0.0
-        reasons: List[str] = []
-        weighted_terms = [
-            (constraints.ingredients, 3.0, "食材匹配"),
-            (constraints.cuisine_terms, 2.5, "菜系匹配"),
-            (constraints.category_terms, 2.0, "类别匹配"),
-            (constraints.include_terms, 1.5, "主题匹配"),
-            (constraints.health_terms, 1.5, "健康偏好匹配"),
-            (constraints.preference_terms, 1.0, "偏好匹配"),
-        ]
-        for terms, weight, label in weighted_terms:
-            hits = [term for term in terms if term in text]
-            if hits:
-                score += weight * len(hits)
-                reasons.append(f"{label}: {', '.join(hits[:4])}")
-
-        if constraints.cuisine_terms and self._contains_any(
-            cuisine,
-            constraints.cuisine_terms,
-        ):
-            score += 1.0
-        if constraints.category_terms and self._contains_any(
-            category,
-            constraints.category_terms,
-        ):
-            score += 1.0
-        if constraints.max_total_minutes is not None:
-            if total is not None:
-                score += 2.0
-                reasons.append(f"时间约束命中: {total}分钟")
-            else:
-                score -= 0.5
-                reasons.append("时间信息不完整")
-
-        return True, score, reasons
-
-    def filter_and_rank(
-        self,
-        constraints: QueryConstraints,
-        min_score: float = 0.0,
-        limit: int = 20,
-    ) -> List[Document]:
-        scored = []
-        for doc in self.documents:
-            keep, score, reasons = self.score(doc, constraints)
-            if not keep or score < min_score:
-                continue
-            metadata = dict(doc.metadata)
-            metadata["constraint_score"] = score
-            metadata["constraint_reasons"] = reasons
-            metadata["search_type"] = metadata.get(
-                "search_type",
-                "constraint_recipe",
-            )
-            scored.append(Document(page_content=doc.page_content, metadata=metadata))
-
-        scored.sort(
-            key=lambda d: d.metadata.get("constraint_score", 0.0),
-            reverse=True,
-        )
-        return scored[:limit]
