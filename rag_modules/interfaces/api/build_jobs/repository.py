@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -112,6 +113,31 @@ class BuildJobRepository:
             return ""
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _encode_cursor(created_at: str, job_id: str) -> str:
+        payload = json.dumps(
+            {"created_at": created_at, "job_id": job_id},
+            separators=(",", ":"),
+        )
+        return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+    @staticmethod
+    def _decode_cursor(cursor: str) -> tuple[str, str] | None:
+        if not cursor:
+            return None
+        try:
+            raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+            payload = json.loads(raw)
+            if not isinstance(payload, Mapping):
+                raise ValueError
+            created_at = str(payload.get("created_at") or "")
+            job_id = str(payload.get("job_id") or "")
+            if not created_at or not job_id:
+                raise ValueError
+            return created_at, job_id
+        except (OSError, TypeError, ValueError):
+            raise ValueError("invalid build job cursor") from None
+
     def create_or_active(
         self,
         *,
@@ -196,17 +222,26 @@ class BuildJobRepository:
                 return [job.to_dict() for job in jobs]
 
     def list_page(self, *, limit: int, cursor: str = "") -> BuildJobListPage:
-        del cursor
         with self._lock:
             with self.locked():
+                decoded_cursor = self._decode_cursor(cursor)
                 jobs = sorted(
                     self._load_jobs_unlocked(),
                     key=lambda item: (item.created_at, item.job_id),
                     reverse=True,
                 )
+                if decoded_cursor is not None:
+                    jobs = [job for job in jobs if (job.created_at, job.job_id) < decoded_cursor]
+                bounded_limit = max(1, min(int(limit), self.settings.list_max_limit))
+                selected = jobs[:bounded_limit]
+                remaining = jobs[bounded_limit:]
+                next_cursor = ""
+                if remaining and selected:
+                    last = selected[-1]
+                    next_cursor = self._encode_cursor(last.created_at, last.job_id)
                 return BuildJobListPage(
-                    jobs=[job.to_dict() for job in jobs[: int(limit)]],
-                    next_cursor="",
+                    jobs=[job.to_dict() for job in selected],
+                    next_cursor=next_cursor,
                 )
 
     def append_log(self, job_id: str, message: str) -> None:

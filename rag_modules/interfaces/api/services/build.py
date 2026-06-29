@@ -15,6 +15,8 @@ from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ..build_job_store import (
     BuildJobIdempotencyConflictError,
+    BuildJobListPage,
+    BuildJobRepositorySettings,
     FileBuildJobStore,
     PersistentBuildJobRegistry,
     default_build_job_store_path,
@@ -54,10 +56,17 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         self._artifact_registry = artifact_registry or ArtifactRegistry(
             ArtifactManifestStore(resolved_config)
         )
+        api_settings = getattr(resolved_config, "api", None)
+        repository_settings = BuildJobRepositorySettings(
+            retention_limit=int(getattr(api_settings, "build_job_retention_limit", 100)),
+            list_default_limit=int(getattr(api_settings, "build_job_list_default_limit", 50)),
+            list_max_limit=int(getattr(api_settings, "build_job_list_max_limit", 100)),
+        )
         self._job_registry = PersistentBuildJobRegistry(
             resolved_job_store,
             now=_utc_now_iso,
             recover_interrupted=not resolved_job_store.build_lock_held(),
+            settings=repository_settings,
         )
 
     def _ensure_build_runtime_initialized(self) -> None:
@@ -173,8 +182,15 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 raise
             return job
 
-    def list_build_jobs(self) -> list[dict]:
-        return self._job_registry.list()
+    def list_build_jobs(self, *, limit: int | None = None, cursor: str = "") -> BuildJobListPage:
+        resolved_limit = int(limit or self._job_registry.repository.settings.list_default_limit)
+        try:
+            return self._job_registry.list_page(limit=resolved_limit, cursor=cursor)
+        except ValueError:
+            raise InvalidApiRequestError(
+                "Invalid build job cursor.",
+                details={"field": "cursor", "reason": "invalid_cursor"},
+            ) from None
 
     def get_build_job(self, job_id: str) -> dict:
         job = self._job_registry.get(str(job_id))

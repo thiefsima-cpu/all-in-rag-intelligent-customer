@@ -16,6 +16,55 @@ def _now() -> str:
 
 
 class BuildJobRepositoryTests(unittest.TestCase):
+    def test_repository_lists_jobs_newest_first_with_cursor(self) -> None:
+        created_times = iter(
+            [
+                "2026-06-29T00:00:00Z",
+                "2026-06-29T00:00:01Z",
+                "2026-06-29T00:00:02Z",
+                "2026-06-29T00:00:03Z",
+                "2026-06-29T00:00:04Z",
+                "2026-06-29T00:00:05Z",
+            ]
+        )
+
+        def next_time() -> str:
+            return next(created_times)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = BuildJobRepository(
+                str(Path(temp_dir) / "build_jobs.json"),
+                now=next_time,
+                settings=BuildJobRepositorySettings(
+                    retention_limit=100,
+                    list_default_limit=2,
+                    list_max_limit=2,
+                ),
+            )
+            for job_id in ("1" * 32, "2" * 32, "3" * 32):
+                created, job, build_lock = repository.create_or_active(
+                    job_id=job_id,
+                    request_id=f"request-{job_id[0]}",
+                    job_type="build",
+                    message="Knowledge base build job queued.",
+                    idempotency_key="",
+                )
+                if build_lock is not None:
+                    build_lock.release()
+                repository.mark_succeeded(
+                    job["job_id"],
+                    result={"message": "Knowledge base build completed."},
+                )
+                self.assertTrue(created)
+
+            first_page = repository.list_page(limit=2, cursor="")
+            second_page = repository.list_page(limit=2, cursor=first_page.next_cursor)
+
+            self.assertEqual([job["job_id"] for job in first_page.jobs], ["3" * 32, "2" * 32])
+            self.assertTrue(first_page.next_cursor)
+            self.assertEqual([job["job_id"] for job in second_page.jobs], ["1" * 32])
+            self.assertEqual(second_page.next_cursor, "")
+
     def test_same_idempotency_key_and_job_type_returns_original_job(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = BuildJobRepository(

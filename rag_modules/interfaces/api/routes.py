@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Header, Path
+from fastapi import FastAPI, Header, Path, Query
 from fastapi.responses import StreamingResponse
 
 from .answer_models import (
@@ -345,8 +345,12 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
 
     @app.get(f"{API_PREFIX}/jobs", response_model=BuildJobListResponseModel)
     @app.get("/jobs", response_model=BuildJobListResponseModel)
-    def list_build_jobs():
-        return build_build_job_list_response(api_service.list_build_jobs())
+    def list_build_jobs(
+        limit: int | None = Query(default=None, ge=1),
+        cursor: str = Query(default=""),
+    ):
+        page = api_service.list_build_jobs(limit=limit, cursor=cursor)
+        return build_build_job_list_response(page.jobs, next_cursor=page.next_cursor)
 
     @app.get(f"{API_PREFIX}/artifacts", response_model=ArtifactRegistryResponseModel)
     @app.get("/artifacts", response_model=ArtifactRegistryResponseModel)

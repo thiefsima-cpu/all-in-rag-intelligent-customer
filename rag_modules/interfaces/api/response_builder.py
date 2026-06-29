@@ -86,9 +86,15 @@ def build_build_job_response(job_payload: dict) -> BuildJobResponseModel:
     return BuildJobResponseModel.model_validate({"job": safe})
 
 
-def build_build_job_list_response(job_payloads: list[dict]) -> BuildJobListResponseModel:
+def build_build_job_list_response(
+    job_payloads: list[dict],
+    *,
+    next_cursor: str = "",
+) -> BuildJobListResponseModel:
     safe = sanitize_public_error_fields(list(job_payloads or []), code=ErrorCode.BUILD_FAILED)
-    return BuildJobListResponseModel.model_validate({"jobs": safe})
+    return BuildJobListResponseModel.model_validate(
+        {"jobs": safe, "next_cursor": str(next_cursor or "")}
+    )
 
 
 def build_artifact_registry_response(snapshot) -> ArtifactRegistryResponseModel:

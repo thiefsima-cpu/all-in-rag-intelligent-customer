@@ -993,6 +993,46 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(list_response.json()["jobs"][0]["job_id"], build_job["job_id"])
         self.assertEqual(finished_job["result"]["message"], "Knowledge base build completed.")
 
+    def test_build_jobs_surface_paginates_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {
+                        "access_token": _API_TOKEN,
+                        "build_job_list_default_limit": 2,
+                        "build_job_list_max_limit": 2,
+                    },
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                job_ids: list[str] = []
+                for _ in range(3):
+                    submitted = client.post("/jobs/build").json()["job"]
+                    finished = _wait_for_job_status(client, submitted["job_id"], "succeeded")
+                    job_ids.append(finished["job_id"])
+                first_page = client.get("/jobs", params={"limit": 2})
+                cursor = first_page.json()["next_cursor"]
+                second_page = client.get("/jobs", params={"limit": 2, "cursor": cursor})
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(
+            [job["job_id"] for job in first_page.json()["jobs"]], list(reversed(job_ids))[0:2]
+        )
+        self.assertTrue(cursor)
+        self.assertEqual(
+            [job["job_id"] for job in second_page.json()["jobs"]], list(reversed(job_ids))[2:3]
+        )
+        self.assertEqual(second_page.json()["next_cursor"], "")
+
     def test_build_jobs_surface_reuses_idempotency_key_for_same_job_type(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(

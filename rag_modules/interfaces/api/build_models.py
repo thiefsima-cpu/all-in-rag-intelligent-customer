@@ -97,6 +97,7 @@ class BuildJobListResponseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     jobs: list[BuildJobPayloadModel] = Field(default_factory=list)
+    next_cursor: str = ""
 
 
 __all__ = [
