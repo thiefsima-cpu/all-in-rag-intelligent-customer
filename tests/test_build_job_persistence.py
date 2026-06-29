@@ -106,7 +106,35 @@ def _wait_for_service_job_status(
     )
 
 
+def _repository_job_path(store_path: str, job_id: str) -> Path:
+    path = Path(store_path)
+    return path.with_name(f"{path.stem}.d") / "jobs" / f"{job_id}.json"
+
+
 class BuildJobPersistenceTests(unittest.TestCase):
+    def test_file_store_facade_uses_repository_after_legacy_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            store = FileBuildJobStore(path)
+            store.save_all(
+                [
+                    {
+                        "job_id": "c" * 32,
+                        "request_id": "seed-request",
+                        "job_type": "build",
+                        "status": "succeeded",
+                        "created_at": "2026-06-28T00:00:00Z",
+                        "message": "Knowledge base build completed.",
+                    }
+                ]
+            )
+
+            loaded = FileBuildJobStore(path).load_all()
+
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0]["job_id"], "c" * 32)
+            self.assertTrue(_repository_job_path(path, "c" * 32).exists())
+
     def test_completed_job_is_visible_after_service_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -181,7 +209,9 @@ class BuildJobPersistenceTests(unittest.TestCase):
 
             submitted = service.submit_build_job(request_id="build-submit-42")
             failed = _wait_for_service_job_status(service, submitted["job_id"], "failed")
-            stored_text = Path(path).read_text(encoding="utf-8")
+            stored_text = _repository_job_path(path, submitted["job_id"]).read_text(
+                encoding="utf-8"
+            )
 
             self.assertEqual(
                 failed["error"],
@@ -218,10 +248,11 @@ class BuildJobPersistenceTests(unittest.TestCase):
 
             restored = service.get_build_job("a" * 32)
             returned_text = json.dumps(restored, ensure_ascii=False)
-            stored_text = Path(path).read_text(encoding="utf-8")
+            stored_text = _repository_job_path(path, "a" * 32).read_text(encoding="utf-8")
 
             self.assertEqual(restored["error"]["code"], "BUILD_FAILED")
             self.assertEqual(restored["logs"], ["Build failed."])
+            self.assertTrue(Path(path).exists())
             self.assertNotIn("legacy-secret", returned_text)
             self.assertNotIn("legacy-secret", stored_text)
 

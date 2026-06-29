@@ -16,6 +16,43 @@ def _now() -> str:
 
 
 class BuildJobRepositoryTests(unittest.TestCase):
+    def test_repository_imports_legacy_jobs_once_without_deleting_legacy_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "build_jobs.json"
+            legacy_payload = {
+                "schema_version": "graph-rag-build-jobs-v2",
+                "jobs": [
+                    {
+                        "job_id": "b" * 32,
+                        "request_id": "legacy-request",
+                        "job_type": "build",
+                        "status": "succeeded",
+                        "created_at": "2026-06-28T00:00:00Z",
+                        "message": "Knowledge base build completed.",
+                    }
+                ],
+            }
+            legacy_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+            first = BuildJobRepository(
+                str(legacy_path),
+                now=_now,
+                settings=BuildJobRepositorySettings(),
+            )
+            second = BuildJobRepository(
+                str(legacy_path),
+                now=_now,
+                settings=BuildJobRepositorySettings(),
+            )
+
+            self.assertEqual(first.get("b" * 32)["status"], "succeeded")
+            self.assertEqual(second.get("b" * 32)["status"], "succeeded")
+            self.assertTrue(legacy_path.exists())
+            metadata = json.loads((root / "build_jobs.d" / "metadata.json").read_text())
+            self.assertEqual(metadata["legacy_imports"][0]["path"], str(legacy_path))
+            self.assertEqual(metadata["legacy_imports"][0]["status"], "imported")
+
     def test_repository_rejects_job_file_with_mismatched_payload_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

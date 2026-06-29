@@ -12,6 +12,7 @@ from typing import Any, Iterator, Mapping
 from ....runtime.artifacts import write_json_atomic
 from .locks import _InterprocessFileLock
 from .models import BUILD_JOB_STORE_SCHEMA_VERSION
+from .repository import BuildJobRepository
 
 
 class FileBuildJobStore:
@@ -43,8 +44,12 @@ class FileBuildJobStore:
         return False
 
     def load_all(self) -> list[dict[str, Any]]:
-        with self.locked():
-            return self._load_all_unlocked()
+        repository = BuildJobRepository(
+            self.path,
+            now=lambda: "",
+            recover_interrupted=False,
+        )
+        return repository.list_all()
 
     def save_all(self, jobs: list[Mapping[str, Any]]) -> None:
         with self.locked():

@@ -6,7 +6,7 @@ import copy
 import json
 import os
 import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
 from ....runtime.artifacts import write_json_atomic
@@ -48,7 +48,7 @@ class BuildJobRepository:
         self._warnings: list[BuildJobCorruptionWarning] = []
         self._ensure_directories()
         with self.locked():
-            self._write_metadata_unlocked()
+            self._import_legacy_store_once_unlocked()
             if recover_interrupted and not self.build_lock_held():
                 self._recover_interrupted_unlocked()
 
@@ -113,11 +113,26 @@ class BuildJobRepository:
                 self._write_job_unlocked(job)
                 return True, job.to_dict(), build_lock
 
+    def active(self) -> dict | None:
+        with self._lock:
+            with self.locked():
+                job = self._active_unlocked()
+                return job.to_dict() if job is not None else None
+
     def get(self, job_id: str) -> dict | None:
         with self._lock:
             with self.locked():
                 job = self._load_job_unlocked(str(job_id))
                 return job.to_dict() if job is not None else None
+
+    def list_all(self) -> list[dict]:
+        with self._lock:
+            with self.locked():
+                jobs = sorted(
+                    self._load_jobs_unlocked(),
+                    key=lambda item: (item.created_at, item.job_id),
+                )
+                return [job.to_dict() for job in jobs]
 
     def list_page(self, *, limit: int, cursor: str = "") -> BuildJobListPage:
         del cursor
@@ -241,13 +256,75 @@ class BuildJobRepository:
         job.logs.append("Build interrupted by service restart.")
         self._write_job_unlocked(job)
 
-    def _write_metadata_unlocked(self) -> None:
+    def _import_legacy_store_once_unlocked(self) -> None:
+        metadata = self._load_metadata_unlocked()
+        imports = [
+            dict(item)
+            for item in list(metadata.get("legacy_imports") or [])
+            if isinstance(item, Mapping)
+        ]
+        if any(item.get("path") == self.path for item in imports):
+            return
+        if not os.path.exists(self.path):
+            self._write_metadata_unlocked(legacy_imports=imports)
+            return
+        try:
+            with open(self.path, "r", encoding="utf-8") as file:
+                payload = json.load(file)
+            jobs = payload.get("jobs") if isinstance(payload, Mapping) else None
+            if not isinstance(jobs, list):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                    "legacy",
+                    os.path.basename(self.path),
+                )
+                imports.append({"path": self.path, "status": "corrupt"})
+                self._write_metadata_unlocked(legacy_imports=imports)
+                return
+            for item in jobs:
+                if not isinstance(item, Mapping):
+                    continue
+                job = BuildJobRecord.from_dict(item)
+                if job.job_id and not os.path.exists(self._job_path(job.job_id)):
+                    self._write_job_unlocked(job)
+            imports.append({"path": self.path, "status": "imported"})
+            self._write_metadata_unlocked(legacy_imports=imports)
+        except (OSError, TypeError, ValueError):
+            self._record_warning_unlocked(
+                "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                "legacy",
+                os.path.basename(self.path),
+            )
+            imports.append({"path": self.path, "status": "corrupt"})
+            self._write_metadata_unlocked(legacy_imports=imports)
+
+    def _load_metadata_unlocked(self) -> dict:
+        if not os.path.exists(self.metadata_path):
+            return {}
+        try:
+            with open(self.metadata_path, "r", encoding="utf-8") as file:
+                payload = json.load(file)
+            return dict(payload) if isinstance(payload, Mapping) else {}
+        except (OSError, TypeError, ValueError):
+            self._record_warning_unlocked(
+                "BUILD_JOB_STORE_CORRUPT_METADATA",
+                "metadata",
+                os.path.basename(self.metadata_path),
+            )
+            return {}
+
+    def _write_metadata_unlocked(
+        self,
+        *,
+        legacy_imports: Sequence[Mapping[str, object]] | None = None,
+    ) -> None:
         write_json_atomic(
             self.metadata_path,
             {
                 "schema_version": BUILD_JOB_REPOSITORY_SCHEMA_VERSION,
                 "legacy_schema_version": BUILD_JOB_STORE_SCHEMA_VERSION,
                 "legacy_path": self.path,
+                "legacy_imports": [dict(item) for item in legacy_imports or []],
             },
         )
 
