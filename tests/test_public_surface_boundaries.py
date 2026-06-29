@@ -384,6 +384,23 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_domain_shared_does_not_import_contracts(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "domain" / "shared").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if module_name == "rag_modules.contracts" or module_name.startswith(
+                    "rag_modules.contracts."
+                ):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Domain shared modules must stay free of contracts dependencies:\n"
+            + "\n".join(violations),
+        )
+
     def test_domain_shared_does_not_export_recipe_constraint_matcher(self) -> None:
         domain_shared = importlib.import_module("rag_modules.domain.shared")
 
