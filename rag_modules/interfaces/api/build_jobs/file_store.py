@@ -7,7 +7,7 @@ import json
 import os
 import threading
 from contextlib import contextmanager
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Mapping, Sequence
 
 from ....runtime.artifacts import write_json_atomic
 from .locks import _InterprocessFileLock
@@ -52,8 +52,15 @@ class FileBuildJobStore:
         return repository.list_all()
 
     def save_all(self, jobs: list[Mapping[str, Any]]) -> None:
-        with self.locked():
-            self._save_all_unlocked(jobs)
+        snapshot = [copy.deepcopy(dict(job)) for job in jobs]
+        repository = BuildJobRepository(
+            self.path,
+            now=lambda: "",
+            recover_interrupted=False,
+        )
+        with repository.locked():
+            self._save_all_unlocked(snapshot)
+            repository._replace_jobs_unlocked(snapshot)
 
     def _load_all_unlocked(self) -> list[dict[str, Any]]:
         if not os.path.exists(self.path):
@@ -70,7 +77,7 @@ class FileBuildJobStore:
             return []
         return [copy.deepcopy(dict(job)) for job in jobs if isinstance(job, Mapping)]
 
-    def _save_all_unlocked(self, jobs: list[Mapping[str, Any]]) -> None:
+    def _save_all_unlocked(self, jobs: Sequence[Mapping[str, Any]]) -> None:
         write_json_atomic(
             self.path,
             {

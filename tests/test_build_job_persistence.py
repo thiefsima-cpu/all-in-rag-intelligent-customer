@@ -135,6 +135,42 @@ class BuildJobPersistenceTests(unittest.TestCase):
             self.assertEqual(loaded[0]["job_id"], "c" * 32)
             self.assertTrue(_repository_job_path(path, "c" * 32).exists())
 
+    def test_file_store_save_all_refreshes_repository_after_existing_import(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            store = FileBuildJobStore(path)
+            store.save_all(
+                [
+                    {
+                        "job_id": "c" * 32,
+                        "request_id": "first-seed",
+                        "job_type": "build",
+                        "status": "succeeded",
+                        "created_at": "2026-06-28T00:00:00Z",
+                    }
+                ]
+            )
+            self.assertEqual(FileBuildJobStore(path).load_all()[0]["job_id"], "c" * 32)
+
+            store.save_all(
+                [
+                    {
+                        "job_id": "d" * 32,
+                        "request_id": "second-seed",
+                        "job_type": "rebuild",
+                        "status": "failed",
+                        "created_at": "2026-06-29T00:00:00Z",
+                        "error": {"code": "BUILD_FAILED", "request_id": "second-seed"},
+                    }
+                ]
+            )
+
+            loaded = FileBuildJobStore(path).load_all()
+
+            self.assertEqual([job["job_id"] for job in loaded], ["d" * 32])
+            self.assertFalse(_repository_job_path(path, "c" * 32).exists())
+            self.assertTrue(_repository_job_path(path, "d" * 32).exists())
+
     def test_completed_job_is_visible_after_service_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

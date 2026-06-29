@@ -53,6 +53,54 @@ class BuildJobRepositoryTests(unittest.TestCase):
             self.assertEqual(metadata["legacy_imports"][0]["path"], str(legacy_path))
             self.assertEqual(metadata["legacy_imports"][0]["status"], "imported")
 
+    def test_repository_reports_parseable_invalid_metadata_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repository_dir = root / "build_jobs.d"
+            repository_dir.mkdir()
+            (repository_dir / "metadata.json").write_text("[]", encoding="utf-8")
+
+            repository = BuildJobRepository(str(root / "build_jobs.json"), now=_now)
+            summary = repository.corruption_summary()
+
+            self.assertEqual(summary["warning_count"], 1)
+            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_METADATA"])
+            self.assertNotIn(str(root), json.dumps(summary, ensure_ascii=False))
+
+    def test_repository_reports_invalid_legacy_job_entries_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "build_jobs.json"
+            legacy_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "graph-rag-build-jobs-v2",
+                        "jobs": [
+                            {
+                                "job_id": "d" * 32,
+                                "request_id": "valid-legacy",
+                                "job_type": "build",
+                                "status": "succeeded",
+                                "created_at": "2026-06-29T00:00:00Z",
+                            },
+                            "legacy-secret-value",
+                            {"job_id": "", "logs": ["another-secret-value"]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            repository = BuildJobRepository(str(legacy_path), now=_now)
+            summary = repository.corruption_summary()
+
+            self.assertEqual(repository.get("d" * 32)["status"], "succeeded")
+            self.assertEqual(summary["warning_count"], 1)
+            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_LEGACY"])
+            dumped_summary = json.dumps(summary, ensure_ascii=False)
+            self.assertNotIn("legacy-secret-value", dumped_summary)
+            self.assertNotIn("another-secret-value", dumped_summary)
+
     def test_repository_rejects_job_file_with_mismatched_payload_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

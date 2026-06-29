@@ -237,6 +237,38 @@ class BuildJobRepository:
     def _write_job_unlocked(self, job: BuildJobRecord) -> None:
         write_json_atomic(self._job_path(job.job_id), job.to_dict())
 
+    def _replace_jobs_unlocked(self, jobs: Sequence[Mapping[str, object]]) -> None:
+        replacements: dict[str, BuildJobRecord] = {}
+        saw_invalid_entry = False
+        for item in jobs:
+            if not isinstance(item, Mapping):
+                saw_invalid_entry = True
+                continue
+            job = BuildJobRecord.from_dict(item)
+            if not job.job_id:
+                saw_invalid_entry = True
+                continue
+            replacements[job.job_id] = job
+        if os.path.isdir(self.jobs_dir):
+            for filename in os.listdir(self.jobs_dir):
+                if not filename.endswith(".json"):
+                    continue
+                job_id = filename[:-5]
+                if job_id in replacements:
+                    continue
+                try:
+                    os.remove(self._job_path(job_id))
+                except FileNotFoundError:
+                    pass
+        for job in replacements.values():
+            self._write_job_unlocked(job)
+        if saw_invalid_entry:
+            self._record_warning_unlocked(
+                "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                "legacy",
+                os.path.basename(self.path),
+            )
+
     def _active_unlocked(self) -> BuildJobRecord | None:
         for job in self._load_jobs_unlocked():
             if job.status in {"queued", "running"}:
@@ -283,9 +315,21 @@ class BuildJobRepository:
                 return
             for item in jobs:
                 if not isinstance(item, Mapping):
+                    self._record_warning_unlocked(
+                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                        "legacy",
+                        os.path.basename(self.path),
+                    )
                     continue
                 job = BuildJobRecord.from_dict(item)
-                if job.job_id and not os.path.exists(self._job_path(job.job_id)):
+                if not job.job_id:
+                    self._record_warning_unlocked(
+                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
+                        "legacy",
+                        os.path.basename(self.path),
+                    )
+                    continue
+                if not os.path.exists(self._job_path(job.job_id)):
                     self._write_job_unlocked(job)
             imports.append({"path": self.path, "status": "imported"})
             self._write_metadata_unlocked(legacy_imports=imports)
@@ -304,7 +348,37 @@ class BuildJobRepository:
         try:
             with open(self.metadata_path, "r", encoding="utf-8") as file:
                 payload = json.load(file)
-            return dict(payload) if isinstance(payload, Mapping) else {}
+            if not isinstance(payload, Mapping):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_METADATA",
+                    "metadata",
+                    os.path.basename(self.metadata_path),
+                )
+                return {}
+            metadata = dict(payload)
+            legacy_imports = metadata.get("legacy_imports")
+            if legacy_imports is None:
+                return metadata
+            if not isinstance(legacy_imports, list):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_METADATA",
+                    "metadata",
+                    os.path.basename(self.metadata_path),
+                )
+                metadata["legacy_imports"] = []
+                return metadata
+            valid_imports: list[dict[str, object]] = []
+            for item in legacy_imports:
+                if not isinstance(item, Mapping) or not item.get("path"):
+                    self._record_warning_unlocked(
+                        "BUILD_JOB_STORE_CORRUPT_METADATA",
+                        "metadata",
+                        os.path.basename(self.metadata_path),
+                    )
+                    continue
+                valid_imports.append(dict(item))
+            metadata["legacy_imports"] = valid_imports
+            return metadata
         except (OSError, TypeError, ValueError):
             self._record_warning_unlocked(
                 "BUILD_JOB_STORE_CORRUPT_METADATA",
