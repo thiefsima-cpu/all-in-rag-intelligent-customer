@@ -97,6 +97,13 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertFalse(config.api.openapi_public)
         self.assertFalse(config.observability.prometheus_public)
 
+    def test_default_build_job_history_limits_are_bounded(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        self.assertEqual(config.api.build_job_retention_limit, 100)
+        self.assertEqual(config.api.build_job_list_default_limit, 50)
+        self.assertEqual(config.api.build_job_list_max_limit, 100)
+
     def test_dimension_mismatch_reports_both_field_paths(self) -> None:
         with self.assertRaises(ConfigurationError) as context:
             GraphRAGConfig.from_dict(

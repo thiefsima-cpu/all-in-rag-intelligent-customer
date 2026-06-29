@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from typing import Self
+
+from pydantic import Field, model_validator
 
 from .base import ConfigSection
 
@@ -24,6 +26,15 @@ class ApiSettings(ConfigSection):
     build_job_list_max_limit: int = Field(default=100, ge=1)
     serving_hot_refresh_enabled: bool = True
     serving_hot_refresh_interval_seconds: float = Field(default=2.0, ge=0.1)
+
+    @model_validator(mode="after")
+    def _validate_build_job_limits(self) -> Self:
+        if self.build_job_list_default_limit > self.build_job_list_max_limit:
+            raise ValueError(
+                "api.build_job_list_default_limit must be less than or equal to "
+                "api.build_job_list_max_limit."
+            )
+        return self
 
 
 __all__ = ["ApiSettings"]

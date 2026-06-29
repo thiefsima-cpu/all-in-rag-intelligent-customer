@@ -198,6 +198,7 @@ class BuildJobRepository:
                         job_id=job_id,
                         job_type=job_type,
                     )
+                self._apply_retention_unlocked()
                 return True, job.to_dict(), build_lock
 
     def active(self) -> dict | None:
@@ -273,6 +274,7 @@ class BuildJobRepository:
                 job.message = str(result.get("message", "Knowledge base build completed."))
                 job.result = copy.deepcopy(result)
                 self._write_job_unlocked(job)
+                self._apply_retention_unlocked()
 
     def mark_failed(self, job_id: str, *, result: dict) -> None:
         with self._lock:
@@ -284,6 +286,7 @@ class BuildJobRepository:
                 job.message = "Knowledge base build failed."
                 job.result = copy.deepcopy(result)
                 self._write_job_unlocked(job)
+                self._apply_retention_unlocked()
 
     def corruption_summary(self) -> dict:
         warnings = [warning.to_dict() for warning in self._warnings]
@@ -328,6 +331,37 @@ class BuildJobRepository:
                 "created_at": self._now(),
             },
         )
+
+    def _remove_idempotency_for_job_unlocked(self, job_id: str) -> None:
+        if not os.path.isdir(self.idempotency_dir):
+            return
+        for filename in os.listdir(self.idempotency_dir):
+            if not filename.endswith(".json"):
+                continue
+            path = os.path.join(self.idempotency_dir, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as file:
+                    payload = json.load(file)
+                if isinstance(payload, Mapping) and str(payload.get("job_id") or "") == job_id:
+                    os.remove(path)
+            except (OSError, TypeError, ValueError):
+                self._record_warning_unlocked(
+                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
+                    "idempotency",
+                    filename[:-5][:12],
+                )
+
+    def _apply_retention_unlocked(self) -> None:
+        terminal_jobs = [
+            job for job in self._load_jobs_unlocked() if job.status not in {"queued", "running"}
+        ]
+        terminal_jobs.sort(key=lambda item: (item.created_at, item.job_id), reverse=True)
+        for job in terminal_jobs[self.settings.retention_limit :]:
+            try:
+                os.remove(self._job_path(job.job_id))
+            except FileNotFoundError:
+                pass
+            self._remove_idempotency_for_job_unlocked(job.job_id)
 
     def _repair_idempotency_from_jobs_unlocked(
         self,
@@ -409,6 +443,7 @@ class BuildJobRepository:
                     pass
         for job in replacements.values():
             self._write_job_unlocked(job)
+        self._apply_retention_unlocked()
         if saw_invalid_entry:
             self._record_warning_unlocked(
                 "BUILD_JOB_STORE_CORRUPT_LEGACY",
@@ -434,6 +469,7 @@ class BuildJobRepository:
         job.message = "Knowledge base build interrupted by service restart."
         job.logs.append("Build interrupted by service restart.")
         self._write_job_unlocked(job)
+        self._apply_retention_unlocked()
 
     def _import_legacy_store_once_unlocked(self) -> None:
         metadata = self._load_metadata_unlocked()
@@ -486,6 +522,7 @@ class BuildJobRepository:
                     continue
                 if not os.path.exists(self._job_path(job.job_id)):
                     self._write_job_unlocked(job)
+            self._apply_retention_unlocked()
             imports.append({"path": self.path, "status": "imported"})
             self._write_metadata_unlocked(legacy_imports=imports)
         except (OSError, TypeError, ValueError):

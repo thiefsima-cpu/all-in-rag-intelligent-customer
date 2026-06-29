@@ -16,6 +16,62 @@ def _now() -> str:
 
 
 class BuildJobRepositoryTests(unittest.TestCase):
+    def test_retention_prunes_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
+        timestamps = (f"2026-06-29T00:00:{index:02d}Z" for index in range(20))
+
+        def next_time() -> str:
+            return next(timestamps)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = BuildJobRepository(
+                str(Path(temp_dir) / "build_jobs.json"),
+                now=next_time,
+                settings=BuildJobRepositorySettings(
+                    retention_limit=1,
+                    list_default_limit=10,
+                    list_max_limit=10,
+                ),
+            )
+            for job_id in ("1" * 32, "2" * 32):
+                created, job, build_lock = repository.create_or_active(
+                    job_id=job_id,
+                    request_id=f"request-{job_id[0]}",
+                    job_type="build",
+                    message="Knowledge base build job queued.",
+                    idempotency_key=f"key-{job_id[0]}",
+                )
+                if build_lock is not None:
+                    build_lock.release()
+                repository.mark_succeeded(
+                    job["job_id"],
+                    result={"message": "Knowledge base build completed."},
+                )
+                self.assertTrue(created)
+
+            active_created, active_job, active_lock = repository.create_or_active(
+                job_id="3" * 32,
+                request_id="request-3",
+                job_type="build",
+                message="Knowledge base build job queued.",
+                idempotency_key="key-3",
+            )
+            if active_lock is not None:
+                active_lock.release()
+
+            page = repository.list_page(limit=10, cursor="")
+
+            self.assertTrue(active_created)
+            self.assertIsNone(repository.get("1" * 32))
+            self.assertEqual(repository.get("2" * 32)["status"], "succeeded")
+            self.assertEqual(repository.get(active_job["job_id"])["status"], "queued")
+            self.assertEqual([job["job_id"] for job in page.jobs], ["3" * 32, "2" * 32])
+            idempotency_payloads = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in (Path(temp_dir) / "build_jobs.d" / "idempotency").glob("*.json")
+            ]
+            self.assertEqual(len(idempotency_payloads), 2)
+            self.assertNotIn("1" * 32, {payload["job_id"] for payload in idempotency_payloads})
+
     def test_repository_lists_jobs_newest_first_with_cursor(self) -> None:
         created_times = iter(
             [

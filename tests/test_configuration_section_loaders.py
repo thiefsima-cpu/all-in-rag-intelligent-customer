@@ -150,6 +150,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "API_ANSWER_ACQUIRE_TIMEOUT_SECONDS": "0.5",
                     "API_STREAM_EXECUTOR_MAX_WORKERS": "8",
                     "API_STREAM_QUEUE_MAX_SIZE": "128",
+                    "API_BUILD_JOB_RETENTION_LIMIT": "12",
+                    "API_BUILD_JOB_LIST_DEFAULT_LIMIT": "4",
+                    "API_BUILD_JOB_LIST_MAX_LIMIT": "8",
                 }
             )
         )
@@ -165,6 +168,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.answer_acquire_timeout_seconds, 0.5)
         self.assertEqual(config.api.stream_executor_max_workers, 8)
         self.assertEqual(config.api.stream_queue_max_size, 128)
+        self.assertEqual(config.api.build_job_retention_limit, 12)
+        self.assertEqual(config.api.build_job_list_default_limit, 4)
+        self.assertEqual(config.api.build_job_list_max_limit, 8)
 
     def test_api_settings_default_answer_concurrency_limit_is_nonzero(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
@@ -177,6 +183,17 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                 source=EnvConfigSource(
                     environ={
                         "API_MAX_CONCURRENT_ANSWERS": "0",
+                    }
+                )
+            )
+
+    def test_api_settings_reject_build_job_default_limit_above_max_limit(self) -> None:
+        with self.assertRaises(ConfigurationError):
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "API_BUILD_JOB_LIST_DEFAULT_LIMIT": "9",
+                        "API_BUILD_JOB_LIST_MAX_LIMIT": "8",
                     }
                 )
             )
