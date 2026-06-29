@@ -1069,6 +1069,83 @@ class ApiAppTests(unittest.TestCase):
         payload = _assert_error_response(response, status_code=400, code="INVALID_REQUEST")
         self.assertEqual(payload["error"]["details"]["field"], "Idempotency-Key")
 
+    def test_build_jobs_surface_replays_active_job_with_same_idempotency_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _BlockingBuildApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "active-key-1"},
+                )
+                first_job = first_response.json()["job"]
+                self.assertTrue(system.build_started.wait(timeout=1.0))
+
+                replay_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "active-key-1"},
+                )
+
+                system.release_build.set()
+                _wait_for_job_status(client, first_job["job_id"], "succeeded")
+
+        self.assertEqual(first_response.status_code, 202)
+        self.assertEqual(replay_response.status_code, 202)
+        self.assertEqual(replay_response.json()["job"]["job_id"], first_job["job_id"])
+        self.assertEqual(system.build_calls, 1)
+
+    def test_rejected_idempotency_key_does_not_reserve_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {"access_token": _API_TOKEN},
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _BlockingBuildApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                first_response = client.post(
+                    "/jobs/build",
+                    headers={"Idempotency-Key": "active-key-2"},
+                )
+                first_job = first_response.json()["job"]
+                self.assertTrue(system.build_started.wait(timeout=1.0))
+
+                conflict_response = client.post(
+                    "/jobs/rebuild",
+                    headers={"Idempotency-Key": "later-key"},
+                )
+
+                system.release_build.set()
+                _wait_for_job_status(client, first_job["job_id"], "succeeded")
+                accepted_response = client.post(
+                    "/jobs/rebuild",
+                    headers={"Idempotency-Key": "later-key"},
+                )
+                accepted_job = accepted_response.json()["job"]
+                _wait_for_job_status(client, accepted_job["job_id"], "succeeded")
+
+        _assert_error_response(conflict_response, status_code=409, code="BUILD_JOB_CONFLICT")
+        self.assertEqual(accepted_response.status_code, 202)
+        self.assertNotEqual(accepted_job["job_id"], first_job["job_id"])
+
     def test_build_jobs_surface_rejects_parallel_build_submission(self) -> None:
         system = _BlockingBuildApiSystem()
         app = create_build_api_app(system=system)

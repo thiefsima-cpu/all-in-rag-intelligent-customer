@@ -129,12 +129,24 @@ class BuildJobRepository:
                     if idempotency is not None:
                         existing_job = self._load_job_unlocked(str(idempotency.get("job_id") or ""))
                         existing_type = str(idempotency.get("job_type") or "")
-                        if existing_job is not None and existing_type == job_type:
+                        trusted_index = (
+                            existing_job is not None
+                            and existing_job.idempotency_key_hash == key_hash
+                            and existing_type == existing_job.job_type
+                        )
+                        if existing_job is not None and trusted_index and existing_type == job_type:
                             payload = existing_job.to_dict()
                             payload["_idempotency_replayed"] = True
                             return False, payload, None
-                        if existing_job is not None:
+                        if existing_job is not None and trusted_index:
                             raise BuildJobIdempotencyConflictError(existing_job.to_dict())
+                    repaired_job = self._repair_idempotency_from_jobs_unlocked(key_hash)
+                    if repaired_job is not None:
+                        if repaired_job.job_type == job_type:
+                            payload = repaired_job.to_dict()
+                            payload["_idempotency_replayed"] = True
+                            return False, payload, None
+                        raise BuildJobIdempotencyConflictError(repaired_job.to_dict())
                 active_job = self._active_unlocked()
                 if active_job is not None:
                     if self.build_lock_held():
@@ -281,6 +293,21 @@ class BuildJobRepository:
                 "created_at": self._now(),
             },
         )
+
+    def _repair_idempotency_from_jobs_unlocked(
+        self,
+        key_hash: str,
+    ) -> BuildJobRecord | None:
+        for job in self._load_jobs_unlocked():
+            if job.idempotency_key_hash != key_hash:
+                continue
+            self._write_idempotency_unlocked(
+                key_hash=key_hash,
+                job_id=job.job_id,
+                job_type=job.job_type,
+            )
+            return job
+        return None
 
     def _load_job_unlocked(self, job_id: str) -> BuildJobRecord | None:
         path = self._job_path(job_id)
