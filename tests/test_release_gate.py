@@ -368,6 +368,21 @@ class ReleaseGateTests(unittest.TestCase):
             reports["quality_eval"]["suite_error"],
         )
 
+    def test_run_suites_marks_neo4j_connection_failure_as_dependency_unavailable(self) -> None:
+        def fail_quality_eval() -> dict:
+            raise RuntimeError("Neo4j ServiceUnavailable: Failed to establish connection")
+
+        reports = run_suites(
+            ["quality_eval"],
+            runners={"quality_eval": fail_quality_eval},
+        )
+
+        self.assertEqual(reports["quality_eval"]["failure_type"], "dependency-unavailable")
+        self.assertIn(
+            "dependency-unavailable",
+            {failure["failure_type"] for failure in reports["quality_eval"]["failures"]},
+        )
+
     def test_run_release_gate_policy_error_includes_policy_path(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         policy["suite_runners"]["quality_eval"] = {}
@@ -440,6 +455,58 @@ class ReleaseGateTests(unittest.TestCase):
                 self.assertTrue(
                     any(metric_name in check["name"] for check in report["failed_checks"])
                 )
+
+    def test_gate_marks_quality_threshold_failure_as_metric_regression(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"]["metrics"]["recall_at_k"] = 0.79
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        check = failed_checks["metric_minimum:quality_eval.metrics.recall_at_k"]
+        self.assertEqual(check["failure_type"], "metric-regression")
+        self.assertEqual(report["failure_types"], ["metric-regression"])
+
+    def test_gate_marks_dependency_unavailable_separately_from_metric_regression(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"] = {
+            "case_count": 0,
+            "passed_count": 0,
+            "results": [],
+            "failures": [
+                {
+                    "suite_error": "ServiceUnavailable: Unable to connect to Neo4j",
+                    "failure_type": "dependency-unavailable",
+                }
+            ],
+            "suite_error": "ServiceUnavailable: Unable to connect to Neo4j",
+            "failure_type": "dependency-unavailable",
+        }
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        self.assertIn("dependency-unavailable", report["failure_types"])
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(
+            failed_checks["suite_available:quality_eval"]["failure_type"],
+            "dependency-unavailable",
+        )
+        self.assertEqual(
+            failed_checks["metric_available:quality_eval.metrics.recall_at_k"]["failure_type"],
+            "dependency-unavailable",
+        )
+        self.assertNotIn(
+            "metric-regression",
+            {
+                item["failure_type"]
+                for item in report["failed_checks"]
+                if item["name"].startswith("metric_")
+            },
+        )
 
     def test_gate_reports_non_numeric_quality_metric_as_failed_check(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -539,6 +606,29 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("fallback_rate: 0.0000", summary)
         self.assertIn("retrieval_degradation_rate: 0.0000", summary)
         self.assertIn("degraded_sources: none", summary)
+
+    def test_gate_summary_lists_failure_types(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"] = {
+            "case_count": 0,
+            "passed_count": 0,
+            "results": [],
+            "failures": [],
+            "suite_error": "ServiceUnavailable: Unable to connect to Neo4j",
+            "failure_type": "dependency-unavailable",
+        }
+        report = evaluate_gate(policy, reports)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _, summary_path = write_report(report, temp_dir)
+            summary = summary_path.read_text(encoding="utf-8")
+
+        self.assertIn("failure_types: dependency-unavailable", summary)
+        self.assertIn(
+            "`suite_available:quality_eval` type `dependency-unavailable`",
+            summary,
+        )
 
     def test_gate_fails_when_route_coverage_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)

@@ -18,6 +18,13 @@ threshold passes. It writes:
 - `eval/reports/release_gate/report.json`
 - `eval/reports/release_gate/summary.md`
 
+Dependency outages still prevent a PASS, but the report keeps them distinct
+from quality regressions. `report.json` exposes top-level `failure_types` and
+each failed check includes `failure_type`; `summary.md` mirrors the same labels.
+Use `dependency-unavailable` for external service outages such as Neo4j or
+Milvus connection failures, and `metric-regression` for numeric threshold
+misses.
+
 The legacy `--include-quality-eval` flag and
 `RELEASE_GATE_INCLUDE_QUALITY_EVAL=true` environment variable remain accepted
 for custom policies that still model `quality_eval` as an optional stage. They

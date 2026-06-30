@@ -31,6 +31,33 @@ INCLUDE_QUALITY_EVAL_ENV = "RELEASE_GATE_INCLUDE_QUALITY_EVAL"
 QUALITY_EVAL_STAGE = "quality_eval"
 _TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
+FAILURE_TYPE_DEPENDENCY_UNAVAILABLE = "dependency-unavailable"
+FAILURE_TYPE_METRIC_REGRESSION = "metric-regression"
+FAILURE_TYPE_SUITE_ERROR = "suite-error"
+FAILURE_TYPE_SUITE_REGRESSION = "suite-regression"
+_DEPENDENCY_UNAVAILABLE_MARKERS = (
+    "neo4j",
+    "milvus",
+    "serviceunavailable",
+    "service unavailable",
+    "connection refused",
+    "failed to establish connection",
+    "unable to connect",
+    "cannot connect",
+    "connectionerror",
+    "connection error",
+    "connection reset",
+    "database unavailable",
+    "server unavailable",
+    "timed out",
+    "timeout",
+)
+_FAILURE_TYPE_ORDER = {
+    FAILURE_TYPE_DEPENDENCY_UNAVAILABLE: 0,
+    FAILURE_TYPE_METRIC_REGRESSION: 1,
+    FAILURE_TYPE_SUITE_ERROR: 2,
+    FAILURE_TYPE_SUITE_REGRESSION: 3,
+}
 
 SuiteRunner = Callable[[], dict[str, Any]]
 
@@ -230,6 +257,13 @@ def _validate_metric_threshold_rules(
                 )
 
 
+def _classify_runner_exception(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if any(marker in text for marker in _DEPENDENCY_UNAVAILABLE_MARKERS):
+        return FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+    return FAILURE_TYPE_SUITE_ERROR
+
+
 def run_suites(
     suite_names: list[str],
     *,
@@ -244,20 +278,29 @@ def run_suites(
                 "case_count": 0,
                 "passed_count": 0,
                 "results": [],
-                "failures": [{"suite_error": f"unknown_suite:{suite_name}"}],
+                "failures": [
+                    {
+                        "suite_error": f"unknown_suite:{suite_name}",
+                        "failure_type": FAILURE_TYPE_SUITE_ERROR,
+                    }
+                ],
                 "suite_error": f"unknown_suite:{suite_name}",
+                "failure_type": FAILURE_TYPE_SUITE_ERROR,
             }
             continue
         try:
             report = runner()
             reports[suite_name] = dict(report or {})
         except Exception as exc:
+            failure_type = _classify_runner_exception(exc)
+            suite_error = f"{type(exc).__name__}: {exc}"
             reports[suite_name] = {
                 "case_count": 0,
                 "passed_count": 0,
                 "results": [],
-                "failures": [{"suite_error": f"{type(exc).__name__}: {exc}"}],
-                "suite_error": f"{type(exc).__name__}: {exc}",
+                "failures": [{"suite_error": suite_error, "failure_type": failure_type}],
+                "suite_error": suite_error,
+                "failure_type": failure_type,
             }
     return reports
 
@@ -334,12 +377,16 @@ def _suite_metrics(report: dict[str, Any]) -> dict[str, Any]:
     passed_count = max(0, int(report.get("passed_count") or 0))
     passed_count = min(case_count, passed_count)
     pass_rate = passed_count / case_count if case_count else 0.0
+    failure_type = str(report.get("failure_type") or "")
+    if report.get("suite_error") and not failure_type:
+        failure_type = FAILURE_TYPE_SUITE_ERROR
     return {
         "case_count": case_count,
         "passed_count": passed_count,
         "failed_count": case_count - passed_count,
         "pass_rate": pass_rate,
         "suite_error": str(report.get("suite_error") or ""),
+        "failure_type": failure_type,
     }
 
 
@@ -350,6 +397,7 @@ def _check(
     passed: bool,
     expected: Any,
     actual: Any,
+    failure_type: str = "",
 ) -> None:
     checks.append(
         {
@@ -357,8 +405,14 @@ def _check(
             "passed": bool(passed),
             "expected": expected,
             "actual": actual,
+            "failure_type": "" if passed else str(failure_type or ""),
         }
     )
+
+
+def _suite_failure_type(suite_reports: dict[str, dict[str, Any]], suite_name: str) -> str:
+    report = suite_reports.get(suite_name) or {}
+    return str(report.get("failure_type") or "")
 
 
 def _resolve_metric(
@@ -376,6 +430,16 @@ def _resolve_metric(
     return current
 
 
+def _metric_blocking_failure_type(
+    suite_reports: dict[str, dict[str, Any]],
+    path: str,
+) -> str:
+    suite_name = str(path or "").split(".", 1)[0]
+    if not suite_name:
+        return ""
+    return _suite_failure_type(suite_reports, suite_name)
+
+
 def _evaluate_metric_thresholds(
     checks: list[dict[str, Any]],
     *,
@@ -386,12 +450,21 @@ def _evaluate_metric_thresholds(
         limits = dict(threshold or {})
         actual = _resolve_metric(suite_reports, str(metric_path))
         if actual is None:
+            blocking_failure_type = _metric_blocking_failure_type(
+                suite_reports,
+                str(metric_path),
+            )
             _check(
                 checks,
                 name=f"metric_available:{metric_path}",
                 passed=False,
                 expected="numeric_metric",
-                actual=None,
+                actual=(
+                    f"blocked_by:{blocking_failure_type}"
+                    if blocking_failure_type
+                    else None
+                ),
+                failure_type=blocking_failure_type or FAILURE_TYPE_METRIC_REGRESSION,
             )
             continue
         try:
@@ -403,6 +476,7 @@ def _evaluate_metric_thresholds(
                 passed=False,
                 expected="numeric_metric",
                 actual=actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
             continue
         if isinstance(actual, bool) or not math.isfinite(numeric_actual):
@@ -412,6 +486,7 @@ def _evaluate_metric_thresholds(
                 passed=False,
                 expected="finite_numeric_metric",
                 actual=actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
             continue
         if "minimum" in limits:
@@ -422,6 +497,7 @@ def _evaluate_metric_thresholds(
                 passed=numeric_actual >= minimum,
                 expected=f">={minimum}",
                 actual=numeric_actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
         if "maximum" in limits:
             maximum = float(limits["maximum"])
@@ -431,7 +507,23 @@ def _evaluate_metric_thresholds(
                 passed=numeric_actual <= maximum,
                 expected=f"<={maximum}",
                 actual=numeric_actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
+
+
+def _failure_type_counts(failed_checks: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for check in failed_checks:
+        failure_type = str(check.get("failure_type") or "").strip()
+        if not failure_type:
+            continue
+        counts[failure_type] = counts.get(failure_type, 0) + 1
+    return dict(
+        sorted(
+            counts.items(),
+            key=lambda item: (_FAILURE_TYPE_ORDER.get(item[0], 99), item[0]),
+        )
+    )
 
 
 def evaluate_gate(
@@ -461,6 +553,7 @@ def evaluate_gate(
     for suite_name in required_suites:
         metrics = suite_metrics[suite_name]
         suite_present = suite_name in suite_reports and not metrics["suite_error"]
+        suite_failure_type = str(metrics.get("failure_type") or "")
         _check(
             checks,
             name=f"suite_available:{suite_name}",
@@ -468,6 +561,7 @@ def evaluate_gate(
             expected="available_without_error",
             actual=metrics["suite_error"]
             or ("available" if suite_name in suite_reports else "missing"),
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_ERROR,
         )
 
         required_case_count = minimum_cases.get(suite_name, 0)
@@ -477,6 +571,7 @@ def evaluate_gate(
             passed=metrics["case_count"] >= required_case_count,
             expected=f">={required_case_count}",
             actual=metrics["case_count"],
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_REGRESSION,
         )
 
         required_pass_rate = minimum_pass_rates.get(suite_name, 1.0)
@@ -486,6 +581,7 @@ def evaluate_gate(
             passed=metrics["pass_rate"] >= required_pass_rate,
             expected=f">={required_pass_rate}",
             actual=metrics["pass_rate"],
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_REGRESSION,
         )
 
     total_cases = sum(item["case_count"] for item in suite_metrics.values())
@@ -493,12 +589,21 @@ def evaluate_gate(
     overall_pass_rate = total_passed / total_cases if total_cases else 0.0
     minimum_total_cases = max(0, int(policy.get("minimum_total_cases") or 0))
     minimum_overall_pass_rate = float(policy.get("minimum_overall_pass_rate", 1.0))
+    aggregate_failure_type = (
+        FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+        if any(
+            item.get("failure_type") == FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+            for item in suite_metrics.values()
+        )
+        else FAILURE_TYPE_SUITE_REGRESSION
+    )
     _check(
         checks,
         name="minimum_total_cases",
         passed=total_cases >= minimum_total_cases,
         expected=f">={minimum_total_cases}",
         actual=total_cases,
+        failure_type=aggregate_failure_type,
     )
     _check(
         checks,
@@ -506,6 +611,7 @@ def evaluate_gate(
         passed=overall_pass_rate >= minimum_overall_pass_rate,
         expected=f">={minimum_overall_pass_rate}",
         actual=overall_pass_rate,
+        failure_type=aggregate_failure_type,
     )
 
     route_report = suite_reports.get("route_semantics") or {}
@@ -520,6 +626,7 @@ def evaluate_gate(
         passed=len(route_categories) >= minimum_route_category_count,
         expected=f">={minimum_route_category_count}",
         actual=len(route_categories),
+        failure_type=FAILURE_TYPE_SUITE_REGRESSION,
     )
     required_route_categories = {
         str(item) for item in (policy.get("required_route_categories") or []) if str(item).strip()
@@ -534,6 +641,7 @@ def evaluate_gate(
             "present": sorted(route_categories),
             "missing": missing_route_categories,
         },
+        failure_type=FAILURE_TYPE_SUITE_REGRESSION,
     )
     _evaluate_metric_thresholds(
         checks,
@@ -542,6 +650,7 @@ def evaluate_gate(
     )
 
     failed_checks = [item for item in checks if not item["passed"]]
+    failure_type_counts = _failure_type_counts(failed_checks)
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "passed": not failed_checks,
@@ -553,7 +662,9 @@ def evaluate_gate(
             "failed_count": total_cases - total_passed,
             "pass_rate": overall_pass_rate,
             "route_category_count": len(route_categories),
+            "failure_type_counts": failure_type_counts,
         },
+        "failure_types": list(failure_type_counts),
         "suite_metrics": suite_metrics,
         "checks": checks,
         "failed_checks": failed_checks,
@@ -582,6 +693,8 @@ def write_report(
     optional_stage_label = ", ".join(optional_stages) if optional_stages else "none"
     query_policy = dict(report.get("query_policy") or {})
     quality_eval_required = bool(report.get("quality_eval_required"))
+    failure_types = [str(item) for item in (report.get("failure_types") or []) if str(item)]
+    failure_type_label = ", ".join(failure_types) if failure_types else "none"
     quality_eval_label = (
         "required"
         if quality_eval_required
@@ -596,6 +709,7 @@ def write_report(
         f"- prompt_version: {query_policy.get('prompt_version', '')}",
         f"- optional_stages: {optional_stage_label}",
         f"- quality_eval: {quality_eval_label}",
+        f"- failure_types: {failure_type_label}",
         f"- suites: {metrics.get('suite_count', 0)}",
         f"- cases: {metrics.get('passed_count', 0)}/{metrics.get('case_count', 0)}",
         f"- pass_rate: {metrics.get('pass_rate', 0.0):.4f}",
@@ -630,8 +744,9 @@ def write_report(
     if failed_checks:
         lines.extend(["", "## Failed Checks", ""])
         for item in failed_checks:
+            failure_type = str(item.get("failure_type") or "unclassified")
             lines.append(
-                f"- `{item.get('name', '')}` expected "
+                f"- `{item.get('name', '')}` type `{failure_type}` expected "
                 f"`{item.get('expected')}`; actual `{item.get('actual')}`"
             )
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
