@@ -5,6 +5,9 @@ import unittest
 from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+    CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
     CandidateSourceDegradationStrategy,
     RetrievalCandidateGenerator,
 )
@@ -156,10 +159,41 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
 
         self.assertEqual(candidate_set.stats, {"vector": 0, "bm25": 1})
         self.assertEqual(candidate_set.degraded_sources, ["vector"])
-        self.assertEqual(candidate_set.degraded_details[0]["reason"], "exception")
-        self.assertEqual(candidate_set.degraded_details[0]["error_type"], "TimeoutError")
-        self.assertEqual(candidate_set.degraded_details[0]["circuit_state"], "open")
+        self.assertEqual(
+            candidate_set.degraded_details[0],
+            {
+                "source": "vector",
+                "error_code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+                "error_type": "TimeoutError",
+            },
+        )
         self.assertEqual(len(bm25.requests), 1)
+
+    def test_degraded_details_expose_only_safe_public_error_fields(self) -> None:
+        failing = _FailingSource(
+            CandidateSourceSpec(
+                name="vector",
+                rank_name="vector",
+                search_method="vector",
+                search_type="vector_enhanced",
+                rank_order=1,
+            ),
+            RuntimeError("postgres://user:secret@example.internal/db token=abc123"),
+        )
+        generator = RetrievalCandidateGenerator(sources=[failing])
+
+        candidate_set = generator.generate(
+            RetrievalRequest.from_inputs(query="recommend tofu", top_k=2, candidate_k=4)
+        )
+
+        self.assertEqual(
+            candidate_set.degraded_details[0],
+            {
+                "source": "vector",
+                "error_code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+                "error_type": "RuntimeError",
+            },
+        )
 
     def test_configured_failure_threshold_delays_open_circuit(self) -> None:
         vector = _FailingSource(
@@ -194,12 +228,18 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
 
         self.assertEqual(len(vector.requests), 2)
         self.assertEqual(len(bm25.requests), 3)
-        self.assertEqual(first.degraded_details[0]["reason"], "exception")
-        self.assertEqual(first.degraded_details[0]["circuit_state"], "closed")
-        self.assertEqual(first.degraded_details[0]["failure_count"], 1)
-        self.assertEqual(second.degraded_details[0]["reason"], "exception")
-        self.assertEqual(second.degraded_details[0]["circuit_state"], "open")
-        self.assertEqual(third.degraded_details[0]["reason"], "circuit_open")
+        self.assertEqual(
+            first.degraded_details[0]["error_code"],
+            CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+        )
+        self.assertEqual(
+            second.degraded_details[0]["error_code"],
+            CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+        )
+        self.assertEqual(
+            third.degraded_details[0]["error_code"],
+            CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+        )
 
     def test_fail_fast_strategy_raises_source_exception_and_stops_later_sources(self) -> None:
         vector = _FailingSource(
@@ -262,7 +302,14 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
 
         self.assertEqual(len(vector.requests), 1)
         self.assertEqual(len(bm25.requests), 2)
-        self.assertEqual(second.degraded_details[0]["reason"], "circuit_open")
+        self.assertEqual(
+            second.degraded_details[0],
+            {
+                "source": "vector",
+                "error_code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+                "error_type": "CircuitOpenError",
+            },
+        )
         self.assertEqual(second.bm25_docs[0].recipe_name, "B")
 
     def test_request_skip_metadata_does_not_touch_source_or_circuit(self) -> None:
@@ -299,7 +346,14 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
         self.assertEqual(len(vector.requests), 0)
         self.assertEqual(len(bm25.requests), 1)
         self.assertEqual(candidate_set.vector_docs, [])
-        self.assertEqual(candidate_set.degraded_details[0]["reason"], "request_skip")
+        self.assertEqual(
+            candidate_set.degraded_details[0],
+            {
+                "source": "vector",
+                "error_code": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+                "error_type": "",
+            },
+        )
         self.assertEqual(candidate_set.to_stage_details()["candidate_counts"]["bm25"], 1)
         self.assertEqual(candidate_set.to_stage_details()["degraded_sources"], ["vector"])
 

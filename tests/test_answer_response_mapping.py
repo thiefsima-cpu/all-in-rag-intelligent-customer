@@ -13,6 +13,7 @@ from rag_modules.contracts import (
 )
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.interfaces.api.answer_models import AnswerPayloadModel, PublicAnswerPayloadModel
+from rag_modules.retrieval.candidate_generator import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
 from rag_modules.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
@@ -93,6 +94,66 @@ def test_public_answer_payload_can_be_derived_from_debug_payload() -> None:
         "grounding": debug_payload.grounding.model_dump(),
         "diagnostics": debug_payload.diagnostics.model_dump(),
     }
+
+
+def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> None:
+    result = _complete_result()
+    legacy_candidate = {
+        "source": "vector",
+        "reason": "circuit_open",
+        "error_type": "CircuitOpenError",
+        "message": "postgres://user:secret@example.internal/db token=abc123",
+        "circuit_state": "open",
+        "failure_count": 2,
+    }
+    safe_candidate = {
+        "source": "vector",
+        "error_code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+        "error_type": "CircuitOpenError",
+    }
+    result.route_trace.add_stage(
+        "hybrid",
+        RouteStageSnapshot(
+            latency_ms=2.0,
+            doc_count=0,
+            sources={"vector": 0},
+            details={
+                "degraded_sources": ["vector"],
+                "degraded_candidates": [legacy_candidate],
+            },
+        ),
+    )
+    result.retrieval_outcome.degradation_summary = {
+        "retrieval_degraded": True,
+        "degraded_sources": ["vector"],
+        "degraded_candidates": [legacy_candidate],
+    }
+    result.trace_event.diagnostics = QueryDiagnostics(
+        retrieval_degraded=True,
+        degraded_sources=["vector"],
+        degraded_candidates=[legacy_candidate],
+    )
+
+    payload = AnswerPayloadModel.from_dto(result.to_response()).model_dump()
+
+    assert (
+        payload["diagnostics"]["diagnostics"]["degraded_candidates"][0]
+        == safe_candidate
+    )
+    assert (
+        payload["traces"]["route_trace"]["diagnostics"]["degraded_candidates"][0]
+        == safe_candidate
+    )
+    assert (
+        payload["traces"]["route_trace"]["stages"]["hybrid"]["degraded_candidates"][0]
+        == safe_candidate
+    )
+    assert (
+        payload["grounding"]["retrieval_outcome"]["degradation_summary"][
+            "degraded_candidates"
+        ][0]
+        == safe_candidate
+    )
 
 
 def _complete_result() -> QuestionAnswerResult:

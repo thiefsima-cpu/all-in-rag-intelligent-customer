@@ -7,6 +7,7 @@ from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     CandidateSet,
     CandidateSourceDegradation,
     CandidateSourceDegradationStrategy,
@@ -76,9 +77,6 @@ class _StubCandidateGenerator:
                     spec=vector_spec,
                     reason="circuit_open",
                     error_type="CircuitOpenError",
-                    message="Circuit breaker open",
-                    circuit_state="open",
-                    failure_count=2,
                 )
             )
         return CandidateSet(
@@ -164,7 +162,10 @@ class HybridSearchServiceTests(unittest.TestCase):
         self.assertEqual(outcome.degraded_sources, ["vector"])
         self.assertTrue(outcome.circuit_breaker_triggered)
         self.assertFalse(outcome.answer_impacted)
-        self.assertEqual(outcome.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertEqual(
+            outcome.degraded_candidates[0]["error_code"],
+            CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+        )
         self.assertEqual(outcome.to_stage_details()["candidate_counts"]["vector"], 1)
 
     def test_candidate_source_factory_is_used_when_generator_not_injected(self) -> None:

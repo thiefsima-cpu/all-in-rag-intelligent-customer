@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ..contracts import EvidenceDocument
-from .candidate_generator import CandidateSet
+from .candidate_generator import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN, CandidateSet
 
 
 def _unique_strings(values: List[Any]) -> List[str]:
@@ -77,7 +77,9 @@ class HybridRetrievalOutcome:
     @property
     def circuit_breaker_triggered(self) -> bool:
         return any(
-            item.get("reason") == "circuit_open" or item.get("circuit_state") == "open"
+            item.get("error_code") == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
+            or item.get("reason") == "circuit_open"
+            or item.get("circuit_state") == "open"
             for item in self.degraded_candidates
         )
 

@@ -23,6 +23,12 @@ from ...contracts import (
     RetrievalRequest,
 )
 from ...domain.shared.query_constraints import QueryConstraints
+from ...retrieval.candidate_generator import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    CANDIDATE_SOURCE_ERROR_DEGRADED,
+    CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+    CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+)
 from ...runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
@@ -153,6 +159,51 @@ def _retrieval_request_payload(value: RetrievalRequest | None) -> JsonObject:
 
 def _public_answer_error(value: str) -> str:
     return ErrorCode.ANSWER_FAILED.value if str(value or "") else ""
+
+
+_LEGACY_DEGRADED_CANDIDATE_ERROR_CODES = {
+    "exception": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+    "circuit_open": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    "request_skip": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+}
+
+
+def _public_degraded_candidate(value: object) -> JsonObject:
+    candidate = coerce_json_object(value)
+    if not candidate:
+        return {}
+    error_code = str(candidate.get("error_code") or "").strip()
+    if not error_code:
+        reason = str(candidate.get("reason") or "").strip()
+        error_code = _LEGACY_DEGRADED_CANDIDATE_ERROR_CODES.get(reason, "")
+    if not error_code and str(candidate.get("circuit_state") or "").strip().lower() == "open":
+        error_code = CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
+    if not error_code:
+        error_code = CANDIDATE_SOURCE_ERROR_DEGRADED
+    return {
+        "source": str(candidate.get("source") or "").strip(),
+        "error_code": error_code,
+        "error_type": str(candidate.get("error_type") or "").strip(),
+    }
+
+
+def _public_degraded_candidates(values: object) -> list[JsonObject]:
+    if not isinstance(values, list):
+        return []
+    return [
+        candidate
+        for candidate in (_public_degraded_candidate(item) for item in values)
+        if candidate
+    ]
+
+
+def _public_degradation_payload(value: object) -> JsonObject:
+    payload = coerce_json_object(value)
+    if "degraded_candidates" in payload:
+        payload["degraded_candidates"] = _public_degraded_candidates(
+            payload.get("degraded_candidates")
+        )
+    return payload
 
 
 class AnswerStreamEventType(str, Enum):
@@ -292,7 +343,7 @@ class RouteStageSnapshotResponseModel(BaseModel):
             latency_ms=stage.latency_ms,
             doc_count=stage.doc_count,
             sources=dict(stage.sources),
-            **coerce_json_object(stage.details),
+            **_public_degradation_payload(stage.details),
         )
 
 
@@ -323,9 +374,9 @@ class RouteDiagnosticsResponseModel(BaseModel):
             post_process_doc_count=diagnostics.post_process_doc_count,
             retrieval_degraded=diagnostics.retrieval_degraded,
             degraded_sources=list(diagnostics.degraded_sources),
-            degraded_candidates=[
-                coerce_json_object(item) for item in diagnostics.degraded_candidates
-            ],
+            degraded_candidates=_public_degraded_candidates(
+                diagnostics.degraded_candidates
+            ),
             circuit_breaker_triggered=diagnostics.circuit_breaker_triggered,
             answer_impacted=diagnostics.answer_impacted,
             failure_reasons=list(diagnostics.failure_reasons),
@@ -393,7 +444,7 @@ class RetrievalOutcomeResponseModel(BaseModel):
                 for document in outcome.evidence_documents
             ],
             route_trace=RouteSnapshotResponseModel.from_dto(outcome.route_trace),
-            degradation_summary=coerce_json_object(outcome.degradation_summary),
+            degradation_summary=_public_degradation_payload(outcome.degradation_summary),
             metadata=coerce_json_object(outcome.metadata),
         )
 
@@ -490,9 +541,9 @@ class QueryDiagnosticsResponseModel(BaseModel):
             overall_bucket=diagnostics.overall_bucket,
             retrieval_degraded=diagnostics.retrieval_degraded,
             degraded_sources=list(diagnostics.degraded_sources),
-            degraded_candidates=[
-                coerce_json_object(item) for item in diagnostics.degraded_candidates
-            ],
+            degraded_candidates=_public_degraded_candidates(
+                diagnostics.degraded_candidates
+            ),
             circuit_breaker_triggered=diagnostics.circuit_breaker_triggered,
             answer_impacted=diagnostics.answer_impacted,
             failure_reasons=list(diagnostics.failure_reasons),

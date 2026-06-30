@@ -27,6 +27,22 @@ SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_
 SUPPORTED_SOURCE_DEGRADATION_STRATEGIES = {
     strategy.value for strategy in CandidateSourceDegradationStrategy
 }
+CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED = "CANDIDATE_SOURCE_RETRIEVAL_FAILED"
+CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN = "CANDIDATE_SOURCE_CIRCUIT_OPEN"
+CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED = "CANDIDATE_SOURCE_REQUEST_SKIPPED"
+CANDIDATE_SOURCE_ERROR_DEGRADED = "CANDIDATE_SOURCE_DEGRADED"
+_SOURCE_DEGRADATION_ERROR_CODES = {
+    "exception": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+    "circuit_open": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    "request_skip": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+}
+
+
+def _candidate_source_error_code(reason: str) -> str:
+    return _SOURCE_DEGRADATION_ERROR_CODES.get(
+        str(reason or "").strip(),
+        CANDIDATE_SOURCE_ERROR_DEGRADED,
+    )
 
 
 def _normalize_source_degradation_strategy(
@@ -64,12 +80,8 @@ class CandidateSourceDegradation:
     def to_dict(self) -> Dict[str, object]:
         return {
             "source": self.spec.name,
-            "rank_name": self.spec.rank_name,
-            "reason": self.reason,
+            "error_code": _candidate_source_error_code(self.reason),
             "error_type": self.error_type,
-            "message": self.message,
-            "circuit_state": self.circuit_state,
-            "failure_count": self.failure_count,
         }
 
 
@@ -278,7 +290,6 @@ class RetrievalCandidateGenerator:
             spec=spec,
             reason=reason,
             error_type=type(error).__name__ if error else "",
-            message=str(error or ""),
             circuit_state=snapshot.state,
             failure_count=snapshot.failure_count,
         )
@@ -306,6 +317,10 @@ class RetrievalCandidateGenerator:
 
 __all__ = [
     "CandidateSet",
+    "CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN",
+    "CANDIDATE_SOURCE_ERROR_DEGRADED",
+    "CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED",
+    "CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED",
     "CandidateSourceDegradation",
     "CandidateSourceDegradationStrategy",
     "CandidateSourceResult",

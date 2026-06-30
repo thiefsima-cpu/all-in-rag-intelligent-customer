@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from ..contracts import RetrievalRequest
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 
+CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN = "CANDIDATE_SOURCE_CIRCUIT_OPEN"
+
 
 @dataclass
 class RouteStageSnapshot:
@@ -319,7 +321,11 @@ def _summarize_stage_degradation(
                 continue
             degraded_candidates.append(item)
             degraded_sources.append(str(item.get("source") or ""))
-            if item.get("reason") == "circuit_open" or item.get("circuit_state") == "open":
+            if (
+                item.get("error_code") == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
+                or item.get("reason") == "circuit_open"
+                or item.get("circuit_state") == "open"
+            ):
                 circuit_breaker_triggered = True
         if details.get("circuit_breaker_triggered"):
             circuit_breaker_triggered = True
