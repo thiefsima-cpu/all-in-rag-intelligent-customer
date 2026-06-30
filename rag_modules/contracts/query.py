@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List
 
 from ..domain.shared.query_constraints import QueryConstraints
 from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
 from ..query_policy import get_query_policy
 from .query_settings import QuerySemanticRuntimeSettings
+
+if TYPE_CHECKING:
+    from ..runtime.analysis_models import SearchStrategy
 
 _POLICY = get_query_policy()
 _VALID_STRATEGIES = set(_POLICY.graph_routing_strategies)
@@ -54,6 +58,30 @@ def _clamp_int(value: Any, default: int = 2, minimum: int = 1, maximum: int = 32
     except (TypeError, ValueError):
         number = default
     return max(minimum, min(maximum, number))
+
+
+class QueryPlannerMode(str, Enum):
+    LLM = "llm"
+    RULE_BASED = "rule_based"
+    FAST_RULE = "fast_rule"
+    FALLBACK_RULE = "fallback_rule"
+
+
+def _search_strategy(value: Any) -> "SearchStrategy":
+    from ..runtime.analysis_models import SearchStrategy
+
+    if isinstance(value, SearchStrategy):
+        return value
+    return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
+
+
+def _query_planner_mode(value: Any) -> QueryPlannerMode:
+    if isinstance(value, QueryPlannerMode):
+        return value
+    try:
+        return QueryPlannerMode(str(value or QueryPlannerMode.LLM.value))
+    except ValueError:
+        return QueryPlannerMode.LLM
 
 
 @dataclass(frozen=True)
@@ -191,7 +219,7 @@ class QueryPlan:
     complexity: float = 0.5
     relationship_intensity: float = 0.5
     reasoning_required: bool = False
-    strategy: str = "hybrid_traditional"
+    strategy: "SearchStrategy | str" = "hybrid_traditional"
     confidence: float = 0.6
     reasoning: str = "rule-based fallback"
     entity_keywords: List[str] = field(default_factory=list)
@@ -207,14 +235,26 @@ class QueryPlan:
     planner_version: str = f"query-planner-v3:{SEMANTIC_SCHEMA_VERSION}"
     used_cache: bool = False
     fallback_reason: str = ""
-    planner_mode: str = "llm"
+    planner_mode: QueryPlannerMode | str = QueryPlannerMode.LLM
     semantic_profile: QuerySemanticProfile = field(default_factory=QuerySemanticProfile)
     raw_plan: Dict[str, Any] = field(default_factory=dict)
     validation_errors: List[str] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        self.strategy = _search_strategy(self.strategy)
+        self.planner_mode = _query_planner_mode(self.planner_mode)
+
     @property
     def entity_count(self) -> int:
         return len(set(self.entity_keywords + self.source_entities + self.target_entities))
+
+    @property
+    def strategy_value(self) -> str:
+        return _search_strategy(self.strategy).value
+
+    @property
+    def planner_mode_value(self) -> str:
+        return _query_planner_mode(self.planner_mode).value
 
     @classmethod
     def from_dict(
@@ -237,10 +277,18 @@ class QueryPlan:
             data.get("constraints") or resolved_profile.constraints or {}
         )
 
-        strategy = str(data.get("strategy") or "hybrid_traditional")
-        if strategy not in _VALID_STRATEGIES:
-            validation_errors.append(f"invalid_strategy:{strategy}")
-            strategy = "combined" if constraints.has_constraints() else "hybrid_traditional"
+        from ..runtime.analysis_models import SearchStrategy
+
+        raw_strategy = str(data.get("strategy") or SearchStrategy.HYBRID_TRADITIONAL.value)
+        try:
+            strategy = SearchStrategy(raw_strategy)
+        except ValueError:
+            validation_errors.append(f"invalid_strategy:{raw_strategy}")
+            strategy = (
+                SearchStrategy.COMBINED
+                if constraints.has_constraints() or constraints.needs_recipe_recommendation
+                else SearchStrategy.HYBRID_TRADITIONAL
+            )
 
         graph_query_type = str(
             data.get("graph_query_type") or resolved_profile.query_type or "subgraph"
@@ -316,6 +364,7 @@ class QueryPlan:
             constraints=constraints,
             needs_recipe_recommendation=needs_recipe_recommendation,
             answer_style=str(data.get("answer_style") or "concise"),
+            planner_mode=_query_planner_mode(data.get("planner_mode")),
             semantic_profile=resolved_profile,
             raw_plan=dict(data),
             validation_errors=validation_errors,
@@ -328,7 +377,7 @@ class QueryPlan:
             "complexity": self.complexity,
             "relationship_intensity": self.relationship_intensity,
             "reasoning_required": self.reasoning_required,
-            "strategy": self.strategy,
+            "strategy": self.strategy_value,
             "confidence": self.confidence,
             "reasoning": self.reasoning,
             "entity_keywords": self.entity_keywords,
@@ -344,10 +393,15 @@ class QueryPlan:
             "planner_version": self.planner_version,
             "used_cache": self.used_cache,
             "fallback_reason": self.fallback_reason,
-            "planner_mode": self.planner_mode,
+            "planner_mode": self.planner_mode_value,
             "semantic_profile": self.semantic_profile.to_dict(),
             "validation_errors": self.validation_errors,
         }
 
 
-__all__ = ["QueryPlan", "QuerySemanticProfile", "QuerySemanticScoreBreakdown"]
+__all__ = [
+    "QueryPlan",
+    "QueryPlannerMode",
+    "QuerySemanticProfile",
+    "QuerySemanticScoreBreakdown",
+]

@@ -26,8 +26,8 @@ class RouteTraceRecorder:
                 latency_ms=self._elapsed_ms(start_time),
                 details={
                     "used_cache": plan.used_cache,
-                    "strategy": plan.strategy,
-                    "planner_mode": plan.planner_mode,
+                    "strategy": plan.strategy_value,
+                    "planner_mode": plan.planner_mode_value,
                     "fallback_reason": plan.fallback_reason,
                     "query_type": plan.semantic_profile.query_type,
                     "relation_hits": list(plan.semantic_profile.relation_hits or []),

@@ -113,7 +113,7 @@ def _query_plan_payload(value: QueryPlan) -> JsonObject:
         "complexity": value.complexity,
         "relationship_intensity": value.relationship_intensity,
         "reasoning_required": value.reasoning_required,
-        "strategy": value.strategy,
+        "strategy": value.strategy_value,
         "confidence": value.confidence,
         "reasoning": value.reasoning,
         "entity_keywords": list(value.entity_keywords),
@@ -129,7 +129,7 @@ def _query_plan_payload(value: QueryPlan) -> JsonObject:
         "planner_version": value.planner_version,
         "used_cache": value.used_cache,
         "fallback_reason": value.fallback_reason,
-        "planner_mode": value.planner_mode,
+        "planner_mode": value.planner_mode_value,
         "semantic_profile": _semantic_profile_payload(value.semantic_profile),
         "validation_errors": list(value.validation_errors),
     }

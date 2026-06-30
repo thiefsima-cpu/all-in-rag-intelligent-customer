@@ -8,6 +8,7 @@ from copy import deepcopy
 
 from ...contracts import (
     QueryPlan,
+    QueryPlannerMode,
     QueryPlannerRuntimeSettings,
     QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
@@ -80,7 +81,7 @@ class QueryPlanner:
             plan = self.rule_based_plan(query)
             self._calibrate_plan(plan)
             plan.fallback_reason = "fast_rule"
-            plan.planner_mode = "fast_rule"
+            plan.planner_mode = QueryPlannerMode.FAST_RULE
             plan.used_cache = False
             return plan
 
@@ -101,10 +102,10 @@ class QueryPlanner:
                 semantic_settings=self.semantic_settings,
             )
             self._calibrate_plan(plan)
-            plan.planner_mode = "llm"
+            plan.planner_mode = QueryPlannerMode.LLM
             plan.used_cache = False
-            planner_mode = plan.planner_mode
-            strategy = plan.strategy
+            planner_mode = plan.planner_mode_value
+            strategy = plan.strategy_value
             logger.info("Query plan created: mode=%s strategy=%s", planner_mode, strategy)
             return plan
         except Exception as exc:
@@ -118,7 +119,7 @@ class QueryPlanner:
             plan = self.rule_based_plan(query)
             self._calibrate_plan(plan)
             plan.fallback_reason = "query_planning_failed"
-            plan.planner_mode = "fallback_rule"
+            plan.planner_mode = QueryPlannerMode.FALLBACK_RULE
             plan.used_cache = False
             return plan
 

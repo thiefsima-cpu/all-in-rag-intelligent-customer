@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.contracts import (
+    QueryPlan,
+    QueryPlannerMode,
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
@@ -11,6 +13,7 @@ from rag_modules.query_understanding import (
     infer_query_constraints,
     infer_query_semantic_profile,
 )
+from rag_modules.runtime import SearchStrategy
 
 
 class _DummyCompletions:
@@ -53,7 +56,7 @@ class QuerySemanticsTests(unittest.TestCase):
 
         self.assertGreaterEqual(profile.complexity, 0.7)
         self.assertGreaterEqual(profile.relationship_intensity, 0.7)
-        self.assertEqual(plan.strategy, "graph_rag")
+        self.assertIs(plan.strategy, SearchStrategy.GRAPH_RAG)
         self.assertEqual(plan.graph_query_type, "multi_hop")
         self.assertIn(
             "水煮肉片",
@@ -63,7 +66,7 @@ class QuerySemanticsTests(unittest.TestCase):
     def test_simple_recipe_query_prefers_hybrid(self) -> None:
         plan = self.planner.rule_based_plan("宫保鸡丁怎么做？")
 
-        self.assertEqual(plan.strategy, "hybrid_traditional")
+        self.assertIs(plan.strategy, SearchStrategy.HYBRID_TRADITIONAL)
         self.assertEqual(plan.graph_query_type, "entity_relation")
         self.assertLess(plan.relationship_intensity, 0.7)
 
@@ -77,6 +80,35 @@ class QuerySemanticsTests(unittest.TestCase):
         plan = planner.plan("recommend tofu")
 
         self.assertEqual(plan.fallback_reason, "query_planning_failed")
+
+    def test_query_plan_normalizes_route_strategy_and_planner_mode_enums(self) -> None:
+        plan = QueryPlan.from_dict(
+            "recommend tofu",
+            {
+                "strategy": "combined",
+                "planner_mode": "fast_rule",
+                "constraints": {"needs_recipe_recommendation": True},
+            },
+        )
+
+        self.assertIs(plan.strategy, SearchStrategy.COMBINED)
+        self.assertIs(plan.planner_mode, QueryPlannerMode.FAST_RULE)
+        self.assertEqual(plan.to_dict()["strategy"], "combined")
+        self.assertEqual(plan.to_dict()["planner_mode"], "fast_rule")
+
+    def test_query_plan_keeps_invalid_strategy_fallback_behavior(self) -> None:
+        plan = QueryPlan.from_dict(
+            "recommend tofu",
+            {
+                "strategy": "typo",
+                "planner_mode": "llm",
+                "constraints": {"needs_recipe_recommendation": True},
+            },
+        )
+
+        self.assertIs(plan.strategy, SearchStrategy.COMBINED)
+        self.assertIn("invalid_strategy:typo", plan.validation_errors)
+        self.assertEqual(plan.to_dict()["strategy"], "combined")
 
     def test_constraint_extraction_uses_policy_rules(self) -> None:
         constraints = infer_query_constraints("20分钟内少油的鸡肉菜有哪些？")

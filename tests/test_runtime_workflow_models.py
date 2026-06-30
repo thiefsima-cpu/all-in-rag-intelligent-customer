@@ -11,6 +11,7 @@ from rag_modules.runtime import (
     QueryUnderstandingSnapshot,
     RetrievalOutcome,
     RouteResolution,
+    SearchStrategy,
 )
 
 
@@ -43,7 +44,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
 
         self.assertEqual(context.question, "why does dish A work")
         self.assertEqual(context.analysis.strategy_name, "graph_rag")
-        self.assertEqual(context.understanding.query_plan.strategy, "graph_rag")
+        self.assertIs(context.understanding.query_plan.strategy, SearchStrategy.GRAPH_RAG)
         self.assertEqual(len(context.evidence_documents), 1)
 
     def test_answer_context_round_trips_with_evidence_package_payload(self) -> None:

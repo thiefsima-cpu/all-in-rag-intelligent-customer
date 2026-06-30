@@ -6,7 +6,12 @@ from .langchain_compat import (
     from_langchain_documents,
     to_langchain_documents,
 )
-from .query import QueryPlan, QuerySemanticProfile, QuerySemanticScoreBreakdown
+from .query import (
+    QueryPlan,
+    QueryPlannerMode,
+    QuerySemanticProfile,
+    QuerySemanticScoreBreakdown,
+)
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .retrieval import EvidenceDocument, RetrievalRequest
 
@@ -14,6 +19,7 @@ __all__ = [
     "EvidenceDocument",
     "PageDocumentLike",
     "QueryPlan",
+    "QueryPlannerMode",
     "QueryPlannerRuntimeSettings",
     "QuerySemanticProfile",
     "QuerySemanticRuntimeSettings",

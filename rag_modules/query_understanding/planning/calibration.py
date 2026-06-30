@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from ...contracts import QueryPlan, QuerySemanticProfile, QuerySemanticRuntimeSettings
 from ...domain.shared.query_constraints import QueryConstraints
+from ...runtime import SearchStrategy
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
-from ..registry import GRAPH_QUERY_TYPES, GRAPH_ROUTING_STRATEGIES
+from ..registry import GRAPH_QUERY_TYPES
 
-_VALID_STRATEGIES = set(GRAPH_ROUTING_STRATEGIES)
+_VALID_STRATEGIES = {strategy.value for strategy in SearchStrategy}
 _VALID_GRAPH_QUERY_TYPES = set(GRAPH_QUERY_TYPES)
+
+
+def _strategy_value(strategy: SearchStrategy | str) -> str:
+    if isinstance(strategy, SearchStrategy):
+        return strategy.value
+    return str(strategy or SearchStrategy.HYBRID_TRADITIONAL.value)
 
 
 class QueryPlanCalibrator:
@@ -52,7 +59,7 @@ class QueryPlanCalibrator:
     def resolve_strategy(
         self,
         *,
-        current_strategy: str,
+        current_strategy: SearchStrategy | str,
         profile: QuerySemanticProfile,
         constraints: QueryConstraints,
         complexity: float,
@@ -62,22 +69,31 @@ class QueryPlanCalibrator:
         graph_first = self.is_graph_first_profile(profile)
 
         if graph_first:
-            return "combined" if meaningful_constraints else "graph_rag"
+            return (
+                SearchStrategy.COMBINED.value
+                if meaningful_constraints
+                else SearchStrategy.GRAPH_RAG.value
+            )
 
         if relationship_intensity >= self.settings.high_relationship_routing_threshold:
             if meaningful_constraints and (
                 relationship_intensity >= self.settings.combined_strategy_relationship_threshold
                 or complexity >= self.settings.combined_strategy_complexity_threshold
             ):
-                return "combined"
-            return "graph_rag"
+                return SearchStrategy.COMBINED.value
+            return SearchStrategy.GRAPH_RAG.value
 
-        if current_strategy == "combined" and not meaningful_constraints:
-            return "hybrid_traditional"
+        current_strategy_value = _strategy_value(current_strategy)
+        if current_strategy_value == SearchStrategy.COMBINED.value and not meaningful_constraints:
+            return SearchStrategy.HYBRID_TRADITIONAL.value
 
-        if current_strategy in _VALID_STRATEGIES:
-            return current_strategy
-        return "combined" if meaningful_constraints else "hybrid_traditional"
+        if current_strategy_value in _VALID_STRATEGIES:
+            return current_strategy_value
+        return (
+            SearchStrategy.COMBINED.value
+            if meaningful_constraints
+            else SearchStrategy.HYBRID_TRADITIONAL.value
+        )
 
     def resolve_graph_query_type(
         self,
@@ -123,11 +139,12 @@ class QueryPlanCalibrator:
             complexity=plan.complexity,
             relationship_intensity=plan.relationship_intensity,
         )
-        if resolved_strategy != plan.strategy:
+        current_strategy = _strategy_value(plan.strategy)
+        if resolved_strategy != current_strategy:
             plan.validation_errors.append(
-                f"calibrated_strategy:{plan.strategy}->{resolved_strategy}"
+                f"calibrated_strategy:{current_strategy}->{resolved_strategy}"
             )
-            plan.strategy = resolved_strategy
+            plan.strategy = SearchStrategy(resolved_strategy)
 
         resolved_query_type = self.resolve_graph_query_type(plan.graph_query_type, profile)
         if resolved_query_type != plan.graph_query_type:
@@ -151,7 +168,11 @@ class QueryPlanCalibrator:
                 profile.target_entities[: self.settings.target_entity_limit]
             )
 
-        if plan.strategy in {"graph_rag", "combined"} and not plan.source_entities:
+        if (
+            _strategy_value(plan.strategy)
+            in {SearchStrategy.GRAPH_RAG.value, SearchStrategy.COMBINED.value}
+            and not plan.source_entities
+        ):
             fallback_candidates = (
                 profile.source_entities
                 or fallback_entity_phrases(query)

@@ -80,7 +80,7 @@ class HybridSearchService:
             query=request_or_query,
             top_k=top_k,
             candidate_k=candidate_k,
-            strategy=query_plan.strategy if query_plan else "",
+            strategy=query_plan.strategy_value if query_plan else "",
             constraints=constraints,
             query_plan=query_plan,
             entity_keywords=entity_keywords,

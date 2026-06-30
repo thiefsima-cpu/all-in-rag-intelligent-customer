@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from ...contracts import QueryPlan, QuerySemanticRuntimeSettings
+from ...contracts import QueryPlan, QueryPlannerMode, QuerySemanticRuntimeSettings
 from ...domain.shared.query_constraints import QueryConstraints
+from ...runtime import SearchStrategy
 from ..features import fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
 from ..scoring import estimate_query_complexity, estimate_relationship_intensity
@@ -32,7 +33,7 @@ class RuleBasedPlanner:
         )
 
         strategy = self.calibrator.resolve_strategy(
-            current_strategy="hybrid_traditional",
+            current_strategy=SearchStrategy.HYBRID_TRADITIONAL.value,
             profile=profile,
             constraints=constraints,
             complexity=complexity,
@@ -45,7 +46,7 @@ class RuleBasedPlanner:
             else []
         )
         if not source_candidates and (
-            strategy != "hybrid_traditional"
+            strategy != SearchStrategy.HYBRID_TRADITIONAL.value
             or relationship_intensity >= self.settings.source_entity_backfill_relationship_threshold
         ):
             source_candidates = (
@@ -55,7 +56,7 @@ class RuleBasedPlanner:
             source_candidates[: self.settings.source_entity_limit]
         )
         if (
-            strategy == "hybrid_traditional"
+            strategy == SearchStrategy.HYBRID_TRADITIONAL.value
             and relationship_intensity < self.settings.source_entity_seed_relationship_threshold
         ):
             source_entities = []
@@ -69,7 +70,7 @@ class RuleBasedPlanner:
                 profile.reasoning_required
                 or relationship_intensity >= self.settings.source_entity_seed_relationship_threshold
             ),
-            strategy=strategy,
+            strategy=SearchStrategy(strategy),
             confidence=self.settings.rule_fallback_confidence,
             reasoning="LLM planning unavailable; used shared lexical fallback.",
             entity_keywords=profile.entity_keywords[: self.settings.entity_keyword_limit],
@@ -86,7 +87,7 @@ class RuleBasedPlanner:
             constraints=constraints,
             needs_recipe_recommendation=profile.needs_recipe_recommendation,
             fallback_reason="rule_based",
-            planner_mode="rule_based",
+            planner_mode=QueryPlannerMode.RULE_BASED,
             semantic_profile=profile,
         )
 

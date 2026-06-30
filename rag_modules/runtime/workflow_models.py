@@ -14,7 +14,9 @@ from .json_types import JsonObject, coerce_json_object
 from .retrieval_models import RetrievalOutcome
 
 
-def _search_strategy(value: str) -> SearchStrategy:
+def _search_strategy(value: SearchStrategy | str) -> SearchStrategy:
+    if isinstance(value, SearchStrategy):
+        return value
     try:
         return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
     except ValueError:

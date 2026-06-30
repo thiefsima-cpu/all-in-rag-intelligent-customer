@@ -254,7 +254,7 @@ class RetrievalRequest:
         resolved_constraints = constraints or (
             query_plan.constraints if query_plan else QueryConstraints()
         )
-        resolved_strategy = strategy or (query_plan.strategy if query_plan else "")
+        resolved_strategy = strategy or (query_plan.strategy_value if query_plan else "")
         return cls(
             query=query,
             top_k=max(1, int(top_k or 1)),
