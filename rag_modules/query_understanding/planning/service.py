@@ -7,6 +7,7 @@ from concurrent.futures import Future
 from copy import deepcopy
 
 from ...contracts import (
+    GraphQueryType,
     QueryPlan,
     QueryPlannerMode,
     QueryPlannerRuntimeSettings,
@@ -176,7 +177,11 @@ class QueryPlanner:
             relationship_intensity=relationship_intensity,
         )
 
-    def _resolve_graph_query_type(self, current_type: str, profile: QuerySemanticProfile) -> str:
+    def _resolve_graph_query_type(
+        self,
+        current_type: GraphQueryType | str,
+        profile: QuerySemanticProfile,
+    ) -> GraphQueryType:
         return self._calibrator.resolve_graph_query_type(current_type, profile)
 
     def _calibrate_plan(self, plan: QueryPlan) -> None:

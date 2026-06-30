@@ -3,9 +3,11 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.contracts import (
+    GraphQueryType,
     QueryPlan,
     QueryPlannerMode,
     QueryPlannerRuntimeSettings,
+    QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
 )
 from rag_modules.query_understanding import (
@@ -95,6 +97,34 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertIs(plan.planner_mode, QueryPlannerMode.FAST_RULE)
         self.assertEqual(plan.to_dict()["strategy"], "combined")
         self.assertEqual(plan.to_dict()["planner_mode"], "fast_rule")
+
+    def test_query_plan_normalizes_graph_query_type_enum(self) -> None:
+        profile = QuerySemanticProfile.from_dict({"query_type": "multi_hop"})
+        plan = QueryPlan.from_dict(
+            "why does tofu work",
+            {
+                "graph_query_type": "path_finding",
+                "semantic_profile": profile,
+            },
+        )
+
+        self.assertIs(profile.query_type, GraphQueryType.MULTI_HOP)
+        self.assertEqual(profile.to_dict()["query_type"], "multi_hop")
+        self.assertIs(plan.graph_query_type, GraphQueryType.PATH_FINDING)
+        self.assertEqual(plan.to_dict()["graph_query_type"], "path_finding")
+
+    def test_query_plan_invalid_graph_query_type_falls_back_to_profile_enum(self) -> None:
+        plan = QueryPlan.from_dict(
+            "recommend tofu",
+            {
+                "graph_query_type": "typo",
+                "semantic_profile": {"query_type": "entity_relation"},
+            },
+        )
+
+        self.assertIs(plan.graph_query_type, GraphQueryType.ENTITY_RELATION)
+        self.assertIn("invalid_graph_query_type:typo", plan.validation_errors)
+        self.assertEqual(plan.to_dict()["graph_query_type"], "entity_relation")
 
     def test_query_plan_keeps_invalid_strategy_fallback_behavior(self) -> None:
         plan = QueryPlan.from_dict(

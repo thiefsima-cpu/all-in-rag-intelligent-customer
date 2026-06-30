@@ -6,6 +6,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
 
+from ..runtime.generation_models import (
+    GenerationMode,
+    generation_mode_value,
+    normalize_generation_mode,
+)
+
 
 @dataclass
 class AnswerPlan:
@@ -55,9 +61,18 @@ class AnswerPlan:
 
 @dataclass
 class GenerationDecision:
-    mode: str
+    mode: GenerationMode | str
     reason: str
     evidence_limit: int
+
+    def __post_init__(self) -> None:
+        self.mode = normalize_generation_mode(self.mode)
+        self.reason = str(self.reason or "")
+        self.evidence_limit = max(1, int(self.evidence_limit or 1))
+
+    @property
+    def mode_value(self) -> str:
+        return generation_mode_value(self.mode)
 
 
 class GenerationPlannerMode(str, Enum):
@@ -112,7 +127,7 @@ class RenderedPrompt:
 
 @dataclass
 class GenerationTrace:
-    mode: str
+    mode: GenerationMode | str
     decision_reason: str
     total_evidence_items: int
     selected_evidence_items: int
@@ -132,10 +147,17 @@ class GenerationTrace:
     estimated_cost_usd: float = 0.0
     token_usage_source: str = ""
 
+    def __post_init__(self) -> None:
+        self.mode = normalize_generation_mode(self.mode)
+
+    @property
+    def mode_value(self) -> str:
+        return generation_mode_value(self.mode)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "status": self.status,
-            "mode": self.mode,
+            "mode": self.mode_value,
             "decision_reason": self.decision_reason,
             "total_evidence_items": self.total_evidence_items,
             "selected_evidence_items": self.selected_evidence_items,

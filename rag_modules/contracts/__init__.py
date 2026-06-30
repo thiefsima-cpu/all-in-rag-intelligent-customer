@@ -7,6 +7,7 @@ from .langchain_compat import (
     to_langchain_documents,
 )
 from .query import (
+    GraphQueryType,
     QueryPlan,
     QueryPlannerMode,
     QuerySemanticProfile,
@@ -18,6 +19,7 @@ from .retrieval import EvidenceDocument, RetrievalRequest
 
 __all__ = [
     "EvidenceDocument",
+    "GraphQueryType",
     "PageDocumentLike",
     "QueryPlan",
     "QueryPlannerMode",

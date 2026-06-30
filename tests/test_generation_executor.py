@@ -6,12 +6,16 @@ from types import SimpleNamespace
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation import (
     AnswerPlan,
+    GenerationDecision,
     GenerationExecutionEngine,
+    GenerationMode,
     GenerationPlannerMode,
     GenerationSettings,
+    GenerationTrace,
     RenderedPrompt,
+    decide_generation_mode,
 )
-from rag_modules.runtime import AnswerContext, QueryAnalysis, SearchStrategy
+from rag_modules.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis, SearchStrategy
 
 
 class _FakePromptBuilder:
@@ -145,6 +149,33 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         settings = GenerationSettings(planner_mode="hybrid")
 
         self.assertIs(settings.planner_mode, GenerationPlannerMode.HYBRID)
+
+    def test_generation_decision_normalizes_mode_to_enum(self) -> None:
+        decision = GenerationDecision(mode="direct", reason="fixture", evidence_limit=2)
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_decide_generation_mode_returns_generation_mode_enum(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_generation_trace_and_snapshot_serialize_mode_as_string(self) -> None:
+        trace = GenerationTrace(
+            mode="two_stage",
+            decision_reason="fixture",
+            total_evidence_items=2,
+            selected_evidence_items=1,
+        )
+        snapshot = GenerationSnapshot(mode=GenerationMode.TWO_STAGE)
+
+        self.assertIs(trace.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(trace.to_dict()["mode"], "two_stage")
+        self.assertIs(snapshot.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(snapshot.to_dict()["mode"], "two_stage")
 
     def _build_package(self) -> AnswerEvidencePackage:
         return AnswerEvidencePackage(

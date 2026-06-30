@@ -58,13 +58,13 @@ class QueryUnderstandingService:
             f"Complexity: {analysis.query_complexity:.2f}\n"
             f"Relationship intensity: {analysis.relationship_intensity:.2f}\n"
             f"Reasoning required: {'yes' if analysis.reasoning_required else 'no'}\n"
-            f"Graph query type: {plan.graph_query_type}\n"
+            f"Graph query type: {plan.graph_query_type_value}\n"
             f"Source entities: {source_entities}\n"
             f"Target entities: {target_entities}\n"
             f"Relation hits: {relation_hits}\n"
             f"Constraint hits: {constraint_hits}\n"
             f"Structural hits: {structural_hits}\n"
-            f"Planner mode: {plan.planner_mode}\n"
+            f"Planner mode: {plan.planner_mode_value}\n"
             f"Reason: {analysis.reasoning or 'n/a'}"
         )
 

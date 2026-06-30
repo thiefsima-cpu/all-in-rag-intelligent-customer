@@ -17,7 +17,7 @@ from ...runtime.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
-from ..models import AnswerPlan, GenerationSettings
+from ..models import AnswerPlan, GenerationMode, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder
 from .direct import _DirectCompletionMixin
@@ -100,7 +100,7 @@ class GenerationExecutionEngine(
         trace = self._new_trace(decision, package, selected_package)
 
         try:
-            if decision.mode == "two_stage":
+            if decision.mode is GenerationMode.TWO_STAGE:
                 answer, trace = self._generate_two_stage_with_fallback(
                     answer_context=selected_context,
                     package=selected_package,

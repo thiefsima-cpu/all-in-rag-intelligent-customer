@@ -110,7 +110,7 @@ def _complete_result() -> QuestionAnswerResult:
     )
     semantic_profile = QuerySemanticProfile(
         query=question,
-        query_type="path",
+        query_type="path_finding",
         source_entities=["tofu"],
         target_entities=["doubanjiang"],
         relation_types=["CONTRIBUTES_TO"],
@@ -139,7 +139,7 @@ def _complete_result() -> QuestionAnswerResult:
         reasoning="fixture",
         entity_keywords=["tofu"],
         topic_keywords=["texture"],
-        graph_query_type="path",
+        graph_query_type="path_finding",
         source_entities=["tofu"],
         target_entities=["doubanjiang"],
         relation_types=["CONTRIBUTES_TO"],
@@ -246,7 +246,7 @@ def _complete_result() -> QuestionAnswerResult:
         strategy="combined",
         requested_top_k=3,
         retrieval_request=retrieval_request,
-        query_type="path",
+        query_type="path_finding",
         source_entities=["tofu"],
         target_entities=["doubanjiang"],
         relation_types=["CONTRIBUTES_TO"],

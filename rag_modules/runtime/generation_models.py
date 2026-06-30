@@ -4,14 +4,46 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 
 from .json_types import JsonObject, coerce_json_float, coerce_json_int
+
+
+class GenerationMode(str, Enum):
+    DIRECT = "direct"
+    TWO_STAGE = "two_stage"
+    EMPTY = "empty"
+
+
+def normalize_generation_mode(
+    value: GenerationMode | str | None,
+    *,
+    allow_unknown: bool = False,
+) -> GenerationMode | str:
+    if isinstance(value, GenerationMode):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return GenerationMode(text)
+    except ValueError:
+        if allow_unknown:
+            return text
+        supported = ", ".join(mode.value for mode in GenerationMode)
+        raise ValueError(f"generation mode must be one of: {supported}") from None
+
+
+def generation_mode_value(value: GenerationMode | str) -> str:
+    if isinstance(value, GenerationMode):
+        return value.value
+    return str(value or "")
 
 
 @dataclass
 class GenerationSnapshot:
     status: str = ""
-    mode: str = ""
+    mode: GenerationMode | str = ""
     decision_reason: str = ""
     total_evidence_items: int = 0
     selected_evidence_items: int = 0
@@ -29,6 +61,13 @@ class GenerationSnapshot:
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
     token_usage_source: str = ""
+
+    def __post_init__(self) -> None:
+        self.mode = normalize_generation_mode(self.mode, allow_unknown=True)
+
+    @property
+    def mode_value(self) -> str:
+        return generation_mode_value(self.mode)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object] | None) -> "GenerationSnapshot":
@@ -58,7 +97,7 @@ class GenerationSnapshot:
     def to_dict(self) -> JsonObject:
         return {
             "status": self.status,
-            "mode": self.mode,
+            "mode": self.mode_value,
             "decision_reason": self.decision_reason,
             "total_evidence_items": self.total_evidence_items,
             "selected_evidence_items": self.selected_evidence_items,

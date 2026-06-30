@@ -11,9 +11,11 @@ The scope is limited to:
 - Route strategy values.
 - Retrieval candidate-source degradation strategy values.
 - Planner mode values.
+- Generation mode values.
+- Graph query type values.
 
-Generation mode, graph query type, answer style, fallback reasons, trace status, and other
-string classifications are intentionally out of scope for this pass.
+Answer style, fallback reasons, trace status, and other string classifications are intentionally
+out of scope for this pass.
 
 ## Current State
 
@@ -36,6 +38,9 @@ Use local `str, Enum` classes at the domain boundary that owns each vocabulary:
 - `CandidateSourceDegradationStrategy` in retrieval candidate-source settings/generator code.
 - `GenerationPlannerMode` for generation planner settings.
 - `QueryPlannerMode` for query-planning runtime trace mode values.
+- `GenerationMode` for direct/two-stage/empty generation execution modes.
+- `GraphQueryType` for query semantic profile and query plan graph-query type values, with the
+  graph package's existing `QueryType` kept as a compatibility alias.
 
 Enums should accept existing string values during construction and expose `.value` when payloads
 are serialized. Existing `ARTIFACT_STAGE_*` and degradation constants may remain as compatibility
@@ -45,7 +50,7 @@ aliases to avoid broad call-site churn, but their values should come from the en
 
 `ArtifactManifest.to_dict()`, `QueryPlan.to_dict()`, answer response DTOs, route traces, and
 configuration `to_dict()` should continue emitting strings such as `"ready"`, `"combined"`,
-`"fail_fast"`, and `"rule"`.
+`"fail_fast"`, `"rule"`, `"direct"`, and `"multi_hop"`.
 
 Existing profiles and environment variables should continue using the same string values. Invalid
 configuration values should fail during configuration or runtime-settings construction with a
@@ -93,6 +98,25 @@ Query planner mode is trace metadata for query planning and supports `"llm"`, `"
 `"fast_rule"`, and `"fallback_rule"`. `QueryPlan` should normalize these values and serialize
 strings. Rule and fallback assignments should use enum values.
 
+### Generation Mode
+
+Generation mode supports `"direct"`, `"two_stage"`, and the internal empty-evidence trace mode
+`"empty"`. `GenerationDecision` and `GenerationTrace` should normalize known mode values to
+`GenerationMode`, while `GenerationSnapshot` should normalize known values but preserve unknown
+historical trace strings when loading old payloads. All API, trace, telemetry, and smoke-report
+payloads should continue emitting plain strings via a value helper.
+
+### Graph Query Type
+
+`GraphQueryType` should be owned by the contract kernel so query planning, semantic profiles,
+route traces, and graph retrieval share one vocabulary without making contracts depend on graph
+feature packages. `QuerySemanticProfile.query_type` and `QueryPlan.graph_query_type` should
+normalize valid values to the enum and serialize strings. Invalid LLM-produced graph query types
+should keep the existing validation error and fallback behavior.
+
+The graph package should keep `QueryType` as a compatibility alias to avoid broad executor and
+retrieval call-site churn.
+
 ## Testing
 
 Focused tests should be added before implementation:
@@ -105,6 +129,9 @@ Focused tests should be added before implementation:
 - Generation config/runtime settings reject invalid planner modes and normalize valid modes.
 - Query plans normalize valid route strategies and planner modes while preserving existing invalid
   route fallback behavior.
+- Generation decisions, traces, and snapshots normalize mode values while serializing strings.
+- Query semantic profiles and query plans normalize graph query types while preserving invalid
+  planner-output fallback behavior.
 
 Run the narrow test files first, then expand to related API/runtime tests if shared behavior is
 touched.
@@ -113,6 +140,5 @@ touched.
 
 - No public API field renames.
 - No profile syntax migration.
-- No broad refactor of trace status, generation mode, graph query type, answer type, or fallback
-  reason strings.
+- No broad refactor of trace status, answer type, answer style, or fallback reason strings.
 - No new runtime dependencies.

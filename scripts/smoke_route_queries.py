@@ -132,14 +132,15 @@ def _subset_failures(
 def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
     plan = planner.rule_based_plan(case.query)
     failures: List[str] = []
+    graph_query_type = plan.graph_query_type_value
     if plan.strategy != case.expected_strategy:
         failures.append(
             f"expected_strategy={case.expected_strategy} actual_strategy={plan.strategy}"
         )
-    if case.expected_graph_query_type and plan.graph_query_type != case.expected_graph_query_type:
+    if case.expected_graph_query_type and graph_query_type != case.expected_graph_query_type:
         failures.append(
             "expected_graph_query_type="
-            f"{case.expected_graph_query_type} actual_graph_query_type={plan.graph_query_type}"
+            f"{case.expected_graph_query_type} actual_graph_query_type={graph_query_type}"
         )
     if case.expected_intent and plan.intent != case.expected_intent:
         failures.append(f"expected_intent={case.expected_intent} actual_intent={plan.intent}")
@@ -192,7 +193,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         "expected_strategy": case.expected_strategy,
         "strategy": plan.strategy,
         "expected_graph_query_type": case.expected_graph_query_type,
-        "graph_query_type": plan.graph_query_type,
+        "graph_query_type": graph_query_type,
         "intent": plan.intent,
         "reasoning_required": plan.reasoning_required,
         "needs_recipe_recommendation": plan.needs_recipe_recommendation,

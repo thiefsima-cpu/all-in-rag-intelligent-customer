@@ -13,7 +13,6 @@ from .query_settings import QuerySemanticRuntimeSettings
 
 _POLICY = get_query_policy()
 _VALID_STRATEGIES = set(_POLICY.graph_routing_strategies)
-_VALID_GRAPH_QUERY_TYPES = set(_POLICY.graph_query_types)
 _SCHEMA_RELATION_TYPES = tuple(
     dict.fromkeys([*_POLICY.graph_relation_types, *SEMANTIC_RELATION_TYPES])
 )
@@ -63,6 +62,14 @@ class SearchStrategy(str, Enum):
     COMBINED = "combined"
 
 
+class GraphQueryType(str, Enum):
+    ENTITY_RELATION = "entity_relation"
+    MULTI_HOP = "multi_hop"
+    SUBGRAPH = "subgraph"
+    PATH_FINDING = "path_finding"
+    CLUSTERING = "clustering"
+
+
 class QueryPlannerMode(str, Enum):
     LLM = "llm"
     RULE_BASED = "rule_based"
@@ -70,10 +77,38 @@ class QueryPlannerMode(str, Enum):
     FALLBACK_RULE = "fallback_rule"
 
 
+_VALID_GRAPH_QUERY_TYPES = {query_type.value for query_type in GraphQueryType}
+
+
 def _search_strategy(value: Any) -> SearchStrategy:
     if isinstance(value, SearchStrategy):
         return value
     return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
+
+
+def _graph_query_type(
+    value: Any,
+    default: GraphQueryType = GraphQueryType.SUBGRAPH,
+) -> GraphQueryType:
+    if isinstance(value, GraphQueryType):
+        return value
+    return GraphQueryType(str(value or default.value))
+
+
+def _graph_query_type_or_default(
+    value: Any,
+    default: GraphQueryType = GraphQueryType.SUBGRAPH,
+) -> GraphQueryType:
+    try:
+        return _graph_query_type(value, default)
+    except ValueError:
+        return default
+
+
+def _graph_query_type_value(value: GraphQueryType | str) -> str:
+    if isinstance(value, GraphQueryType):
+        return value.value
+    return str(value or "")
 
 
 def _query_planner_mode(value: Any) -> QueryPlannerMode:
@@ -141,7 +176,7 @@ class QuerySemanticScoreBreakdown:
 @dataclass(frozen=True)
 class QuerySemanticProfile:
     query: str = ""
-    query_type: str = "entity_relation"
+    query_type: GraphQueryType | str = GraphQueryType.ENTITY_RELATION
     source_entities: List[str] = field(default_factory=list)
     target_entities: List[str] = field(default_factory=list)
     relation_types: List[str] = field(default_factory=list)
@@ -161,13 +196,27 @@ class QuerySemanticProfile:
         default_factory=QuerySemanticScoreBreakdown
     )
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "query_type",
+            _graph_query_type_or_default(self.query_type, GraphQueryType.ENTITY_RELATION),
+        )
+
+    @property
+    def query_type_value(self) -> str:
+        return _graph_query_type_value(self.query_type)
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any] | None) -> "QuerySemanticProfile":
         payload = dict(data or {})
         score_breakdown = payload.get("score_breakdown") or {}
         return cls(
             query=str(payload.get("query") or ""),
-            query_type=str(payload.get("query_type") or "entity_relation"),
+            query_type=_graph_query_type_or_default(
+                payload.get("query_type"),
+                GraphQueryType.ENTITY_RELATION,
+            ),
             source_entities=_dedupe_preserve_order(payload.get("source_entities") or []),
             target_entities=_dedupe_preserve_order(payload.get("target_entities") or []),
             relation_types=_dedupe_preserve_order(payload.get("relation_types") or []),
@@ -193,7 +242,7 @@ class QuerySemanticProfile:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "query": self.query,
-            "query_type": self.query_type,
+            "query_type": self.query_type_value,
             "source_entities": list(self.source_entities),
             "target_entities": list(self.target_entities),
             "relation_types": list(self.relation_types),
@@ -225,7 +274,7 @@ class QueryPlan:
     reasoning: str = "rule-based fallback"
     entity_keywords: List[str] = field(default_factory=list)
     topic_keywords: List[str] = field(default_factory=list)
-    graph_query_type: str = "subgraph"
+    graph_query_type: GraphQueryType | str = GraphQueryType.SUBGRAPH
     source_entities: List[str] = field(default_factory=list)
     target_entities: List[str] = field(default_factory=list)
     relation_types: List[str] = field(default_factory=list)
@@ -243,6 +292,7 @@ class QueryPlan:
 
     def __post_init__(self) -> None:
         self.strategy = _search_strategy(self.strategy)
+        self.graph_query_type = _graph_query_type(self.graph_query_type)
         self.planner_mode = _query_planner_mode(self.planner_mode)
 
     @property
@@ -256,6 +306,10 @@ class QueryPlan:
     @property
     def planner_mode_value(self) -> str:
         return _query_planner_mode(self.planner_mode).value
+
+    @property
+    def graph_query_type_value(self) -> str:
+        return _graph_query_type_value(self.graph_query_type)
 
     @classmethod
     def from_dict(
@@ -289,15 +343,18 @@ class QueryPlan:
                 else SearchStrategy.HYBRID_TRADITIONAL
             )
 
-        graph_query_type = str(
-            data.get("graph_query_type") or resolved_profile.query_type or "subgraph"
+        raw_graph_query_type = str(
+            data.get("graph_query_type")
+            or resolved_profile.query_type_value
+            or GraphQueryType.SUBGRAPH.value
         )
-        if graph_query_type not in _VALID_GRAPH_QUERY_TYPES:
-            validation_errors.append(f"invalid_graph_query_type:{graph_query_type}")
-            graph_query_type = (
-                resolved_profile.query_type
-                if resolved_profile.query_type in _VALID_GRAPH_QUERY_TYPES
-                else "subgraph"
+        try:
+            graph_query_type = GraphQueryType(raw_graph_query_type)
+        except ValueError:
+            validation_errors.append(f"invalid_graph_query_type:{raw_graph_query_type}")
+            graph_query_type = _graph_query_type_or_default(
+                resolved_profile.query_type,
+                GraphQueryType.SUBGRAPH,
             )
 
         complexity = _clamp_float(data.get("complexity"), resolved_profile.complexity)
@@ -381,7 +438,7 @@ class QueryPlan:
             "reasoning": self.reasoning,
             "entity_keywords": self.entity_keywords,
             "topic_keywords": self.topic_keywords,
-            "graph_query_type": self.graph_query_type,
+            "graph_query_type": self.graph_query_type_value,
             "source_entities": self.source_entities,
             "target_entities": self.target_entities,
             "relation_types": self.relation_types,
@@ -399,6 +456,7 @@ class QueryPlan:
 
 
 __all__ = [
+    "GraphQueryType",
     "QueryPlan",
     "QueryPlannerMode",
     "QuerySemanticProfile",

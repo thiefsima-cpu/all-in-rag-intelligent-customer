@@ -140,8 +140,9 @@ def evaluate_case(
     )
 
     failures: List[str] = []
-    if decision.mode != case.expected_mode:
-        failures.append(f"expected_mode={case.expected_mode} actual_mode={decision.mode}")
+    decision_mode = decision.mode_value
+    if decision_mode != case.expected_mode:
+        failures.append(f"expected_mode={case.expected_mode} actual_mode={decision_mode}")
     if plan.answer_type != case.expected_answer_type:
         failures.append(
             f"expected_answer_type={case.expected_answer_type} actual_answer_type={plan.answer_type}"
@@ -182,7 +183,7 @@ def evaluate_case(
         "passed": not failures,
         "failures": failures,
         "decision": {
-            "mode": decision.mode,
+            "mode": decision_mode,
             "reason": decision.reason,
             "evidence_limit": decision.evidence_limit,
         },

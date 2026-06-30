@@ -29,7 +29,7 @@ class RouteTraceRecorder:
                     "strategy": plan.strategy_value,
                     "planner_mode": plan.planner_mode_value,
                     "fallback_reason": plan.fallback_reason,
-                    "query_type": plan.semantic_profile.query_type,
+                    "query_type": plan.semantic_profile.query_type_value,
                     "relation_hits": list(plan.semantic_profile.relation_hits or []),
                     "constraint_hits": list(plan.semantic_profile.constraint_hits or []),
                     "structural_hits": list(plan.semantic_profile.structural_hits or []),

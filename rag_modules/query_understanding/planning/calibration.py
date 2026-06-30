@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
-from ...contracts import QueryPlan, QuerySemanticProfile, QuerySemanticRuntimeSettings
+from ...contracts import (
+    GraphQueryType,
+    QueryPlan,
+    QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
+)
 from ...domain.shared.query_constraints import QueryConstraints
 from ...runtime import SearchStrategy
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
-from ..registry import GRAPH_QUERY_TYPES
 
 _VALID_STRATEGIES = {strategy.value for strategy in SearchStrategy}
-_VALID_GRAPH_QUERY_TYPES = set(GRAPH_QUERY_TYPES)
+_VALID_GRAPH_QUERY_TYPES = {query_type.value for query_type in GraphQueryType}
 
 
 def _strategy_value(strategy: SearchStrategy | str) -> str:
     if isinstance(strategy, SearchStrategy):
         return strategy.value
     return str(strategy or SearchStrategy.HYBRID_TRADITIONAL.value)
+
+
+def _graph_query_type_value(query_type: GraphQueryType | str) -> str:
+    if isinstance(query_type, GraphQueryType):
+        return query_type.value
+    return str(query_type or "")
 
 
 class QueryPlanCalibrator:
@@ -46,9 +56,13 @@ class QueryPlanCalibrator:
         )
 
     def is_graph_first_profile(self, profile: QuerySemanticProfile) -> bool:
-        if profile.query_type in {"path_finding", "subgraph", "clustering"}:
+        if profile.query_type in {
+            GraphQueryType.PATH_FINDING,
+            GraphQueryType.SUBGRAPH,
+            GraphQueryType.CLUSTERING,
+        }:
             return True
-        if profile.query_type != "multi_hop":
+        if profile.query_type is not GraphQueryType.MULTI_HOP:
             return False
         return bool(
             len(profile.relation_hits or []) >= 2
@@ -97,21 +111,26 @@ class QueryPlanCalibrator:
 
     def resolve_graph_query_type(
         self,
-        current_type: str,
+        current_type: GraphQueryType | str,
         profile: QuerySemanticProfile,
-    ) -> str:
-        if profile.query_type in {"path_finding", "subgraph", "clustering"}:
+    ) -> GraphQueryType:
+        current_type_value = _graph_query_type_value(current_type)
+        if profile.query_type in {
+            GraphQueryType.PATH_FINDING,
+            GraphQueryType.SUBGRAPH,
+            GraphQueryType.CLUSTERING,
+        }:
             return profile.query_type
         if (
-            profile.query_type == "multi_hop"
-            and current_type == "subgraph"
+            profile.query_type is GraphQueryType.MULTI_HOP
+            and current_type_value == GraphQueryType.SUBGRAPH.value
             and profile.relationship_intensity
             >= self.settings.multi_hop_hint_relationship_threshold
         ):
-            return "multi_hop"
-        if current_type in _VALID_GRAPH_QUERY_TYPES:
-            return current_type
-        return profile.query_type if profile.query_type in _VALID_GRAPH_QUERY_TYPES else "subgraph"
+            return GraphQueryType.MULTI_HOP
+        if current_type_value in _VALID_GRAPH_QUERY_TYPES:
+            return GraphQueryType(current_type_value)
+        return profile.query_type
 
     def calibrate(self, plan: QueryPlan) -> None:
         query = plan.query or ""
@@ -149,7 +168,8 @@ class QueryPlanCalibrator:
         resolved_query_type = self.resolve_graph_query_type(plan.graph_query_type, profile)
         if resolved_query_type != plan.graph_query_type:
             plan.validation_errors.append(
-                f"calibrated_graph_query_type:{plan.graph_query_type}->{resolved_query_type}"
+                "calibrated_graph_query_type:"
+                f"{plan.graph_query_type_value}->{resolved_query_type.value}"
             )
             plan.graph_query_type = resolved_query_type
 
@@ -191,7 +211,7 @@ class QueryPlanCalibrator:
                 int(
                     plan.max_depth
                     or infer_graph_max_depth(
-                        plan.graph_query_type,
+                        plan.graph_query_type_value,
                         plan.relationship_intensity,
                         settings=self.settings,
                     )

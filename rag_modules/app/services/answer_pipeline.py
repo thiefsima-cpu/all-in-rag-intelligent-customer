@@ -9,6 +9,7 @@ from typing import List
 from ...contracts import EvidenceDocument
 from ...runtime import (
     AnswerContext,
+    GenerationMode,
     GenerationSnapshot,
     QueryAnalysis,
 )
@@ -88,7 +89,7 @@ class AnswerPipelineService:
         if not state.has_evidence:
             state.generation_trace = GenerationSnapshot(
                 status="failed",
-                mode="empty",
+                mode=GenerationMode.EMPTY,
                 decision_reason="no_evidence",
                 failure_code="no_evidence",
                 total_evidence_items=0,
@@ -125,7 +126,7 @@ class AnswerPipelineService:
                 )
                 span.set_attribute(
                     "rag.generation.mode",
-                    state.generation_trace.mode or "unknown",
+                    state.generation_trace.mode_value or "unknown",
                 )
         return state
 

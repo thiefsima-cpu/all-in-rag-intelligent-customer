@@ -6,7 +6,7 @@ from typing import Any
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import GenerationSnapshot
-from ..models import GenerationDecision
+from ..models import GenerationDecision, GenerationMode
 from .contracts import _GenerationExecutionHost
 
 
@@ -37,7 +37,7 @@ class _GenerationTraceMixin(_GenerationExecutionHost):
     ) -> tuple[str, GenerationSnapshot]:
         trace = GenerationSnapshot(
             status="failed",
-            mode="empty",
+            mode=GenerationMode.EMPTY,
             decision_reason=reason,
             failure_code="no_evidence",
             total_evidence_items=0,

@@ -17,7 +17,7 @@ from .artifact_ports import (
     DocumentArtifactCachePort,
     RuntimeArtifactAccessPort,
 )
-from .generation_models import GenerationSnapshot
+from .generation_models import GenerationMode, GenerationSnapshot
 from .graph_models import (
     GraphRetrievalSnapshot,
     GraphTraceEventSnapshot,
@@ -45,6 +45,7 @@ __all__ = [
     "DefaultRuntimeArtifactAccess",
     "DefaultRuntimeStatsAccess",
     "GenerationSnapshot",
+    "GenerationMode",
     "GraphRetrievalSnapshot",
     "GraphTraceEventSnapshot",
     "ModelSuiteSnapshot",

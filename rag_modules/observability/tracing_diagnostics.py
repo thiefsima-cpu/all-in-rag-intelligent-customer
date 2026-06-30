@@ -119,7 +119,7 @@ class _TraceDiagnosticsMixin:
             return "generation_fallback"
         if generation_trace.status == "failed":
             return "generation_failed"
-        mode = str(generation_trace.mode or "")
+        mode = generation_trace.mode_value
         if mode == "two_stage":
             return "generation_two_stage"
         if mode == "direct":

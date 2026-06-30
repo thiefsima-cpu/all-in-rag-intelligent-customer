@@ -80,7 +80,7 @@ class RuleBasedPlanner:
             target_entities=profile.target_entities[: self.settings.target_entity_limit],
             relation_types=profile.relation_types,
             max_depth=infer_graph_max_depth(
-                profile.query_type,
+                profile.query_type_value,
                 relationship_intensity,
                 settings=self.settings,
             ),

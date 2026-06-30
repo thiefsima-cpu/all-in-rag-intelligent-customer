@@ -12,6 +12,7 @@ from ...safe_logging import log_failure
 from ..clients import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
+from ..models import GenerationMode
 from .contracts import _GenerationExecutionHost
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
         resolved_retries = max(1, int(max_retries or self.settings.stream_retries))
 
         try:
-            if decision.mode == "two_stage":
+            if decision.mode is GenerationMode.TWO_STAGE:
                 plan_start = time.perf_counter()
                 plan = self._build_answer_plan(
                     selected_context,
@@ -112,7 +113,7 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                 error=exc,
             )
             trace.request_retries += self._consume_retry_count()
-            if decision.mode == "two_stage" and not should_skip_model_fallback(
+            if decision.mode is GenerationMode.TWO_STAGE and not should_skip_model_fallback(
                 exc,
                 fallback_on_timeout=self.settings.fallback_on_timeout,
             ):

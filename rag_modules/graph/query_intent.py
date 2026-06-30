@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ..contracts import QuerySemanticRuntimeSettings
+from ..contracts import GraphQueryType, QuerySemanticRuntimeSettings
 from ..query_understanding import (
     infer_graph_max_depth,
     infer_query_semantic_profile,
@@ -20,16 +20,28 @@ from ..query_understanding import (
 
 @dataclass
 class GraphQueryIntent:
-    query_type: str = "multi_hop"
+    query_type: GraphQueryType | str = GraphQueryType.MULTI_HOP
     source_entities: List[str] = field(default_factory=list)
     target_entities: List[str] = field(default_factory=list)
     relation_types: List[str] = field(default_factory=list)
     max_depth: int = 2
     constraints: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if isinstance(self.query_type, GraphQueryType):
+            return
+        try:
+            self.query_type = GraphQueryType(str(self.query_type or GraphQueryType.MULTI_HOP.value))
+        except ValueError:
+            self.query_type = GraphQueryType.MULTI_HOP
+
+    @property
+    def query_type_value(self) -> str:
+        return self.query_type.value if isinstance(self.query_type, GraphQueryType) else str(self.query_type or "")
+
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "query_type": self.query_type,
+            "query_type": self.query_type_value,
             "source_entities": self.source_entities,
             "target_entities": self.target_entities,
             "relation_types": self.relation_types,
@@ -50,7 +62,7 @@ def infer_graph_query_intent(
         target_entities=profile.target_entities,
         relation_types=profile.relation_types,
         max_depth=infer_graph_max_depth(
-            profile.query_type,
+            profile.query_type_value,
             profile.relationship_intensity,
             settings=semantic_settings,
         ),

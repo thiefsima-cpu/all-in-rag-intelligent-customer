@@ -264,7 +264,7 @@ class _StaticGraphRetrieval:
             strategy="graph_rag",
             requested_top_k=request.top_k,
             retrieval_request=request,
-            query_type=plan.graph_query_type if plan else "",
+            query_type=plan.graph_query_type_value if plan else "",
             source_entities=list(plan.source_entities if plan else []),
             target_entities=list(plan.target_entities if plan else []),
             relation_types=list(plan.relation_types if plan else []),
@@ -349,6 +349,7 @@ def evaluate_contracts(
     graph_trace = response_payload["traces"]["graph_trace"]
     route_request = result.route_trace.retrieval_request
     graph_expected = _graph_expected(case)
+    plan_graph_query_type = plan.graph_query_type_value if plan else ""
 
     plan_stage = dict((route_trace.get("stages") or {}).get("plan") or {})
     planner_mode = str(plan_stage.get("planner_mode") or "")
@@ -363,11 +364,11 @@ def evaluate_contracts(
             fail("plan", f"plan_strategy_mismatch={plan.strategy}")
         if (
             case.expected_graph_query_type
-            and plan.graph_query_type != case.expected_graph_query_type
+            and plan_graph_query_type != case.expected_graph_query_type
         ):
             fail(
                 "plan",
-                f"plan_graph_query_type_mismatch={plan.graph_query_type}",
+                f"plan_graph_query_type_mismatch={plan_graph_query_type}",
             )
         if plan.validation_errors:
             fail("plan", f"plan_validation_errors={plan.validation_errors}")
@@ -412,7 +413,7 @@ def evaluate_contracts(
         fail("trace", "sink_trace_event_doc_count_mismatch")
     if not route_plan_payload:
         fail("trace", "route_trace_missing_query_plan_payload")
-    if plan and event_plan.get("graph_query_type") != plan.graph_query_type:
+    if plan and event_plan.get("graph_query_type") != plan_graph_query_type:
         fail("trace", "sink_trace_event_plan_graph_query_type_mismatch")
 
     graph_doc_count = int(graph_trace.get("doc_count") or 0)
@@ -536,7 +537,7 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
             f"actual_graph_snapshot_doc_count={graph_trace.get('doc_count')}"
         )
     if case.expected_graph_query_type:
-        actual_graph_query_type = plan.graph_query_type if plan else ""
+        actual_graph_query_type = plan.graph_query_type_value if plan else ""
         if actual_graph_query_type != case.expected_graph_query_type:
             failures.append(
                 f"expected_graph_query_type={case.expected_graph_query_type} "
@@ -568,7 +569,7 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
             failures.append(
                 f"expected_graph_event_names={case.expected_graph_event_names} actual_graph_event_names={graph_event_names}"
             )
-    if plan and event.plan.get("graph_query_type") != plan.graph_query_type:
+    if plan and event.plan.get("graph_query_type") != plan.graph_query_type_value:
         failures.append("trace_event_plan_query_type_mismatch")
 
     contract_checks = evaluate_contracts(

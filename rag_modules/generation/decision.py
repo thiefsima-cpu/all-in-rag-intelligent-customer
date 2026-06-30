@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, analysis_strategy_name, analysis_value
-from .models import GenerationDecision, GenerationSettings
+from .models import GenerationDecision, GenerationMode, GenerationSettings
 
 
 def decide_generation_mode(
@@ -15,7 +15,7 @@ def decide_generation_mode(
 ) -> GenerationDecision:
     if not settings.enable_two_stage:
         return GenerationDecision(
-            mode="direct",
+            mode=GenerationMode.DIRECT,
             reason="two_stage_disabled",
             evidence_limit=settings.direct_max_evidence_items,
         )
@@ -27,12 +27,12 @@ def decide_generation_mode(
         )
         if has_graph_evidence and len(package.items) > 1:
             return GenerationDecision(
-                mode="two_stage",
+                mode=GenerationMode.TWO_STAGE,
                 reason="graph_evidence_present_without_route_analysis",
                 evidence_limit=settings.two_stage_max_evidence_items,
             )
         return GenerationDecision(
-            mode="direct",
+            mode=GenerationMode.DIRECT,
             reason="no_route_analysis",
             evidence_limit=settings.direct_max_evidence_items,
         )
@@ -44,7 +44,7 @@ def decide_generation_mode(
 
     if strategy == "graph_rag":
         return GenerationDecision(
-            mode="two_stage",
+            mode=GenerationMode.TWO_STAGE,
             reason="graph_rag_strategy",
             evidence_limit=settings.two_stage_max_evidence_items,
         )
@@ -55,7 +55,7 @@ def decide_generation_mode(
         or reasoning_required
     ):
         return GenerationDecision(
-            mode="two_stage",
+            mode=GenerationMode.TWO_STAGE,
             reason="combined_strategy_with_reasoning_pressure",
             evidence_limit=settings.two_stage_max_evidence_items,
         )
@@ -65,13 +65,13 @@ def decide_generation_mode(
         or relationship_intensity >= settings.two_stage_relationship_threshold + 0.12
     ):
         return GenerationDecision(
-            mode="two_stage",
+            mode=GenerationMode.TWO_STAGE,
             reason="high_complexity_or_dense_relations",
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
     return GenerationDecision(
-        mode="direct",
+        mode=GenerationMode.DIRECT,
         reason="simple_or_medium_question",
         evidence_limit=settings.direct_max_evidence_items,
     )
