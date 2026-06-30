@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...query_policy import get_planner_prompt_template
+from ...query_policy import get_query_policy
 from ..registry import GRAPH_QUERY_TYPES, GRAPH_RELATION_TYPES
 
 
@@ -14,7 +14,7 @@ def build_planning_prompt(query: str) -> str:
         for item in GRAPH_RELATION_TYPES
         if item not in {"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}
     )
-    return get_planner_prompt_template().format(
+    return get_query_policy().prompts.query_planner.format(
         graph_query_types_text=graph_query_types_text,
         relation_types_text=relation_types_text,
         preferred_relation_types_text=preferred_relation_types_text,

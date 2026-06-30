@@ -189,6 +189,31 @@ class QueryPolicyTests(unittest.TestCase):
         prompts.answer_compose.format(question="q", plan_json="p", evidence_text="e")
         prompts.answer_direct.format(question="q", evidence_text="e")
 
+    def test_registry_reads_terms_from_typed_policy_bundle(self) -> None:
+        from rag_modules.query_understanding.registry import POLICY, RELATION_MARKERS
+
+        self.assertEqual("c9-default-policy-v1", POLICY.metadata.policy_version)
+        self.assertEqual(POLICY.lexicon.term_group("relation_markers"), RELATION_MARKERS)
+
+    def test_query_understanding_consumers_use_typed_policy_sections(self) -> None:
+        registry_source = Path("rag_modules/query_understanding/registry.py").read_text(
+            encoding="utf-8"
+        )
+        features_source = Path("rag_modules/query_understanding/features.py").read_text(
+            encoding="utf-8"
+        )
+        prompting_source = Path(
+            "rag_modules/query_understanding/planning/prompting.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("POLICY.term_group", registry_source)
+        self.assertNotIn("POLICY.regex_group", features_source)
+        self.assertNotIn("POLICY.term_group", features_source)
+        self.assertNotIn("get_planner_prompt_template", prompting_source)
+        self.assertIn("POLICY.lexicon.term_group", registry_source)
+        self.assertIn("POLICY.lexicon.regex_group", features_source)
+        self.assertIn("get_query_policy().prompts.query_planner", prompting_source)
+
 
 def test_policy_loader_rejects_unversioned_schema(tmp_path: Path) -> None:
     from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle

@@ -54,12 +54,12 @@ def matched_terms(text: str, terms: Sequence[str]) -> List[str]:
 
 
 def regex_group_matches(text: str, group_name: str) -> bool:
-    return any(re.search(pattern, text) for pattern in POLICY.regex_group(group_name))
+    return any(re.search(pattern, text) for pattern in POLICY.lexicon.regex_group(group_name))
 
 
 def apply_cleanup_patterns(text: str, group_name: str) -> str:
     value = text
-    for pattern in POLICY.regex_group(group_name):
+    for pattern in POLICY.lexicon.regex_group(group_name):
         value = re.sub(pattern, "", value)
     return value
 
@@ -77,11 +77,17 @@ def has_recommendation_intent(query: str) -> bool:
 def has_filtering_intent(query: str) -> bool:
     if contains_any(query, FILTERING_MARKERS):
         return True
-    if any(re.search(pattern, query) for pattern in POLICY.regex_group("time_minutes_patterns")):
+    if any(
+        re.search(pattern, query)
+        for pattern in POLICY.lexicon.regex_group("time_minutes_patterns")
+    ):
         return True
-    if any(re.search(pattern, query) for pattern in POLICY.regex_group("time_hours_patterns")):
+    if any(
+        re.search(pattern, query)
+        for pattern in POLICY.lexicon.regex_group("time_hours_patterns")
+    ):
         return True
-    return contains_any(query, POLICY.regex_group("time_half_hour_patterns"))
+    return contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns"))
 
 
 def clean_entity_phrase(text: str) -> str:
@@ -122,7 +128,7 @@ def looks_like_entity(text: str) -> bool:
 
 def pairwise_entity_matches(query: str) -> List[Tuple[str, str]]:
     matches: List[Tuple[str, str]] = []
-    for pattern in POLICY.regex_group("pairwise_entity_patterns"):
+    for pattern in POLICY.lexicon.regex_group("pairwise_entity_patterns"):
         for left, right in re.findall(pattern, query):
             left_text = clean_entity_phrase(left)
             right_text = clean_entity_phrase(right)
@@ -251,7 +257,7 @@ def infer_graph_query_type(query: str) -> str:
         return "path_finding"
     if contains_any(normalized, SUBGRAPH_MARKERS):
         return "subgraph"
-    if contains_any(normalized, POLICY.term_group("clustering_markers")):
+    if contains_any(normalized, POLICY.lexicon.term_group("clustering_markers")):
         return "clustering"
     if contains_any(normalized, RELATION_MARKERS) or contains_any(
         normalized, STRUCTURAL_REASONING_MARKERS
@@ -270,15 +276,15 @@ def infer_relation_types(query: str) -> List[str]:
 
 
 def extract_minutes(query: str) -> int | None:
-    for pattern in POLICY.regex_group("time_minutes_patterns"):
+    for pattern in POLICY.lexicon.regex_group("time_minutes_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1))))
-    for pattern in POLICY.regex_group("time_hours_patterns"):
+    for pattern in POLICY.lexicon.regex_group("time_hours_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1)) * 60))
-    if contains_any(query, POLICY.regex_group("time_half_hour_patterns")):
+    if contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns")):
         return 30
     return None
 
@@ -299,7 +305,7 @@ def extract_difficulty(query: str) -> str:
 
 def extract_excluded_terms(query: str) -> List[str]:
     excluded: List[str] = []
-    for pattern in POLICY.regex_group("excluded_term_patterns"):
+    for pattern in POLICY.lexicon.regex_group("excluded_term_patterns"):
         for match in re.findall(pattern, query):
             value = clean_entity_phrase(match)
             if looks_like_entity(value):
