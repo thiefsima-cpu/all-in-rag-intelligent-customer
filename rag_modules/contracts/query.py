@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List
 
 from ..domain.shared.query_constraints import QueryConstraints
 from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
 from ..query_policy import get_query_policy
 from .query_settings import QuerySemanticRuntimeSettings
-
-if TYPE_CHECKING:
-    from ..runtime.analysis_models import SearchStrategy
 
 _POLICY = get_query_policy()
 _VALID_STRATEGIES = set(_POLICY.graph_routing_strategies)
@@ -60,6 +57,12 @@ def _clamp_int(value: Any, default: int = 2, minimum: int = 1, maximum: int = 32
     return max(minimum, min(maximum, number))
 
 
+class SearchStrategy(str, Enum):
+    HYBRID_TRADITIONAL = "hybrid_traditional"
+    GRAPH_RAG = "graph_rag"
+    COMBINED = "combined"
+
+
 class QueryPlannerMode(str, Enum):
     LLM = "llm"
     RULE_BASED = "rule_based"
@@ -67,9 +70,7 @@ class QueryPlannerMode(str, Enum):
     FALLBACK_RULE = "fallback_rule"
 
 
-def _search_strategy(value: Any) -> "SearchStrategy":
-    from ..runtime.analysis_models import SearchStrategy
-
+def _search_strategy(value: Any) -> SearchStrategy:
     if isinstance(value, SearchStrategy):
         return value
     return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
@@ -219,7 +220,7 @@ class QueryPlan:
     complexity: float = 0.5
     relationship_intensity: float = 0.5
     reasoning_required: bool = False
-    strategy: "SearchStrategy | str" = "hybrid_traditional"
+    strategy: SearchStrategy | str = "hybrid_traditional"
     confidence: float = 0.6
     reasoning: str = "rule-based fallback"
     entity_keywords: List[str] = field(default_factory=list)
@@ -276,8 +277,6 @@ class QueryPlan:
         constraints = QueryConstraints.from_dict(
             data.get("constraints") or resolved_profile.constraints or {}
         )
-
-        from ..runtime.analysis_models import SearchStrategy
 
         raw_strategy = str(data.get("strategy") or SearchStrategy.HYBRID_TRADITIONAL.value)
         try:
@@ -404,4 +403,5 @@ __all__ = [
     "QueryPlannerMode",
     "QuerySemanticProfile",
     "QuerySemanticScoreBreakdown",
+    "SearchStrategy",
 ]

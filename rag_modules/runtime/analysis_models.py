@@ -4,16 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict
 
-from ..contracts import QuerySemanticProfile
-
-
-class SearchStrategy(Enum):
-    HYBRID_TRADITIONAL = "hybrid_traditional"
-    GRAPH_RAG = "graph_rag"
-    COMBINED = "combined"
+from ..contracts import QuerySemanticProfile, SearchStrategy
 
 
 @dataclass

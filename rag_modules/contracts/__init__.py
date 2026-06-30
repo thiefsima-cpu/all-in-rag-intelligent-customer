@@ -11,6 +11,7 @@ from .query import (
     QueryPlannerMode,
     QuerySemanticProfile,
     QuerySemanticScoreBreakdown,
+    SearchStrategy,
 )
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .retrieval import EvidenceDocument, RetrievalRequest
@@ -25,6 +26,7 @@ __all__ = [
     "QuerySemanticRuntimeSettings",
     "QuerySemanticScoreBreakdown",
     "RetrievalRequest",
+    "SearchStrategy",
     "ensure_evidence_documents",
     "from_langchain_documents",
     "to_langchain_documents",
