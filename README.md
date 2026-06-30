@@ -166,9 +166,20 @@ message, and the submission request ID.
 Use `/v1` for new API clients. The unversioned routes remain compatibility
 aliases during the migration window and will be removed in API version `2.0.0`.
 
-Public answer routes (`/v1/answers` and `/v1/answers/stream`) return `summary`,
-`grounding`, and `diagnostics` without the complete `traces` object. Full trace
-payloads are available only through explicit debug routes:
+Public answer routes (`/v1/answers` and `/v1/answers/stream`) expose a
+field-level public contract:
+
+- `summary`: final answer, status, strategy, latency, evidence count, fallback,
+  token, and cost summary fields.
+- `grounding.evidence_documents`: public citation fields only: `content`,
+  `recipe_name`, `score`, `source`, `evidence_type`, and `matched_terms`.
+- `diagnostics`: stable health/degradation fields such as `overall_bucket`,
+  `retrieval_degraded`, `degraded_sources`, and safe degraded-candidate codes.
+
+Public responses do not expose route resolution, answer context, retrieval
+outcome, query plans, semantic profiles, graph evidence maps, evidence units,
+metadata bags, or trace snapshots. Full runtime details are available only
+through explicit debug routes:
 
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8000/v1/debug/answers -Body (@{question="..."} | ConvertTo-Json) -ContentType application/json

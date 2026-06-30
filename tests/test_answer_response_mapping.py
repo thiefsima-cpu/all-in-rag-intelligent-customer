@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextlib import ExitStack
 from unittest.mock import patch
 
+from pydantic import ValidationError
+
 from rag_modules.app.services.answer_models import QuestionAnswerResult
 from rag_modules.contracts import (
     EvidenceDocument,
@@ -80,11 +82,27 @@ def test_public_answer_payload_maps_typed_response_without_traces() -> None:
     response = _complete_result().to_response()
 
     payload = PublicAnswerPayloadModel.from_dto(response)
+    dumped = payload.model_dump()
 
     assert payload.summary.answer == "grounded answer"
-    assert payload.grounding.retrieval_outcome.strategy == "combined"
-    assert payload.diagnostics.diagnostics.overall_bucket == "healthy"
-    assert "traces" not in payload.model_dump()
+    assert payload.diagnostics.overall_bucket == "healthy"
+    assert set(dumped) == {"summary", "grounding", "diagnostics"}
+    assert set(dumped["grounding"]) == {"evidence_documents"}
+    assert dumped["grounding"]["evidence_documents"] == [
+        {
+            "content": "Mapo tofu balances tofu and chili bean paste.",
+            "recipe_name": "mapo tofu",
+            "score": 0.95,
+            "source": "graph",
+            "evidence_type": "graph_relation",
+            "matched_terms": ["tofu"],
+        }
+    ]
+    assert "analysis" not in dumped["diagnostics"]
+    assert "retrieval_outcome" not in dumped["grounding"]
+    assert "answer_context" not in dumped["grounding"]
+    assert "route_resolution" not in dumped["grounding"]
+    assert "traces" not in dumped
 
 
 def test_public_answer_payload_can_be_derived_from_debug_payload() -> None:
@@ -93,11 +111,25 @@ def test_public_answer_payload_can_be_derived_from_debug_payload() -> None:
 
     payload = PublicAnswerPayloadModel.from_debug_payload(debug_payload)
 
-    assert payload.model_dump() == {
-        "summary": debug_payload.summary.model_dump(),
-        "grounding": debug_payload.grounding.model_dump(),
-        "diagnostics": debug_payload.diagnostics.model_dump(),
-    }
+    assert payload.model_dump() == PublicAnswerPayloadModel.from_dto(response).model_dump()
+
+
+def test_public_answer_payload_rejects_debug_only_fields() -> None:
+    response = _complete_result().to_response()
+    payload = PublicAnswerPayloadModel.from_dto(response).model_dump()
+
+    payload["grounding"]["retrieval_outcome"] = {"strategy": "combined"}
+    payload["diagnostics"]["analysis"] = {"recommended_strategy": "combined"}
+
+    try:
+        PublicAnswerPayloadModel.model_validate(payload)
+    except ValidationError as exc:
+        error_locations = {tuple(error["loc"]) for error in exc.errors()}
+    else:
+        raise AssertionError("public payload accepted debug-only fields")
+
+    assert ("grounding", "retrieval_outcome") in error_locations
+    assert ("diagnostics", "analysis") in error_locations
 
 
 def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> None:
@@ -140,22 +172,16 @@ def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> Non
 
     payload = AnswerPayloadModel.from_dto(result.to_response()).model_dump()
 
+    assert payload["diagnostics"]["diagnostics"]["degraded_candidates"][0] == safe_candidate
     assert (
-        payload["diagnostics"]["diagnostics"]["degraded_candidates"][0]
-        == safe_candidate
-    )
-    assert (
-        payload["traces"]["route_trace"]["diagnostics"]["degraded_candidates"][0]
-        == safe_candidate
+        payload["traces"]["route_trace"]["diagnostics"]["degraded_candidates"][0] == safe_candidate
     )
     assert (
         payload["traces"]["route_trace"]["stages"]["hybrid"]["degraded_candidates"][0]
         == safe_candidate
     )
     assert (
-        payload["grounding"]["retrieval_outcome"]["degradation_summary"][
-            "degraded_candidates"
-        ][0]
+        payload["grounding"]["retrieval_outcome"]["degradation_summary"]["degraded_candidates"][0]
         == safe_candidate
     )
 

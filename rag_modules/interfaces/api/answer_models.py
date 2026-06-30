@@ -331,6 +331,42 @@ class EvidenceDocumentResponseModel(BaseModel):
         )
 
 
+class PublicEvidenceDocumentResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = ""
+    recipe_name: str = ""
+    score: float = 0.0
+    source: str = "unknown"
+    evidence_type: str = "text"
+    matched_terms: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_dto(cls, document: EvidenceDocument) -> "PublicEvidenceDocumentResponseModel":
+        return cls(
+            content=document.content,
+            recipe_name=document.recipe_name,
+            score=document.score,
+            source=document.source,
+            evidence_type=document.evidence_type,
+            matched_terms=list(document.matched_terms),
+        )
+
+    @classmethod
+    def from_debug_model(
+        cls,
+        document: EvidenceDocumentResponseModel,
+    ) -> "PublicEvidenceDocumentResponseModel":
+        return cls(
+            content=document.content,
+            recipe_name=document.recipe_name,
+            score=document.score,
+            source=document.source,
+            evidence_type=document.evidence_type,
+            matched_terms=list(document.matched_terms),
+        )
+
+
 class RouteStageSnapshotResponseModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -375,9 +411,7 @@ class RouteDiagnosticsResponseModel(BaseModel):
             post_process_doc_count=diagnostics.post_process_doc_count,
             retrieval_degraded=diagnostics.retrieval_degraded,
             degraded_sources=list(diagnostics.degraded_sources),
-            degraded_candidates=_public_degraded_candidates(
-                diagnostics.degraded_candidates
-            ),
+            degraded_candidates=_public_degraded_candidates(diagnostics.degraded_candidates),
             circuit_breaker_triggered=diagnostics.circuit_breaker_triggered,
             answer_impacted=diagnostics.answer_impacted,
             failure_reasons=list(diagnostics.failure_reasons),
@@ -566,9 +600,7 @@ class QueryDiagnosticsResponseModel(BaseModel):
             overall_bucket=diagnostics.overall_bucket,
             retrieval_degraded=diagnostics.retrieval_degraded,
             degraded_sources=list(diagnostics.degraded_sources),
-            degraded_candidates=_public_degraded_candidates(
-                diagnostics.degraded_candidates
-            ),
+            degraded_candidates=_public_degraded_candidates(diagnostics.degraded_candidates),
             circuit_breaker_triggered=diagnostics.circuit_breaker_triggered,
             answer_impacted=diagnostics.answer_impacted,
             failure_reasons=list(diagnostics.failure_reasons),
@@ -870,6 +902,33 @@ class AnswerGroundingModel(BaseModel):
         )
 
 
+class PublicAnswerGroundingModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_documents: list[PublicEvidenceDocumentResponseModel] = Field(default_factory=list)
+
+    @classmethod
+    def from_dto(cls, grounding: QuestionAnswerGrounding) -> "PublicAnswerGroundingModel":
+        return cls(
+            evidence_documents=[
+                PublicEvidenceDocumentResponseModel.from_dto(document)
+                for document in grounding.evidence_documents
+            ],
+        )
+
+    @classmethod
+    def from_debug_model(
+        cls,
+        grounding: AnswerGroundingModel,
+    ) -> "PublicAnswerGroundingModel":
+        return cls(
+            evidence_documents=[
+                PublicEvidenceDocumentResponseModel.from_debug_model(document)
+                for document in grounding.evidence_documents
+            ],
+        )
+
+
 class AnswerDiagnosticsModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -883,6 +942,52 @@ class AnswerDiagnosticsModel(BaseModel):
         return cls(
             analysis=QueryAnalysisResponseModel.from_dto(diagnostics.analysis),
             diagnostics=QueryDiagnosticsResponseModel.from_dto(diagnostics.diagnostics),
+        )
+
+
+class PublicAnswerDiagnosticsModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_bucket: str = ""
+    generation_bucket: str = ""
+    overall_bucket: str = ""
+    retrieval_degraded: bool = False
+    degraded_sources: list[str] = Field(default_factory=list)
+    degraded_candidates: list[JsonObject] = Field(default_factory=list)
+    circuit_breaker_triggered: bool = False
+    answer_impacted: bool = False
+    failure_reasons: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_dto(cls, diagnostics: QuestionAnswerDiagnostics) -> "PublicAnswerDiagnosticsModel":
+        return cls.from_query_diagnostics(
+            QueryDiagnosticsResponseModel.from_dto(diagnostics.diagnostics)
+        )
+
+    @classmethod
+    def from_debug_model(
+        cls,
+        diagnostics: AnswerDiagnosticsModel,
+    ) -> "PublicAnswerDiagnosticsModel":
+        return cls.from_query_diagnostics(diagnostics.diagnostics)
+
+    @classmethod
+    def from_query_diagnostics(
+        cls,
+        diagnostics: QueryDiagnosticsResponseModel,
+    ) -> "PublicAnswerDiagnosticsModel":
+        return cls(
+            retrieval_bucket=diagnostics.retrieval_bucket,
+            generation_bucket=diagnostics.generation_bucket,
+            overall_bucket=diagnostics.overall_bucket,
+            retrieval_degraded=diagnostics.retrieval_degraded,
+            degraded_sources=list(diagnostics.degraded_sources),
+            degraded_candidates=[
+                coerce_json_object(candidate) for candidate in diagnostics.degraded_candidates
+            ],
+            circuit_breaker_triggered=diagnostics.circuit_breaker_triggered,
+            answer_impacted=diagnostics.answer_impacted,
+            failure_reasons=list(diagnostics.failure_reasons),
         )
 
 
@@ -934,23 +1039,23 @@ class PublicAnswerPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     summary: AnswerSummaryModel
-    grounding: AnswerGroundingModel
-    diagnostics: AnswerDiagnosticsModel
+    grounding: PublicAnswerGroundingModel
+    diagnostics: PublicAnswerDiagnosticsModel
 
     @classmethod
     def from_debug_payload(cls, payload: AnswerPayloadModel) -> "PublicAnswerPayloadModel":
         return cls(
             summary=payload.summary,
-            grounding=payload.grounding,
-            diagnostics=payload.diagnostics,
+            grounding=PublicAnswerGroundingModel.from_debug_model(payload.grounding),
+            diagnostics=PublicAnswerDiagnosticsModel.from_debug_model(payload.diagnostics),
         )
 
     @classmethod
     def from_dto(cls, response: QuestionAnswerResponse) -> "PublicAnswerPayloadModel":
         return cls(
             summary=AnswerSummaryModel.from_dto(response.summary),
-            grounding=AnswerGroundingModel.from_dto(response.grounding),
-            diagnostics=AnswerDiagnosticsModel.from_dto(response.diagnostics),
+            grounding=PublicAnswerGroundingModel.from_dto(response.grounding),
+            diagnostics=PublicAnswerDiagnosticsModel.from_dto(response.diagnostics),
         )
 
 
@@ -1074,8 +1179,11 @@ __all__ = [
     "QueryDiagnosticsResponseModel",
     "QueryTraceEventResponseModel",
     "QueryUnderstandingSnapshotResponseModel",
+    "PublicAnswerDiagnosticsModel",
+    "PublicAnswerGroundingModel",
     "PublicAnswerPayloadModel",
     "PublicAnswerResponseModel",
+    "PublicEvidenceDocumentResponseModel",
     "RetrievalOutcomeResponseModel",
     "RetrievalTraceSnapshotResponseModel",
     "RouteDiagnosticsResponseModel",

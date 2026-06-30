@@ -22,6 +22,7 @@ from rag_modules.interfaces.api.answer_models import (
     MAX_QUESTION_CHARS,
     AnswerResponseModel,
     AnswerStreamEventType,
+    PublicAnswerPayloadModel,
 )
 from rag_modules.interfaces.api.error_models import ErrorCode, build_error_payload
 from rag_modules.interfaces.api.services import (
@@ -1467,6 +1468,23 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()["response"]
         self.assertEqual(payload["summary"]["answer"], "answer:Can I cook tofu?")
+        self.assertEqual(set(payload["grounding"]), {"evidence_documents"})
+        self.assertEqual(
+            set(payload["grounding"]["evidence_documents"][0]),
+            {
+                "content",
+                "recipe_name",
+                "score",
+                "source",
+                "evidence_type",
+                "matched_terms",
+            },
+        )
+        self.assertEqual(payload["diagnostics"]["overall_bucket"], "ok")
+        self.assertNotIn("analysis", payload["diagnostics"])
+        self.assertNotIn("retrieval_outcome", payload["grounding"])
+        self.assertNotIn("answer_context", payload["grounding"])
+        self.assertNotIn("route_resolution", payload["grounding"])
         self.assertNotIn("traces", payload)
 
     def test_v1_debug_answer_includes_traces(self) -> None:
@@ -1500,6 +1518,12 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         result_payload = _parse_sse_events(body)["result"][0]["response"]
         self.assertEqual(result_payload["summary"]["answer"], "answer:Can I cook tofu?")
+        self.assertEqual(set(result_payload["grounding"]), {"evidence_documents"})
+        self.assertEqual(result_payload["diagnostics"]["overall_bucket"], "ok")
+        self.assertNotIn("analysis", result_payload["diagnostics"])
+        self.assertNotIn("retrieval_outcome", result_payload["grounding"])
+        self.assertNotIn("answer_context", result_payload["grounding"])
+        self.assertNotIn("route_resolution", result_payload["grounding"])
         self.assertNotIn("traces", result_payload)
 
     def test_v1_debug_answer_stream_result_includes_traces(self) -> None:
@@ -1698,7 +1722,56 @@ class ApiAppTests(unittest.TestCase):
             "traces",
             schema["components"]["schemas"]["PublicAnswerPayloadModel"]["properties"],
         )
+        self.assertEqual(
+            schema["components"]["schemas"]["PublicAnswerPayloadModel"]["properties"]["grounding"][
+                "$ref"
+            ],
+            "#/components/schemas/PublicAnswerGroundingModel",
+        )
+        self.assertEqual(
+            schema["components"]["schemas"]["PublicAnswerPayloadModel"]["properties"][
+                "diagnostics"
+            ]["$ref"],
+            "#/components/schemas/PublicAnswerDiagnosticsModel",
+        )
+        public_grounding_properties = schema["components"]["schemas"]["PublicAnswerGroundingModel"][
+            "properties"
+        ]
+        self.assertEqual(set(public_grounding_properties), {"evidence_documents"})
+        public_evidence_properties = schema["components"]["schemas"][
+            "PublicEvidenceDocumentResponseModel"
+        ]["properties"]
+        self.assertEqual(
+            set(public_evidence_properties),
+            {
+                "content",
+                "recipe_name",
+                "score",
+                "source",
+                "evidence_type",
+                "matched_terms",
+            },
+        )
+        public_diagnostics_properties = schema["components"]["schemas"][
+            "PublicAnswerDiagnosticsModel"
+        ]["properties"]
+        self.assertNotIn("analysis", public_diagnostics_properties)
+        self.assertIn("overall_bucket", public_diagnostics_properties)
         self.assertIn("traces", schema["components"]["schemas"]["AnswerPayloadModel"]["properties"])
+
+    def test_public_answer_payload_model_rejects_debug_only_fields(self) -> None:
+        payload = PublicAnswerPayloadModel.from_dto(
+            _answer_response("Can I cook tofu?")
+        ).model_dump()
+        payload["grounding"]["route_resolution"] = {"metadata": {"internal": True}}
+        payload["diagnostics"]["analysis"] = {"recommended_strategy": "hybrid_traditional"}
+
+        with self.assertRaises(ValidationError) as context:
+            PublicAnswerPayloadModel.model_validate(payload)
+
+        locations = {tuple(error["loc"]) for error in context.exception.errors()}
+        self.assertIn(("grounding", "route_resolution"), locations)
+        self.assertIn(("diagnostics", "analysis"), locations)
 
     def test_answer_trace_error_fields_are_sanitized_on_success(self) -> None:
         secret = "private-answer-trace-error"
