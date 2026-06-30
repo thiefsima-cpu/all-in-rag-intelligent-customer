@@ -5,23 +5,26 @@
     "answer_pipeline",
     "answer_pipeline_real_route",
     "generation_plans",
-    "generation_prompts"
+    "generation_prompts",
+    "quality_eval"
   ],
-  "minimum_total_cases": 39,
+  "minimum_total_cases": 48,
   "minimum_overall_pass_rate": 1.0,
   "suite_minimum_cases": {
     "route_semantics": 24,
     "answer_pipeline": 3,
     "answer_pipeline_real_route": 3,
     "generation_plans": 3,
-    "generation_prompts": 6
+    "generation_prompts": 6,
+    "quality_eval": 9
   },
   "suite_minimum_pass_rate": {
     "route_semantics": 1.0,
     "answer_pipeline": 1.0,
     "answer_pipeline_real_route": 1.0,
     "generation_plans": 1.0,
-    "generation_prompts": 1.0
+    "generation_prompts": 1.0,
+    "quality_eval": 1.0
   },
   "minimum_route_category_count": 9,
   "required_route_categories": [
@@ -41,25 +44,20 @@
     "answer_pipeline_real_route.metrics.trace_contract_pass_rate": {"minimum": 1.0},
     "answer_pipeline_real_route.metrics.graph_contract_pass_rate": {"minimum": 1.0},
     "answer_pipeline_real_route.metrics.evidence_contract_pass_rate": {"minimum": 1.0},
-    "answer_pipeline_real_route.metrics.offline_planner_guard_pass_rate": {"minimum": 1.0}
+    "answer_pipeline_real_route.metrics.offline_planner_guard_pass_rate": {"minimum": 1.0},
+    "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
+    "quality_eval.metrics.faithfulness": {"minimum": 0.8},
+    "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+    "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
+    "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
+    "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
+    "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0}
   },
-  "optional_stages": {
+  "suite_runners": {
     "quality_eval": {
-      "suite": "quality_eval",
-      "runner": {
-        "profile": "eval_quality",
-        "top_k": 6,
-        "generate": true
-      },
-      "suite_minimum_cases": 6,
-      "suite_minimum_pass_rate": 1.0,
-      "metric_thresholds": {
-        "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
-        "quality_eval.metrics.faithfulness": {"minimum": 0.8},
-        "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
-        "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
-        "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0}
-      }
+      "profile": "eval_quality",
+      "top_k": 6,
+      "generate": true
     }
   }
 }

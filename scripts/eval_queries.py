@@ -188,6 +188,110 @@ def _response_query_plan(response) -> dict[str, Any]:
     return dict(query_plan) if isinstance(query_plan, dict) else {}
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _string_items(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _add_unique(target: list[str], value: Any) -> None:
+    text = str(value or "").strip()
+    if text and text not in target:
+        target.append(text)
+
+
+def _extend_unique(target: list[str], values: list[str]) -> None:
+    for value in values:
+        _add_unique(target, value)
+
+
+def _extend_unique_dicts(target: list[dict[str, Any]], values: list[dict[str, Any]]) -> None:
+    for value in values:
+        if value and value not in target:
+            target.append(dict(value))
+
+
+def _answer_resilience_signals(
+    response_payload: dict[str, Any],
+    route_resolution_payload: dict[str, Any],
+) -> dict[str, Any]:
+    summary = _mapping(response_payload.get("summary"))
+    traces = _mapping(response_payload.get("traces"))
+    generation_trace = _mapping(traces.get("generation_trace"))
+    route_trace = _mapping(traces.get("route_trace"))
+    grounding = _mapping(response_payload.get("grounding"))
+    retrieval_outcome = _mapping(grounding.get("retrieval_outcome"))
+    degradation_summary = _mapping(retrieval_outcome.get("degradation_summary"))
+
+    if not route_trace:
+        route_trace = _mapping(retrieval_outcome.get("route_trace"))
+    if not route_trace and route_resolution_payload:
+        route_retrieval = _mapping(route_resolution_payload.get("retrieval"))
+        route_trace = _mapping(route_retrieval.get("route_trace"))
+        if not degradation_summary:
+            degradation_summary = _mapping(route_retrieval.get("degradation_summary"))
+
+    response_diagnostics = _mapping(
+        _mapping(response_payload.get("diagnostics")).get("diagnostics")
+    )
+    route_diagnostics = _mapping(route_trace.get("diagnostics"))
+
+    fallback_reasons: list[str] = []
+    generation_fallback = bool(summary.get("fallback_used")) or bool(
+        generation_trace.get("fallback_used")
+    )
+    if generation_fallback:
+        _add_unique(
+            fallback_reasons,
+            generation_trace.get("fallback_reason")
+            or generation_trace.get("failure_code")
+            or summary.get("failure_code")
+            or "generation_fallback",
+        )
+    route_fallbacks = _string_items(route_trace.get("fallbacks"))
+    _extend_unique(fallback_reasons, route_fallbacks)
+    if route_diagnostics.get("used_fallback") and not route_fallbacks:
+        _add_unique(fallback_reasons, "route_fallback")
+
+    degraded_sources: list[str] = []
+    degraded_candidates: list[dict[str, Any]] = []
+    for payload in (degradation_summary, route_diagnostics, response_diagnostics):
+        _extend_unique(degraded_sources, _string_items(payload.get("degraded_sources")))
+        candidates = _dict_items(payload.get("degraded_candidates"))
+        _extend_unique_dicts(degraded_candidates, candidates)
+        _extend_unique(
+            degraded_sources,
+            [
+                str(candidate.get("source") or "").strip()
+                for candidate in candidates
+                if str(candidate.get("source") or "").strip()
+            ],
+        )
+
+    retrieval_degraded = any(
+        bool(payload.get("retrieval_degraded"))
+        for payload in (degradation_summary, route_diagnostics, response_diagnostics)
+    ) or bool(degraded_sources or degraded_candidates)
+
+    return {
+        "fallback_used": bool(generation_fallback or fallback_reasons),
+        "fallback_reasons": fallback_reasons,
+        "retrieval_degraded": bool(retrieval_degraded),
+        "degraded_sources": degraded_sources,
+        "degraded_candidates": degraded_candidates,
+    }
+
+
 def evaluate_case(
     system: AdvancedGraphRAGSystem,
     case: EvalCase,
@@ -305,6 +409,10 @@ def evaluate_case(
         )
         or ""
     )
+    resilience = _answer_resilience_signals(
+        contracts["answer_response"],
+        contracts["route_resolution"],
+    )
 
     return {
         "query": case.query,
@@ -343,6 +451,7 @@ def evaluate_case(
             "estimated_cost_usd": estimated_cost_usd,
             "token_usage_source": token_usage_source,
         },
+        "resilience": resilience,
         "runtime": {
             "latency_ms": latency_ms,
             "plan_used_cache": plan.get("used_cache"),
@@ -444,6 +553,22 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         for item in citation_cases
         if _answer_has_citation_marker(item.get("evaluation", {}).get("answer_preview", ""))
     )
+    fallback_cases = [item for item in results if item.get("resilience", {}).get("fallback_used")]
+    fallback_reasons: dict[str, int] = {}
+    for item in results:
+        for reason in item.get("resilience", {}).get("fallback_reasons", []) or []:
+            text = str(reason or "").strip()
+            if text:
+                fallback_reasons[text] = fallback_reasons.get(text, 0) + 1
+    degraded_cases = [
+        item for item in results if item.get("resilience", {}).get("retrieval_degraded")
+    ]
+    degraded_source_counts: dict[str, int] = {}
+    for item in results:
+        for source in item.get("resilience", {}).get("degraded_sources", []) or []:
+            text = str(source or "").strip()
+            if text:
+                degraded_source_counts[text] = degraded_source_counts.get(text, 0) + 1
     grouped = {}
     for item in results:
         grouped.setdefault(item.get("category", "general"), []).append(item)
@@ -505,6 +630,13 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "avg_cost_usd_per_case": (total_estimated_cost_usd / total if total else 0.0),
         "answer_pass_rate": answer_passed / len(answer_cases) if answer_cases else None,
         "answer_citation_rate": citation_passed / len(citation_cases) if citation_cases else None,
+        "fallback_case_count": len(fallback_cases),
+        "fallback_rate": len(fallback_cases) / total,
+        "fallback_reasons": dict(sorted(fallback_reasons.items())),
+        "retrieval_degraded_case_count": len(degraded_cases),
+        "retrieval_degradation_rate": len(degraded_cases) / total,
+        "degraded_sources": sorted(degraded_source_counts),
+        "degraded_source_counts": dict(sorted(degraded_source_counts.items())),
         "by_category": category_metrics,
     }
 
@@ -568,6 +700,9 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
         f"- ndcg_at_k: {metrics.get('ndcg_at_k')}",
         f"- faithfulness: {metrics.get('faithfulness')}",
         f"- citation_accuracy: {metrics.get('citation_accuracy')}",
+        f"- fallback_rate: {metrics.get('fallback_rate', 0.0)}",
+        f"- retrieval_degradation_rate: {metrics.get('retrieval_degradation_rate', 0.0)}",
+        f"- degraded_sources: {metrics.get('degraded_sources', [])}",
         f"- p95_latency_ms: {metrics.get('p95_latency_ms', 0.0)}",
         f"- total_tokens: {metrics.get('total_tokens', 0)}",
         f"- estimated_cost_usd: {metrics.get('estimated_cost_usd', 0.0)}",

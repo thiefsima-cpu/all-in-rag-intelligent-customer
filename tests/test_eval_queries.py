@@ -28,12 +28,20 @@ class _FakeResponse:
         evidence_documents: list[dict],
         route_resolution: dict,
         latency_ms: float = 12.5,
+        generation_trace: dict | None = None,
+        route_trace: dict | None = None,
+        diagnostics: dict | None = None,
+        degradation_summary: dict | None = None,
     ) -> None:
         self.answer = answer
         self.strategy = strategy
         self.evidence_documents = list(evidence_documents)
         self.route_resolution = dict(route_resolution)
         self.latency_ms = latency_ms
+        self.generation_trace = dict(generation_trace or {"mode": "two_stage"})
+        self.route_trace = dict(route_trace or {"strategy": self.strategy})
+        self.diagnostics = dict(diagnostics or {})
+        self.degradation_summary = dict(degradation_summary or {})
 
     def to_dict(self) -> dict:
         return {
@@ -43,6 +51,7 @@ class _FakeResponse:
                 "latency_ms": self.latency_ms,
                 "doc_count": len(self.evidence_documents),
                 "has_evidence": bool(self.evidence_documents),
+                "fallback_used": bool(self.generation_trace.get("fallback_used")),
                 "error": "",
             },
             "grounding": {
@@ -53,6 +62,7 @@ class _FakeResponse:
                     "strategy": self.strategy,
                     "doc_count": len(self.evidence_documents),
                     "evidence_documents": list(self.evidence_documents),
+                    "degradation_summary": dict(self.degradation_summary),
                 },
                 "answer_context": {},
                 "route_resolution": dict(self.route_resolution),
@@ -65,9 +75,9 @@ class _FakeResponse:
                 "diagnostics": {},
             },
             "traces": {
-                "route_trace": {"strategy": self.strategy},
+                "route_trace": dict(self.route_trace),
                 "graph_trace": {},
-                "generation_trace": {"mode": "two_stage"},
+                "generation_trace": dict(self.generation_trace),
                 "trace_event": {"strategy": self.strategy},
             },
         }
@@ -200,8 +210,10 @@ class EvalQueriesTests(unittest.TestCase):
 
         cases = load_eval_cases(DEFAULT_CORPUS_PATH)
 
-        self.assertGreaterEqual(len(cases), 4)
+        self.assertGreaterEqual(len(cases), 9)
         self.assertTrue(any(case.expected_strategy == "graph_rag" for case in cases))
+        self.assertTrue(any(case.category == "subgraph" for case in cases))
+        self.assertTrue(any(case.category == "constrained_recommendation" for case in cases))
         self.assertTrue(any("水煮肉片" in case.query for case in cases))
         self.assertFalse(any("\ufffd" in case.query for case in cases))
 
@@ -295,6 +307,88 @@ class EvalQueriesTests(unittest.TestCase):
             "hybrid_traditional",
         )
         self.assertEqual(item["retrieval"]["doc_count"], 1)
+
+    def test_evaluate_case_reports_fallback_and_degraded_sources(self) -> None:
+        case = EvalCase(
+            query="解释带降级的回答",
+            category="complex_relation",
+            expected_strategy="graph_rag",
+            expected_recipe_names=["水煮肉片"],
+            expected_answer_terms=["依据"],
+        )
+        evidence_documents = [
+            {
+                "recipe_name": "水煮肉片",
+                "doc_id": "doc-1",
+                "recipe_id": "recipe-1",
+                "score": 0.96,
+                "content": "水煮肉片使用花椒和豆瓣酱形成麻辣风味。",
+                "graph_evidence": {"relationships": [{"type": "CONTRIBUTES_TO"}]},
+                "evidence_units": [
+                    {"claim": "花椒和豆瓣酱共同贡献麻辣风味。", "is_graph_evidence": True}
+                ],
+            }
+        ]
+        response = _FakeResponse(
+            answer="依据 Evidence 1，花椒和豆瓣酱共同贡献麻辣风味。",
+            strategy="graph_rag",
+            evidence_documents=evidence_documents,
+            route_resolution={
+                "understanding": {
+                    "query_plan": {
+                        "query": case.query,
+                        "used_cache": False,
+                        "validation_errors": [],
+                    }
+                }
+            },
+            generation_trace={
+                "status": "degraded",
+                "mode": "two_stage",
+                "fallback_used": True,
+                "fallback_reason": "two_stage_to_direct_model",
+            },
+            route_trace={
+                "strategy": "graph_rag",
+                "fallbacks": ["graph_empty_to_hybrid"],
+                "diagnostics": {
+                    "used_fallback": True,
+                    "fallback_count": 1,
+                    "retrieval_degraded": True,
+                    "degraded_sources": ["vector"],
+                    "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+                },
+            },
+            diagnostics={
+                "retrieval_degraded": True,
+                "degraded_sources": ["vector"],
+                "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+            },
+            degradation_summary={
+                "retrieval_degraded": True,
+                "degraded_sources": ["vector"],
+                "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+            },
+        )
+
+        item = evaluate_case(
+            _FakeSystem(response=response),
+            case,
+            top_k=3,
+            generate=True,
+        )
+
+        self.assertTrue(item["resilience"]["fallback_used"])
+        self.assertEqual(
+            item["resilience"]["fallback_reasons"],
+            ["two_stage_to_direct_model", "graph_empty_to_hybrid"],
+        )
+        self.assertTrue(item["resilience"]["retrieval_degraded"])
+        self.assertEqual(item["resilience"]["degraded_sources"], ["vector"])
+        self.assertEqual(
+            item["resilience"]["degraded_candidates"],
+            [{"source": "vector", "reason": "circuit_open"}],
+        )
 
     def test_build_eval_report_includes_profile_metadata(self) -> None:
         config = build_test_config()

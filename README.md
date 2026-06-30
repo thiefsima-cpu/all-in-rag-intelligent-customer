@@ -71,16 +71,10 @@ python scripts/release_gate.py
 python scripts/pressure_api_service.py --json
 ```
 
-The default release-gate command runs only the fast deterministic offline
-smoke gate. To include quality, generation, latency, and cost thresholds in
-the same gate, explicitly run:
-
-```powershell
-python scripts/release_gate.py --include-quality-eval
-```
-
-Alternatively, set `RELEASE_GATE_INCLUDE_QUALITY_EVAL=true` before running the
-default command.
+The release-gate command now runs the deterministic offline smoke suites and
+the curated quality evaluation required for release. The quality report covers
+retrieval quality, generated-answer grounding, citation accuracy, fallback
+rate, degraded retrieval sources, latency, and estimated cost.
 
 ## Docker
 

@@ -193,6 +193,38 @@ def activate_optional_stages(
     return active
 
 
+def _validate_metric_threshold_rules(
+    metric_thresholds: Any,
+    *,
+    context: str,
+) -> None:
+    if not isinstance(metric_thresholds, dict):
+        raise ValueError(f"{context} metric_thresholds must be a JSON object.")
+    for metric_path, threshold in metric_thresholds.items():
+        if not isinstance(metric_path, str) or not metric_path.strip():
+            raise ValueError(f"{context} has invalid metric path.")
+        if not isinstance(threshold, dict) or not {"minimum", "maximum"}.intersection(threshold):
+            raise ValueError(f"{context} has invalid metric threshold rule: {metric_path}")
+        for limit_name in ("minimum", "maximum"):
+            if limit_name not in threshold:
+                continue
+            limit = threshold[limit_name]
+            if isinstance(limit, bool):
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                )
+            try:
+                numeric_limit = float(limit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                ) from exc
+            if not math.isfinite(numeric_limit):
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                )
+
+
 def run_suites(
     suite_names: list[str],
     *,
@@ -246,6 +278,49 @@ def _run_quality_eval(stage: dict[str, Any]) -> dict[str, Any]:
         "results": results,
         "failures": failures,
         "profile": dict(report.get("profile") or {}),
+    }
+
+
+def _required_quality_stage(policy: dict[str, Any]) -> dict[str, Any]:
+    suite_runners = policy.get("suite_runners")
+    runner = None
+    if isinstance(suite_runners, dict):
+        configured = suite_runners.get(QUALITY_EVAL_STAGE)
+        if isinstance(configured, dict):
+            runner = dict(configured)
+
+    if runner is None:
+        optional_stages = policy.get("optional_stages")
+        if isinstance(optional_stages, dict):
+            stage = optional_stages.get(QUALITY_EVAL_STAGE)
+            if isinstance(stage, dict):
+                runner = dict(stage.get("runner") or {})
+
+    if not isinstance(runner, dict):
+        raise ValueError(f"Required release-gate suite has no runner: {QUALITY_EVAL_STAGE}")
+
+    profile = runner.get("profile")
+    top_k = runner.get("top_k")
+    generate = runner.get("generate")
+    if (
+        not isinstance(profile, str)
+        or not profile.strip()
+        or isinstance(top_k, bool)
+        or not isinstance(top_k, int)
+        or top_k <= 0
+        or not isinstance(generate, bool)
+    ):
+        raise ValueError(
+            f"Required release-gate suite has invalid runner settings: {QUALITY_EVAL_STAGE}"
+        )
+
+    return {
+        "suite": QUALITY_EVAL_STAGE,
+        "runner": {
+            "profile": profile.strip(),
+            "top_k": int(top_k),
+            "generate": bool(generate),
+        },
     }
 
 
@@ -499,12 +574,19 @@ def write_report(
     status = "PASS" if report.get("passed") else "FAIL"
     optional_stages = [str(item) for item in (report.get("included_optional_stages") or [])]
     optional_stage_label = ", ".join(optional_stages) if optional_stages else "none"
+    quality_eval_required = bool(report.get("quality_eval_required"))
+    quality_eval_label = (
+        "required"
+        if quality_eval_required
+        else ("optional" if QUALITY_EVAL_STAGE in optional_stages else "not_run")
+    )
     lines = [
         "# Offline Evaluation Release Gate",
         "",
         f"- status: {status}",
         f"- generated_at: {report.get('generated_at', '')}",
         f"- optional_stages: {optional_stage_label}",
+        f"- quality_eval: {quality_eval_label}",
         f"- suites: {metrics.get('suite_count', 0)}",
         f"- cases: {metrics.get('passed_count', 0)}/{metrics.get('case_count', 0)}",
         f"- pass_rate: {metrics.get('pass_rate', 0.0):.4f}",
@@ -520,6 +602,21 @@ def write_report(
             f"| {suite_name} | {suite.get('passed_count', 0)} | "
             f"{suite.get('case_count', 0)} | {suite.get('pass_rate', 0.0):.4f} |"
         )
+    quality_report = dict((report.get("suite_reports") or {}).get(QUALITY_EVAL_STAGE) or {})
+    quality_metrics = dict(quality_report.get("metrics") or {})
+    if quality_metrics:
+        lines.extend(
+            [
+                "",
+                "## Quality Metrics",
+                "",
+                f"- citation_accuracy: {_summary_metric_value(quality_metrics.get('citation_accuracy'))}",
+                f"- fallback_rate: {_summary_metric_value(quality_metrics.get('fallback_rate'))}",
+                "- retrieval_degradation_rate: "
+                f"{_summary_metric_value(quality_metrics.get('retrieval_degradation_rate'))}",
+                f"- degraded_sources: {_summary_metric_value(quality_metrics.get('degraded_sources'))}",
+            ]
+        )
     failed_checks = report.get("failed_checks") or []
     if failed_checks:
         lines.extend(["", "## Failed Checks", ""])
@@ -532,6 +629,21 @@ def write_report(
     return report_path, summary_path
 
 
+def _summary_metric_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, list):
+        values = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(values) if values else "none"
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True) if value else "none"
+    if value is None:
+        return "none"
+    return str(value)
+
+
 def run_release_gate(
     *,
     policy_path: str | Path = DEFAULT_POLICY_PATH,
@@ -540,23 +652,35 @@ def run_release_gate(
 ) -> dict[str, Any]:
     resolved_policy_path = Path(policy_path).resolve()
     policy = load_policy(policy_path)
-    included_optional_stages = [QUALITY_EVAL_STAGE] if include_quality_eval else []
+    quality_required_in_policy = QUALITY_EVAL_STAGE in [
+        str(item) for item in (policy.get("required_suites") or [])
+    ]
+    included_optional_stages = (
+        [QUALITY_EVAL_STAGE] if include_quality_eval and not quality_required_in_policy else []
+    )
     try:
         active_policy = activate_optional_stages(policy, included_optional_stages)
+        _validate_metric_threshold_rules(
+            active_policy.get("metric_thresholds") or {},
+            context="Release gate policy",
+        )
+        active_required_suites = [
+            str(item) for item in (active_policy.get("required_suites") or []) if str(item).strip()
+        ]
+        quality_eval_required = QUALITY_EVAL_STAGE in active_required_suites
+        quality_stage = _required_quality_stage(active_policy) if quality_eval_required else None
     except ValueError as exc:
         raise ValueError(f"Invalid release gate policy at {resolved_policy_path}: {exc}") from exc
 
-    required_suites = [
-        str(item) for item in (active_policy.get("required_suites") or []) if str(item).strip()
-    ]
+    required_suites = active_required_suites
     runners = dict(SUITE_RUNNERS)
-    if include_quality_eval:
-        stage = active_policy["optional_stages"][QUALITY_EVAL_STAGE]
-        suite_name = str(stage["suite"])
-        runners[suite_name] = partial(_run_quality_eval, stage)
+    if quality_stage is not None:
+        suite_name = str(quality_stage["suite"])
+        runners[suite_name] = partial(_run_quality_eval, quality_stage)
     suite_reports = run_suites(required_suites, runners=runners)
     report = evaluate_gate(active_policy, suite_reports)
     report["included_optional_stages"] = included_optional_stages
+    report["quality_eval_required"] = quality_eval_required
     report["policy_path"] = str(resolved_policy_path)
     report_path, summary_path = write_report(report, output_dir)
     report["report_path"] = str(report_path)
@@ -575,7 +699,10 @@ def main() -> int:
     parser.add_argument(
         "--include-quality-eval",
         action="store_true",
-        help="Include the policy-configured quality evaluation stage.",
+        help=(
+            "Compatibility flag for legacy policies that still define quality_eval "
+            "as an optional stage. The default policy requires quality_eval."
+        ),
     )
     args = parser.parse_args()
 

@@ -40,5 +40,26 @@
     "expected_strategy": null,
     "expected_recipe_names": [],
     "expected_answer_terms": []
+  },
+  {
+    "query": "番茄炒蛋的做法是什么？",
+    "category": "single_recipe",
+    "expected_strategy": "hybrid_traditional",
+    "expected_recipe_names": ["西红柿炒鸡蛋"],
+    "expected_answer_terms": []
+  },
+  {
+    "query": "推荐30分钟内适合新手的素菜。",
+    "category": "constrained_recommendation",
+    "expected_strategy": "hybrid_traditional",
+    "expected_recipe_names": [],
+    "expected_answer_terms": []
+  },
+  {
+    "query": "分析川菜麻辣风味的关系网络。",
+    "category": "subgraph",
+    "expected_strategy": "graph_rag",
+    "expected_recipe_names": [],
+    "expected_answer_terms": ["麻辣"]
   }
 ]

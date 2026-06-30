@@ -53,11 +53,18 @@ def _real_route_suite_report(case_count: int, metric_value: float = 1.0) -> dict
 
 def _quality_metrics() -> dict:
     return {
-        "case_count": 6,
+        "case_count": 9,
         "pass_rate": 1.0,
         "recall_at_k": 0.8,
         "faithfulness": 0.8,
         "citation_accuracy": 0.8,
+        "fallback_rate": 0.0,
+        "fallback_case_count": 0,
+        "fallback_reasons": {},
+        "retrieval_degradation_rate": 0.0,
+        "retrieval_degraded_case_count": 0,
+        "degraded_sources": [],
+        "degraded_source_counts": {},
         "p95_latency_ms": 2000.0,
         "estimated_cost_usd": 1.0,
     }
@@ -65,10 +72,10 @@ def _quality_metrics() -> dict:
 
 def _quality_suite_report() -> dict:
     return {
-        "case_count": 6,
-        "passed_count": 6,
+        "case_count": 9,
+        "passed_count": 9,
         "metrics": _quality_metrics(),
-        "results": [{"query": str(index), "passed": True} for index in range(6)],
+        "results": [{"query": str(index), "passed": True} for index in range(9)],
         "failures": [],
     }
 
@@ -85,6 +92,38 @@ def _passing_reports_for_policy(policy: dict) -> dict:
         "generation_prompts": _suite_report(6),
         "quality_eval": _quality_suite_report(),
     }
+
+
+def _legacy_optional_policy() -> dict:
+    policy = copy.deepcopy(load_policy(DEFAULT_POLICY_PATH))
+    policy["required_suites"] = [
+        suite for suite in policy["required_suites"] if suite != "quality_eval"
+    ]
+    policy["minimum_total_cases"] = 39
+    policy["suite_minimum_cases"].pop("quality_eval", None)
+    policy["suite_minimum_pass_rate"].pop("quality_eval", None)
+    policy.pop("suite_runners", None)
+    for metric_path in list(policy["metric_thresholds"]):
+        if metric_path.startswith("quality_eval."):
+            policy["metric_thresholds"].pop(metric_path)
+    policy["optional_stages"] = {
+        "quality_eval": {
+            "suite": "quality_eval",
+            "runner": {"profile": "eval_quality", "top_k": 6, "generate": True},
+            "suite_minimum_cases": 9,
+            "suite_minimum_pass_rate": 1.0,
+            "metric_thresholds": {
+                "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
+                "quality_eval.metrics.faithfulness": {"minimum": 0.8},
+                "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+                "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
+                "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
+                "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
+                "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0},
+            },
+        }
+    }
+    return policy
 
 
 class ReleaseGateTests(unittest.TestCase):
@@ -125,14 +164,14 @@ class ReleaseGateTests(unittest.TestCase):
             )
 
     def test_activate_quality_stage_copies_and_merges_policy(self) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy = _legacy_optional_policy()
         original = copy.deepcopy(policy)
 
         active = activate_optional_stages(policy, ["quality_eval"])
 
         self.assertEqual(policy, original)
         self.assertEqual(active["required_suites"][-1], "quality_eval")
-        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 6)
+        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 9)
         self.assertEqual(active["suite_minimum_pass_rate"]["quality_eval"], 1.0)
         self.assertEqual(
             active["metric_thresholds"]["quality_eval.metrics.recall_at_k"],
@@ -140,7 +179,7 @@ class ReleaseGateTests(unittest.TestCase):
         )
 
     def test_activate_quality_stage_requires_policy_configuration(self) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy = _legacy_optional_policy()
         policy.pop("optional_stages")
 
         with self.assertRaisesRegex(ValueError, "quality_eval"):
@@ -149,7 +188,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_activate_optional_stages_leaves_unselected_legacy_policy_unchanged(
         self,
     ) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy = _legacy_optional_policy()
         policy.pop("optional_stages")
 
         self.assertEqual(activate_optional_stages(policy, []), policy)
@@ -157,42 +196,40 @@ class ReleaseGateTests(unittest.TestCase):
     def test_activate_quality_stage_rejects_collisions_and_malformed_runner(
         self,
     ) -> None:
-        malformed_optional_stages = load_policy(DEFAULT_POLICY_PATH)
+        malformed_optional_stages = _legacy_optional_policy()
         malformed_optional_stages["optional_stages"] = []
         with self.assertRaisesRegex(ValueError, "optional_stages"):
             activate_optional_stages(malformed_optional_stages, ["quality_eval"])
 
-        duplicate_suite = load_policy(DEFAULT_POLICY_PATH)
+        duplicate_suite = _legacy_optional_policy()
         duplicate_suite["optional_stages"]["quality_eval"]["suite"] = "route_semantics"
         with self.assertRaisesRegex(ValueError, "already required"):
             activate_optional_stages(duplicate_suite, ["quality_eval"])
 
-        duplicate_metric = load_policy(DEFAULT_POLICY_PATH)
+        duplicate_metric = _legacy_optional_policy()
         duplicate_metric["optional_stages"]["quality_eval"]["metric_thresholds"] = {
             "answer_pipeline_real_route.metrics.plan_contract_pass_rate": {"minimum": 1.0}
         }
         with self.assertRaisesRegex(ValueError, "duplicates metric thresholds"):
             activate_optional_stages(duplicate_metric, ["quality_eval"])
 
-        malformed_thresholds = load_policy(DEFAULT_POLICY_PATH)
+        malformed_thresholds = _legacy_optional_policy()
         malformed_thresholds["optional_stages"]["quality_eval"]["metric_thresholds"] = []
         with self.assertRaisesRegex(ValueError, "metric thresholds"):
             activate_optional_stages(malformed_thresholds, ["quality_eval"])
 
-        malformed_runner = load_policy(DEFAULT_POLICY_PATH)
+        malformed_runner = _legacy_optional_policy()
         malformed_runner["optional_stages"]["quality_eval"]["runner"] = {"top_k": 0}
         with self.assertRaisesRegex(ValueError, "runner"):
             activate_optional_stages(malformed_runner, ["quality_eval"])
 
     def test_default_offline_release_gate_passes(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_names = list(policy["required_suites"])
-
-        report = evaluate_gate(policy, run_suites(suite_names))
+        report = evaluate_gate(policy, _passing_reports_for_policy(policy))
 
         self.assertTrue(report["passed"])
-        self.assertEqual(report["metrics"]["case_count"], 39)
-        self.assertEqual(report["metrics"]["passed_count"], 39)
+        self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertEqual(report["metrics"]["passed_count"], 48)
         self.assertEqual(report["metrics"]["route_category_count"], 9)
         self.assertFalse(report["failed_checks"])
 
@@ -203,37 +240,50 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertFalse(reports["answer_pipeline_real_route"]["failures"])
         log_failure.assert_not_called()
 
-    def test_default_policy_configures_quality_eval_as_optional(self) -> None:
+    def test_default_policy_does_not_configure_quality_eval_as_optional(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
 
-        self.assertNotIn("quality_eval", policy["required_suites"])
-        stage = policy["optional_stages"]["quality_eval"]
-        self.assertEqual(stage["suite"], "quality_eval")
+        self.assertIn("quality_eval", policy["required_suites"])
+        self.assertNotIn("optional_stages", policy)
         self.assertEqual(
-            stage["runner"],
+            policy["suite_runners"]["quality_eval"],
             {"profile": "eval_quality", "top_k": 6, "generate": True},
         )
-        self.assertEqual(stage["suite_minimum_cases"], 6)
-        self.assertEqual(stage["suite_minimum_pass_rate"], 1.0)
+
+    def test_default_policy_requires_quality_eval(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+
+        self.assertIn("quality_eval", policy["required_suites"])
+        self.assertNotIn("optional_stages", policy)
+        self.assertEqual(policy["minimum_total_cases"], 48)
+        self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 9)
+        self.assertEqual(policy["suite_minimum_pass_rate"]["quality_eval"], 1.0)
         self.assertEqual(
-            stage["metric_thresholds"],
-            {
-                "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
-                "quality_eval.metrics.faithfulness": {"minimum": 0.8},
-                "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
-                "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
-                "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0},
-            },
+            policy["suite_runners"]["quality_eval"],
+            {"profile": "eval_quality", "top_k": 6, "generate": True},
+        )
+        self.assertEqual(
+            policy["metric_thresholds"]["quality_eval.metrics.citation_accuracy"],
+            {"minimum": 0.8},
+        )
+        self.assertEqual(
+            policy["metric_thresholds"]["quality_eval.metrics.fallback_rate"],
+            {"maximum": 0.0},
+        )
+        self.assertEqual(
+            policy["metric_thresholds"]["quality_eval.metrics.retrieval_degradation_rate"],
+            {"maximum": 0.0},
         )
 
     def test_quality_runner_normalizes_structured_eval_report(self) -> None:
         eval_report = {
             "metrics": _quality_metrics(),
-            "results": [{"query": str(index), "passed": True} for index in range(6)],
+            "results": [{"query": str(index), "passed": True} for index in range(9)],
             "failures": [],
             "profile": {"name": "eval_quality"},
         }
-        stage = load_policy(DEFAULT_POLICY_PATH)["optional_stages"]["quality_eval"]
+        runner = load_policy(DEFAULT_POLICY_PATH)["suite_runners"]["quality_eval"]
+        stage = {"suite": "quality_eval", "runner": runner}
 
         with patch("scripts.eval_queries.evaluate_queries", return_value=eval_report) as evaluate:
             report = _run_quality_eval(stage)
@@ -243,12 +293,12 @@ class ReleaseGateTests(unittest.TestCase):
             generate=True,
             profile="eval_quality",
         )
-        self.assertEqual(report["case_count"], 6)
-        self.assertEqual(report["passed_count"], 6)
+        self.assertEqual(report["case_count"], 9)
+        self.assertEqual(report["passed_count"], 9)
         self.assertEqual(report["metrics"]["recall_at_k"], 0.8)
         self.assertEqual(report["profile"], {"name": "eval_quality"})
 
-    def test_run_release_gate_includes_quality_suite_only_when_requested(self) -> None:
+    def test_run_release_gate_include_flag_keeps_required_quality_suite(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         suite_reports = _passing_reports_for_policy(policy)
 
@@ -262,24 +312,42 @@ class ReleaseGateTests(unittest.TestCase):
         suite_names = run.call_args.args[0]
         self.assertIn("quality_eval", suite_names)
         self.assertIn("quality_eval", run.call_args.kwargs["runners"])
-        self.assertEqual(report["included_optional_stages"], ["quality_eval"])
+        self.assertEqual(report["included_optional_stages"], [])
+        self.assertTrue(report["quality_eval_required"])
         self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 45)
+        self.assertEqual(report["metrics"]["case_count"], 48)
         self.assertTrue(report["passed"])
 
-    def test_run_release_gate_default_does_not_register_quality_runner(self) -> None:
+    def test_run_release_gate_default_does_not_mark_quality_optional(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         suite_reports = _passing_reports_for_policy(policy)
-        suite_reports.pop("quality_eval")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
                 report = run_release_gate(output_dir=temp_dir)
 
-        self.assertNotIn("quality_eval", run.call_args.args[0])
-        self.assertNotIn("quality_eval", run.call_args.kwargs["runners"])
+        self.assertIn("quality_eval", run.call_args.args[0])
+        self.assertIn("quality_eval", run.call_args.kwargs["runners"])
         self.assertEqual(report["included_optional_stages"], [])
-        self.assertEqual(report["metrics"]["case_count"], 39)
+        self.assertTrue(report["quality_eval_required"])
+        self.assertEqual(report["metrics"]["case_count"], 48)
+
+    def test_run_release_gate_default_registers_required_quality_runner(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+                report = run_release_gate(output_dir=temp_dir)
+
+        suite_names = run.call_args.args[0]
+        self.assertIn("quality_eval", suite_names)
+        self.assertIn("quality_eval", run.call_args.kwargs["runners"])
+        self.assertEqual(report["included_optional_stages"], [])
+        self.assertTrue(report["quality_eval_required"])
+        self.assertEqual(report["metrics"]["suite_count"], 6)
+        self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertTrue(report["passed"])
 
     def test_quality_runner_failure_becomes_failed_suite_report(self) -> None:
         def fail_quality_eval() -> dict:
@@ -297,7 +365,7 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_run_release_gate_policy_error_includes_policy_path(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        policy["optional_stages"]["quality_eval"]["runner"] = {}
+        policy["suite_runners"]["quality_eval"] = {}
 
         with tempfile.TemporaryDirectory() as temp_dir:
             policy_path = Path(temp_dir) / "release_gate.json"
@@ -306,14 +374,11 @@ class ReleaseGateTests(unittest.TestCase):
                 run_release_gate(
                     policy_path=policy_path,
                     output_dir=temp_dir,
-                    include_quality_eval=True,
                 )
 
     def test_run_release_gate_rejects_malformed_threshold_rule_before_suites(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        policy["optional_stages"]["quality_eval"]["metric_thresholds"] = {
-            "quality_eval.metrics.recall_at_k": []
-        }
+        policy["metric_thresholds"]["quality_eval.metrics.recall_at_k"] = []
 
         with tempfile.TemporaryDirectory() as temp_dir:
             policy_path = Path(temp_dir) / "release_gate.json"
@@ -325,14 +390,13 @@ class ReleaseGateTests(unittest.TestCase):
                 run_release_gate(
                     policy_path=policy_path,
                     output_dir=temp_dir,
-                    include_quality_eval=True,
                 )
 
         run.assert_not_called()
 
     def test_run_release_gate_wraps_malformed_top_k_with_policy_path(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        policy["optional_stages"]["quality_eval"]["runner"]["top_k"] = {"value": 6}
+        policy["suite_runners"]["quality_eval"]["top_k"] = {"value": 6}
 
         with tempfile.TemporaryDirectory() as temp_dir:
             policy_path = Path(temp_dir) / "release_gate.json"
@@ -344,13 +408,12 @@ class ReleaseGateTests(unittest.TestCase):
                 run_release_gate(
                     policy_path=policy_path,
                     output_dir=temp_dir,
-                    include_quality_eval=True,
                 )
 
         run.assert_not_called()
 
     def test_quality_thresholds_pass_at_boundaries_and_fail_outside_them(self) -> None:
-        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        policy = load_policy(DEFAULT_POLICY_PATH)
         boundary_report = evaluate_gate(policy, _passing_reports_for_policy(policy))
         self.assertTrue(boundary_report["passed"])
 
@@ -358,6 +421,8 @@ class ReleaseGateTests(unittest.TestCase):
             "recall_at_k": 0.79,
             "faithfulness": 0.79,
             "citation_accuracy": 0.79,
+            "fallback_rate": 0.01,
+            "retrieval_degradation_rate": 0.01,
             "p95_latency_ms": 2000.1,
             "estimated_cost_usd": 1.01,
         }
@@ -372,7 +437,7 @@ class ReleaseGateTests(unittest.TestCase):
                 )
 
     def test_gate_reports_non_numeric_quality_metric_as_failed_check(self) -> None:
-        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        policy = load_policy(DEFAULT_POLICY_PATH)
         reports = _passing_reports_for_policy(policy)
         reports["quality_eval"]["metrics"]["recall_at_k"] = "unknown"
 
@@ -385,7 +450,7 @@ class ReleaseGateTests(unittest.TestCase):
         )
 
     def test_gate_reports_non_finite_quality_metric_as_failed_check(self) -> None:
-        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        policy = load_policy(DEFAULT_POLICY_PATH)
         reports = _passing_reports_for_policy(policy)
         reports["quality_eval"]["metrics"]["recall_at_k"] = "Infinity"
 
@@ -442,7 +507,7 @@ class ReleaseGateTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_gate_summary_lists_included_optional_stages(self) -> None:
-        policy = activate_optional_stages(load_policy(DEFAULT_POLICY_PATH), ["quality_eval"])
+        policy = activate_optional_stages(_legacy_optional_policy(), ["quality_eval"])
         report = evaluate_gate(policy, _passing_reports_for_policy(policy))
         report["included_optional_stages"] = ["quality_eval"]
 
@@ -451,19 +516,29 @@ class ReleaseGateTests(unittest.TestCase):
             summary = summary_path.read_text(encoding="utf-8")
 
         self.assertIn("optional_stages: quality_eval", summary)
-        self.assertIn("| quality_eval | 6 | 6 | 1.0000 |", summary)
+        self.assertIn("| quality_eval | 9 | 9 | 1.0000 |", summary)
+
+    def test_gate_summary_lists_required_quality_metrics(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        report = evaluate_gate(policy, _passing_reports_for_policy(policy))
+        report["quality_eval_required"] = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _, summary_path = write_report(report, temp_dir)
+            summary = summary_path.read_text(encoding="utf-8")
+
+        self.assertIn("quality_eval: required", summary)
+        self.assertIn("citation_accuracy: 0.8000", summary)
+        self.assertIn("fallback_rate: 0.0000", summary)
+        self.assertIn("retrieval_degradation_rate: 0.0000", summary)
+        self.assertIn("degraded_sources: none", summary)
 
     def test_gate_fails_when_route_coverage_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = {
-            "route_semantics": {
-                **_suite_report(24),
-                "category_counts": {"single_recipe": 24},
-            },
-            "answer_pipeline": _suite_report(3),
-            "answer_pipeline_real_route": _real_route_suite_report(3),
-            "generation_plans": _suite_report(3),
-            "generation_prompts": _suite_report(6),
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports["route_semantics"] = {
+            **_suite_report(24),
+            "category_counts": {"single_recipe": 24},
         }
 
         report = evaluate_gate(policy, suite_reports)
@@ -475,23 +550,13 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_gate_report_writes_json_and_markdown(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = {
-            "route_semantics": {
-                **_suite_report(24),
-                "category_counts": {
-                    category: 1 for category in policy["required_route_categories"]
-                },
-            },
-            "answer_pipeline": _suite_report(3),
-            "answer_pipeline_real_route": _real_route_suite_report(3),
-            "generation_plans": _suite_report(3),
-            "generation_prompts": _suite_report(6),
-        }
+        suite_reports = _passing_reports_for_policy(policy)
         report = evaluate_gate(
             policy,
             suite_reports,
             generated_at="2026-06-11T00:00:00+00:00",
         )
+        report["quality_eval_required"] = True
 
         with tempfile.TemporaryDirectory() as temp_dir:
             report_path, summary_path = write_report(report, temp_dir)
@@ -509,18 +574,8 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_gate_fails_when_real_route_contract_metric_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = {
-            "route_semantics": {
-                **_suite_report(24),
-                "category_counts": {
-                    category: 1 for category in policy["required_route_categories"]
-                },
-            },
-            "answer_pipeline": _suite_report(3),
-            "answer_pipeline_real_route": _real_route_suite_report(3, metric_value=0.5),
-            "generation_plans": _suite_report(3),
-            "generation_prompts": _suite_report(6),
-        }
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports["answer_pipeline_real_route"] = _real_route_suite_report(3, metric_value=0.5)
 
         report = evaluate_gate(policy, suite_reports)
 
@@ -533,18 +588,8 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_gate_fails_when_real_route_contract_metric_is_missing(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = {
-            "route_semantics": {
-                **_suite_report(24),
-                "category_counts": {
-                    category: 1 for category in policy["required_route_categories"]
-                },
-            },
-            "answer_pipeline": _suite_report(3),
-            "answer_pipeline_real_route": _suite_report(3),
-            "generation_plans": _suite_report(3),
-            "generation_prompts": _suite_report(6),
-        }
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports["answer_pipeline_real_route"] = _suite_report(3)
 
         report = evaluate_gate(policy, suite_reports)
 
@@ -563,7 +608,7 @@ class ReleaseGateTests(unittest.TestCase):
                 "answer_pipeline.metrics.p95_latency_ms": {"maximum": 500.0},
             },
         }
-        suite_reports = run_suites(list(policy["required_suites"]))
+        suite_reports = _passing_reports_for_policy(policy)
         suite_reports["answer_pipeline"]["metrics"] = {
             "faithfulness": 0.9,
             "p95_latency_ms": 250.0,
