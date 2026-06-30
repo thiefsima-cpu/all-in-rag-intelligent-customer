@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, Literal, TypeVar
+
 from fastapi import FastAPI, Header, Path, Query
 from fastapi.responses import StreamingResponse
 
@@ -53,28 +56,41 @@ _SSE_EXAMPLE = (
     'data: {"ok":true}\n\n'
 )
 
+_RouteMethod = Literal["get", "post"]
+_RouteEndpoint = TypeVar("_RouteEndpoint", bound=Callable[..., object])
+
+
+def _versioned_alias_route(
+    app: FastAPI,
+    method: _RouteMethod,
+    path: str,
+    **kwargs: Any,
+) -> Callable[[_RouteEndpoint], _RouteEndpoint]:
+    def decorator(endpoint: _RouteEndpoint) -> _RouteEndpoint:
+        registrar = getattr(app, method)
+        registrar(path, **kwargs)(endpoint)
+        registrar(f"{API_PREFIX}{path}", **kwargs)(endpoint)
+        return endpoint
+
+    return decorator
+
 
 def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService) -> None:
     @app.get("/", response_model=HealthResponseModel)
     def read_root():
         return api_service.health()
 
-    @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
-    @app.get("/health", response_model=HealthResponseModel)
+    @_versioned_alias_route(app, "get", "/health", response_model=HealthResponseModel)
     def read_health():
         return api_service.health()
 
-    @app.get(f"{API_PREFIX}/health/live", response_model=HealthResponseModel)
-    @app.get("/health/live", response_model=HealthResponseModel)
+    @_versioned_alias_route(app, "get", "/health/live", response_model=HealthResponseModel)
     def read_liveness():
         return api_service.health()
 
-    @app.get(
-        f"{API_PREFIX}/health/ready",
-        response_model=HealthResponseModel,
-        responses={503: {"description": "Serving runtime is not ready."}},
-    )
-    @app.get(
+    @_versioned_alias_route(
+        app,
+        "get",
         "/health/ready",
         response_model=HealthResponseModel,
         responses={503: {"description": "Serving runtime is not ready."}},
@@ -86,25 +102,36 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             content=payload,
         )
 
-    @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
-    @app.get("/stats", response_model=StatsResponseModel)
+    @_versioned_alias_route(app, "get", "/stats", response_model=StatsResponseModel)
     def read_stats():
         return build_stats_response(api_service.collect_stats())
 
-    @app.get(f"{API_PREFIX}/diagnostics", response_model=DiagnosticsResponseModel)
-    @app.get("/diagnostics", response_model=DiagnosticsResponseModel)
+    @_versioned_alias_route(
+        app,
+        "get",
+        "/diagnostics",
+        response_model=DiagnosticsResponseModel,
+    )
     def read_diagnostics():
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.serve.value)
         )
 
-    @app.post(f"{API_PREFIX}/runtime/serving/initialize", response_model=OperationResponseModel)
-    @app.post("/runtime/serving/initialize", response_model=OperationResponseModel)
+    @_versioned_alias_route(
+        app,
+        "post",
+        "/runtime/serving/initialize",
+        response_model=OperationResponseModel,
+    )
     def initialize_serving_runtime():
         return build_operation_response(api_service.initialize_serving_runtime())
 
-    @app.post(f"{API_PREFIX}/runtime/serving/refresh", response_model=OperationResponseModel)
-    @app.post("/runtime/serving/refresh", response_model=OperationResponseModel)
+    @_versioned_alias_route(
+        app,
+        "post",
+        "/runtime/serving/refresh",
+        response_model=OperationResponseModel,
+    )
     def refresh_serving_runtime():
         return build_operation_response(api_service.refresh_serving_runtime())
 
@@ -299,22 +326,17 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     def read_root():
         return api_service.health()
 
-    @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
-    @app.get("/health", response_model=HealthResponseModel)
+    @_versioned_alias_route(app, "get", "/health", response_model=HealthResponseModel)
     def read_health():
         return api_service.health()
 
-    @app.get(f"{API_PREFIX}/health/live", response_model=HealthResponseModel)
-    @app.get("/health/live", response_model=HealthResponseModel)
+    @_versioned_alias_route(app, "get", "/health/live", response_model=HealthResponseModel)
     def read_liveness():
         return api_service.health()
 
-    @app.get(
-        f"{API_PREFIX}/health/ready",
-        response_model=HealthResponseModel,
-        responses={503: {"description": "Build runtime is not ready."}},
-    )
-    @app.get(
+    @_versioned_alias_route(
+        app,
+        "get",
         "/health/ready",
         response_model=HealthResponseModel,
         responses={503: {"description": "Build runtime is not ready."}},
@@ -326,25 +348,31 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
             content=payload,
         )
 
-    @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
-    @app.get("/stats", response_model=StatsResponseModel)
+    @_versioned_alias_route(app, "get", "/stats", response_model=StatsResponseModel)
     def read_stats():
         return build_stats_response(api_service.collect_stats())
 
-    @app.get(f"{API_PREFIX}/diagnostics", response_model=DiagnosticsResponseModel)
-    @app.get("/diagnostics", response_model=DiagnosticsResponseModel)
+    @_versioned_alias_route(
+        app,
+        "get",
+        "/diagnostics",
+        response_model=DiagnosticsResponseModel,
+    )
     def read_diagnostics():
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.build.value)
         )
 
-    @app.post(f"{API_PREFIX}/runtime/build/initialize", response_model=OperationResponseModel)
-    @app.post("/runtime/build/initialize", response_model=OperationResponseModel)
+    @_versioned_alias_route(
+        app,
+        "post",
+        "/runtime/build/initialize",
+        response_model=OperationResponseModel,
+    )
     def initialize_build_runtime():
         return build_operation_response(api_service.initialize_build_runtime())
 
-    @app.get(f"{API_PREFIX}/jobs", response_model=BuildJobListResponseModel)
-    @app.get("/jobs", response_model=BuildJobListResponseModel)
+    @_versioned_alias_route(app, "get", "/jobs", response_model=BuildJobListResponseModel)
     def list_build_jobs(
         limit: int | None = Query(default=None, ge=1),
         cursor: str = Query(default=""),
@@ -352,27 +380,29 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         page = api_service.list_build_jobs(limit=limit, cursor=cursor)
         return build_build_job_list_response(page.jobs, next_cursor=page.next_cursor)
 
-    @app.get(f"{API_PREFIX}/artifacts", response_model=ArtifactRegistryResponseModel)
-    @app.get("/artifacts", response_model=ArtifactRegistryResponseModel)
+    @_versioned_alias_route(
+        app,
+        "get",
+        "/artifacts",
+        response_model=ArtifactRegistryResponseModel,
+    )
     def read_artifact_registry():
         return build_artifact_registry_response(api_service.artifact_registry_snapshot())
 
-    @app.get(f"{API_PREFIX}/jobs/{{job_id}}", response_model=BuildJobResponseModel)
-    @app.get("/jobs/{job_id}", response_model=BuildJobResponseModel)
+    @_versioned_alias_route(
+        app,
+        "get",
+        "/jobs/{job_id}",
+        response_model=BuildJobResponseModel,
+    )
     def read_build_job(
         job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
     ):
         return build_build_job_response(api_service.get_build_job(job_id))
 
-    @app.post(
-        f"{API_PREFIX}/jobs/build",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a build job",
-        description="Queues an asynchronous knowledge-base build job and returns a job identifier.",
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    @app.post(
+    @_versioned_alias_route(
+        app,
+        "post",
         "/jobs/build",
         response_model=BuildJobResponseModel,
         status_code=202,
@@ -391,15 +421,9 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
             )
         )
 
-    @app.post(
-        f"{API_PREFIX}/jobs/rebuild",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a rebuild job",
-        description="Queues an asynchronous knowledge-base rebuild job and returns a job identifier.",
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    @app.post(
+    @_versioned_alias_route(
+        app,
+        "post",
         "/jobs/rebuild",
         response_model=BuildJobResponseModel,
         status_code=202,
@@ -418,18 +442,9 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
             )
         )
 
-    @app.post(
-        f"{API_PREFIX}/knowledge-base/build",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a build job (compatibility alias)",
-        description=(
-            "Compatibility alias for `/jobs/build`. "
-            "Queues an asynchronous knowledge-base build job instead of blocking until completion."
-        ),
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    @app.post(
+    @_versioned_alias_route(
+        app,
+        "post",
         "/knowledge-base/build",
         response_model=BuildJobResponseModel,
         status_code=202,
@@ -451,18 +466,9 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
             )
         )
 
-    @app.post(
-        f"{API_PREFIX}/knowledge-base/rebuild",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a rebuild job (compatibility alias)",
-        description=(
-            "Compatibility alias for `/jobs/rebuild`. "
-            "Queues an asynchronous knowledge-base rebuild job instead of blocking until completion."
-        ),
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    @app.post(
+    @_versioned_alias_route(
+        app,
+        "post",
         "/knowledge-base/rebuild",
         response_model=BuildJobResponseModel,
         status_code=202,

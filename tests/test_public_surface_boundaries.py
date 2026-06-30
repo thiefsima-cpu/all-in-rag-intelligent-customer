@@ -573,6 +573,67 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         ):
             self.assertIn(expected, policy)
 
+    def test_api_route_aliases_use_shared_registration_helper(self) -> None:
+        path = RAG_MODULES_DIR / "interfaces" / "api" / "routes.py"
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        violations: list[str] = []
+
+        def route_path(node: ast.AST) -> tuple[str, str] | None:
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return ("unversioned", node.value)
+            if not isinstance(node, ast.JoinedStr):
+                return None
+            has_api_prefix = any(
+                isinstance(value, ast.FormattedValue)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "API_PREFIX"
+                for value in node.values
+            )
+            if not has_api_prefix:
+                return None
+            suffix = "".join(
+                value.value
+                for value in node.values
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            )
+            return ("versioned", suffix)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            unversioned_paths: set[str] = set()
+            versioned_paths: set[str] = set()
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                func = decorator.func
+                if (
+                    not isinstance(func, ast.Attribute)
+                    or func.attr not in {"get", "post"}
+                    or not isinstance(func.value, ast.Name)
+                    or func.value.id != "app"
+                    or not decorator.args
+                ):
+                    continue
+                parsed_path = route_path(decorator.args[0])
+                if parsed_path is None:
+                    continue
+                kind, parsed = parsed_path
+                if kind == "versioned":
+                    versioned_paths.add(parsed)
+                else:
+                    unversioned_paths.add(parsed)
+
+            for duplicated_path in sorted(unversioned_paths & versioned_paths):
+                violations.append(f"{node.name}: {duplicated_path}")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Register versioned/unversioned API aliases through the shared helper "
+            "instead of stacking matching app decorators on one endpoint.",
+        )
+
     def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {
             path.stem
