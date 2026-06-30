@@ -21,6 +21,7 @@ from rag_modules.runtime import (
     GraphRetrievalSnapshot,
     GraphTraceEventSnapshot,
     ModelSuiteSnapshot,
+    PolicySnapshot,
     QueryAnalysis,
     QueryDiagnostics,
     QueryTraceEvent,
@@ -62,6 +63,9 @@ def test_answer_payload_maps_typed_response_without_to_dict() -> None:
 
     assert payload.summary.answer == "grounded answer"
     assert payload.grounding.retrieval_outcome.strategy == "combined"
+    assert payload.traces.route_trace.policy.policy_version == "c9-default-policy-v1"
+    assert payload.traces.graph_trace.policy.prompt_version == "c9-default-prompts-v1"
+    assert payload.traces.trace_event.policy.policy_hash == "sha256:policy"
     assert payload.traces.generation_trace.total_tokens == 12
     assert payload.traces.trace_event.diagnostics.overall_bucket == "healthy"
 
@@ -158,6 +162,14 @@ def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> Non
 
 def _complete_result() -> QuestionAnswerResult:
     question = "why does mapo tofu work"
+    policy = PolicySnapshot(
+        schema_version="policy-bundle-v1",
+        policy_version="c9-default-policy-v1",
+        prompt_version="c9-default-prompts-v1",
+        policy_hash="sha256:policy",
+        prompt_hash="sha256:prompt",
+        bundle_name="c9-default-v1",
+    )
     constraints = QueryConstraints(
         include_terms=["tofu"],
         ingredients=["tofu", "doubanjiang"],
@@ -249,6 +261,7 @@ def _complete_result() -> QuestionAnswerResult:
         query=question,
         strategy="combined",
         requested_top_k=3,
+        policy=policy,
         retrieval_request=retrieval_request,
         stages={
             "plan": RouteStageSnapshot(
@@ -306,6 +319,7 @@ def _complete_result() -> QuestionAnswerResult:
         query=question,
         strategy="combined",
         requested_top_k=3,
+        policy=policy,
         retrieval_request=retrieval_request,
         query_type="path_finding",
         source_entities=["tofu"],
@@ -332,6 +346,7 @@ def _complete_result() -> QuestionAnswerResult:
     generation_trace = GenerationSnapshot(
         status="success",
         mode="two_stage",
+        policy=policy,
         decision_reason="grounded",
         total_evidence_items=2,
         selected_evidence_items=1,
@@ -356,6 +371,7 @@ def _complete_result() -> QuestionAnswerResult:
         query=question,
         strategy="combined",
         latency_ms=9.9,
+        policy=policy,
         plan={"strategy": "combined"},
         models=ModelSuiteSnapshot(llm="llm", embedding="embedding", rerank="rerank"),
         retrieval=RetrievalTraceSnapshot(

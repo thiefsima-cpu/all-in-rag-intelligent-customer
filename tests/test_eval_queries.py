@@ -412,6 +412,9 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertEqual(report["top_k"], 3)
         self.assertFalse(report["generate"])
         self.assertEqual(report["metrics"]["pass_rate"], 1.0)
+        self.assertEqual(report["policy"]["policy_version"], "c9-default-policy-v1")
+        self.assertEqual(report["policy"]["prompt_version"], "c9-default-prompts-v1")
+        self.assertTrue(report["policy"]["policy_hash"].startswith("sha256:"))
 
 
 if __name__ == "__main__":

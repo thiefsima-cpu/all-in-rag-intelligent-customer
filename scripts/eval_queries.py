@@ -24,6 +24,7 @@ from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.configuration import GraphRAGConfig, load_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.evaluation import grounding_metrics, percentile, retrieval_metrics
+from rag_modules.query_policy import get_query_policy
 from rag_modules.retrieval_observability import summarize_documents
 
 DEFAULT_CORPUS_PATH = (
@@ -649,6 +650,10 @@ def _config_profile_metadata(config: GraphRAGConfig) -> dict[str, Any]:
     }
 
 
+def _query_policy_metadata() -> dict[str, str]:
+    return get_query_policy().metadata.to_dict()
+
+
 def build_eval_report(
     *,
     metrics: dict,
@@ -663,6 +668,7 @@ def build_eval_report(
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "profile": _config_profile_metadata(config),
+        "policy": _query_policy_metadata(),
         "corpus": str(Path(corpus_path).resolve()),
         "top_k": int(top_k),
         "generate": bool(generate),
@@ -684,12 +690,15 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
     )
     metrics = report.get("metrics") or {}
     profile = report.get("profile") or {}
+    policy = report.get("policy") or {}
     summary_lines = [
         "# Eval Summary",
         "",
         f"- generated_at: {report.get('generated_at', '')}",
         f"- profile: {profile.get('name', '') or 'none'}",
         f"- profile_hash: {profile.get('hash', '')}",
+        f"- policy_version: {policy.get('policy_version', '')}",
+        f"- prompt_version: {policy.get('prompt_version', '')}",
         f"- corpus: {report.get('corpus', '')}",
         f"- top_k: {report.get('top_k', '')}",
         f"- generate: {report.get('generate', False)}",

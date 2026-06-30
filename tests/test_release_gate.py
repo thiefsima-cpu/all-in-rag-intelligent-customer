@@ -331,6 +331,8 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["included_optional_stages"], [])
         self.assertTrue(report["quality_eval_required"])
         self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertEqual(report["query_policy"]["policy_version"], "c9-default-policy-v1")
+        self.assertEqual(report["query_policy"]["prompt_version"], "c9-default-prompts-v1")
 
     def test_run_release_gate_default_registers_required_quality_runner(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -528,6 +530,8 @@ class ReleaseGateTests(unittest.TestCase):
             summary = summary_path.read_text(encoding="utf-8")
 
         self.assertIn("quality_eval: required", summary)
+        self.assertIn("policy_version: c9-default-policy-v1", summary)
+        self.assertIn("prompt_version: c9-default-prompts-v1", summary)
         self.assertIn("citation_accuracy: 0.8000", summary)
         self.assertIn("fallback_rate: 0.0000", summary)
         self.assertIn("retrieval_degradation_rate: 0.0000", summary)

@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Mapping
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from rag_modules.query_policy import get_query_policy
 from scripts.smoke_answer_pipeline import run_smoke as run_answer_pipeline
 from scripts.smoke_answer_pipeline_real_route import (
     run_smoke as run_answer_pipeline_real_route,
@@ -40,6 +41,10 @@ SUITE_RUNNERS: Dict[str, SuiteRunner] = {
     "generation_plans": run_generation_plans,
     "generation_prompts": run_generation_prompts,
 }
+
+
+def _query_policy_metadata() -> dict[str, str]:
+    return get_query_policy().metadata.to_dict()
 
 
 def load_policy(path: str | Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
@@ -540,6 +545,7 @@ def evaluate_gate(
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "passed": not failed_checks,
+        "query_policy": _query_policy_metadata(),
         "metrics": {
             "suite_count": len(required_suites),
             "case_count": total_cases,
@@ -574,6 +580,7 @@ def write_report(
     status = "PASS" if report.get("passed") else "FAIL"
     optional_stages = [str(item) for item in (report.get("included_optional_stages") or [])]
     optional_stage_label = ", ".join(optional_stages) if optional_stages else "none"
+    query_policy = dict(report.get("query_policy") or {})
     quality_eval_required = bool(report.get("quality_eval_required"))
     quality_eval_label = (
         "required"
@@ -585,6 +592,8 @@ def write_report(
         "",
         f"- status: {status}",
         f"- generated_at: {report.get('generated_at', '')}",
+        f"- policy_version: {query_policy.get('policy_version', '')}",
+        f"- prompt_version: {query_policy.get('prompt_version', '')}",
         f"- optional_stages: {optional_stage_label}",
         f"- quality_eval: {quality_eval_label}",
         f"- suites: {metrics.get('suite_count', 0)}",
