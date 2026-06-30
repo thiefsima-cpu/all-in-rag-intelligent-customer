@@ -1108,16 +1108,14 @@
       {
         "id": "direct_relations",
         "when": {
-          "graph_query_types": [
-            "entity_relation"
-          ]
+          "entities_present": true
         },
         "template": "Find the direct graph relations around: {entities}"
       },
       {
         "id": "flavor_contribution",
         "when": {
-          "relation_types": [
+          "relation_types_any": [
             "HAS_FLAVOR",
             "CONTRIBUTES_TO",
             "INGREDIENT_CONTRIBUTES_TO"
@@ -1128,7 +1126,7 @@
       {
         "id": "technique_texture",
         "when": {
-          "relation_types": [
+          "relation_types_any": [
             "USES_TECHNIQUE",
             "TECHNIQUE_MODIFIES_TEXTURE"
           ]
@@ -1138,9 +1136,9 @@
       {
         "id": "time_difficulty",
         "when": {
-          "constraint_fields": [
-            "time_minutes",
-            "difficulty"
+          "constraints_present": [
+            "time",
+            "preference_terms"
           ]
         },
         "template": "Verify whether time and difficulty constraints are satisfied."
@@ -1148,9 +1146,11 @@
       {
         "id": "multi_hop_reasoning",
         "when": {
-          "graph_query_types": [
-            "multi_hop",
-            "path_finding"
+          "query_markers_any": [
+            "why",
+            "reason",
+            "impact",
+            "relationship"
           ]
         },
         "template": "Assemble multi-hop paths that explain causal or associative chains."
@@ -1158,7 +1158,7 @@
       {
         "id": "constraints",
         "when": {
-          "constraint_fields": [
+          "constraints_present": [
             "include_terms",
             "exclude_terms"
           ]

@@ -15,6 +15,7 @@ from ..runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     ModelSuiteSnapshot,
+    PolicySnapshot,
     QueryDiagnostics,
     QueryTraceEvent,
     RetrievalOutcome,
@@ -68,6 +69,11 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
         route_snapshot = self._normalize_route_snapshot(route_trace)
         graph_snapshot = self._normalize_graph_snapshot(graph_trace)
         generation_snapshot = self._normalize_generation_snapshot(generation_trace)
+        policy_snapshot = self._select_policy_snapshot(
+            route_snapshot,
+            graph_snapshot,
+            generation_snapshot,
+        )
         diagnostics = self._build_diagnostics(
             evidence_documents,
             error,
@@ -80,6 +86,7 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             query=query,
             strategy=strategy,
             latency_ms=round(float(latency_ms or 0.0), 2),
+            policy=policy_snapshot,
             plan=plan,
             models=ModelSuiteSnapshot(
                 llm=str(self.models.llm_model),
@@ -145,6 +152,21 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
         generation_trace: Mapping[str, Any] | GenerationSnapshot | None,
     ) -> GenerationSnapshot:
         return clone_generation_snapshot(generation_trace)
+
+    @staticmethod
+    def _select_policy_snapshot(
+        route_snapshot: RouteSnapshot,
+        graph_snapshot: GraphRetrievalSnapshot,
+        generation_snapshot: GenerationSnapshot,
+    ) -> PolicySnapshot:
+        for policy in (
+            route_snapshot.policy,
+            graph_snapshot.policy,
+            generation_snapshot.policy,
+        ):
+            if policy.is_recorded():
+                return PolicySnapshot.from_dict(policy.to_dict())
+        return PolicySnapshot()
 
 
 __all__ = ["_TraceEventBuilderMixin"]

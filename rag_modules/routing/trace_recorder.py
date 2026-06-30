@@ -6,7 +6,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
-from ..runtime import RouteSnapshot, RouteStageSnapshot
+from ..query_policy import get_query_policy
+from ..runtime import PolicySnapshot, RouteSnapshot, RouteStageSnapshot
 from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
 
@@ -17,6 +18,7 @@ class RouteTraceRecorder:
         self.snapshot = RouteSnapshot(
             query=query,
             requested_top_k=requested_top_k,
+            policy=PolicySnapshot.from_metadata(get_query_policy().metadata),
         )
 
     def record_plan(self, plan: QueryPlan, *, start_time: float) -> None:

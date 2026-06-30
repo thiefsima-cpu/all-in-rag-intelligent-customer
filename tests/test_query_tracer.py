@@ -251,6 +251,21 @@ class QueryTracerTests(unittest.TestCase):
         )
         self.assertEqual(QueryTraceEvent(policy=policy).to_dict()["policy"], _policy_payload())
 
+    def test_route_trace_policy_is_preserved_in_query_trace(self) -> None:
+        tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
+        policy = PolicySnapshot.from_dict(_policy_payload())
+
+        event = tracer.record(
+            query="policy route",
+            analysis=None,
+            documents=[EvidenceDocument(content="evidence")],
+            latency_ms=1.0,
+            route_trace=RouteSnapshot(query="policy route", policy=policy),
+            generation_trace=GenerationSnapshot(status="success", mode="direct", policy=policy),
+        )
+
+        self.assertEqual(policy.policy_version, event.policy.policy_version)
+
     def test_generation_fallback_is_classified_as_degraded(self) -> None:
         tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
 

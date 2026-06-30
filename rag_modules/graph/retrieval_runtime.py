@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..contracts import QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
-from ..runtime import GraphRetrievalSnapshot
+from ..query_policy import get_query_policy
+from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
 from .query_resolution import GraphQueryFactory
 from .retrieval_types import GraphQuery
 
@@ -51,6 +52,10 @@ class GraphRetrievalRuntime:
         return graph_query, evidence_goals
 
     @staticmethod
+    def _policy_snapshot() -> PolicySnapshot:
+        return PolicySnapshot.from_metadata(get_query_policy().metadata)
+
+    @staticmethod
     def start_trace(
         query: str,
         *,
@@ -61,6 +66,7 @@ class GraphRetrievalRuntime:
             query=query,
             strategy="graph_rag",
             requested_top_k=requested_top_k,
+            policy=GraphRetrievalRuntime._policy_snapshot(),
             retrieval_request=retrieval_request,
         )
 
@@ -76,6 +82,8 @@ class GraphRetrievalRuntime:
         trace.target_entities = list(graph_query.target_entities or [])
         trace.relation_types = list(graph_query.relation_types or [])
         trace.sub_questions = list(evidence_goals or [])
+        if not trace.policy.is_recorded():
+            trace.policy = GraphRetrievalRuntime._policy_snapshot()
 
     @staticmethod
     def finalize_trace(
