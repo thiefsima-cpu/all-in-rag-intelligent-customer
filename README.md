@@ -62,6 +62,11 @@ graph-rag-pressure
 graph-rag-verify-env
 ```
 
+## Architecture
+
+Start with [docs/architecture.md](docs/architecture.md) for the runtime
+assembly, query-to-answer flow, and build workflow state machine diagrams.
+
 ## Common Commands
 
 ```powershell
