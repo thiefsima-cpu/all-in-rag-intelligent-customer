@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from rag_modules.contracts import (
     GraphQueryType,
@@ -97,6 +98,53 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertIs(plan.planner_mode, QueryPlannerMode.FAST_RULE)
         self.assertEqual(plan.to_dict()["strategy"], "combined")
         self.assertEqual(plan.to_dict()["planner_mode"], "fast_rule")
+
+    def test_scoring_uses_policy_structural_relationship_factor(self) -> None:
+        from rag_modules.query_policy import get_query_policy
+        from rag_modules.query_understanding.scoring import build_query_semantic_score_breakdown
+
+        policy = get_query_policy()
+        settings = QuerySemanticRuntimeSettings(relation_intensity_reference_ratio=1.0)
+
+        score = build_query_semantic_score_breakdown(
+            "relationship",
+            settings=settings,
+            relation_hits=[],
+            structural_hits=["relationship"],
+        )
+
+        expected = min(
+            1.0,
+            policy.scoring.structural_relationship_factor
+            / max(1.0, len(policy.lexicon.term_group("relation_markers"))),
+        )
+        self.assertEqual(score.lexical_relationship_intensity, expected)
+
+        scoring_source = Path("rag_modules/query_understanding/scoring.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("structural_hit_count * 0.5", scoring_source)
+        self.assertIn("policy.structural_relationship_factor", scoring_source)
+
+    def test_calibrator_uses_policy_validation_labels(self) -> None:
+        from rag_modules.query_policy import get_query_policy
+
+        plan = QueryPlan.from_dict(
+            "plain tofu",
+            {"strategy": "combined", "graph_query_type": "entity_relation"},
+        )
+        self.planner._calibrator.calibrate(plan)
+
+        label = get_query_policy().routing.validation_labels["strategy"]
+        self.assertTrue(any(item.startswith(label + ":") for item in plan.validation_errors))
+
+        calibration_source = Path(
+            "rag_modules/query_understanding/planning/calibration.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("calibrated_strategy:", calibration_source)
+        self.assertNotIn("calibrated_graph_query_type:", calibration_source)
+        self.assertNotIn("calibrated_source_entities", calibration_source)
+        self.assertIn('self.policy.validation_labels["strategy"]', calibration_source)
 
     def test_query_plan_normalizes_graph_query_type_enum(self) -> None:
         profile = QuerySemanticProfile.from_dict({"query_type": "multi_hop"})

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from ..contracts import QuerySemanticRuntimeSettings, QuerySemanticScoreBreakdown
+from ..query_policy import get_query_policy
 from .features import infer_graph_query_type
 from .registry import (
     CONSTRAINT_MARKERS,
@@ -26,6 +27,7 @@ def build_query_semantic_score_breakdown(
     fast_rule_hits: Sequence[str] | None = None,
 ) -> QuerySemanticScoreBreakdown:
     settings = settings or QuerySemanticRuntimeSettings()
+    policy = get_query_policy().scoring
     normalized = normalize_query_text(query)
     relation_hits = list(relation_hits or marker_hits(normalized, RELATION_MARKERS))
     constraint_hits = list(constraint_hits or marker_hits(normalized, CONSTRAINT_MARKERS))
@@ -40,7 +42,11 @@ def build_query_semantic_score_breakdown(
     reference_hits = max(1.0, len(RELATION_MARKERS) * settings.relation_intensity_reference_ratio)
     lexical_relationship_intensity = min(
         1.0,
-        (relation_hit_count + structural_hit_count * 0.5) / reference_hits,
+        (
+            relation_hit_count
+            + structural_hit_count * policy.structural_relationship_factor
+        )
+        / reference_hits,
     )
 
     relation_hit_intensity_boost = 0.0

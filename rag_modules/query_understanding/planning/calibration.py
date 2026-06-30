@@ -9,6 +9,7 @@ from ...contracts import (
     QuerySemanticRuntimeSettings,
 )
 from ...domain.shared.query_constraints import QueryConstraints
+from ...query_policy import get_query_policy
 from ...runtime import SearchStrategy
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
@@ -44,42 +45,36 @@ def _graph_query_type_enum(
 class QueryPlanCalibrator:
     def __init__(self, settings: QuerySemanticRuntimeSettings) -> None:
         self.settings = settings
+        self.policy = get_query_policy().routing
 
     def has_meaningful_constraints(
         self,
         constraints: QueryConstraints,
         profile: QuerySemanticProfile,
     ) -> bool:
-        return bool(
-            profile.needs_recipe_recommendation
-            or constraints.needs_recipe_recommendation
-            or constraints.ingredients
-            or constraints.excluded_ingredients
-            or constraints.include_terms
-            or constraints.exclude_terms
-            or constraints.cuisine_terms
-            or constraints.excluded_cuisine_terms
-            or constraints.category_terms
-            or constraints.health_terms
-            or constraints.preference_terms
-            or constraints.max_total_minutes is not None
-            or constraints.max_prep_minutes is not None
-            or constraints.max_cook_minutes is not None
-        )
+        meaningful_fields = set(self.policy.meaningful_constraint_fields)
+        if profile.needs_recipe_recommendation and "needs_recipe_recommendation" in meaningful_fields:
+            return True
+        for field_name in meaningful_fields:
+            value = getattr(constraints, field_name, None)
+            if isinstance(value, bool):
+                if value:
+                    return True
+                continue
+            if value is not None and bool(value):
+                return True
+        return False
 
     def is_graph_first_profile(self, profile: QuerySemanticProfile) -> bool:
         query_type = _graph_query_type_enum(profile.query_type)
-        if query_type in {
-            GraphQueryType.PATH_FINDING,
-            GraphQueryType.SUBGRAPH,
-            GraphQueryType.CLUSTERING,
-        }:
+        if query_type.value in set(self.policy.graph_first_query_types):
             return True
         if query_type is not GraphQueryType.MULTI_HOP:
             return False
+        required_relation_hits = self.policy.multi_hop_graph_first_relation_hits
         return bool(
-            len(profile.relation_hits or []) >= 2
-            or len(profile.structural_hits or []) >= 2
+            len(profile.relation_hits or []) >= required_relation_hits
+            or len(profile.structural_hits or []) >= required_relation_hits
             or profile.relationship_intensity >= self.settings.multi_hop_hint_relationship_threshold
         )
 
@@ -175,14 +170,15 @@ class QueryPlanCalibrator:
         current_strategy = _strategy_value(plan.strategy)
         if resolved_strategy != current_strategy:
             plan.validation_errors.append(
-                f"calibrated_strategy:{current_strategy}->{resolved_strategy}"
+                f'{self.policy.validation_labels["strategy"]}:'
+                f"{current_strategy}->{resolved_strategy}"
             )
             plan.strategy = SearchStrategy(resolved_strategy)
 
         resolved_query_type = self.resolve_graph_query_type(plan.graph_query_type, profile)
         if resolved_query_type != plan.graph_query_type:
             plan.validation_errors.append(
-                "calibrated_graph_query_type:"
+                f'{self.policy.validation_labels["graph_query_type"]}:'
                 f"{plan.graph_query_type_value}->{resolved_query_type.value}"
             )
             plan.graph_query_type = resolved_query_type
@@ -217,7 +213,9 @@ class QueryPlanCalibrator:
                 fallback_candidates[: self.settings.source_entity_limit]
             )
             if plan.source_entities:
-                plan.validation_errors.append("calibrated_source_entities")
+                plan.validation_errors.append(
+                    self.policy.validation_labels["source_entities"]
+                )
 
         plan.max_depth = max(
             1,

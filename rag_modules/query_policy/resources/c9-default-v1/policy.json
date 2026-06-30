@@ -1061,7 +1061,18 @@
     "multi_hop_graph_first_relation_hits": 2,
     "meaningful_constraint_fields": [
       "include_terms",
-      "exclude_terms"
+      "exclude_terms",
+      "ingredients",
+      "excluded_ingredients",
+      "cuisine_terms",
+      "excluded_cuisine_terms",
+      "category_terms",
+      "health_terms",
+      "preference_terms",
+      "max_total_minutes",
+      "max_prep_minutes",
+      "max_cook_minutes",
+      "needs_recipe_recommendation"
     ],
     "validation_labels": {
       "strategy": "calibrated_strategy",
