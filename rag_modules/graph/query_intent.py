@@ -37,7 +37,11 @@ class GraphQueryIntent:
 
     @property
     def query_type_value(self) -> str:
-        return self.query_type.value if isinstance(self.query_type, GraphQueryType) else str(self.query_type or "")
+        return (
+            self.query_type.value
+            if isinstance(self.query_type, GraphQueryType)
+            else str(self.query_type or "")
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {

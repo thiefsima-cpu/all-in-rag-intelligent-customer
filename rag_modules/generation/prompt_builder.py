@@ -177,4 +177,6 @@ class GenerationPromptBuilder:
 
     def question_needs_relation_explanation(self, question: str) -> bool:
         question = (question or "").strip()
-        return any(marker in question for marker in self.generation_policy.relation_explanation_markers)
+        return any(
+            marker in question for marker in self.generation_policy.relation_explanation_markers
+        )

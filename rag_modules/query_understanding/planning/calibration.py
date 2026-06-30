@@ -53,7 +53,10 @@ class QueryPlanCalibrator:
         profile: QuerySemanticProfile,
     ) -> bool:
         meaningful_fields = set(self.policy.meaningful_constraint_fields)
-        if profile.needs_recipe_recommendation and "needs_recipe_recommendation" in meaningful_fields:
+        if (
+            profile.needs_recipe_recommendation
+            and "needs_recipe_recommendation" in meaningful_fields
+        ):
             return True
         for field_name in meaningful_fields:
             value = getattr(constraints, field_name, None)
@@ -169,16 +172,17 @@ class QueryPlanCalibrator:
         )
         current_strategy = _strategy_value(plan.strategy)
         if resolved_strategy != current_strategy:
+            strategy_label = self.policy.validation_labels["strategy"]
             plan.validation_errors.append(
-                f'{self.policy.validation_labels["strategy"]}:'
-                f"{current_strategy}->{resolved_strategy}"
+                f"{strategy_label}:{current_strategy}->{resolved_strategy}"
             )
             plan.strategy = SearchStrategy(resolved_strategy)
 
         resolved_query_type = self.resolve_graph_query_type(plan.graph_query_type, profile)
         if resolved_query_type != plan.graph_query_type:
+            graph_query_type_label = self.policy.validation_labels["graph_query_type"]
             plan.validation_errors.append(
-                f'{self.policy.validation_labels["graph_query_type"]}:'
+                f"{graph_query_type_label}:"
                 f"{plan.graph_query_type_value}->{resolved_query_type.value}"
             )
             plan.graph_query_type = resolved_query_type
@@ -213,9 +217,7 @@ class QueryPlanCalibrator:
                 fallback_candidates[: self.settings.source_entity_limit]
             )
             if plan.source_entities:
-                plan.validation_errors.append(
-                    self.policy.validation_labels["source_entities"]
-                )
+                plan.validation_errors.append(self.policy.validation_labels["source_entities"])
 
         plan.max_depth = max(
             1,

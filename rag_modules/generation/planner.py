@@ -119,9 +119,13 @@ class GenerationPlanner:
                 ),
                 "",
             )
-            claim = graph_claim or text_claim or self._fallback_claim(
-                recipe_name=item.recipe_name,
-                citation=item.citation,
+            claim = (
+                graph_claim
+                or text_claim
+                or self._fallback_claim(
+                    recipe_name=item.recipe_name,
+                    citation=item.citation,
+                )
             )
             key_points.append(
                 {
@@ -133,7 +137,10 @@ class GenerationPlanner:
             )
 
         missing_information: list[str] = []
-        if self.prompt_builder.question_needs_relation_explanation(question) and not has_graph_claims:
+        if (
+            self.prompt_builder.question_needs_relation_explanation(question)
+            and not has_graph_claims
+        ):
             missing_information.append(self._rule_plan_text("missing_relation_evidence"))
         if len(package.items) < 2 and answer_type in {"recommendation", "comparison"}:
             missing_information.append(self._rule_plan_text("sparse_evidence"))

@@ -52,9 +52,8 @@ def infer_graph_max_depth(
         "default": settings.default_high_intensity_threshold,
     }
     high_intensity_key = f"{base_key}_high_intensity"
-    if (
-        high_intensity_key in depth_map
-        and relationship_intensity >= high_intensity_thresholds.get(base_key, 1.0)
+    if high_intensity_key in depth_map and relationship_intensity >= high_intensity_thresholds.get(
+        base_key, 1.0
     ):
         return int(depth_map[high_intensity_key])
     return int(depth_map.get(base_key, depth_map["default"]))

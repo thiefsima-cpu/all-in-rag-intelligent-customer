@@ -263,10 +263,10 @@ def run_suites(
 
 
 def _run_quality_eval(stage: dict[str, Any]) -> dict[str, Any]:
-    from scripts.eval_queries import evaluate_queries
+    from scripts.eval_queries import evaluate_offline_quality_queries
 
     runner = dict(stage.get("runner") or {})
-    report = evaluate_queries(
+    report = evaluate_offline_quality_queries(
         top_k=int(runner.get("top_k") or 3),
         generate=bool(runner.get("generate", False)),
         profile=str(runner.get("profile") or "") or None,

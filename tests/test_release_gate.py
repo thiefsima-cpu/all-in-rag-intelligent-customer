@@ -285,7 +285,10 @@ class ReleaseGateTests(unittest.TestCase):
         runner = load_policy(DEFAULT_POLICY_PATH)["suite_runners"]["quality_eval"]
         stage = {"suite": "quality_eval", "runner": runner}
 
-        with patch("scripts.eval_queries.evaluate_queries", return_value=eval_report) as evaluate:
+        with patch(
+            "scripts.eval_queries.evaluate_offline_quality_queries",
+            return_value=eval_report,
+        ) as evaluate:
             report = _run_quality_eval(stage)
 
         evaluate.assert_called_once_with(

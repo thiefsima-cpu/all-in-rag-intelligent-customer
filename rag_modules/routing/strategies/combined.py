@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import Executor, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import List
+from dataclasses import dataclass
+from typing import Any, List, Literal, Sequence, TypeAlias, cast
 
 from ...contracts import EvidenceDocument
 from ...retrieval.hybrid_outcome import HybridRetrievalOutcome
@@ -31,7 +32,24 @@ _BRANCH_TIMEOUT_METADATA_KEYS = (
     "retrieval_branch_timeout_seconds",
     "request_budget_seconds",
 )
-_MISSING_RESULT = object()
+
+_BranchName: TypeAlias = Literal["traditional", "graph"]
+
+
+@dataclass(frozen=True)
+class _TraditionalBranchResult:
+    outcome: HybridRetrievalOutcome
+    latency_ms: float
+
+
+@dataclass(frozen=True)
+class _GraphBranchResult:
+    documents: List[EvidenceDocument]
+    trace: object
+    latency_ms: float
+
+
+_BranchResult: TypeAlias = _TraditionalBranchResult | _GraphBranchResult
 
 
 class CombinedRouteStrategy:
@@ -74,12 +92,15 @@ class CombinedRouteStrategy:
             strategy=SearchStrategy.COMBINED.value,
         )
 
-        def load_traditional() -> tuple[HybridRetrievalOutcome, float]:
+        def load_traditional() -> _BranchResult:
             traditional_start = time.perf_counter()
             outcome = services.traditional_retrieval.hybrid_evidence_search(traditional_request)
-            return outcome, _elapsed_ms(traditional_start)
+            return _TraditionalBranchResult(
+                outcome=outcome,
+                latency_ms=_elapsed_ms(traditional_start),
+            )
 
-        def load_graph() -> tuple[List[EvidenceDocument], object, float]:
+        def load_graph() -> _BranchResult:
             graph_start = time.perf_counter()
             if hasattr(services.graph_rag_retrieval, "graph_rag_evidence_search_with_trace"):
                 docs, trace = services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
@@ -100,19 +121,23 @@ class CombinedRouteStrategy:
                     requested_top_k=candidate_k,
                     doc_count=len(docs),
                 )
-            return list(docs), trace, _elapsed_ms(graph_start)
+            return _GraphBranchResult(
+                documents=list(docs),
+                trace=trace,
+                latency_ms=_elapsed_ms(graph_start),
+            )
 
         executor = self._resolve_executor()
-        traditional_future = executor.submit(load_traditional)
-        graph_future = executor.submit(load_graph)
-        branch_futures = {
+        traditional_future: Future[_BranchResult] = executor.submit(load_traditional)
+        graph_future: Future[_BranchResult] = executor.submit(load_graph)
+        branch_futures: dict[_BranchName, Future[_BranchResult]] = {
             "traditional": traditional_future,
             "graph": graph_future,
         }
         branch_timeout_seconds = self._resolve_branch_timeout_seconds(request)
         deadline = time.perf_counter() + branch_timeout_seconds
-        branch_results: dict[str, object] = {}
-        timed_out_branches: List[str] = []
+        branch_results: dict[_BranchName, _BranchResult] = {}
+        timed_out_branches: List[_BranchName] = []
 
         for branch_name, future in branch_futures.items():
             try:
@@ -129,27 +154,29 @@ class CombinedRouteStrategy:
             branch_results[branch_name] = future.result(timeout=0)
             timed_out_branches.remove(branch_name)
 
-        cancelled_branches = []
+        cancelled_branches: List[_BranchName] = []
         for branch_name in timed_out_branches:
             if _cancel_future(branch_futures[branch_name]):
                 cancelled_branches.append(branch_name)
 
-        traditional_result = branch_results.get("traditional", _MISSING_RESULT)
-        graph_result = branch_results.get("graph", _MISSING_RESULT)
+        traditional_result = branch_results.get("traditional")
+        graph_result = branch_results.get("graph")
         traditional_outcome = None
         traditional_latency_ms = None
         traditional_docs: List[EvidenceDocument] = []
-        if traditional_result is not _MISSING_RESULT:
-            traditional_outcome, traditional_latency_ms = traditional_result
+        if isinstance(traditional_result, _TraditionalBranchResult):
+            traditional_outcome = traditional_result.outcome
+            traditional_latency_ms = traditional_result.latency_ms
             traditional_docs = list(traditional_outcome.documents)
 
         graph_trace = None
         graph_latency_ms = None
         graph_docs: List[EvidenceDocument] = []
-        if graph_result is not _MISSING_RESULT:
-            raw_graph_docs, graph_trace, graph_latency_ms = graph_result
+        if isinstance(graph_result, _GraphBranchResult):
+            graph_trace = graph_result.trace
+            graph_latency_ms = graph_result.latency_ms
             graph_docs = services.traditional_retrieval.enrich_to_parent_evidence_documents(
-                raw_graph_docs,
+                graph_result.documents,
                 top_n=candidate_k,
             )
         combined_docs = interleave_route_documents(
@@ -183,8 +210,8 @@ class CombinedRouteStrategy:
             documents=list(combined_docs),
             fallbacks=_timeout_fallbacks(
                 timed_out_branches=timed_out_branches,
-                has_traditional_result=traditional_result is not _MISSING_RESULT,
-                has_graph_result=graph_result is not _MISSING_RESULT,
+                has_traditional_result=isinstance(traditional_result, _TraditionalBranchResult),
+                has_graph_result=isinstance(graph_result, _GraphBranchResult),
             ),
             stages=[
                 RouteExecutionStageResult(
@@ -236,7 +263,7 @@ class CombinedRouteStrategy:
 
 def _coerce_branch_timeout_seconds(value: object, *, default: float) -> float:
     try:
-        seconds = float(value)
+        seconds = float(cast(Any, value))
     except (TypeError, ValueError):
         seconds = float(default)
     if seconds <= 0:
@@ -248,19 +275,17 @@ def _remaining_timeout_seconds(deadline: float) -> float:
     return max(0.0, deadline - time.perf_counter())
 
 
-def _future_done(future: object) -> bool:
-    done = getattr(future, "done", None)
-    return bool(done()) if callable(done) else False
+def _future_done(future: Future[_BranchResult]) -> bool:
+    return future.done()
 
 
-def _cancel_future(future: object) -> bool:
-    cancel = getattr(future, "cancel", None)
-    return bool(cancel()) if callable(cancel) else False
+def _cancel_future(future: Future[_BranchResult]) -> bool:
+    return future.cancel()
 
 
 def _timeout_fallbacks(
     *,
-    timed_out_branches: List[str],
+    timed_out_branches: Sequence[str],
     has_traditional_result: bool,
     has_graph_result: bool,
 ) -> List[str]:

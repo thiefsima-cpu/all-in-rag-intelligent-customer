@@ -78,13 +78,11 @@ def has_filtering_intent(query: str) -> bool:
     if contains_any(query, FILTERING_MARKERS):
         return True
     if any(
-        re.search(pattern, query)
-        for pattern in POLICY.lexicon.regex_group("time_minutes_patterns")
+        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_minutes_patterns")
     ):
         return True
     if any(
-        re.search(pattern, query)
-        for pattern in POLICY.lexicon.regex_group("time_hours_patterns")
+        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_hours_patterns")
     ):
         return True
     return contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns"))

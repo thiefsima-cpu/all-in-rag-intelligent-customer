@@ -2,8 +2,7 @@
 
 The release gate runs deterministic offline smoke suites and the curated
 quality evaluation. The quality suite is part of the default release policy and
-may initialize model, Milvus, and Neo4j dependencies through the `eval_quality`
-profile.
+uses offline fixtures; it does not require model, Milvus, or Neo4j services.
 
 ## Run
 
@@ -46,7 +45,9 @@ subgraph retrieval, clustering, and combined retrieval.
 ## Quality Stage Policy
 
 The default policy requires `quality_eval`. It uses the `eval_quality` profile
-with `top_k=6` and answer generation enabled. The gate requires:
+metadata with `top_k=6` and answer generation enabled, then evaluates
+deterministic offline evidence and answers derived from the curated corpus. The
+gate requires:
 
 - at least 9 quality cases;
 - a 100% quality-suite pass rate;

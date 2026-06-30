@@ -215,7 +215,9 @@ def _required_mapping(payload: Mapping[str, Any], key: str, root: Path) -> Dict[
     return dict(value)
 
 
-def _require_keys(payload: Mapping[str, Any], keys: Tuple[str, ...], root: Path, field_path: str) -> None:
+def _require_keys(
+    payload: Mapping[str, Any], keys: Tuple[str, ...], root: Path, field_path: str
+) -> None:
     for key in keys:
         if key not in payload:
             raise PolicyLoadError(
@@ -404,7 +406,9 @@ def _to_semantic_relation_key_specs(
                 bundle_path=str(root),
                 field_path=f"{spec_path}.target_field",
             )
-        key_fields = _required_str_tuple(raw_spec.get("key_fields"), root, f"{spec_path}.key_fields")
+        key_fields = _required_str_tuple(
+            raw_spec.get("key_fields"), root, f"{spec_path}.key_fields"
+        )
         if not key_fields:
             raise PolicyLoadError(
                 "Semantic relation key spec key_fields cannot be empty",

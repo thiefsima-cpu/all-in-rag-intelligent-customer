@@ -21,9 +21,7 @@ TECHNIQUE_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("technique_terms")
 DIET_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("diet_terms")
 HEALTH_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("health_terms")
 CUISINE_STYLE_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("cuisine_style_terms")
-INGREDIENT_CATEGORY_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group(
-    "ingredient_category_terms"
-)
+INGREDIENT_CATEGORY_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("ingredient_category_terms")
 DIFFICULTY_TERMS: Tuple[str, ...] = POLICY.lexicon.term_group("difficulty_terms")
 TIME_MARKERS: Tuple[str, ...] = POLICY.lexicon.term_group("time_markers")
 PATH_MARKERS: Tuple[str, ...] = POLICY.lexicon.term_group("path_markers")
@@ -51,12 +49,8 @@ QUERY_STOPWORDS: Tuple[str, ...] = POLICY.lexicon.term_group("query_stopwords")
 GRAPH_SOURCE_PREFIXES: Tuple[str, ...] = POLICY.lexicon.term_group("graph_source_prefixes")
 GRAPH_SOURCE_SUFFIXES: Tuple[str, ...] = POLICY.lexicon.term_group("graph_source_suffixes")
 SEMANTIC_RELATION_HINTS: Dict[str, str] = dict(POLICY.relations.semantic_relation_hints)
-RELATION_INDEX_KEYWORDS: Dict[str, Tuple[str, ...]] = dict(
-    POLICY.relations.relation_index_keywords
-)
-RELATION_QUERY_MARKERS: Dict[str, Tuple[str, ...]] = dict(
-    POLICY.relations.relation_query_markers
-)
+RELATION_INDEX_KEYWORDS: Dict[str, Tuple[str, ...]] = dict(POLICY.relations.relation_index_keywords)
+RELATION_QUERY_MARKERS: Dict[str, Tuple[str, ...]] = dict(POLICY.relations.relation_query_markers)
 DEFAULT_ENTITY_LINKER_PREFERRED_LABELS: Tuple[str, ...] = (
     POLICY.relations.entity_linker_preferred_labels
 )

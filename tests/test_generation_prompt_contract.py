@@ -54,7 +54,9 @@ class GenerationPromptContractTests(unittest.TestCase):
         self.assertIn("Recipe Evidence 1", rendered.text)
 
     def test_rule_plan_uses_policy_missing_information_template(self) -> None:
-        prompt_builder = GenerationPromptBuilder(settings=GenerationSettings(), evidence_max_chars=700)
+        prompt_builder = GenerationPromptBuilder(
+            settings=GenerationSettings(), evidence_max_chars=700
+        )
         planner = GenerationPlanner(
             settings=GenerationSettings(planner_mode="rule"),
             client_adapter=object(),

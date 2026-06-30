@@ -235,7 +235,9 @@ class QueryTracerTests(unittest.TestCase):
         self.assertFalse(GenerationSnapshot().is_recorded())
         self.assertTrue(GenerationSnapshot(mode="direct").is_recorded())
         self.assertTrue(GenerationSnapshot(request_retries=1).is_recorded())
-        self.assertTrue(GenerationSnapshot(policy=PolicySnapshot.from_dict(_policy_payload())).is_recorded())
+        self.assertTrue(
+            GenerationSnapshot(policy=PolicySnapshot.from_dict(_policy_payload())).is_recorded()
+        )
 
     def test_trace_snapshots_serialize_policy_metadata(self) -> None:
         policy = PolicySnapshot.from_dict(_policy_payload())

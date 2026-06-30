@@ -77,7 +77,8 @@ python scripts/pressure_api_service.py --json
 ```
 
 The release-gate command now runs the deterministic offline smoke suites and
-the curated quality evaluation required for release. The quality report covers
+the curated offline quality evaluation required for release. It does not need
+local Milvus, Neo4j, or model-provider services. The quality report covers
 retrieval quality, generated-answer grounding, citation accuracy, fallback
 rate, degraded retrieval sources, latency, and estimated cost.
 

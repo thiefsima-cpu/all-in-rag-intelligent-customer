@@ -42,10 +42,7 @@ def build_query_semantic_score_breakdown(
     reference_hits = max(1.0, len(RELATION_MARKERS) * settings.relation_intensity_reference_ratio)
     lexical_relationship_intensity = min(
         1.0,
-        (
-            relation_hit_count
-            + structural_hit_count * policy.structural_relationship_factor
-        )
+        (relation_hit_count + structural_hit_count * policy.structural_relationship_factor)
         / reference_hits,
     )
 

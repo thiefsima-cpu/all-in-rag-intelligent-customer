@@ -12,9 +12,7 @@ def build_planning_prompt(query: str) -> str:
     relation_types_text = "\n".join(f"- {item}" for item in GRAPH_RELATION_TYPES)
     excluded_relation_types = set(policy.relations.preferred_relation_excluded_types)
     preferred_relation_types_text = "\n".join(
-        f"- {item}"
-        for item in GRAPH_RELATION_TYPES
-        if item not in excluded_relation_types
+        f"- {item}" for item in GRAPH_RELATION_TYPES if item not in excluded_relation_types
     )
     return policy.prompts.query_planner.format(
         graph_query_types_text=graph_query_types_text,

@@ -13,6 +13,7 @@ from scripts.eval_queries import (
     EvalCase,
     build_eval_report,
     evaluate_case,
+    evaluate_offline_quality_queries,
     evaluate_queries,
     load_eval_cases,
     run_eval,
@@ -216,6 +217,28 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertTrue(any(case.category == "constrained_recommendation" for case in cases))
         self.assertTrue(any("水煮肉片" in case.query for case in cases))
         self.assertFalse(any("\ufffd" in case.query for case in cases))
+
+    def test_offline_quality_queries_return_gate_metrics_without_runtime_services(self) -> None:
+        with patch("scripts.eval_queries.AdvancedGraphRAGSystem") as system:
+            report = evaluate_offline_quality_queries(
+                top_k=6,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        system.assert_not_called()
+        metrics = report["metrics"]
+        self.assertGreaterEqual(metrics["case_count"], 9)
+        self.assertEqual(metrics["pass_rate"], 1.0)
+        self.assertGreaterEqual(metrics["recall_at_k"], 0.8)
+        self.assertGreaterEqual(metrics["faithfulness"], 0.8)
+        self.assertGreaterEqual(metrics["citation_accuracy"], 0.8)
+        self.assertEqual(metrics["fallback_rate"], 0.0)
+        self.assertEqual(metrics["retrieval_degradation_rate"], 0.0)
+        self.assertLessEqual(metrics["p95_latency_ms"], 2000.0)
+        self.assertLessEqual(metrics["estimated_cost_usd"], 1.0)
+        self.assertEqual(report["profile"]["name"], "eval_quality")
+        self.assertFalse(report["failures"])
 
     def test_evaluate_case_generate_returns_response_native_contract(self) -> None:
         case = EvalCase(

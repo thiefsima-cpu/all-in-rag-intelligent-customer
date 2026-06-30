@@ -103,9 +103,7 @@ class GraphIndexingModuleTests(unittest.TestCase):
             len(
                 [
                     item
-                    for item in restored.get_relations_by_key(
-                        self._relation_keyword("REQUIRES")
-                    )
+                    for item in restored.get_relations_by_key(self._relation_keyword("REQUIRES"))
                     if item.relation_type == "REQUIRES"
                 ]
             ),

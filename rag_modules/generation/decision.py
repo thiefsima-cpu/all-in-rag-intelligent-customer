@@ -67,7 +67,8 @@ def decide_generation_mode(
 
     if (
         complexity >= settings.two_stage_complexity_threshold + high_pressure_margin
-        or relationship_intensity >= settings.two_stage_relationship_threshold + high_pressure_margin
+        or relationship_intensity
+        >= settings.two_stage_relationship_threshold + high_pressure_margin
     ):
         return GenerationDecision(
             mode=GenerationMode.TWO_STAGE,

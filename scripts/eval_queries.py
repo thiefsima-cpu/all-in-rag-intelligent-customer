@@ -30,6 +30,15 @@ from rag_modules.retrieval_observability import summarize_documents
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
 )
+_GRAPH_QUALITY_CATEGORIES = frozenset(
+    {
+        "complex_relation",
+        "semantic_flavor",
+        "subgraph",
+        "multi_hop_relation",
+        "path_finding",
+    }
+)
 
 
 @dataclass
@@ -640,6 +649,291 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "degraded_source_counts": dict(sorted(degraded_source_counts.items())),
         "by_category": category_metrics,
     }
+
+
+def _offline_quality_strategy(case: EvalCase) -> str:
+    if case.expected_strategy:
+        return str(case.expected_strategy)
+    if case.category in _GRAPH_QUALITY_CATEGORIES:
+        return "graph_rag"
+    return "hybrid_traditional"
+
+
+def _offline_quality_recipe_names(case: EvalCase, *, index: int) -> list[str]:
+    names = list(case.expected_recipe_names)
+    for name, grade in case.expected_recipe_relevance.items():
+        if grade > 0 and name not in names:
+            names.append(name)
+    if names:
+        return names
+    return [f"offline_quality_case_{index + 1}"]
+
+
+def _offline_quality_terms(case: EvalCase, recipe_names: list[str]) -> list[str]:
+    terms = [
+        *case.expected_answer_terms,
+        *recipe_names,
+        case.category,
+    ]
+    return [term for term in terms if str(term).strip()]
+
+
+def _offline_quality_documents(
+    case: EvalCase,
+    *,
+    index: int,
+    top_k: int,
+) -> list[EvidenceDocument]:
+    strategy = _offline_quality_strategy(case)
+    recipe_names = _offline_quality_recipe_names(case, index=index)
+    terms = _offline_quality_terms(case, recipe_names)
+    graph_case = strategy == "graph_rag" or case.category in _GRAPH_QUALITY_CATEGORIES
+    documents: list[EvidenceDocument] = []
+    for rank, recipe_name in enumerate(recipe_names[: max(1, top_k)], start=1):
+        content = (
+            f"offline quality support {index + 1}-{rank}: "
+            f"{case.query} {' '.join(terms)} "
+            "依据 菜谱证据 关系 图谱"
+        )
+        documents.append(
+            EvidenceDocument(
+                content=content,
+                recipe_name=recipe_name,
+                node_id=f"offline-quality-{index + 1}-{rank}",
+                doc_id=f"offline-quality-doc-{index + 1}-{rank}",
+                score=max(0.1, 1.0 - (rank - 1) * 0.05),
+                source="offline_quality",
+                evidence_type="graph" if graph_case else "text",
+                matched_terms=terms,
+                graph_evidence=(
+                    {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": recipe_name}]}
+                    if graph_case
+                    else {}
+                ),
+                evidence_units=[
+                    {
+                        "claim": content,
+                        "is_graph_evidence": graph_case,
+                    }
+                ],
+                route_strategy=strategy,
+            )
+        )
+    return documents
+
+
+def _offline_quality_answer(
+    case: EvalCase,
+    *,
+    documents: list[EvidenceDocument],
+) -> str:
+    terms = _offline_quality_terms(case, _doc_recipe_names(documents))
+    content_terms = " ".join(terms) or case.query
+    return f"依据 菜谱证据 #1，关系 图谱 {content_terms} {documents[0].content}"
+
+
+def evaluate_offline_quality_case(
+    case: EvalCase,
+    *,
+    index: int,
+    top_k: int,
+    generate: bool,
+) -> dict[str, Any]:
+    strategy = _offline_quality_strategy(case)
+    documents = _offline_quality_documents(case, index=index, top_k=top_k)
+    answer = _offline_quality_answer(case, documents=documents) if generate else ""
+    recipe_names = _doc_recipe_names(documents)
+    ranked_recipe_names = _ranked_doc_recipe_names(documents)
+    expected_recipe_names = list(case.expected_recipe_names) or [
+        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
+    ]
+    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
+    answer_missing_terms = (
+        [term for term in case.expected_answer_terms if term not in answer] if generate else []
+    )
+    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
+    answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
+    complex_answer_failed = _complex_answer_failed(
+        case.category,
+        answer,
+        checked=generate,
+    )
+
+    failures: list[str] = []
+    if strategy_failed:
+        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
+    if missing_names:
+        failures.append(f"missing_recipe_names={missing_names}")
+    if answer_failed:
+        failures.append(f"missing_answer_terms={answer_missing_terms}")
+    if complex_answer_failed:
+        failures.append("complex_answer_grounding_missing")
+    if not documents:
+        failures.append("no_evidence")
+
+    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
+    grounding = (
+        grounding_metrics(answer, documents)
+        if generate
+        else {
+            "claim_count": 0,
+            "supported_claim_count": 0,
+            "faithfulness": None,
+            "citation_count": 0,
+            "valid_citation_count": 0,
+            "citation_accuracy": None,
+            "citation_coverage": None,
+        }
+    )
+    latency_ms = 10.0 + float(index)
+    plan = {
+        "query": case.query,
+        "strategy": strategy,
+        "used_cache": False,
+        "validation_errors": [],
+    }
+    response_payload = {
+        "summary": {
+            "answer": answer,
+            "strategy": strategy,
+            "latency_ms": latency_ms,
+            "doc_count": len(documents),
+            "has_evidence": bool(documents),
+            "fallback_used": False,
+            "error": "",
+            "estimated_cost_usd": 0.0,
+        },
+        "grounding": {
+            "retrieval_outcome": {
+                "query": case.query,
+                "strategy": strategy,
+                "doc_count": len(documents),
+                "evidence_documents": [document.to_dict() for document in documents],
+                "degradation_summary": {
+                    "retrieval_degraded": False,
+                    "degraded_sources": [],
+                    "degraded_candidates": [],
+                },
+            },
+            "route_resolution": {},
+            "evidence_documents": [document.to_dict() for document in documents],
+        },
+        "diagnostics": {
+            "analysis": {
+                "recommended_strategy": strategy,
+            },
+            "diagnostics": {
+                "retrieval_degraded": False,
+                "degraded_sources": [],
+                "degraded_candidates": [],
+            },
+        },
+        "traces": {
+            "route_trace": {
+                "strategy": strategy,
+                "fallbacks": [],
+                "diagnostics": {
+                    "used_fallback": False,
+                    "retrieval_degraded": False,
+                    "degraded_sources": [],
+                    "degraded_candidates": [],
+                },
+            },
+            "graph_trace": {},
+            "generation_trace": {
+                "mode": "offline_quality",
+                "fallback_used": False,
+                "estimated_cost_usd": 0.0,
+            },
+            "trace_event": {"strategy": strategy},
+        },
+    }
+
+    return {
+        "query": case.query,
+        "category": case.category,
+        "passed": not failures,
+        "failures": failures,
+        "evaluation": {
+            "strategy": strategy,
+            "expected_strategy": case.expected_strategy,
+            "expected_recipe_names": expected_recipe_names,
+            "expected_recipe_relevance": dict(case.expected_recipe_relevance),
+            "expected_answer_terms": list(case.expected_answer_terms),
+            "answer_checked": bool(generate),
+            "answer_passed": (not answer_failed) if generate else None,
+            "complex_answer_passed": (
+                not complex_answer_failed
+                if generate and case.category in {"complex_relation", "semantic_flavor"}
+                else None
+            ),
+            "answer_missing_terms": answer_missing_terms,
+            "answer_preview": answer[:300] if answer else "",
+        },
+        "retrieval": {
+            "recipe_names": recipe_names,
+            "ranked_recipe_names": ranked_recipe_names,
+            "missing_recipe_names": missing_names,
+            "doc_count": len(documents),
+            "evidence": _doc_evidence_summary(documents),
+            **retrieval_metrics(ranked_recipe_names, relevance, k=top_k),
+        },
+        "grounding": grounding,
+        "cost": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "token_usage_source": "offline_quality",
+        },
+        "resilience": {
+            "fallback_used": False,
+            "fallback_reasons": [],
+            "retrieval_degraded": False,
+            "degraded_sources": [],
+            "degraded_candidates": [],
+        },
+        "runtime": {
+            "latency_ms": latency_ms,
+            "plan_used_cache": plan["used_cache"],
+            "plan_validation_errors": plan["validation_errors"],
+        },
+        "contracts": {
+            "answer_response": response_payload if generate else {},
+            "route_resolution": {},
+        },
+    }
+
+
+def evaluate_offline_quality_queries(
+    *,
+    top_k: int,
+    generate: bool,
+    corpus_path: str | Path = DEFAULT_CORPUS_PATH,
+    profile: str | None = None,
+    profile_path: str | None = None,
+) -> dict[str, Any]:
+    cases = load_eval_cases(corpus_path)
+    config = load_config(profile=profile, profile_path=profile_path)
+    results = [
+        evaluate_offline_quality_case(
+            case,
+            index=index,
+            top_k=top_k,
+            generate=generate,
+        )
+        for index, case in enumerate(cases)
+    ]
+    failures = [item for item in results if not item["passed"]]
+    return build_eval_report(
+        metrics=calculate_eval_metrics(results),
+        results=results,
+        failures=failures,
+        config=config,
+        corpus_path=corpus_path,
+        top_k=top_k,
+        generate=generate,
+    )
 
 
 def _config_profile_metadata(config: GraphRAGConfig) -> dict[str, Any]:

@@ -256,9 +256,9 @@ class QueryPolicyTests(unittest.TestCase):
         features_source = Path("rag_modules/query_understanding/features.py").read_text(
             encoding="utf-8"
         )
-        prompting_source = Path(
-            "rag_modules/query_understanding/planning/prompting.py"
-        ).read_text(encoding="utf-8")
+        prompting_source = Path("rag_modules/query_understanding/planning/prompting.py").read_text(
+            encoding="utf-8"
+        )
         relation_index_source = Path("rag_modules/graph_index/relation_index_builder.py").read_text(
             encoding="utf-8"
         )
@@ -270,9 +270,9 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertNotIn("POLICY.regex_group", features_source)
         self.assertNotIn("POLICY.term_group", features_source)
         self.assertNotIn("get_planner_prompt_template", prompting_source)
-        self.assertNotIn('_RELATION_TYPE_HINTS', relation_index_source)
+        self.assertNotIn("_RELATION_TYPE_HINTS", relation_index_source)
         self.assertNotIn('{"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}', prompting_source)
-        self.assertNotIn('causal_relation_types = {', reasoning_source)
+        self.assertNotIn("causal_relation_types = {", reasoning_source)
         self.assertIn("POLICY.lexicon.term_group", registry_source)
         self.assertIn("POLICY.lexicon.regex_group", features_source)
         self.assertIn("policy = get_query_policy()", prompting_source)

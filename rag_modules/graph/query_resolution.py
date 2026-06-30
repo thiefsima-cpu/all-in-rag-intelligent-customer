@@ -223,10 +223,14 @@ def _sub_question_rule_matches(
     if "entities_present" in when and bool(entities) != bool(when.get("entities_present")):
         return False
     relation_type_rules = _string_list(when.get("relation_types_any"))
-    if relation_type_rules and not any(relation in relation_types for relation in relation_type_rules):
+    if relation_type_rules and not any(
+        relation in relation_types for relation in relation_type_rules
+    ):
         return False
     constraint_rules = when.get("constraints_present")
-    if constraint_rules is not None and not _constraints_present(profile.constraints, constraint_rules):
+    if constraint_rules is not None and not _constraints_present(
+        profile.constraints, constraint_rules
+    ):
         return False
     threshold = when.get("relationship_intensity_at_least")
     if threshold is not None and profile.relationship_intensity < float(threshold):

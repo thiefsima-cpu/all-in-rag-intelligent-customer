@@ -28,9 +28,7 @@ def build_evidence_only_fallback_answer(
         )
         matched_terms = "、".join(item.matched_terms[:6])
         if matched_terms:
-            lines.append(
-                "   - " + templates["matched_terms"].format(matched_terms=matched_terms)
-            )
+            lines.append("   - " + templates["matched_terms"].format(matched_terms=matched_terms))
         graph_claim = next(
             (
                 unit.get("claim")
