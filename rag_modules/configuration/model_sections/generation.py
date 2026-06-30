@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Self
+
+from pydantic import model_validator
+
 from .base import ConfigSection
+
+_GENERATION_PLANNER_MODE_VALUES = ("rule", "hybrid", "llm")
+_DEFAULT_GENERATION_PLANNER_MODE = "rule"
 
 
 class GenerationSettings(ConfigSection):
@@ -31,6 +38,17 @@ class GenerationSettings(ConfigSection):
     generation_include_document_evidence: bool = False
     generation_compose_include_content: bool = False
     generation_fallback_on_timeout: bool = False
+
+    @model_validator(mode="after")
+    def normalize_generation_planner_mode(self) -> Self:
+        normalized = self.generation_planner_mode.strip().lower() or (
+            _DEFAULT_GENERATION_PLANNER_MODE
+        )
+        if normalized not in _GENERATION_PLANNER_MODE_VALUES:
+            supported = ", ".join(_GENERATION_PLANNER_MODE_VALUES)
+            raise ValueError(f"generation_planner_mode must be one of: {supported}") from None
+        object.__setattr__(self, "generation_planner_mode", normalized)
+        return self
 
 
 __all__ = ["GenerationSettings"]

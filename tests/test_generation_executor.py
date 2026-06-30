@@ -7,6 +7,7 @@ from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEviden
 from rag_modules.generation import (
     AnswerPlan,
     GenerationExecutionEngine,
+    GenerationPlannerMode,
     GenerationSettings,
     RenderedPrompt,
 )
@@ -139,6 +140,11 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         )
 
         self.assertIs(PackageEngine, CanonicalEngine)
+
+    def test_generation_settings_normalizes_planner_mode_to_enum(self) -> None:
+        settings = GenerationSettings(planner_mode="hybrid")
+
+        self.assertIs(settings.planner_mode, GenerationPlannerMode.HYBRID)
 
     def _build_package(self) -> AnswerEvidencePackage:
         return AnswerEvidencePackage(

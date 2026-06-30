@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List
 
 
@@ -57,6 +58,23 @@ class GenerationDecision:
     mode: str
     reason: str
     evidence_limit: int
+
+
+class GenerationPlannerMode(str, Enum):
+    RULE = "rule"
+    HYBRID = "hybrid"
+    LLM = "llm"
+
+
+def _generation_planner_mode(value: "GenerationPlannerMode | str") -> GenerationPlannerMode:
+    if isinstance(value, GenerationPlannerMode):
+        return value
+    normalized = str(value or GenerationPlannerMode.RULE.value).strip().lower()
+    try:
+        return GenerationPlannerMode(normalized)
+    except ValueError:
+        supported = ", ".join(mode.value for mode in GenerationPlannerMode)
+        raise ValueError(f"planner_mode must be one of: {supported}") from None
 
 
 @dataclass
@@ -149,7 +167,7 @@ class GenerationSettings:
     planner_max_tokens: int = 600
     composer_max_tokens: int = 1100
     planner_temperature: float = 0.0
-    planner_mode: str = "rule"
+    planner_mode: GenerationPlannerMode | str = GenerationPlannerMode.RULE
     max_retries: int = 1
     request_retries: int = 1
     stream_retries: int = 1
@@ -179,7 +197,7 @@ class GenerationSettings:
             256, int(self.composer_max_tokens or self.max_tokens or 1400)
         )
         self.planner_temperature = float(self.planner_temperature)
-        self.planner_mode = str(self.planner_mode or "rule").strip().lower()
+        self.planner_mode = _generation_planner_mode(self.planner_mode)
         self.max_retries = max(1, int(self.max_retries or 1))
         self.request_retries = max(1, int(self.request_retries or 1))
         self.stream_retries = max(1, int(self.stream_retries or 1))

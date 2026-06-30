@@ -112,6 +112,24 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.generation.generation_direct_max_tokens, 777)
         self.assertEqual(config.generation.generation_latency_budget_seconds, 19)
 
+    def test_generation_settings_reject_invalid_planner_mode(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "GENERATION_PLANNER_MODE": "rules",
+                    }
+                )
+            )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "generation_planner_mode",
+            "rule",
+            "hybrid",
+            "llm",
+        )
+
     def test_graph_settings_respect_environment_overrides(self) -> None:
         config = load_config(
             source=EnvConfigSource(

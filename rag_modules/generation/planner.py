@@ -7,7 +7,7 @@ from typing import List
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
 from .clients import GenerationClientAdapter
-from .models import AnswerPlan, GenerationSettings
+from .models import AnswerPlan, GenerationPlannerMode, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
 
 
@@ -47,9 +47,11 @@ class GenerationPlanner:
         *,
         timeout_seconds: float | None = None,
     ) -> AnswerPlan:
-        if self.settings.planner_mode == "rule":
+        if self.settings.planner_mode is GenerationPlannerMode.RULE:
             return self._build_rule_based_plan(question, package)
-        if self.settings.planner_mode == "hybrid" and self._can_use_rule_plan(package, analysis):
+        if self.settings.planner_mode is GenerationPlannerMode.HYBRID and self._can_use_rule_plan(
+            package, analysis
+        ):
             return self._build_rule_based_plan(question, package)
 
         rendered_prompt = self.prompt_builder.render_plan_prompt(question, package)

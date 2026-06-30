@@ -7,6 +7,7 @@ from .fallback import build_evidence_only_fallback_answer, should_skip_model_fal
 from .models import (
     AnswerPlan,
     GenerationDecision,
+    GenerationPlannerMode,
     GenerationSettings,
     GenerationTrace,
     RenderedPrompt,
@@ -22,6 +23,7 @@ __all__ = [
     "GenerationDecision",
     "GenerationExecutionEngine",
     "GenerationPlanner",
+    "GenerationPlannerMode",
     "GenerationPromptBuilder",
     "GenerationSettings",
     "GenerationTrace",
