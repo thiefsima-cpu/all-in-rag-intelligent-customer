@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import threading
 import time
@@ -34,7 +35,7 @@ class _BuildSystem:
 
     def build_knowledge_base(self, progress=None) -> None:
         if progress:
-            progress("building")
+            progress("Building Milvus vector index...")
         self.system_ready = True
 
     def rebuild_knowledge_base(self, progress=None) -> None:
@@ -205,7 +206,14 @@ class BuildJobPersistenceTests(unittest.TestCase):
 
             restored = restarted.get_build_job(submitted["job_id"])
             self.assertEqual(restored["status"], "succeeded")
-            self.assertEqual(restored["logs"], ["Build progress updated."])
+            self.assertEqual(len(restored["logs"]), 1)
+            self.assertRegex(
+                restored["logs"][0],
+                re.compile(
+                    r"^stage=build_vector_index elapsed=\d+\.\d{3}s "
+                    r'message="Building Milvus vector index\."$'
+                ),
+            )
 
     def test_incomplete_job_is_marked_failed_during_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -257,7 +265,15 @@ class BuildJobPersistenceTests(unittest.TestCase):
                     "request_id": "build-submit-42",
                 },
             )
-            self.assertEqual(failed["logs"], ["Build progress updated.", "Build failed."])
+            self.assertEqual(len(failed["logs"]), 2)
+            self.assertRegex(
+                failed["logs"][0],
+                re.compile(
+                    r"^stage=build_progress elapsed=\d+\.\d{3}s "
+                    r'message="Build progress updated\."$'
+                ),
+            )
+            self.assertEqual(failed["logs"][1], "Build failed.")
             self.assertNotIn(secret, stored_text)
 
     def test_legacy_raw_job_errors_are_sanitized_on_load(self) -> None:

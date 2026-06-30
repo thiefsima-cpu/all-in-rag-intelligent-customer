@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,6 +22,7 @@ from ..build_job_store import (
     PersistentBuildJobRegistry,
     default_build_job_store_path,
 )
+from ..build_jobs.models import format_build_progress_log
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
 from .errors import BuildJobConflictError, BuildJobNotFoundError, InvalidApiRequestError
@@ -231,8 +233,16 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 ),
             )
 
-            def progress(_: str) -> None:
-                self._append_job_log(job_id, "Build progress updated.")
+            progress_started_at = time.perf_counter()
+
+            def progress(message: str) -> None:
+                self._append_job_log(
+                    job_id,
+                    format_build_progress_log(
+                        message,
+                        elapsed_seconds=time.perf_counter() - progress_started_at,
+                    ),
+                )
 
             try:
                 with self._exclusive_runtime_operation():
