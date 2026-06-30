@@ -12,6 +12,7 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
 
         domain_payload = config.to_domain_dict()["query_understanding"]
 
+        self.assertIn("policy", domain_payload)
         self.assertIn("planner", domain_payload)
         self.assertIn("semantics", domain_payload)
         self.assertNotIn("query_plan_cache_size", domain_payload)
@@ -24,11 +25,14 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
         config = load_config()
 
         with self.assertRaises(AttributeError):
-            _ = config.query_plan_cache_size
+            getattr(config, "query_plan_cache_size")
         with self.assertRaises(AttributeError):
-            _ = config.query_understanding.query_plan_cache_size
+            getattr(config.query_understanding, "query_plan_cache_size")
         with self.assertRaises(AttributeError):
-            _ = config.query_understanding.query_semantic_combined_strategy_complexity_threshold
+            getattr(
+                config.query_understanding,
+                "query_semantic_combined_strategy_complexity_threshold",
+            )
 
         payload = config.to_dict()
         self.assertIn("query_understanding", payload)
@@ -112,6 +116,31 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
             config.query_understanding.semantics.extraction.source_entity_limit,
             5,
         )
+
+    def test_query_understanding_policy_selector_is_nested(self) -> None:
+        config = load_config()
+
+        payload = config.to_domain_dict()["query_understanding"]
+
+        self.assertIn("policy", payload)
+        self.assertEqual("c9-default-v1", payload["policy"]["bundle"])
+        self.assertEqual("c9-default-v1", config.query_understanding.policy.bundle)
+        self.assertEqual("", config.query_understanding.policy.bundle_path)
+
+    def test_query_understanding_policy_selector_accepts_env_override(self) -> None:
+        config = load_config(
+            source=EnvConfigSource(environ={"QUERY_POLICY_BUNDLE": "c9-default-v1"})
+        )
+
+        self.assertEqual("c9-default-v1", config.query_understanding.policy.bundle)
+
+    def test_query_understanding_policy_selector_rejects_flat_override(self) -> None:
+        config = load_config()
+
+        with self.assertRaises(ConfigurationError) as context:
+            config.with_overrides({"query_policy_bundle": "c9-default-v1"})
+
+        self.assertIn("query_policy_bundle", str(context.exception))
 
 
 if __name__ == "__main__":

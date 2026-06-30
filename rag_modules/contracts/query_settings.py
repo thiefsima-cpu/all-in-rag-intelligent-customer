@@ -8,9 +8,9 @@ from typing import Any, Dict
 from ..query_policy import get_query_policy
 from ._common import bounded_float, coerce_int
 
-_POLICY = get_query_policy()
-_PLANNER_DEFAULTS = _POLICY.runtime_section("planner")
-_SEMANTIC_DEFAULTS = _POLICY.runtime_section("semantics")
+_POLICY_BUNDLE = get_query_policy()
+_PLANNER_DEFAULTS = _POLICY_BUNDLE.runtime_section("planner")
+_SEMANTIC_DEFAULTS = _POLICY_BUNDLE.runtime_section("semantics")
 
 
 @dataclass

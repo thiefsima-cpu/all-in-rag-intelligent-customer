@@ -7,6 +7,16 @@ from .base import spec as _spec
 
 QUERY_UNDERSTANDING_ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
     _spec(
+        "QUERY_POLICY_BUNDLE",
+        ("query_understanding", "policy", "bundle"),
+        "str",
+    ),
+    _spec(
+        "QUERY_POLICY_BUNDLE_PATH",
+        ("query_understanding", "policy", "bundle_path"),
+        "str",
+    ),
+    _spec(
         "QUERY_PLAN_CACHE_SIZE",
         ("query_understanding", "planner", "cache_size"),
         "int",

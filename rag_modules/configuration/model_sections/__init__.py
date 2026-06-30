@@ -9,6 +9,7 @@ from .graph import GraphSettings
 from .models import ModelSettings
 from .observability import ObservabilitySettings
 from .query_understanding import (
+    QueryPolicySelectorSettings,
     QueryPlannerSettings,
     QuerySemanticAdaptiveTraversalSettings,
     QuerySemanticExtractionSettings,
@@ -28,6 +29,7 @@ __all__ = [
     "GraphSettings",
     "ModelSettings",
     "ObservabilitySettings",
+    "QueryPolicySelectorSettings",
     "QueryPlannerSettings",
     "QuerySemanticAdaptiveTraversalSettings",
     "QuerySemanticExtractionSettings",

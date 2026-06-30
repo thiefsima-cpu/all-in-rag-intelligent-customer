@@ -15,6 +15,11 @@ _PLANNER_DEFAULTS = _QUERY_POLICY.runtime_section("planner")
 _SEMANTIC_DEFAULTS = _QUERY_POLICY.runtime_section("semantics")
 
 
+class QueryPolicySelectorSettings(ConfigSection):
+    bundle: str = "c9-default-v1"
+    bundle_path: str = ""
+
+
 class QueryPlannerSettings(ConfigSection):
     cache_size: int = int(_PLANNER_DEFAULTS.get("cache_size", 128))
     fast_rule_planning: bool = bool(_PLANNER_DEFAULTS.get("fast_rule_planning", True))
@@ -178,6 +183,7 @@ class QuerySemanticSettings(ConfigSection):
 
 
 class QueryUnderstandingSettings(ConfigSection):
+    policy: QueryPolicySelectorSettings = Field(default_factory=QueryPolicySelectorSettings)
     planner: QueryPlannerSettings = Field(default_factory=QueryPlannerSettings)
     semantics: QuerySemanticSettings = Field(default_factory=QuerySemanticSettings)
 
@@ -187,6 +193,7 @@ class QueryUnderstandingSettings(ConfigSection):
 
 
 __all__ = [
+    "QueryPolicySelectorSettings",
     "QueryPlannerSettings",
     "QuerySemanticAdaptiveTraversalSettings",
     "QuerySemanticExtractionSettings",
