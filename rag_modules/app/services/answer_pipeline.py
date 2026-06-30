@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from typing import List
+from typing import Any, List
 
 from ...contracts import EvidenceDocument
 from ...runtime import (
@@ -30,10 +30,10 @@ class AnswerPipelineService:
     def __init__(
         self,
         *,
-        query_router,
-        generation_service,
+        query_router: Any,
+        generation_service: Any,
         top_k: int,
-        telemetry=None,
+        telemetry: Any | None = None,
     ) -> None:
         self.query_router = query_router
         self.generation_service = generation_service

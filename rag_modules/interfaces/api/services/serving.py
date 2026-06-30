@@ -8,9 +8,10 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from ....app.application_protocol import GraphRAGApplication
+from ....app.services.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
@@ -53,7 +54,7 @@ class _AnswerAdmissionController:
         self._semaphore = threading.BoundedSemaphore(self.max_concurrent_answers)
 
     @contextmanager
-    def permit(self):
+    def permit(self) -> Iterator[None]:
         semaphore = self._semaphore
         if not semaphore.acquire(timeout=self.acquire_timeout_seconds):
             raise ApiBackpressureError()
@@ -178,12 +179,12 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             return
         self._ensure_serving_runtime_initialized()
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         if self.system.is_serving_initialized():
             self._refresh_serving_runtime_if_stale()
         return self._health_payload(self.collect_startup_diagnostics(self._MODE))
 
-    def readiness(self) -> dict:
+    def readiness(self) -> dict[str, Any]:
         if self.system.is_serving_initialized():
             self._refresh_serving_runtime_if_stale()
         diagnostics = self.collect_startup_diagnostics(self._MODE)
@@ -192,7 +193,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             ready=bool(diagnostics["system_ready"]),
         )
 
-    def initialize_serving_runtime(self) -> dict:
+    def initialize_serving_runtime(self) -> dict[str, Any]:
         with self._exclusive_runtime_operation():
             if not self.system.is_serving_initialized():
                 self.system.initialize_serving_runtime()
@@ -204,7 +205,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             )
             return self._operation_response(message=message, mode=self._MODE)
 
-    def refresh_serving_runtime(self) -> dict:
+    def refresh_serving_runtime(self) -> dict[str, Any]:
         self._ensure_serving_runtime_initialized()
         refresher = getattr(self.system, "refresh_serving_runtime", None)
         if not callable(refresher):
@@ -226,7 +227,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         super().shutdown()
 
     @staticmethod
-    def _answer_payload(response) -> AnswerPayloadModel:
+    def _answer_payload(response: QuestionAnswerResponse) -> AnswerPayloadModel:
         payload = AnswerPayloadModel.from_dto(response)
         if str(payload.summary.status or "").lower() == "failed":
             raise AnswerFailedError()

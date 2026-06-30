@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...configuration.models import GraphRAGConfig
 from ...runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..diagnostics import (
@@ -9,6 +10,7 @@ from ..diagnostics import (
     StartupDiagnostics,
     SystemStatsDiagnostics,
 )
+from ..runtime_view import SystemRuntime
 
 
 class RuntimeDiagnosticsService:
@@ -16,7 +18,7 @@ class RuntimeDiagnosticsService:
 
     def __init__(
         self,
-        config,
+        config: GraphRAGConfig,
         *,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
     ) -> None:
@@ -26,7 +28,7 @@ class RuntimeDiagnosticsService:
     def collect_system_stats(
         self,
         *,
-        runtime,
+        runtime: SystemRuntime,
         build_initialized: bool,
         serving_initialized: bool,
     ) -> SystemStatsDiagnostics:
@@ -65,7 +67,7 @@ class RuntimeDiagnosticsService:
         self,
         *,
         mode: str,
-        runtime,
+        runtime: SystemRuntime,
         build_initialized: bool,
         serving_initialized: bool,
     ) -> StartupDiagnostics:

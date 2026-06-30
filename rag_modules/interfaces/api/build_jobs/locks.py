@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+from types import TracebackType
 from typing import Any, BinaryIO, cast
 
 _PROCESS_FILE_LOCKS: dict[str, threading.Lock] = {}
@@ -88,7 +89,12 @@ class _InterprocessFileLock:
             raise BlockingIOError(f"Could not acquire file lock: {self.path}")
         return self
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.release()
 
 

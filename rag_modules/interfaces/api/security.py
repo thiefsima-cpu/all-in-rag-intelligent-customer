@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hmac
 import json
-from typing import Any, Dict
+from typing import Any, cast
+
+from fastapi import FastAPI
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ...configuration.models import ApiSettings, ObservabilitySettings
 from .error_models import ERROR_STATUS_CODES, ErrorCode, build_error_payload
@@ -74,7 +77,7 @@ class ApiSecurityMiddleware:
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         *,
         settings: ApiSettings,
         observability_settings: ObservabilitySettings | None = None,
@@ -86,7 +89,7 @@ class ApiSecurityMiddleware:
             observability_settings=observability_settings,
         )
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -110,7 +113,7 @@ class ApiSecurityMiddleware:
 
         await self.app(scope, receive, send)
 
-    def _authentication_error(self, scope) -> ErrorCode | None:
+    def _authentication_error(self, scope: Scope) -> ErrorCode | None:
         if not self.settings.auth_enabled:
             return None
         expected = str(self.settings.access_token or "")
@@ -125,7 +128,12 @@ class ApiSecurityMiddleware:
             return ErrorCode.UNAUTHORIZED
         return None
 
-    async def _buffer_request_body(self, scope, receive, send):
+    async def _buffer_request_body(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> Receive | None:
         max_bytes = int(self.settings.max_request_body_bytes)
         headers = self._headers(scope)
         content_length = headers.get("content-length")
@@ -145,7 +153,7 @@ class ApiSecurityMiddleware:
                 )
                 return None
 
-        messages = []
+        messages: list[Message] = []
         total = 0
         while True:
             message = await receive()
@@ -165,7 +173,7 @@ class ApiSecurityMiddleware:
             if not message.get("more_body", False):
                 break
 
-        async def replay():
+        async def replay() -> Message:
             if messages:
                 return messages.pop(0)
             return await receive()
@@ -173,7 +181,7 @@ class ApiSecurityMiddleware:
         return replay
 
     @staticmethod
-    def _headers(scope) -> Dict[str, str]:
+    def _headers(scope: Scope) -> dict[str, str]:
         return {
             key.decode("latin-1").lower(): value.decode("latin-1")
             for key, value in scope.get("headers") or []
@@ -181,10 +189,10 @@ class ApiSecurityMiddleware:
 
     @staticmethod
     async def _send_error(
-        send,
+        send: Send,
         *,
         code: ErrorCode,
-        details: Dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
         authenticate: bool = False,
     ) -> None:
         payload = build_error_payload(
@@ -210,7 +218,7 @@ class ApiSecurityMiddleware:
 
 
 def configure_openapi_security(
-    app,
+    app: FastAPI,
     *,
     api_settings: ApiSettings,
     observability_settings: ObservabilitySettings | None = None,
@@ -221,9 +229,9 @@ def configure_openapi_security(
         observability_settings=observability_settings,
     )
 
-    def secured_openapi():
+    def secured_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:
-            return app.openapi_schema
+            return cast(dict[str, Any], app.openapi_schema)
         schema = original_openapi()
         schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
         schemes["BearerAuth"] = {
@@ -243,7 +251,7 @@ def configure_openapi_security(
         app.openapi_schema = schema
         return schema
 
-    app.openapi = secured_openapi
+    setattr(app, "openapi", secured_openapi)
 
 
 __all__ = [

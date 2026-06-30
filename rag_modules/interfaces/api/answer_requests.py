@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MAX_QUESTION_CHARS = 4000
@@ -23,7 +25,7 @@ class AnswerRequestModel(BaseModel):
 
     @field_validator("question", mode="before")
     @classmethod
-    def normalize_question(cls, value):
+    def normalize_question(cls, value: Any) -> Any:
         if not isinstance(value, str):
             return value
         normalized = value.strip()
@@ -43,7 +45,7 @@ class AnswerStreamRequestModel(BaseModel):
 
     @field_validator("question", mode="before")
     @classmethod
-    def normalize_question(cls, value):
+    def normalize_question(cls, value: Any) -> Any:
         return AnswerRequestModel.normalize_question(value)
 
 

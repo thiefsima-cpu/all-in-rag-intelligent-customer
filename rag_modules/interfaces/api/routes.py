@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any, Literal, TypeVar
 
 from fastapi import FastAPI, Header, Path, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .answer_models import (
     AnswerRequestModel,
@@ -77,15 +77,15 @@ def _versioned_alias_route(
 
 def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService) -> None:
     @app.get("/", response_model=HealthResponseModel)
-    def read_root():
+    def read_root() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(app, "get", "/health", response_model=HealthResponseModel)
-    def read_health():
+    def read_health() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(app, "get", "/health/live", response_model=HealthResponseModel)
-    def read_liveness():
+    def read_liveness() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(
@@ -95,7 +95,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         response_model=HealthResponseModel,
         responses={503: {"description": "Serving runtime is not ready."}},
     )
-    def read_readiness():
+    def read_readiness() -> JSONResponse:
         payload = api_service.readiness()
         return build_json_response(
             status_code=200 if payload["status"] == "ok" else 503,
@@ -103,7 +103,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         )
 
     @_versioned_alias_route(app, "get", "/stats", response_model=StatsResponseModel)
-    def read_stats():
+    def read_stats() -> StatsResponseModel:
         return build_stats_response(api_service.collect_stats())
 
     @_versioned_alias_route(
@@ -112,7 +112,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         "/diagnostics",
         response_model=DiagnosticsResponseModel,
     )
-    def read_diagnostics():
+    def read_diagnostics() -> DiagnosticsResponseModel:
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.serve.value)
         )
@@ -123,7 +123,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         "/runtime/serving/initialize",
         response_model=OperationResponseModel,
     )
-    def initialize_serving_runtime():
+    def initialize_serving_runtime() -> OperationResponseModel:
         return build_operation_response(api_service.initialize_serving_runtime())
 
     @_versioned_alias_route(
@@ -132,7 +132,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         "/runtime/serving/refresh",
         response_model=OperationResponseModel,
     )
-    def refresh_serving_runtime():
+    def refresh_serving_runtime() -> OperationResponseModel:
         return build_operation_response(api_service.refresh_serving_runtime())
 
     @app.post(
@@ -149,7 +149,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def answer_question(payload: AnswerRequestModel):
+    def answer_question(payload: AnswerRequestModel) -> AnswerResponseModel | StreamingResponse:
         payload_data = payload.model_dump()
         if payload_data.get("stream", False):
             request_id = current_request_id()
@@ -181,7 +181,9 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def answer_question_v1(payload: AnswerRequestModel):
+    def answer_question_v1(
+        payload: AnswerRequestModel,
+    ) -> PublicAnswerResponseModel | StreamingResponse:
         payload_data = payload.model_dump()
         if payload_data.get("stream", False):
             request_id = current_request_id()
@@ -211,7 +213,9 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def debug_answer_question_v1(payload: AnswerRequestModel):
+    def debug_answer_question_v1(
+        payload: AnswerRequestModel,
+    ) -> AnswerResponseModel | StreamingResponse:
         payload_data = payload.model_dump()
         if payload_data.get("stream", False):
             request_id = current_request_id()
@@ -251,7 +255,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def stream_answer_question(payload: AnswerStreamRequestModel):
+    def stream_answer_question(payload: AnswerStreamRequestModel) -> StreamingResponse:
         request_id = current_request_id()
         return build_sse_streaming_response(
             api_service.stream_answer_question_events(
@@ -281,7 +285,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def stream_answer_question_v1(payload: AnswerStreamRequestModel):
+    def stream_answer_question_v1(payload: AnswerStreamRequestModel) -> StreamingResponse:
         request_id = current_request_id()
         return build_sse_streaming_response(
             api_service.stream_answer_question_events(
@@ -309,7 +313,9 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def stream_debug_answer_question_v1(payload: AnswerStreamRequestModel):
+    def stream_debug_answer_question_v1(
+        payload: AnswerStreamRequestModel,
+    ) -> StreamingResponse:
         request_id = current_request_id()
         return build_sse_streaming_response(
             api_service.stream_answer_question_events(
@@ -323,15 +329,15 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
 
 def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) -> None:
     @app.get("/", response_model=HealthResponseModel)
-    def read_root():
+    def read_root() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(app, "get", "/health", response_model=HealthResponseModel)
-    def read_health():
+    def read_health() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(app, "get", "/health/live", response_model=HealthResponseModel)
-    def read_liveness():
+    def read_liveness() -> dict[str, Any]:
         return api_service.health()
 
     @_versioned_alias_route(
@@ -341,7 +347,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         response_model=HealthResponseModel,
         responses={503: {"description": "Build runtime is not ready."}},
     )
-    def read_readiness():
+    def read_readiness() -> JSONResponse:
         payload = api_service.readiness()
         return build_json_response(
             status_code=200 if payload["status"] == "ok" else 503,
@@ -349,7 +355,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         )
 
     @_versioned_alias_route(app, "get", "/stats", response_model=StatsResponseModel)
-    def read_stats():
+    def read_stats() -> StatsResponseModel:
         return build_stats_response(api_service.collect_stats())
 
     @_versioned_alias_route(
@@ -358,7 +364,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         "/diagnostics",
         response_model=DiagnosticsResponseModel,
     )
-    def read_diagnostics():
+    def read_diagnostics() -> DiagnosticsResponseModel:
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.build.value)
         )
@@ -369,14 +375,14 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         "/runtime/build/initialize",
         response_model=OperationResponseModel,
     )
-    def initialize_build_runtime():
+    def initialize_build_runtime() -> OperationResponseModel:
         return build_operation_response(api_service.initialize_build_runtime())
 
     @_versioned_alias_route(app, "get", "/jobs", response_model=BuildJobListResponseModel)
     def list_build_jobs(
         limit: int | None = Query(default=None, ge=1),
         cursor: str = Query(default=""),
-    ):
+    ) -> BuildJobListResponseModel:
         page = api_service.list_build_jobs(limit=limit, cursor=cursor)
         return build_build_job_list_response(page.jobs, next_cursor=page.next_cursor)
 
@@ -386,7 +392,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         "/artifacts",
         response_model=ArtifactRegistryResponseModel,
     )
-    def read_artifact_registry():
+    def read_artifact_registry() -> ArtifactRegistryResponseModel:
         return build_artifact_registry_response(api_service.artifact_registry_snapshot())
 
     @_versioned_alias_route(
@@ -397,7 +403,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     )
     def read_build_job(
         job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(api_service.get_build_job(job_id))
 
     @_versioned_alias_route(
@@ -412,7 +418,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     )
     def queue_build_job(
         idempotency_key: str = Header(default="", alias="Idempotency-Key"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(
             api_service.submit_build_job(
                 rebuild=False,
@@ -433,7 +439,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     )
     def queue_rebuild_job(
         idempotency_key: str = Header(default="", alias="Idempotency-Key"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(
             api_service.submit_build_job(
                 rebuild=True,
@@ -457,7 +463,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     )
     def build_knowledge_base(
         idempotency_key: str = Header(default="", alias="Idempotency-Key"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(
             api_service.build_knowledge_base(
                 rebuild=False,
@@ -481,7 +487,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     )
     def rebuild_knowledge_base(
         idempotency_key: str = Header(default="", alias="Idempotency-Key"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(
             api_service.build_knowledge_base(
                 rebuild=True,

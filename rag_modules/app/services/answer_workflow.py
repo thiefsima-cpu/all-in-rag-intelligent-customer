@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
+from ...configuration.models import GraphRAGConfig
 from ...safe_logging import log_failure
 from ...telemetry import get_runtime_telemetry
 from .answer_models import (
@@ -26,15 +28,15 @@ class AnswerWorkflow:
 
     def __init__(
         self,
-        config,
-        query_router,
-        generation_module,
-        query_tracer,
+        config: GraphRAGConfig,
+        query_router: Any,
+        generation_module: Any,
+        query_tracer: Any,
         *,
         pipeline: AnswerPipelineService | None = None,
         trace_assembler: AnswerTraceAssembler | None = None,
         result_factory: QuestionAnswerResultFactory | None = None,
-        telemetry=None,
+        telemetry: Any | None = None,
     ) -> None:
         self.config = config
         self.retrieval_settings = config.retrieval

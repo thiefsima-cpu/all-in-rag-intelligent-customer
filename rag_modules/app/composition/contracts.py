@@ -19,9 +19,9 @@ class BuildRuntimeFactoryProtocol(Protocol):
         self,
         config: GraphRAGConfig | None = None,
         *,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime: ...
 
@@ -52,10 +52,10 @@ class ServingRuntimeFactoryProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer=None,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -67,7 +67,7 @@ class ServingRuntimePreparerProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
+        chunks: Any | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -91,10 +91,10 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer=None,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -102,7 +102,7 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
+        chunks: Any | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -125,23 +125,23 @@ class SystemOperationsProtocol(Protocol):
         self,
         *,
         progress: ProgressCallback = None,
-        neo4j_manager=None,
+        neo4j_manager: Any | None = None,
     ) -> BuildRuntime: ...
 
     def initialize_serving_runtime(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
     ) -> ServingRuntime: ...
 
     def initialize_system(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
     ) -> SystemRuntime: ...
 
     def is_initialized(self) -> bool: ...

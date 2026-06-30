@@ -7,6 +7,8 @@ import re
 from contextvars import ContextVar
 from uuid import uuid4
 
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
 from ...safe_logging import log_failure
 from .error_models import ErrorCode, build_error_response
 
@@ -27,7 +29,7 @@ def current_request_id() -> str:
     return _REQUEST_ID.get()
 
 
-def _incoming_request_id(scope) -> str:
+def _incoming_request_id(scope: Scope) -> str:
     for key, value in scope.get("headers") or []:
         if key.lower() == b"x-request-id":
             return normalize_or_generate_request_id(value.decode("latin-1"))
@@ -35,10 +37,10 @@ def _incoming_request_id(scope) -> str:
 
 
 class RequestContextMiddleware:
-    def __init__(self, app) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -47,7 +49,7 @@ class RequestContextMiddleware:
         token = _REQUEST_ID.set(request_id)
         response_started = False
 
-        async def send_with_request_id(message) -> None:
+        async def send_with_request_id(message: Message) -> None:
             nonlocal response_started
             if message.get("type") == "http.response.start":
                 response_started = True

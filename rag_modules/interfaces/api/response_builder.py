@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ...runtime.artifacts import artifact_health
+from ...runtime.artifacts import ArtifactManifest, artifact_health
+from ...runtime.artifacts.registry import ArtifactRegistrySnapshot
 from .answer_models import (
     AnswerPayloadModel,
     AnswerResponseModel,
@@ -28,7 +30,7 @@ from .diagnostics_models import (
 from .error_models import ErrorCode, sanitize_public_error_fields
 
 
-def _artifact_manifest_payload(manifest) -> dict:
+def _artifact_manifest_payload(manifest: ArtifactManifest) -> dict[str, Any]:
     return {
         "stage": manifest.stage,
         "health": artifact_health(manifest),
@@ -52,21 +54,21 @@ def _artifact_manifest_payload(manifest) -> dict:
     }
 
 
-def build_json_response(*, status_code: int, content: dict) -> JSONResponse:
+def build_json_response(*, status_code: int, content: dict[str, Any]) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=content)
 
 
-def build_stats_response(stats_payload: dict) -> StatsResponseModel:
+def build_stats_response(stats_payload: dict[str, Any]) -> StatsResponseModel:
     safe = sanitize_public_error_fields(stats_payload, code=ErrorCode.BUILD_FAILED)
     return StatsResponseModel.model_validate({"stats": safe})
 
 
-def build_diagnostics_response(diagnostics_payload: dict) -> DiagnosticsResponseModel:
+def build_diagnostics_response(diagnostics_payload: dict[str, Any]) -> DiagnosticsResponseModel:
     safe = sanitize_public_error_fields(diagnostics_payload, code=ErrorCode.BUILD_FAILED)
     return DiagnosticsResponseModel.model_validate({"diagnostics": safe})
 
 
-def build_operation_response(operation_payload: dict) -> OperationResponseModel:
+def build_operation_response(operation_payload: dict[str, Any]) -> OperationResponseModel:
     safe = sanitize_public_error_fields(operation_payload, code=ErrorCode.BUILD_FAILED)
     return OperationResponseModel.model_validate(safe)
 
@@ -81,13 +83,13 @@ def build_public_answer_response(answer_payload: AnswerPayloadModel) -> PublicAn
     )
 
 
-def build_build_job_response(job_payload: dict) -> BuildJobResponseModel:
+def build_build_job_response(job_payload: dict[str, Any]) -> BuildJobResponseModel:
     safe = sanitize_public_error_fields(job_payload, code=ErrorCode.BUILD_FAILED)
     return BuildJobResponseModel.model_validate({"job": safe})
 
 
 def build_build_job_list_response(
-    job_payloads: list[dict],
+    job_payloads: list[dict[str, Any]],
     *,
     next_cursor: str = "",
 ) -> BuildJobListResponseModel:
@@ -97,7 +99,9 @@ def build_build_job_list_response(
     )
 
 
-def build_artifact_registry_response(snapshot) -> ArtifactRegistryResponseModel:
+def build_artifact_registry_response(
+    snapshot: ArtifactRegistrySnapshot,
+) -> ArtifactRegistryResponseModel:
     return ArtifactRegistryResponseModel.model_validate(
         {
             "active": _artifact_manifest_payload(snapshot.active),
@@ -116,7 +120,7 @@ def encode_sse_event(event: AnswerStreamEventModel) -> str:
     return f"event: {event.event.value}\ndata: {data}\n\n"
 
 
-def iter_sse_chunks(events: Iterable[AnswerStreamEventModel]):
+def iter_sse_chunks(events: Iterable[AnswerStreamEventModel]) -> Iterator[str]:
     for event in events:
         yield encode_sse_event(event)
 

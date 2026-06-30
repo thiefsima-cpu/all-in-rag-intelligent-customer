@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
@@ -22,9 +24,9 @@ class AnswerTraceAssembler:
     def __init__(
         self,
         *,
-        query_tracer,
-        query_router=None,
-        generation_service=None,
+        query_tracer: Any,
+        query_router: Any | None = None,
+        generation_service: Any | None = None,
     ) -> None:
         del query_router, generation_service
         self.query_tracer = query_tracer

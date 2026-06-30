@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import threading
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from ....app.application_protocol import GraphRAGApplication
 from ....app.assembly import create_application_system
@@ -27,7 +28,7 @@ class _GraphRAGApiServiceLocks:
         self._lifecycle_active = False
 
     @contextmanager
-    def lifecycle_operation(self):
+    def lifecycle_operation(self) -> Iterator[None]:
         with self._state_changed:
             self._pending_lifecycle_operations += 1
             waiting_for_lifecycle = True
@@ -53,7 +54,7 @@ class _GraphRAGApiServiceLocks:
                 self._state_changed.notify_all()
 
     @contextmanager
-    def answer_operation(self):
+    def answer_operation(self) -> Iterator[None]:
         with self._state_changed:
             while self._lifecycle_active or self._pending_lifecycle_operations > 0:
                 self._state_changed.wait()
@@ -67,7 +68,7 @@ class _GraphRAGApiServiceLocks:
                     self._state_changed.notify_all()
 
     @contextmanager
-    def inspection_operation(self):
+    def inspection_operation(self) -> Iterator[None]:
         with self._state_changed:
             while self._lifecycle_active or self._pending_lifecycle_operations > 0:
                 self._state_changed.wait()
@@ -87,11 +88,11 @@ class _GraphRAGApiServiceLocks:
 
 def _resolve_shared_api_locks(system: GraphRAGApplication) -> _GraphRAGApiServiceLocks:
     locks = getattr(system, _API_LOCKS_ATTR, None)
-    if locks is not None:
+    if isinstance(locks, _GraphRAGApiServiceLocks):
         return locks
     with _API_LOCKS_CREATION_LOCK:
         locks = getattr(system, _API_LOCKS_ATTR, None)
-        if locks is None:
+        if not isinstance(locks, _GraphRAGApiServiceLocks):
             locks = _GraphRAGApiServiceLocks()
             setattr(system, _API_LOCKS_ATTR, locks)
     return locks
@@ -108,11 +109,11 @@ class _BaseGraphRAGApiService:
     ) -> None:
         self.system = system or create_application_system(config=config)
         self._locks = _resolve_shared_api_locks(self.system)
-        self._stats_cache: dict | None = None
-        self._diagnostics_cache: dict[str, dict] = {}
+        self._stats_cache: dict[str, Any] | None = None
+        self._diagnostics_cache: dict[str, dict[str, Any]] = {}
 
     @contextmanager
-    def _exclusive_runtime_operation(self):
+    def _exclusive_runtime_operation(self) -> Iterator[None]:
         with self._locks.lifecycle_operation():
             yield
 
@@ -120,27 +121,27 @@ class _BaseGraphRAGApiService:
         with self._exclusive_runtime_operation():
             self.system.close()
 
-    def collect_stats(self) -> dict:
+    def collect_stats(self) -> dict[str, Any]:
         cached_stats = self._cached_stats()
         if cached_stats is not None:
             return cached_stats
         with self._locks.inspection_operation():
             return self._cache_stats(self._collect_stats_unlocked())
 
-    def collect_startup_diagnostics(self, mode: str) -> dict:
+    def collect_startup_diagnostics(self, mode: str) -> dict[str, Any]:
         cached_diagnostics = self._cached_diagnostics(mode)
         if cached_diagnostics is not None:
             return cached_diagnostics
         with self._locks.inspection_operation():
             return self._cache_diagnostics(mode, self._collect_startup_diagnostics_unlocked(mode))
 
-    def _collect_stats_unlocked(self) -> dict:
+    def _collect_stats_unlocked(self) -> dict[str, Any]:
         return self.system.collect_system_stats()
 
-    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict:
+    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict[str, Any]:
         return self.system.collect_startup_diagnostics(mode).to_dict()
 
-    def _operation_response(self, *, message: str, mode: str) -> dict:
+    def _operation_response(self, *, message: str, mode: str) -> dict[str, Any]:
         return {
             "ok": True,
             "message": message,
@@ -151,7 +152,12 @@ class _BaseGraphRAGApiService:
             "stats": self._cache_stats(self._collect_stats_unlocked()),
         }
 
-    def _ensure_runtime_initialized(self, *, is_initialized, initializer) -> None:
+    def _ensure_runtime_initialized(
+        self,
+        *,
+        is_initialized: Callable[[], bool],
+        initializer: Callable[[], object],
+    ) -> None:
         with self._locks.inspection_operation():
             if is_initialized():
                 return
@@ -160,7 +166,7 @@ class _BaseGraphRAGApiService:
                 initializer()
 
     @staticmethod
-    def _health_payload(diagnostics: dict) -> dict:
+    def _health_payload(diagnostics: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "status": "ok",
             "build_initialized": diagnostics["build_initialized"],
@@ -172,17 +178,22 @@ class _BaseGraphRAGApiService:
         }
 
     @classmethod
-    def _readiness_payload(cls, diagnostics: dict, *, ready: bool) -> dict:
+    def _readiness_payload(
+        cls,
+        diagnostics: Mapping[str, Any],
+        *,
+        ready: bool,
+    ) -> dict[str, Any]:
         payload = cls._health_payload(diagnostics)
         payload["status"] = "ok" if ready else "not_ready"
         return payload
 
-    def _cached_stats(self) -> dict | None:
+    def _cached_stats(self) -> dict[str, Any] | None:
         if not self._locks.lifecycle_active() or self._stats_cache is None:
             return None
         return copy.deepcopy(self._stats_cache)
 
-    def _cached_diagnostics(self, mode: str) -> dict | None:
+    def _cached_diagnostics(self, mode: str) -> dict[str, Any] | None:
         if not self._locks.lifecycle_active():
             return None
         cached = self._diagnostics_cache.get(mode)
@@ -190,11 +201,15 @@ class _BaseGraphRAGApiService:
             return None
         return copy.deepcopy(cached)
 
-    def _cache_stats(self, stats: dict) -> dict:
+    def _cache_stats(self, stats: dict[str, Any]) -> dict[str, Any]:
         self._stats_cache = copy.deepcopy(stats)
         return copy.deepcopy(self._stats_cache)
 
-    def _cache_diagnostics(self, mode: str, diagnostics: dict) -> dict:
+    def _cache_diagnostics(
+        self,
+        mode: str,
+        diagnostics: dict[str, Any],
+    ) -> dict[str, Any]:
         cached = copy.deepcopy(diagnostics)
         self._diagnostics_cache[mode] = cached
         return copy.deepcopy(cached)

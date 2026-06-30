@@ -7,13 +7,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from ....app.application_protocol import GraphRAGApplication
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
-from ....runtime.artifacts.registry import ArtifactRegistry
+from ....runtime.artifacts.registry import ArtifactRegistry, ArtifactRegistrySnapshot
 from ..build_job_store import (
     BuildJobIdempotencyConflictError,
     BuildJobListPage,
@@ -22,6 +22,7 @@ from ..build_job_store import (
     PersistentBuildJobRegistry,
     default_build_job_store_path,
 )
+from ..build_jobs.locks import _InterprocessFileLock
 from ..build_jobs.models import format_build_progress_log
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
@@ -82,22 +83,22 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             return
         self._ensure_build_runtime_initialized()
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         return self._health_payload(self.collect_startup_diagnostics(self._MODE))
 
-    def readiness(self) -> dict:
+    def readiness(self) -> dict[str, Any]:
         diagnostics = self.collect_startup_diagnostics(self._MODE)
         return self._readiness_payload(
             diagnostics,
             ready=bool(diagnostics["build_initialized"]),
         )
 
-    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict:
+    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict[str, Any]:
         diagnostics = super()._collect_startup_diagnostics_unlocked(mode)
         diagnostics["build_job_store"] = self._job_registry.corruption_summary()
         return diagnostics
 
-    def initialize_build_runtime(self) -> dict:
+    def initialize_build_runtime(self) -> dict[str, Any]:
         with self._exclusive_runtime_operation():
             if not self.system.is_build_initialized():
                 self.system.initialize_build_runtime()
@@ -119,7 +120,7 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         rebuild: bool = False,
         request_id: str = "",
         idempotency_key: str = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         return self.submit_build_job(
             rebuild=rebuild,
             request_id=request_id,
@@ -132,7 +133,7 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         rebuild: bool = False,
         request_id: str = "",
         idempotency_key: str = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         with self._job_submission_lock:
             self.collect_stats()
             self.collect_startup_diagnostics(self._MODE)
@@ -199,13 +200,13 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 details={"field": "cursor", "reason": "invalid_cursor"},
             ) from None
 
-    def get_build_job(self, job_id: str) -> dict:
+    def get_build_job(self, job_id: str) -> dict[str, Any]:
         job = self._job_registry.get(str(job_id))
         if job is None:
             raise BuildJobNotFoundError(str(job_id))
         return job
 
-    def artifact_registry_snapshot(self):
+    def artifact_registry_snapshot(self) -> ArtifactRegistrySnapshot:
         return self._artifact_registry.snapshot()
 
     def _resolve_build_executor(self) -> ThreadPoolExecutor:
@@ -222,7 +223,12 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 self._build_executor = executor
         return executor
 
-    def _run_build_job(self, job_id: str, rebuild: bool, build_lock) -> None:
+    def _run_build_job(
+        self,
+        job_id: str,
+        rebuild: bool,
+        build_lock: _InterprocessFileLock,
+    ) -> None:
         try:
             self._mark_job_running(
                 job_id,
@@ -277,14 +283,14 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             build_lock.release()
 
     @staticmethod
-    def _job_result_from_operation(operation_result: dict) -> dict:
+    def _job_result_from_operation(operation_result: dict[str, Any]) -> dict[str, Any]:
         return {
             "message": str(operation_result.get("message", "")),
             "diagnostics": copy.deepcopy(operation_result.get("diagnostics")),
             "stats": copy.deepcopy(operation_result.get("stats")),
         }
 
-    def _snapshot_after_build_failure(self) -> tuple[dict, dict]:
+    def _snapshot_after_build_failure(self) -> tuple[dict[str, Any], dict[str, Any]]:
         with self._locks.inspection_operation():
             diagnostics = self._cache_diagnostics(
                 self._MODE,
@@ -299,10 +305,10 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
     def _mark_job_running(self, job_id: str, *, message: str) -> None:
         self._job_registry.mark_running(job_id, message=message)
 
-    def _mark_job_succeeded(self, job_id: str, *, result: dict) -> None:
+    def _mark_job_succeeded(self, job_id: str, *, result: dict[str, Any]) -> None:
         self._job_registry.mark_succeeded(job_id, result=result)
 
-    def _mark_job_failed(self, job_id: str, *, result: dict) -> None:
+    def _mark_job_failed(self, job_id: str, *, result: dict[str, Any]) -> None:
         self._job_registry.mark_failed(job_id, result=result)
 
 
