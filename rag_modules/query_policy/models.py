@@ -109,6 +109,7 @@ class GenerationPolicy:
     relation_explanation_markers: Tuple[str, ...]
     rule_plan: Dict[str, Any]
     decision: Dict[str, Any]
+    fallback_answer: Dict[str, str]
 
 
 @dataclass(frozen=True)

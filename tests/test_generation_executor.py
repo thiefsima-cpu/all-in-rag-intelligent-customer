@@ -10,11 +10,14 @@ from rag_modules.generation import (
     GenerationExecutionEngine,
     GenerationMode,
     GenerationPlannerMode,
+    GenerationPromptBuilder,
     GenerationSettings,
     GenerationTrace,
     RenderedPrompt,
+    build_evidence_only_fallback_answer,
     decide_generation_mode,
 )
+from rag_modules.query_policy import get_query_policy
 from rag_modules.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis, SearchStrategy
 
 
@@ -162,6 +165,47 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         )
 
         self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_generation_decision_uses_policy_reason_strings(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertEqual("two_stage_disabled", decision.reason)
+
+    def test_generation_trace_records_policy_metadata(self) -> None:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False),
+            client_adapter=_FakeClientAdapter([_FakeResponse("answer")]),
+            prompt_builder=GenerationPromptBuilder(
+                settings=GenerationSettings(),
+                evidence_max_chars=700,
+            ),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="policy trace",
+            package=self._build_package(),
+        )
+
+        self.assertTrue(trace.policy.is_recorded())
+        self.assertEqual("c9-default-policy-v1", trace.policy.policy_version)
+
+    def test_evidence_only_fallback_uses_policy_templates(self) -> None:
+        policy = get_query_policy().generation.fallback_answer
+
+        answer = build_evidence_only_fallback_answer(
+            package=self._build_package(),
+            error=RuntimeError("provider failed"),
+            max_items=1,
+        )
+
+        self.assertIn(policy["heading"], answer)
+        self.assertIn(policy["boundary"], answer)
+        self.assertIn(policy["model_unavailable"], answer)
 
     def test_generation_trace_and_snapshot_serialize_mode_as_string(self) -> None:
         trace = GenerationTrace(

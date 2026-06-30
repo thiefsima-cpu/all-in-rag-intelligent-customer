@@ -1181,27 +1181,27 @@
       },
       "recommendation": {
         "markers": [
-          "鎺ㄨ崘",
-          "閫傚悎",
-          "鍙互鍋氫粈涔?",
-          "鏈夊摢浜?"
+          "推荐",
+          "适合",
+          "可以做什么",
+          "有哪些"
         ]
       },
       "explanation": {
         "markers": [
-          "涓轰粈涔?",
-          "鍏崇郴",
-          "褰卞搷",
-          "鍘熷洜",
-          "濡備綍褰㈡垚"
+          "为什么",
+          "关系",
+          "影响",
+          "原因",
+          "如何形成"
         ]
       },
       "comparison": {
         "markers": [
-          "鍖哄埆",
-          "姣旇緝",
-          "宸紓",
-          "瀵规瘮"
+          "区别",
+          "比较",
+          "差异",
+          "对比"
         ]
       }
     },
@@ -1213,35 +1213,45 @@
       "之间"
     ],
     "rule_plan": {
-      "outline": [
+      "default_outline": [
         "先给出直接答案",
         "再说明关键证据与关系",
         "最后交代证据边界"
       ],
+      "fallback_outline": [
+        "先直接回答问题",
+        "再解释依据与关键关系",
+        "最后说明证据边界"
+      ],
       "graph_caution": "涉及图谱关系的结论应表述为有限推断，避免过度外延。",
-      "missing_graph_evidence": "当前证据缺少足够的图谱关系来完整解释关系链。"
+      "missing_relation_evidence": "当前证据缺少足够的图谱关系来完整解释关系链。",
+      "sparse_evidence": "当前候选证据较少，覆盖面有限。",
+      "missing_information_caution": "证据不足的部分需要显式说明，不要补充未检索到的事实。",
+      "fallback_claim_template": "{recipe_name} 是当前问题的相关证据。"
     },
     "decision": {
-      "recommendation_markers": [
-        "推荐",
-        "适合",
-        "可以做什么",
-        "有哪些"
-      ],
-      "comparison_markers": [
-        "区别",
-        "比较",
-        "差异",
-        "对比"
-      ],
-      "explanation_markers": [
-        "为什么",
-        "关系",
-        "影响",
-        "原因",
-        "如何形成"
-      ],
-      "default_answer_type": "direct_answer"
+      "default_answer_type": "direct_answer",
+      "high_pressure_margin": 0.12,
+      "reasons": {
+        "two_stage_disabled": "two_stage_disabled",
+        "no_route_analysis": "no_route_analysis",
+        "graph_without_analysis": "graph_evidence_present_without_route_analysis",
+        "graph_rag": "graph_rag_strategy",
+        "combined_pressure": "combined_strategy_with_reasoning_pressure",
+        "high_pressure": "high_complexity_or_dense_relations",
+        "simple": "simple_or_medium_question"
+      }
+    },
+    "fallback_answer": {
+      "empty_evidence": "抱歉，当前既没有足够证据，也无法调用生成模型完成回答。",
+      "heading": "基于当前检索证据，我先给出一个保底回答：",
+      "item_line": "{index}. {title}（依据：{citation}）",
+      "matched_terms": "匹配到的问题要点：{matched_terms}",
+      "graph_claim": "图谱关系证据：{claim}",
+      "text_claim": "文本证据：{claim}",
+      "constraint_reasons": "约束提示：{constraint_reasons}",
+      "boundary": "当前回答为证据保底版，未补充证据之外的信息。",
+      "model_unavailable": "生成模型暂时不可用，已自动切换为证据保底回答。"
     }
   },
   "runtime_defaults": {

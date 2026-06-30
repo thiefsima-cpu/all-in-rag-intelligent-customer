@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
@@ -24,6 +24,7 @@ class GenerationPlanner:
         self.settings = settings
         self.client_adapter = client_adapter
         self.prompt_builder = prompt_builder
+        self.rule_plan_policy = self.prompt_builder.generation_policy.rule_plan
 
     def build_answer_plan_from_context(
         self,
@@ -66,11 +67,7 @@ class GenerationPlanner:
         )
         plan = AnswerPlan.from_dict(plan_data)
         if not plan.outline:
-            plan.outline = [
-                "先直接回答问题",
-                "再解释依据与关键关系",
-                "最后说明证据边界",
-            ]
+            plan.outline = self._rule_plan_list("fallback_outline")
         return plan
 
     def _can_use_rule_plan(
@@ -83,6 +80,16 @@ class GenerationPlanner:
             return True
         return len(package.items) <= self.settings.plan_max_evidence_items
 
+    def _rule_plan_list(self, key: str) -> list[str]:
+        return [str(item) for item in self.rule_plan_policy[key] if str(item).strip()]
+
+    def _rule_plan_text(self, key: str) -> str:
+        return str(self.rule_plan_policy[key])
+
+    def _fallback_claim(self, *, recipe_name: str, citation: str) -> str:
+        template = self._rule_plan_text("fallback_claim_template")
+        return template.format(recipe_name=recipe_name or citation, citation=citation)
+
     def _build_rule_based_plan(
         self,
         question: str,
@@ -93,12 +100,7 @@ class GenerationPlanner:
             unit.get("is_graph_evidence") for item in package.items for unit in item.evidence_units
         )
         reasoning_mode = "grounded_with_limited_inference" if has_graph_claims else "grounded"
-        outline = [
-            "先给出直接答案",
-            "再说明关键证据与关系",
-            "最后交代证据边界",
-        ]
-        key_points: List[dict] = []
+        key_points: list[dict[str, Any]] = []
 
         for item in package.items[: self.settings.plan_max_evidence_items]:
             graph_claim = next(
@@ -117,7 +119,10 @@ class GenerationPlanner:
                 ),
                 "",
             )
-            claim = graph_claim or text_claim or f"{item.recipe_name} 是当前问题的相关证据。"
+            claim = graph_claim or text_claim or self._fallback_claim(
+                recipe_name=item.recipe_name,
+                citation=item.citation,
+            )
             key_points.append(
                 {
                     "title": item.recipe_name or item.citation,
@@ -127,25 +132,22 @@ class GenerationPlanner:
                 }
             )
 
-        missing_information: List[str] = []
-        if (
-            self.prompt_builder.question_needs_relation_explanation(question)
-            and not has_graph_claims
-        ):
-            missing_information.append("当前证据缺少足够的图谱关系来完整解释关系链。")
+        missing_information: list[str] = []
+        if self.prompt_builder.question_needs_relation_explanation(question) and not has_graph_claims:
+            missing_information.append(self._rule_plan_text("missing_relation_evidence"))
         if len(package.items) < 2 and answer_type in {"recommendation", "comparison"}:
-            missing_information.append("当前候选证据较少，覆盖面有限。")
+            missing_information.append(self._rule_plan_text("sparse_evidence"))
 
-        cautions: List[str] = []
+        cautions: list[str] = []
         if has_graph_claims:
-            cautions.append("涉及图谱关系的结论应表述为有限推断，避免过度外延。")
+            cautions.append(self._rule_plan_text("graph_caution"))
         if missing_information:
-            cautions.append("证据不足的部分需要显式说明，不要补充未检索到的事实。")
+            cautions.append(self._rule_plan_text("missing_information_caution"))
 
         return AnswerPlan(
             answer_type=answer_type,
             reasoning_mode=reasoning_mode,
-            outline=outline,
+            outline=self._rule_plan_list("default_outline"),
             key_points=key_points,
             cautions=cautions,
             missing_information=missing_information,

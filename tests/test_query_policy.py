@@ -82,10 +82,38 @@ def _minimal_policy_payload() -> dict:
             },
             "relation_explanation_markers": ["relationship"],
             "rule_plan": {
-                "outline": ["Answer directly"],
+                "default_outline": ["Answer directly"],
+                "fallback_outline": ["Fallback answer"],
                 "graph_caution": "Use graph evidence carefully.",
+                "missing_relation_evidence": "Missing graph evidence.",
+                "sparse_evidence": "Sparse evidence.",
+                "missing_information_caution": "Missing information caution.",
+                "fallback_claim_template": "{recipe_name} evidence.",
             },
-            "decision": {"default_answer_type": "direct_answer"},
+            "decision": {
+                "default_answer_type": "direct_answer",
+                "high_pressure_margin": 0.12,
+                "reasons": {
+                    "two_stage_disabled": "two_stage_disabled",
+                    "no_route_analysis": "no_route_analysis",
+                    "graph_without_analysis": "graph_without_analysis",
+                    "graph_rag": "graph_rag",
+                    "combined_pressure": "combined_pressure",
+                    "high_pressure": "high_pressure",
+                    "simple": "simple",
+                },
+            },
+            "fallback_answer": {
+                "empty_evidence": "No evidence.",
+                "heading": "Evidence-only answer:",
+                "item_line": "{index}. {title} ({citation})",
+                "matched_terms": "Matched terms: {matched_terms}",
+                "graph_claim": "Graph evidence: {claim}",
+                "text_claim": "Text evidence: {claim}",
+                "constraint_reasons": "Constraints: {constraint_reasons}",
+                "boundary": "Evidence-only boundary.",
+                "model_unavailable": "Model unavailable.",
+            },
         },
         "runtime_defaults": {
             "planner": {"model_name": "test"},
@@ -157,6 +185,10 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertIn("template", bundle.graph.sub_questions[0])
         self.assertIn("direct_answer", bundle.generation.answer_types)
         self.assertIsInstance(bundle.generation.answer_types["direct_answer"], dict)
+        self.assertEqual(
+            "基于当前检索证据，我先给出一个保底回答：",
+            bundle.generation.fallback_answer["heading"],
+        )
 
     def test_policy_uses_clean_utf8_terms(self) -> None:
         policy = get_query_policy().lexicon
@@ -247,6 +279,21 @@ def test_policy_loader_rejects_missing_prompt_variable(tmp_path: Path) -> None:
     )
 
     with pytest.raises(PolicyLoadError, match="relation_types_text"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_legacy_generation_policy(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["generation"]["rule_plan"].pop("default_outline")
+    policy["generation"]["rule_plan"]["outline"] = ["legacy outline"]
+    policy["generation"]["decision"].pop("reasons")
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="generation.rule_plan.default_outline"):
         load_policy_bundle(tmp_path)
 
 

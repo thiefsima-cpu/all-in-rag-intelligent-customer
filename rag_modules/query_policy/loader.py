@@ -203,6 +203,51 @@ def _required_mapping(payload: Mapping[str, Any], key: str, root: Path) -> Dict[
     return dict(value)
 
 
+def _require_keys(payload: Mapping[str, Any], keys: Tuple[str, ...], root: Path, field_path: str) -> None:
+    for key in keys:
+        if key not in payload:
+            raise PolicyLoadError(
+                f"Policy field is required: {field_path}.{key}",
+                bundle_path=str(root),
+                field_path=f"{field_path}.{key}",
+            )
+
+
+_GENERATION_RULE_PLAN_KEYS = (
+    "default_outline",
+    "fallback_outline",
+    "graph_caution",
+    "missing_relation_evidence",
+    "sparse_evidence",
+    "missing_information_caution",
+    "fallback_claim_template",
+)
+
+_GENERATION_DECISION_KEYS = ("default_answer_type", "high_pressure_margin", "reasons")
+
+_GENERATION_DECISION_REASON_KEYS = (
+    "two_stage_disabled",
+    "no_route_analysis",
+    "graph_without_analysis",
+    "graph_rag",
+    "combined_pressure",
+    "high_pressure",
+    "simple",
+)
+
+_GENERATION_FALLBACK_ANSWER_KEYS = (
+    "empty_evidence",
+    "heading",
+    "item_line",
+    "matched_terms",
+    "graph_claim",
+    "text_claim",
+    "constraint_reasons",
+    "boundary",
+    "model_unavailable",
+)
+
+
 def _verify_manifest(manifest: Mapping[str, Any], root: Path) -> None:
     schema_version = manifest.get("schema_version")
     if schema_version != SUPPORTED_SCHEMA_VERSION:
@@ -305,7 +350,26 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
     routing_payload = _required_mapping(policy_payload, "routing", root)
     graph_payload = _required_mapping(policy_payload, "graph", root)
     generation_payload = _required_mapping(policy_payload, "generation", root)
+    generation_rule_plan = _required_mapping(generation_payload, "rule_plan", root)
+    generation_decision = _required_mapping(generation_payload, "decision", root)
+    generation_fallback_answer = _required_mapping(generation_payload, "fallback_answer", root)
     entity_linker = dict(relation_payload.get("entity_linker") or {})
+
+    _require_keys(generation_rule_plan, _GENERATION_RULE_PLAN_KEYS, root, "generation.rule_plan")
+    _require_keys(generation_decision, _GENERATION_DECISION_KEYS, root, "generation.decision")
+    generation_decision_reasons = _required_mapping(generation_decision, "reasons", root)
+    _require_keys(
+        generation_decision_reasons,
+        _GENERATION_DECISION_REASON_KEYS,
+        root,
+        "generation.decision.reasons",
+    )
+    _require_keys(
+        generation_fallback_answer,
+        _GENERATION_FALLBACK_ANSWER_KEYS,
+        root,
+        "generation.fallback_answer",
+    )
 
     relation_types = _to_tuple(relation_payload.get("graph_relation_types"))
     relation_index_keywords = _to_tuple_map(relation_payload.get("relation_index_keywords"))
@@ -379,8 +443,9 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
             relation_explanation_markers=_to_tuple(
                 generation_payload.get("relation_explanation_markers")
             ),
-            rule_plan=dict(generation_payload.get("rule_plan") or {}),
-            decision=dict(generation_payload.get("decision") or {}),
+            rule_plan=dict(generation_rule_plan),
+            decision=dict(generation_decision),
+            fallback_answer=_to_str_map(generation_fallback_answer),
         ),
         runtime_defaults=_to_runtime_defaults(policy_payload.get("runtime_defaults")),
         prompts=PromptTemplates(
