@@ -14,6 +14,7 @@ from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQu
 from rag_modules.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
+    PolicySnapshot,
     QueryTraceEvent,
     RouteSnapshot,
     RouteStageSnapshot,
@@ -47,6 +48,17 @@ class _BlockingSink:
 
     def close(self) -> None:
         self.closed = True
+
+
+def _policy_payload() -> dict:
+    return {
+        "schema_version": "policy-bundle-v1",
+        "policy_version": "c9-default-policy-v1",
+        "prompt_version": "c9-default-prompts-v1",
+        "policy_hash": "sha256:policy",
+        "prompt_hash": "sha256:prompt",
+        "bundle_name": "c9-default-v1",
+    }
 
 
 class QueryTracerTests(unittest.TestCase):
@@ -223,6 +235,21 @@ class QueryTracerTests(unittest.TestCase):
         self.assertFalse(GenerationSnapshot().is_recorded())
         self.assertTrue(GenerationSnapshot(mode="direct").is_recorded())
         self.assertTrue(GenerationSnapshot(request_retries=1).is_recorded())
+        self.assertTrue(GenerationSnapshot(policy=PolicySnapshot.from_dict(_policy_payload())).is_recorded())
+
+    def test_trace_snapshots_serialize_policy_metadata(self) -> None:
+        policy = PolicySnapshot.from_dict(_policy_payload())
+
+        self.assertEqual(RouteSnapshot(policy=policy).to_dict()["policy"], _policy_payload())
+        self.assertEqual(
+            GraphRetrievalSnapshot(policy=policy).to_dict()["policy"],
+            _policy_payload(),
+        )
+        self.assertEqual(
+            GenerationSnapshot(policy=policy).to_dict()["policy"],
+            _policy_payload(),
+        )
+        self.assertEqual(QueryTraceEvent(policy=policy).to_dict()["policy"], _policy_payload())
 
     def test_generation_fallback_is_classified_as_degraded(self) -> None:
         tracer = QueryTracer(self._build_config(), sink=_CapturingSink())

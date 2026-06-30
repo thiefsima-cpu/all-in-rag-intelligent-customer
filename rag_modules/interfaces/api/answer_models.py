@@ -36,6 +36,7 @@ from ...runtime import (
     GraphRetrievalSnapshot,
     GraphTraceEventSnapshot,
     ModelSuiteSnapshot,
+    PolicySnapshot,
     QueryAnalysis,
     QueryDiagnostics,
     QueryTraceEvent,
@@ -198,12 +199,12 @@ def _public_degraded_candidates(values: object) -> list[JsonObject]:
 
 
 def _public_degradation_payload(value: object) -> JsonObject:
-    payload = coerce_json_object(value)
+    payload: dict[str, object] = dict(coerce_json_object(value))
     if "degraded_candidates" in payload:
         payload["degraded_candidates"] = _public_degraded_candidates(
             payload.get("degraded_candidates")
         )
-    return payload
+    return coerce_json_object(payload)
 
 
 class AnswerStreamEventType(str, Enum):
@@ -383,12 +384,35 @@ class RouteDiagnosticsResponseModel(BaseModel):
         )
 
 
+class PolicySnapshotResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = ""
+    policy_version: str = ""
+    prompt_version: str = ""
+    policy_hash: str = ""
+    prompt_hash: str = ""
+    bundle_name: str = ""
+
+    @classmethod
+    def from_dto(cls, snapshot: PolicySnapshot) -> "PolicySnapshotResponseModel":
+        return cls(
+            schema_version=snapshot.schema_version,
+            policy_version=snapshot.policy_version,
+            prompt_version=snapshot.prompt_version,
+            policy_hash=snapshot.policy_hash,
+            prompt_hash=snapshot.prompt_hash,
+            bundle_name=snapshot.bundle_name,
+        )
+
+
 class RouteSnapshotResponseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = ""
     strategy: str = ""
     requested_top_k: int = 0
+    policy: PolicySnapshotResponseModel = Field(default_factory=PolicySnapshotResponseModel)
     retrieval_request: JsonObject = Field(default_factory=dict)
     stages: dict[str, RouteStageSnapshotResponseModel] = Field(default_factory=dict)
     fallbacks: list[str] = Field(default_factory=list)
@@ -405,6 +429,7 @@ class RouteSnapshotResponseModel(BaseModel):
             query=snapshot.query,
             strategy=snapshot.strategy,
             requested_top_k=snapshot.requested_top_k,
+            policy=PolicySnapshotResponseModel.from_dto(snapshot.policy),
             retrieval_request=(
                 _retrieval_request_payload(snapshot.retrieval_request)
                 if isinstance(snapshot.retrieval_request, RetrievalRequest)
@@ -577,6 +602,7 @@ class GraphRetrievalSnapshotResponseModel(BaseModel):
     query: str = ""
     strategy: str = "graph_rag"
     requested_top_k: int = 0
+    policy: PolicySnapshotResponseModel = Field(default_factory=PolicySnapshotResponseModel)
     retrieval_request: JsonObject = Field(default_factory=dict)
     query_type: str = ""
     source_entities: list[str] = Field(default_factory=list)
@@ -603,6 +629,7 @@ class GraphRetrievalSnapshotResponseModel(BaseModel):
             query=snapshot.query,
             strategy=snapshot.strategy,
             requested_top_k=snapshot.requested_top_k,
+            policy=PolicySnapshotResponseModel.from_dto(snapshot.policy),
             retrieval_request=(
                 _retrieval_request_payload(snapshot.retrieval_request)
                 if isinstance(snapshot.retrieval_request, RetrievalRequest)
@@ -633,6 +660,7 @@ class GenerationSnapshotResponseModel(BaseModel):
 
     status: str = ""
     mode: str = ""
+    policy: PolicySnapshotResponseModel = Field(default_factory=PolicySnapshotResponseModel)
     decision_reason: str = ""
     total_evidence_items: int = 0
     selected_evidence_items: int = 0
@@ -656,6 +684,7 @@ class GenerationSnapshotResponseModel(BaseModel):
         return cls(
             status=snapshot.status,
             mode=snapshot.mode,
+            policy=PolicySnapshotResponseModel.from_dto(snapshot.policy),
             decision_reason=snapshot.decision_reason,
             total_evidence_items=snapshot.total_evidence_items,
             selected_evidence_items=snapshot.selected_evidence_items,
@@ -740,6 +769,7 @@ class QueryTraceEventResponseModel(BaseModel):
     query: str = ""
     strategy: Optional[str] = None
     latency_ms: float = 0.0
+    policy: PolicySnapshotResponseModel = Field(default_factory=PolicySnapshotResponseModel)
     plan: JsonObject = Field(default_factory=dict)
     models: ModelSuiteSnapshotResponseModel = Field(default_factory=ModelSuiteSnapshotResponseModel)
     retrieval: RetrievalTraceSnapshotResponseModel = Field(
@@ -764,6 +794,7 @@ class QueryTraceEventResponseModel(BaseModel):
             query=event.query,
             strategy=event.strategy,
             latency_ms=event.latency_ms,
+            policy=PolicySnapshotResponseModel.from_dto(event.policy),
             plan=coerce_json_object(event.plan),
             models=ModelSuiteSnapshotResponseModel.from_dto(event.models),
             retrieval=RetrievalTraceSnapshotResponseModel.from_dto(event.retrieval),
@@ -1038,6 +1069,7 @@ __all__ = [
     "GraphRetrievalSnapshotResponseModel",
     "GraphTraceEventSnapshotResponseModel",
     "ModelSuiteSnapshotResponseModel",
+    "PolicySnapshotResponseModel",
     "QueryAnalysisResponseModel",
     "QueryDiagnosticsResponseModel",
     "QueryTraceEventResponseModel",

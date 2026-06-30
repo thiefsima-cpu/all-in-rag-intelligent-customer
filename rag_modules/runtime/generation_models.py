@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .json_types import JsonObject, coerce_json_float, coerce_json_int
+from .policy_models import PolicySnapshot
 
 
 class GenerationMode(str, Enum):
@@ -44,6 +45,7 @@ def generation_mode_value(value: GenerationMode | str) -> str:
 class GenerationSnapshot:
     status: str = ""
     mode: GenerationMode | str = ""
+    policy: PolicySnapshot = field(default_factory=PolicySnapshot)
     decision_reason: str = ""
     total_evidence_items: int = 0
     selected_evidence_items: int = 0
@@ -64,6 +66,10 @@ class GenerationSnapshot:
 
     def __post_init__(self) -> None:
         self.mode = normalize_generation_mode(self.mode, allow_unknown=True)
+        if isinstance(self.policy, dict):
+            self.policy = PolicySnapshot.from_dict(self.policy)
+        elif not isinstance(self.policy, PolicySnapshot):
+            self.policy = PolicySnapshot()
 
     @property
     def mode_value(self) -> str:
@@ -75,6 +81,7 @@ class GenerationSnapshot:
         return cls(
             status=str(payload.get("status") or ""),
             mode=str(payload.get("mode") or ""),
+            policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             decision_reason=str(payload.get("decision_reason") or ""),
             total_evidence_items=coerce_json_int(payload.get("total_evidence_items")),
             selected_evidence_items=coerce_json_int(payload.get("selected_evidence_items")),
@@ -98,6 +105,7 @@ class GenerationSnapshot:
         return {
             "status": self.status,
             "mode": self.mode_value,
+            "policy": self.policy.to_dict(),
             "decision_reason": self.decision_reason,
             "total_evidence_items": self.total_evidence_items,
             "selected_evidence_items": self.selected_evidence_items,
@@ -122,6 +130,7 @@ class GenerationSnapshot:
             (
                 bool(self.status),
                 bool(self.mode),
+                self.policy.is_recorded(),
                 bool(self.decision_reason),
                 self.total_evidence_items != 0,
                 self.selected_evidence_items != 0,
@@ -141,3 +150,7 @@ class GenerationSnapshot:
                 bool(self.token_usage_source),
             )
         )
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None

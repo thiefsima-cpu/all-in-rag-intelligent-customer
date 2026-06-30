@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from .generation_models import GenerationSnapshot
 from .graph_models import GraphRetrievalSnapshot
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from .policy_models import PolicySnapshot
 from .route_models import RouteSnapshot
 
 
@@ -171,6 +172,7 @@ class QueryTraceEvent:
     query: str = ""
     strategy: str | None = None
     latency_ms: float = 0.0
+    policy: PolicySnapshot = field(default_factory=PolicySnapshot)
     plan: JsonObject = field(default_factory=dict)
     models: ModelSuiteSnapshot = field(default_factory=ModelSuiteSnapshot)
     retrieval: RetrievalTraceSnapshot = field(default_factory=RetrievalTraceSnapshot)
@@ -184,6 +186,10 @@ class QueryTraceEvent:
             self.models = ModelSuiteSnapshot.from_dict(self.models)
         elif not isinstance(self.models, ModelSuiteSnapshot):
             self.models = ModelSuiteSnapshot()
+        if isinstance(self.policy, dict):
+            self.policy = PolicySnapshot.from_dict(self.policy)
+        elif not isinstance(self.policy, PolicySnapshot):
+            self.policy = PolicySnapshot()
         if isinstance(self.retrieval, dict):
             self.retrieval = RetrievalTraceSnapshot.from_dict(self.retrieval)
         elif not isinstance(self.retrieval, RetrievalTraceSnapshot):
@@ -212,6 +218,7 @@ class QueryTraceEvent:
             query=str(payload.get("query") or ""),
             strategy=(str(payload["strategy"]) if payload.get("strategy") is not None else None),
             latency_ms=coerce_json_float(payload.get("latency_ms")),
+            policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             plan=coerce_json_object(payload.get("plan")),
             models=ModelSuiteSnapshot.from_dict(_mapping_or_none(payload.get("models"))),
             retrieval=RetrievalTraceSnapshot.from_dict(_mapping_or_none(payload.get("retrieval"))),
@@ -228,6 +235,7 @@ class QueryTraceEvent:
             "query": self.query,
             "strategy": self.strategy,
             "latency_ms": self.latency_ms,
+            "policy": self.policy.to_dict(),
             "plan": dict(self.plan or {}),
             "models": self.models.to_dict(),
             "retrieval": self.retrieval.to_dict(),

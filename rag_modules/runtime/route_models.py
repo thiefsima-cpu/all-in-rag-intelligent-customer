@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from ..contracts import RetrievalRequest
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from .policy_models import PolicySnapshot
 
 CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN = "CANDIDATE_SOURCE_CIRCUIT_OPEN"
 
@@ -128,6 +129,7 @@ class RouteSnapshot:
     query: str = ""
     strategy: str = ""
     requested_top_k: int = 0
+    policy: PolicySnapshot = field(default_factory=PolicySnapshot)
     retrieval_request: RetrievalRequest | Mapping[str, object] | None = None
     stages: dict[str, RouteStageSnapshot] = field(default_factory=dict)
     fallbacks: list[str] = field(default_factory=list)
@@ -140,6 +142,10 @@ class RouteSnapshot:
         self.query = str(self.query or "")
         self.strategy = str(self.strategy or "")
         self.requested_top_k = max(0, int(self.requested_top_k or 0))
+        if isinstance(self.policy, dict):
+            self.policy = PolicySnapshot.from_dict(self.policy)
+        elif not isinstance(self.policy, PolicySnapshot):
+            self.policy = PolicySnapshot()
         if isinstance(self.retrieval_request, Mapping):
             self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
         elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
@@ -169,6 +175,7 @@ class RouteSnapshot:
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or ""),
             requested_top_k=coerce_json_int(payload.get("requested_top_k")),
+            policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             retrieval_request=_retrieval_request_payload(payload.get("retrieval_request")),
             stages=_stage_mapping(payload.get("stages")),
             fallbacks=_string_list(payload.get("fallbacks")),
@@ -267,6 +274,7 @@ class RouteSnapshot:
             "query": self.query,
             "strategy": self.strategy,
             "requested_top_k": self.requested_top_k,
+            "policy": self.policy.to_dict(),
             "retrieval_request": (
                 coerce_json_object(self.retrieval_request.to_dict())
                 if isinstance(self.retrieval_request, RetrievalRequest)
@@ -285,6 +293,7 @@ class RouteSnapshot:
             (
                 bool(self.query),
                 bool(self.strategy),
+                self.policy.is_recorded(),
                 bool(self.stages),
                 bool(self.fallbacks),
                 self.total_latency_ms != 0.0,
