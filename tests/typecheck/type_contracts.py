@@ -39,13 +39,21 @@ from rag_modules.app.runtime_views import (
     SystemServicesView,
 )
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from rag_modules.contracts import (
+    EvidenceDocument,
+    GraphQueryType,
+    QueryPlan,
+    QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
+    RetrievalRequest,
+)
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.generation.execution.contracts import GenerationExecutionHost
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.graph.retrieval_types import GraphQuery
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
+from rag_modules.query_understanding.planning import QueryPlanCalibrator
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.runtime import (
     GenerationSnapshot,
@@ -273,3 +281,15 @@ def accept_json_runtime_ports(
         index_module.similarity_search("question", filters=payload),
         event,
     )
+
+
+def accept_query_plan_calibration_contracts() -> GraphQueryType:
+    calibrator = QueryPlanCalibrator(QuerySemanticRuntimeSettings())
+    profile = QuerySemanticProfile(query_type="path_finding")
+
+    resolved_query_type: GraphQueryType = calibrator.resolve_graph_query_type(
+        GraphQueryType.SUBGRAPH,
+        profile,
+    )
+
+    return resolved_query_type

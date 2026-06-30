@@ -29,6 +29,18 @@ def _graph_query_type_value(query_type: GraphQueryType | str) -> str:
     return str(query_type or "")
 
 
+def _graph_query_type_enum(
+    query_type: GraphQueryType | str,
+    default: GraphQueryType = GraphQueryType.ENTITY_RELATION,
+) -> GraphQueryType:
+    if isinstance(query_type, GraphQueryType):
+        return query_type
+    try:
+        return GraphQueryType(str(query_type or default.value))
+    except ValueError:
+        return default
+
+
 class QueryPlanCalibrator:
     def __init__(self, settings: QuerySemanticRuntimeSettings) -> None:
         self.settings = settings
@@ -56,13 +68,14 @@ class QueryPlanCalibrator:
         )
 
     def is_graph_first_profile(self, profile: QuerySemanticProfile) -> bool:
-        if profile.query_type in {
+        query_type = _graph_query_type_enum(profile.query_type)
+        if query_type in {
             GraphQueryType.PATH_FINDING,
             GraphQueryType.SUBGRAPH,
             GraphQueryType.CLUSTERING,
         }:
             return True
-        if profile.query_type is not GraphQueryType.MULTI_HOP:
+        if query_type is not GraphQueryType.MULTI_HOP:
             return False
         return bool(
             len(profile.relation_hits or []) >= 2
@@ -115,14 +128,15 @@ class QueryPlanCalibrator:
         profile: QuerySemanticProfile,
     ) -> GraphQueryType:
         current_type_value = _graph_query_type_value(current_type)
-        if profile.query_type in {
+        profile_query_type = _graph_query_type_enum(profile.query_type)
+        if profile_query_type in {
             GraphQueryType.PATH_FINDING,
             GraphQueryType.SUBGRAPH,
             GraphQueryType.CLUSTERING,
         }:
-            return profile.query_type
+            return profile_query_type
         if (
-            profile.query_type is GraphQueryType.MULTI_HOP
+            profile_query_type is GraphQueryType.MULTI_HOP
             and current_type_value == GraphQueryType.SUBGRAPH.value
             and profile.relationship_intensity
             >= self.settings.multi_hop_hint_relationship_threshold
@@ -130,7 +144,7 @@ class QueryPlanCalibrator:
             return GraphQueryType.MULTI_HOP
         if current_type_value in _VALID_GRAPH_QUERY_TYPES:
             return GraphQueryType(current_type_value)
-        return profile.query_type
+        return profile_query_type
 
     def calibrate(self, plan: QueryPlan) -> None:
         query = plan.query or ""
