@@ -78,6 +78,23 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.retrieval.candidate_source_degradation_strategy, "fail_fast")
         self.assertFalse(config.retrieval.enable_parent_doc_retrieval)
 
+    def test_retrieval_settings_reject_invalid_candidate_source_degradation_strategy(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "RETRIEVAL_CANDIDATE_SOURCE_DEGRADATION_STRATEGY": "keep_going",
+                    }
+                )
+            )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "candidate_source_degradation_strategy",
+            "continue",
+            "fail_fast",
+        )
+
     def test_generation_settings_respect_environment_overrides(self) -> None:
         config = load_config(
             source=EnvConfigSource(

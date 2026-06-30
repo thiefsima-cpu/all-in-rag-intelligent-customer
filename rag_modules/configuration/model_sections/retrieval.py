@@ -6,6 +6,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from ...retrieval.candidate_generator import CandidateSourceDegradationStrategy
 from .base import ConfigSection
 
 
@@ -32,10 +33,20 @@ class RetrievalSettings(ConfigSection):
 
     @model_validator(mode="after")
     def normalize_degradation_strategy(self) -> Self:
+        normalized = self.candidate_source_degradation_strategy.strip().lower() or (
+            CandidateSourceDegradationStrategy.CONTINUE.value
+        )
+        try:
+            strategy = CandidateSourceDegradationStrategy(normalized)
+        except ValueError:
+            supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
+            raise ValueError(
+                f"candidate_source_degradation_strategy must be one of: {supported}"
+            ) from None
         object.__setattr__(
             self,
             "candidate_source_degradation_strategy",
-            self.candidate_source_degradation_strategy.strip().lower() or "continue",
+            strategy.value,
         )
         return self
 

@@ -9,6 +9,7 @@ from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
     CandidateSet,
     CandidateSourceDegradation,
+    CandidateSourceDegradationStrategy,
     CandidateSourceResult,
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
@@ -201,7 +202,10 @@ class HybridSearchServiceTests(unittest.TestCase):
 
         self.assertEqual(service.candidate_generator.source_failure_threshold, 4)
         self.assertEqual(service.candidate_generator.source_recovery_timeout_seconds, 12.5)
-        self.assertEqual(service.candidate_generator.source_degradation_strategy, "fail_fast")
+        self.assertIs(
+            service.candidate_generator.source_degradation_strategy,
+            CandidateSourceDegradationStrategy.FAIL_FAST,
+        )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,10 @@ import unittest
 
 from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.retrieval.candidate_generator import RetrievalCandidateGenerator
+from rag_modules.retrieval.candidate_generator import (
+    CandidateSourceDegradationStrategy,
+    RetrievalCandidateGenerator,
+)
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
 
 
@@ -31,6 +34,17 @@ class _FailingSource:
 
 
 class RetrievalCandidateGeneratorTests(unittest.TestCase):
+    def test_degradation_strategy_is_stored_as_enum(self) -> None:
+        generator = RetrievalCandidateGenerator(
+            sources=[],
+            source_degradation_strategy="fail_fast",
+        )
+
+        self.assertIs(
+            generator.source_degradation_strategy,
+            CandidateSourceDegradationStrategy.FAIL_FAST,
+        )
+
     def test_generate_calibrates_request_and_normalizes_source_metadata(self) -> None:
         plan = QueryPlan(
             query="recommend tofu dishes",

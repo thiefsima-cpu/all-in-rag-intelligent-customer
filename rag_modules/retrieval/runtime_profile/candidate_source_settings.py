@@ -5,13 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from ..candidate_generator import (
+    CandidateSourceDegradationStrategy,
+    _normalize_source_degradation_strategy,
+)
 from .shared import _CANDIDATE_SOURCE_DEFAULTS, _as_int
 
-CANDIDATE_SOURCE_DEGRADATION_CONTINUE = "continue"
-CANDIDATE_SOURCE_DEGRADATION_FAIL_FAST = "fail_fast"
+CANDIDATE_SOURCE_DEGRADATION_CONTINUE = CandidateSourceDegradationStrategy.CONTINUE.value
+CANDIDATE_SOURCE_DEGRADATION_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_FAST.value
 SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES = {
-    CANDIDATE_SOURCE_DEGRADATION_CONTINUE,
-    CANDIDATE_SOURCE_DEGRADATION_FAIL_FAST,
+    strategy.value for strategy in CandidateSourceDegradationStrategy
 }
 
 
@@ -23,7 +26,7 @@ def _as_recovery_seconds(value: Any, default: float) -> float:
     return max(0.1, resolved)
 
 
-def _normalize_degradation_strategy(value: Any) -> str:
+def _normalize_degradation_strategy(value: Any) -> CandidateSourceDegradationStrategy:
     default = (
         str(
             _CANDIDATE_SOURCE_DEFAULTS.get(
@@ -34,11 +37,13 @@ def _normalize_degradation_strategy(value: Any) -> str:
         .strip()
         .lower()
     )
-    normalized = str(value or default).strip().lower()
-    if normalized not in SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES:
-        supported = ", ".join(sorted(SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES))
-        raise ValueError(f"candidate_source_degradation_strategy must be one of: {supported}")
-    return normalized
+    try:
+        return _normalize_source_degradation_strategy(value or default)
+    except ValueError:
+        supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
+        raise ValueError(
+            f"candidate_source_degradation_strategy must be one of: {supported}"
+        ) from None
 
 
 @dataclass
@@ -47,10 +52,9 @@ class RetrievalCandidateSourceSettings:
     recovery_timeout_seconds: float = float(
         _CANDIDATE_SOURCE_DEFAULTS.get("recovery_timeout_seconds", 30.0)
     )
-    degradation_strategy: str = str(
+    degradation_strategy: CandidateSourceDegradationStrategy | str = str(
         _CANDIDATE_SOURCE_DEFAULTS.get(
-            "degradation_strategy",
-            CANDIDATE_SOURCE_DEGRADATION_CONTINUE,
+            "degradation_strategy", CANDIDATE_SOURCE_DEGRADATION_CONTINUE
         )
     )
 
@@ -78,9 +82,13 @@ class RetrievalCandidateSourceSettings:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()
-        }
+        payload: Dict[str, Any] = {}
+        for field in self.__dataclass_fields__.values():
+            value = getattr(self, field.name)
+            payload[field.name] = (
+                value.value if isinstance(value, CandidateSourceDegradationStrategy) else value
+            )
+        return payload
 
 
 __all__ = [

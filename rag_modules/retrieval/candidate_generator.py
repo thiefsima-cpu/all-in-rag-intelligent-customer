@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Dict, List, Sequence, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
@@ -14,20 +15,31 @@ from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
 logger = logging.getLogger(__name__)
 
 SKIP_CANDIDATE_SOURCES_METADATA_KEY = "skip_candidate_sources"
-SOURCE_DEGRADATION_STRATEGY_CONTINUE = "continue"
-SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = "fail_fast"
+
+
+class CandidateSourceDegradationStrategy(str, Enum):
+    CONTINUE = "continue"
+    FAIL_FAST = "fail_fast"
+
+
+SOURCE_DEGRADATION_STRATEGY_CONTINUE = CandidateSourceDegradationStrategy.CONTINUE.value
+SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_FAST.value
 SUPPORTED_SOURCE_DEGRADATION_STRATEGIES = {
-    SOURCE_DEGRADATION_STRATEGY_CONTINUE,
-    SOURCE_DEGRADATION_STRATEGY_FAIL_FAST,
+    strategy.value for strategy in CandidateSourceDegradationStrategy
 }
 
 
-def _normalize_source_degradation_strategy(value: str) -> str:
-    normalized = str(value or SOURCE_DEGRADATION_STRATEGY_CONTINUE).strip().lower()
-    if normalized not in SUPPORTED_SOURCE_DEGRADATION_STRATEGIES:
-        supported = ", ".join(sorted(SUPPORTED_SOURCE_DEGRADATION_STRATEGIES))
-        raise ValueError(f"source_degradation_strategy must be one of: {supported}")
-    return normalized
+def _normalize_source_degradation_strategy(
+    value: CandidateSourceDegradationStrategy | str,
+) -> CandidateSourceDegradationStrategy:
+    if isinstance(value, CandidateSourceDegradationStrategy):
+        return value
+    normalized = str(value or CandidateSourceDegradationStrategy.CONTINUE.value).strip().lower()
+    try:
+        return CandidateSourceDegradationStrategy(normalized)
+    except ValueError:
+        supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
+        raise ValueError(f"source_degradation_strategy must be one of: {supported}") from None
 
 
 @dataclass
@@ -130,7 +142,9 @@ class RetrievalCandidateGenerator:
         sources: Sequence[RetrievalCandidateSource],
         source_failure_threshold: int = 1,
         source_recovery_timeout_seconds: float = 30.0,
-        source_degradation_strategy: str = SOURCE_DEGRADATION_STRATEGY_CONTINUE,
+        source_degradation_strategy: CandidateSourceDegradationStrategy | str = (
+            CandidateSourceDegradationStrategy.CONTINUE
+        ),
     ):
         self.sources = tuple(sources)
         self.source_failure_threshold = max(1, int(source_failure_threshold))
@@ -249,7 +263,7 @@ class RetrievalCandidateGenerator:
         return documents, None
 
     def _should_raise_degradation(self) -> bool:
-        return self.source_degradation_strategy == SOURCE_DEGRADATION_STRATEGY_FAIL_FAST
+        return self.source_degradation_strategy is CandidateSourceDegradationStrategy.FAIL_FAST
 
     @staticmethod
     def _degradation(
@@ -293,6 +307,7 @@ class RetrievalCandidateGenerator:
 __all__ = [
     "CandidateSet",
     "CandidateSourceDegradation",
+    "CandidateSourceDegradationStrategy",
     "CandidateSourceResult",
     "RetrievalCandidateGenerator",
     "SKIP_CANDIDATE_SOURCES_METADATA_KEY",
