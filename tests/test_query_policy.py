@@ -23,9 +23,11 @@ def _minimal_policy_payload() -> dict:
         "relations": {
             "graph_routing_strategies": ["graph_rag"],
             "graph_query_types": ["entity_relation", "subgraph"],
-            "graph_relation_types": ["CONTRIBUTES_TO"],
+            "graph_relation_types": ["CONTRIBUTES_TO", "REQUIRES"],
+            "preferred_relation_excluded_types": ["REQUIRES"],
             "semantic_relation_hints": {"impact": "CONTRIBUTES_TO"},
             "relation_index_keywords": {"CONTRIBUTES_TO": ["impact"]},
+            "relation_index_suffix_templates": {"REQUIRES": "{source_entity}_ingredient"},
             "relation_query_markers": {"CONTRIBUTES_TO": ["why"]},
             "entity_linker": {
                 "preferred_labels": ["Recipe"],
@@ -62,6 +64,17 @@ def _minimal_policy_payload() -> dict:
         "graph": {
             "max_depth": {"default": 2},
             "max_nodes": {"default": 50},
+            "reasoning": {
+                "causal_relation_types": ["CONTRIBUTES_TO"],
+                "compositional_relation_types": [],
+                "comparison_markers": ["compare"],
+                "semantic_relation_key_specs": {
+                    "CONTRIBUTES_TO": {
+                        "target_field": "effect",
+                        "key_fields": ["effect", "causes"],
+                    }
+                },
+            },
             "sub_questions": [
                 {
                     "id": "fallback",
@@ -185,6 +198,15 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertIn("template", bundle.graph.sub_questions[0])
         self.assertIn("direct_answer", bundle.generation.answer_types)
         self.assertIsInstance(bundle.generation.answer_types["direct_answer"], dict)
+        self.assertIn("REQUIRES", bundle.relations.preferred_relation_excluded_types)
+        self.assertIn(
+            "CONTRIBUTES_TO",
+            bundle.graph.reasoning.causal_relation_types,
+        )
+        self.assertIn(
+            "CONTRIBUTES_TO",
+            bundle.graph.reasoning.semantic_relation_key_specs,
+        )
         self.assertEqual(
             "基于当前检索证据，我先给出一个保底回答：",
             bundle.generation.fallback_answer["heading"],
@@ -237,14 +259,24 @@ class QueryPolicyTests(unittest.TestCase):
         prompting_source = Path(
             "rag_modules/query_understanding/planning/prompting.py"
         ).read_text(encoding="utf-8")
+        relation_index_source = Path("rag_modules/graph_index/relation_index_builder.py").read_text(
+            encoding="utf-8"
+        )
+        reasoning_source = Path("rag_modules/graph/reasoning_strategy.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertNotIn("POLICY.term_group", registry_source)
         self.assertNotIn("POLICY.regex_group", features_source)
         self.assertNotIn("POLICY.term_group", features_source)
         self.assertNotIn("get_planner_prompt_template", prompting_source)
+        self.assertNotIn('_RELATION_TYPE_HINTS', relation_index_source)
+        self.assertNotIn('{"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}', prompting_source)
+        self.assertNotIn('causal_relation_types = {', reasoning_source)
         self.assertIn("POLICY.lexicon.term_group", registry_source)
         self.assertIn("POLICY.lexicon.regex_group", features_source)
-        self.assertIn("get_query_policy().prompts.query_planner", prompting_source)
+        self.assertIn("policy = get_query_policy()", prompting_source)
+        self.assertIn("policy.prompts.query_planner", prompting_source)
 
 
 def test_policy_loader_rejects_unversioned_schema(tmp_path: Path) -> None:
@@ -294,6 +326,52 @@ def test_policy_loader_rejects_legacy_generation_policy(tmp_path: Path) -> None:
     policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
 
     with pytest.raises(PolicyLoadError, match="generation.rule_plan.default_outline"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_incomplete_graph_reasoning_policy(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["graph"]["reasoning"].pop("comparison_markers")
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="graph.reasoning.comparison_markers"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_non_list_graph_reasoning_groups(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["graph"]["reasoning"]["causal_relation_types"] = "CONTRIBUTES_TO"
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="graph.reasoning.causal_relation_types"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_incomplete_semantic_relation_key_spec(
+    tmp_path: Path,
+) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["graph"]["reasoning"]["semantic_relation_key_specs"]["CONTRIBUTES_TO"] = {
+        "target_field": "effect"
+    }
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(
+        PolicyLoadError,
+        match="graph.reasoning.semantic_relation_key_specs.CONTRIBUTES_TO.key_fields",
+    ):
         load_policy_bundle(tmp_path)
 
 

@@ -7,14 +7,16 @@ from ..registry import GRAPH_QUERY_TYPES, GRAPH_RELATION_TYPES
 
 
 def build_planning_prompt(query: str) -> str:
+    policy = get_query_policy()
     graph_query_types_text = "\n".join(f"- {item}" for item in GRAPH_QUERY_TYPES)
     relation_types_text = "\n".join(f"- {item}" for item in GRAPH_RELATION_TYPES)
+    excluded_relation_types = set(policy.relations.preferred_relation_excluded_types)
     preferred_relation_types_text = "\n".join(
         f"- {item}"
         for item in GRAPH_RELATION_TYPES
-        if item not in {"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}
+        if item not in excluded_relation_types
     )
-    return get_query_policy().prompts.query_planner.format(
+    return policy.prompts.query_planner.format(
         graph_query_types_text=graph_query_types_text,
         relation_types_text=relation_types_text,
         preferred_relation_types_text=preferred_relation_types_text,

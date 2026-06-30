@@ -72,8 +72,10 @@ class RelationPolicy:
     graph_routing_strategies: Tuple[str, ...]
     graph_query_types: Tuple[str, ...]
     graph_relation_types: Tuple[str, ...]
+    preferred_relation_excluded_types: Tuple[str, ...]
     semantic_relation_hints: Dict[str, str]
     relation_index_keywords: Dict[str, Tuple[str, ...]]
+    relation_index_suffix_templates: Dict[str, str]
     relation_query_markers: Dict[str, Tuple[str, ...]]
     entity_linker_preferred_labels: Tuple[str, ...]
     entity_linker_query_type_priorities: Dict[str, Tuple[str, ...]]
@@ -97,10 +99,25 @@ class RoutingPolicy:
 
 
 @dataclass(frozen=True)
+class SemanticRelationKeySpec:
+    target_field: str
+    key_fields: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphReasoningPolicy:
+    causal_relation_types: Tuple[str, ...]
+    compositional_relation_types: Tuple[str, ...]
+    comparison_markers: Tuple[str, ...]
+    semantic_relation_key_specs: Dict[str, SemanticRelationKeySpec]
+
+
+@dataclass(frozen=True)
 class GraphPolicy:
     max_depth: Dict[str, int]
     max_nodes: Dict[str, int]
     sub_questions: Tuple[Dict[str, Any], ...]
+    reasoning: GraphReasoningPolicy
 
 
 @dataclass(frozen=True)
@@ -152,6 +169,10 @@ class QueryPolicyBundle:
     @property
     def relation_index_keywords(self) -> Dict[str, Tuple[str, ...]]:
         return dict(self.relations.relation_index_keywords)
+
+    @property
+    def relation_index_suffix_templates(self) -> Dict[str, str]:
+        return dict(self.relations.relation_index_suffix_templates)
 
     @property
     def relation_query_markers(self) -> Dict[str, Tuple[str, ...]]:

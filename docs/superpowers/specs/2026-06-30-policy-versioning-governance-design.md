@@ -109,13 +109,15 @@ The hashes are computed at load time and never hand-maintained in resource files
 
 - `lexicon`: term sets, regex rules, cleanup patterns, stopwords, graph source prefixes/suffixes.
 - `relations`: graph relation types, semantic relation hints, relation query markers, relation
-  index keywords, relation evidence-goal mappings, and entity-linker priorities.
+  index keywords, relation index suffix templates, preferred relation exclusions, relation
+  evidence-goal mappings, and entity-linker priorities.
 - `scoring`: relationship intensity formula, complexity formula, boost formula, normalization
   limits, and numeric bounds.
 - `routing`: graph-first rules, meaningful-constraint fields, strategy resolution thresholds,
   query-type resolution rules, source-entity fallback order, and validation-error labels.
 - `graph`: max-depth profiles, max-node profiles, adaptive traversal profiles, fallback name
-  length, sub-question templates, and template activation conditions.
+  length, sub-question templates, template activation conditions, reasoning relation groups,
+  comparison markers, and semantic relation key specs.
 - `generation`: direct-vs-two-stage decision rules, high-pressure margin, decision reasons,
   answer-type inference rules, relation-explanation markers, rule-plan outline, cautions,
   missing-information templates, and prompt metadata defaults.
@@ -339,12 +341,15 @@ Use test-first implementation. Focused tests should cover:
 - Policy loader exposes schema version, policy version, prompt version, policy hash, and prompt
   hash.
 - Policy loader rejects missing prompt placeholders.
+- Policy loader rejects incomplete graph reasoning policy and unknown relation references.
 - Scoring uses policy-provided formula parameters instead of hidden constants.
 - Routing calibration uses policy-provided graph-first and strategy rules.
 - Generation prompt rendering uses resource templates and records policy metadata.
 - Rule-based generation planning uses policy answer-type and missing-information templates.
 - Generation decision uses policy high-pressure margin and reason strings.
 - Graph sub-question rendering uses policy rule templates and fallback template.
+- Relation index and graph reasoning consumers use policy relation keys, suffix templates, and
+  reasoning relation groups instead of module-level strategy literals.
 - Route, graph, generation, and query trace snapshots serialize policy metadata.
 - Eval report and summary include policy metadata and fail when a generated response lacks it.
 - API debug schemas expose policy metadata through trace models.

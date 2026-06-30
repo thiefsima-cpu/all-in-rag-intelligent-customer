@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping, Tuple
 from .models import (
     GenerationPolicy,
     GraphPolicy,
+    GraphReasoningPolicy,
     LexiconPolicy,
     PolicyLoadError,
     PolicyMetadata,
@@ -20,6 +21,7 @@ from .models import (
     RelationPolicy,
     RoutingPolicy,
     ScoringPolicy,
+    SemanticRelationKeySpec,
 )
 
 SUPPORTED_SCHEMA_VERSION = "policy-bundle-v1"
@@ -87,6 +89,16 @@ def _to_int_map(value: Any) -> Dict[str, int]:
         except (TypeError, ValueError) as exc:
             raise PolicyLoadError(f"Invalid integer value for {key}") from exc
     return result
+
+
+def _required_str_tuple(value: Any, root: Path, field_path: str) -> Tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise PolicyLoadError(
+            f"Policy field must be a list: {field_path}",
+            bundle_path=str(root),
+            field_path=field_path,
+        )
+    return _to_tuple(value)
 
 
 def _to_nested_dict_map(value: Any, root: Path, field_path: str) -> Dict[str, Dict[str, Any]]:
@@ -247,6 +259,13 @@ _GENERATION_FALLBACK_ANSWER_KEYS = (
     "model_unavailable",
 )
 
+_GRAPH_REASONING_KEYS = (
+    "causal_relation_types",
+    "compositional_relation_types",
+    "comparison_markers",
+    "semantic_relation_key_specs",
+)
+
 
 def _verify_manifest(manifest: Mapping[str, Any], root: Path) -> None:
     schema_version = manifest.get("schema_version")
@@ -317,14 +336,28 @@ def _read_prompts(manifest: Mapping[str, Any], root: Path) -> Dict[str, str]:
 
 def _verify_relation_references(
     relation_types: Tuple[str, ...],
+    preferred_relation_excluded_types: Tuple[str, ...],
     relation_index_keywords: Mapping[str, Tuple[str, ...]],
+    relation_index_suffix_templates: Mapping[str, str],
     relation_query_markers: Mapping[str, Tuple[str, ...]],
+    graph_reasoning: GraphReasoningPolicy,
     root: Path,
 ) -> None:
     known = set(relation_types)
     for field_name, relation_map in (
+        ("relations.preferred_relation_excluded_types", preferred_relation_excluded_types),
         ("relations.relation_index_keywords", relation_index_keywords),
+        ("relations.relation_index_suffix_templates", relation_index_suffix_templates),
         ("relations.relation_query_markers", relation_query_markers),
+        ("graph.reasoning.causal_relation_types", graph_reasoning.causal_relation_types),
+        (
+            "graph.reasoning.compositional_relation_types",
+            graph_reasoning.compositional_relation_types,
+        ),
+        (
+            "graph.reasoning.semantic_relation_key_specs",
+            tuple(graph_reasoning.semantic_relation_key_specs),
+        ),
     ):
         unknown = sorted(set(relation_map) - known)
         if unknown:
@@ -333,6 +366,83 @@ def _verify_relation_references(
                 bundle_path=str(root),
                 field_path=f"{field_name}.{unknown[0]}",
             )
+
+
+def _to_semantic_relation_key_specs(
+    value: Any,
+    root: Path,
+) -> Dict[str, SemanticRelationKeySpec]:
+    field_path = "graph.reasoning.semantic_relation_key_specs"
+    if not isinstance(value, dict):
+        raise PolicyLoadError(
+            f"Policy field must be an object: {field_path}",
+            bundle_path=str(root),
+            field_path=field_path,
+        )
+
+    specs: Dict[str, SemanticRelationKeySpec] = {}
+    for relation_type, raw_spec in value.items():
+        relation_name = str(relation_type).strip()
+        spec_path = f"{field_path}.{relation_name}"
+        if not relation_name:
+            raise PolicyLoadError(
+                "Semantic relation key spec has empty relation type",
+                bundle_path=str(root),
+                field_path=field_path,
+            )
+        if not isinstance(raw_spec, dict):
+            raise PolicyLoadError(
+                "Semantic relation key spec must be an object",
+                bundle_path=str(root),
+                field_path=spec_path,
+            )
+        _require_keys(raw_spec, ("target_field", "key_fields"), root, spec_path)
+        target_field = str(raw_spec.get("target_field") or "").strip()
+        if not target_field:
+            raise PolicyLoadError(
+                "Semantic relation key spec target_field is required",
+                bundle_path=str(root),
+                field_path=f"{spec_path}.target_field",
+            )
+        key_fields = _required_str_tuple(raw_spec.get("key_fields"), root, f"{spec_path}.key_fields")
+        if not key_fields:
+            raise PolicyLoadError(
+                "Semantic relation key spec key_fields cannot be empty",
+                bundle_path=str(root),
+                field_path=f"{spec_path}.key_fields",
+            )
+        specs[relation_name] = SemanticRelationKeySpec(
+            target_field=target_field,
+            key_fields=key_fields,
+        )
+    return specs
+
+
+def _to_graph_reasoning_policy(
+    value: Mapping[str, Any],
+    root: Path,
+) -> GraphReasoningPolicy:
+    return GraphReasoningPolicy(
+        causal_relation_types=_required_str_tuple(
+            value.get("causal_relation_types"),
+            root,
+            "graph.reasoning.causal_relation_types",
+        ),
+        compositional_relation_types=_required_str_tuple(
+            value.get("compositional_relation_types"),
+            root,
+            "graph.reasoning.compositional_relation_types",
+        ),
+        comparison_markers=_required_str_tuple(
+            value.get("comparison_markers"),
+            root,
+            "graph.reasoning.comparison_markers",
+        ),
+        semantic_relation_key_specs=_to_semantic_relation_key_specs(
+            value.get("semantic_relation_key_specs"),
+            root,
+        ),
+    )
 
 
 @lru_cache(maxsize=8)
@@ -350,11 +460,20 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
     routing_payload = _required_mapping(policy_payload, "routing", root)
     graph_payload = _required_mapping(policy_payload, "graph", root)
     generation_payload = _required_mapping(policy_payload, "generation", root)
+    graph_reasoning = _required_mapping(graph_payload, "reasoning", root)
     generation_rule_plan = _required_mapping(generation_payload, "rule_plan", root)
     generation_decision = _required_mapping(generation_payload, "decision", root)
     generation_fallback_answer = _required_mapping(generation_payload, "fallback_answer", root)
     entity_linker = dict(relation_payload.get("entity_linker") or {})
 
+    _require_keys(
+        relation_payload,
+        ("preferred_relation_excluded_types", "relation_index_suffix_templates"),
+        root,
+        "relations",
+    )
+    _require_keys(graph_reasoning, _GRAPH_REASONING_KEYS, root, "graph.reasoning")
+    graph_reasoning_policy = _to_graph_reasoning_policy(graph_reasoning, root)
     _require_keys(generation_rule_plan, _GENERATION_RULE_PLAN_KEYS, root, "generation.rule_plan")
     _require_keys(generation_decision, _GENERATION_DECISION_KEYS, root, "generation.decision")
     generation_decision_reasons = _required_mapping(generation_decision, "reasons", root)
@@ -372,12 +491,21 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
     )
 
     relation_types = _to_tuple(relation_payload.get("graph_relation_types"))
+    preferred_relation_excluded_types = _to_tuple(
+        relation_payload.get("preferred_relation_excluded_types")
+    )
     relation_index_keywords = _to_tuple_map(relation_payload.get("relation_index_keywords"))
+    relation_index_suffix_templates = _to_str_map(
+        relation_payload.get("relation_index_suffix_templates")
+    )
     relation_query_markers = _to_tuple_map(relation_payload.get("relation_query_markers"))
     _verify_relation_references(
         relation_types,
+        preferred_relation_excluded_types,
         relation_index_keywords,
+        relation_index_suffix_templates,
         relation_query_markers,
+        graph_reasoning_policy,
         root,
     )
 
@@ -400,8 +528,10 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
             graph_routing_strategies=_to_tuple(relation_payload.get("graph_routing_strategies")),
             graph_query_types=_to_tuple(relation_payload.get("graph_query_types")),
             graph_relation_types=relation_types,
+            preferred_relation_excluded_types=preferred_relation_excluded_types,
             semantic_relation_hints=_to_str_map(relation_payload.get("semantic_relation_hints")),
             relation_index_keywords=relation_index_keywords,
+            relation_index_suffix_templates=relation_index_suffix_templates,
             relation_query_markers=relation_query_markers,
             entity_linker_preferred_labels=_to_tuple(entity_linker.get("preferred_labels")),
             entity_linker_query_type_priorities=_to_tuple_map(
@@ -433,6 +563,7 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
             max_depth=_to_int_map(graph_payload.get("max_depth")),
             max_nodes=_to_int_map(graph_payload.get("max_nodes")),
             sub_questions=_to_sub_question_items(graph_payload.get("sub_questions"), root),
+            reasoning=graph_reasoning_policy,
         ),
         generation=GenerationPolicy(
             answer_types=_to_nested_dict_map(

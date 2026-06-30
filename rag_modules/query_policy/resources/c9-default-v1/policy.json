@@ -1034,6 +1034,15 @@
           "Recipe"
         ]
       }
+    },
+    "preferred_relation_excluded_types": [
+      "REQUIRES",
+      "BELONGS_TO_CATEGORY",
+      "CONTAINS_STEP"
+    ],
+    "relation_index_suffix_templates": {
+      "REQUIRES": "{source_entity}_食材",
+      "CONTAINS_STEP": "{source_entity}_步骤"
     }
   },
   "scoring": {
@@ -1172,7 +1181,60 @@
         },
         "template": "Retrieve recipes, ingredients, steps, and semantic graph relations relevant to the question."
       }
-    ]
+    ],
+    "reasoning": {
+      "causal_relation_types": [
+        "CONTRIBUTES_TO",
+        "INGREDIENT_CONTRIBUTES_TO",
+        "TECHNIQUE_MODIFIES_TEXTURE"
+      ],
+      "compositional_relation_types": [
+        "HAS_FLAVOR",
+        "USES_TECHNIQUE",
+        "HAS_CUISINE_STYLE",
+        "HAS_INGREDIENT_CATEGORY",
+        "HAS_TIME_PROFILE",
+        "HAS_DIFFICULTY_LEVEL",
+        "HAS_DIET_TAG",
+        "HAS_HEALTH_TAG"
+      ],
+      "comparison_markers": [
+        "compare",
+        "difference",
+        "similar",
+        "same",
+        "identical",
+        "比较",
+        "对比",
+        "相似",
+        "差异",
+        "相同",
+        "区别"
+      ],
+      "semantic_relation_key_specs": {
+        "CONTRIBUTES_TO": {
+          "target_field": "effect",
+          "key_fields": [
+            "effect",
+            "causes"
+          ]
+        },
+        "INGREDIENT_CONTRIBUTES_TO": {
+          "target_field": "effect",
+          "key_fields": [
+            "source",
+            "effect"
+          ]
+        },
+        "TECHNIQUE_MODIFIES_TEXTURE": {
+          "target_field": "effect",
+          "key_fields": [
+            "source",
+            "effect"
+          ]
+        }
+      }
+    }
   },
   "generation": {
     "answer_types": {

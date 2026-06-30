@@ -189,9 +189,11 @@ def _minimal_policy_payload() -> dict:
         "relations": {
             "graph_routing_strategies": ["hybrid_traditional", "graph_rag", "combined"],
             "graph_query_types": ["entity_relation", "multi_hop"],
-            "graph_relation_types": ["CONTRIBUTES_TO"],
+            "graph_relation_types": ["CONTRIBUTES_TO", "REQUIRES"],
+            "preferred_relation_excluded_types": ["REQUIRES"],
             "semantic_relation_hints": {},
             "relation_index_keywords": {},
+            "relation_index_suffix_templates": {"REQUIRES": "{source_entity}_ingredient"},
             "relation_query_markers": {},
             "entity_linker": {
                 "preferred_labels": ["Recipe"],
@@ -228,6 +230,17 @@ def _minimal_policy_payload() -> dict:
         "graph": {
             "max_depth": {"entity_relation": 1, "default": 2},
             "max_nodes": {"entity_relation": 20, "default": 50},
+            "reasoning": {
+                "causal_relation_types": ["CONTRIBUTES_TO"],
+                "compositional_relation_types": [],
+                "comparison_markers": ["compare"],
+                "semantic_relation_key_specs": {
+                    "CONTRIBUTES_TO": {
+                        "target_field": "effect",
+                        "key_fields": ["effect", "causes"],
+                    }
+                },
+            },
             "sub_questions": [
                 {"id": "fallback", "when": {"fallback": True}, "template": "Retrieve relevant graph evidence."}
             ],
@@ -340,8 +353,10 @@ class RelationPolicy:
     graph_routing_strategies: tuple[str, ...]
     graph_query_types: tuple[str, ...]
     graph_relation_types: tuple[str, ...]
+    preferred_relation_excluded_types: tuple[str, ...]
     semantic_relation_hints: dict[str, str]
     relation_index_keywords: dict[str, tuple[str, ...]]
+    relation_index_suffix_templates: dict[str, str]
     relation_query_markers: dict[str, tuple[str, ...]]
     entity_linker_preferred_labels: tuple[str, ...]
     entity_linker_query_type_priorities: dict[str, tuple[str, ...]]
@@ -365,10 +380,25 @@ class RoutingPolicy:
 
 
 @dataclass(frozen=True)
+class SemanticRelationKeySpec:
+    target_field: str
+    key_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphReasoningPolicy:
+    causal_relation_types: tuple[str, ...]
+    compositional_relation_types: tuple[str, ...]
+    comparison_markers: tuple[str, ...]
+    semantic_relation_key_specs: dict[str, SemanticRelationKeySpec]
+
+
+@dataclass(frozen=True)
 class GraphPolicy:
     max_depth: dict[str, int]
     max_nodes: dict[str, int]
     sub_questions: tuple[dict[str, Any], ...]
+    reasoning: GraphReasoningPolicy
 
 
 @dataclass(frozen=True)
