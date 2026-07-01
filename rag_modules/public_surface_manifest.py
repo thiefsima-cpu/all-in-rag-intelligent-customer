@@ -72,7 +72,7 @@ PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "public_api",
         "rag_modules.app.providers",
         "canonical",
-        "Public default-provider facade over internal provider components.",
+        "Canonical runtime provider boundary for application assembly.",
     ),
 )
 
@@ -128,13 +128,6 @@ INTERNAL_ONLY_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "rag_modules.app.composition",
         "internal_only",
         "Composition-root helpers for runtime assembly. Do not import from feature code.",
-    ),
-    PublicSurfaceEntry(
-        "rag_modules.app.provider_components",
-        "internal_only",
-        "rag_modules.app.provider_components",
-        "internal_only",
-        "Provider wiring helpers for assembly internals. Use rag_modules.app.providers instead.",
     ),
 )
 

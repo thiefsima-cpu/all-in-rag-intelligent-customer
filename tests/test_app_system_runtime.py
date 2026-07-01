@@ -378,7 +378,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         lifecycle_services = RuntimeLifecycleServiceBundle(
             initialization_service=SimpleNamespace(),
             readiness_service=RuntimeReadinessService(),
-            refresh_service=SimpleNamespace(),
+            serving_lifecycle_service=SimpleNamespace(),
             build_lifecycle_service=SimpleNamespace(),
         )
 
@@ -402,8 +402,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
             lifecycle_services.readiness_service,
         )
         self.assertIs(
-            infrastructure.runtime_manager.refresh_service,
-            lifecycle_services.refresh_service,
+            infrastructure.runtime_manager.serving_lifecycle_service,
+            lifecycle_services.serving_lifecycle_service,
         )
         self.assertIs(
             infrastructure.runtime_manager.build_lifecycle_service,
@@ -588,7 +588,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
                     lifecycle_services=RuntimeLifecycleServiceBundle(
                         initialization_service=SimpleNamespace(),
                         readiness_service=RuntimeReadinessService(),
-                        refresh_service=SimpleNamespace(),
+                        serving_lifecycle_service=SimpleNamespace(),
                         build_lifecycle_service=SimpleNamespace(),
                     ),
                     runtime_state_store=runtime_state_store,

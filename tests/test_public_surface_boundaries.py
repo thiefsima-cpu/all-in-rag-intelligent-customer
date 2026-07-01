@@ -93,6 +93,23 @@ RETIRED_INTERNAL_COMPAT_NAMES = frozenset(
         "provide_query_router",
     }
 )
+RETIRED_PROVIDER_COMPONENTS_PACKAGE = "rag_modules.app.provider_components"
+RETIRED_PROVIDER_COMPONENTS_PATH = RAG_MODULES_DIR / "app" / "provider_components"
+RETIRED_PROVIDER_COMPONENTS_MODULES = frozenset(
+    {
+        RETIRED_PROVIDER_COMPONENTS_PACKAGE,
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.build_pipeline",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.contracts",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.diagnostics",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.generation",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.infrastructure",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.lifecycle",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.query_understanding",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.retrieval",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.runtime",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.services",
+    }
+)
 
 
 class PublicSurfaceBoundaryTests(unittest.TestCase):
@@ -776,6 +793,68 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 sys.modules.pop(module_name, None)
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
+
+    def test_retired_provider_components_package_is_removed(self) -> None:
+        self.assertFalse(RETIRED_PROVIDER_COMPONENTS_PATH.exists())
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_PROVIDER_COMPONENTS_MODULES):
+            with self.subTest(module_name=module_name):
+                for cached_name in list(sys.modules):
+                    if cached_name == RETIRED_PROVIDER_COMPONENTS_PACKAGE or cached_name.startswith(
+                        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}."
+                    ):
+                        sys.modules.pop(cached_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_code_does_not_import_retired_provider_components_package(self) -> None:
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {
+                            module_name,
+                            *(
+                                f"{module_name}.{alias.name}"
+                                for alias in node.names
+                                if alias.name != "*"
+                            ),
+                        }
+                        if any(
+                            name == RETIRED_PROVIDER_COMPONENTS_PACKAGE
+                            or name.startswith(f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.")
+                            for name in imported_names
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == RETIRED_PROVIDER_COMPONENTS_PACKAGE or (
+                                alias.name.startswith(f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.")
+                            ):
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found imports of retired provider_components package:\n" + "\n".join(violations),
+        )
 
     def test_internal_code_and_tests_do_not_reference_retired_internal_compat_names(
         self,
@@ -1873,15 +1952,18 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         alias.name == "RuntimeComponentProviderResolver" for alias in node.names
                     ):
                         found_provider_resolver_import = True
-                    if module_name.endswith("provider_components.runtime") and any(
-                        alias.name == "DefaultRuntimeComponentProvider" for alias in node.names
+                    if module_name == RETIRED_PROVIDER_COMPONENTS_PACKAGE or module_name.startswith(
+                        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}."
                     ):
                         violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name.endswith("provider_resolution"):
                             found_provider_resolver_import = True
-                        if alias.name.endswith("provider_components.runtime"):
+                        if (
+                            alias.name == RETIRED_PROVIDER_COMPONENTS_PACKAGE
+                            or alias.name.startswith(f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.")
+                        ):
                             violations.append(
                                 f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
                             )
@@ -1893,7 +1975,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found inline default-provider resolution that should live in RuntimeComponentProviderResolver:\n"
+            "Found retired provider_components imports in bootstrapper composer:\n"
             + "\n".join(violations),
         )
 

@@ -140,12 +140,10 @@ class PublicApiManifestTests(unittest.TestCase):
 
     def test_internal_only_packages_declare_internal_contract(self) -> None:
         import rag_modules.app.composition as composition
-        import rag_modules.app.provider_components as provider_components
 
-        for module in (composition, provider_components):
-            self.assertTrue(getattr(module, "INTERNAL_ONLY", False))
-            self.assertIn("internal", (module.__doc__ or "").lower())
-            self.assertIn("instead", getattr(module, "INTERNAL_ONLY_REASON", "").lower())
+        self.assertTrue(getattr(composition, "INTERNAL_ONLY", False))
+        self.assertIn("internal", (composition.__doc__ or "").lower())
+        self.assertIn("instead", getattr(composition, "INTERNAL_ONLY_REASON", "").lower())
 
     def test_non_app_code_does_not_import_internal_assembly_packages(self) -> None:
         violations: list[str] = []

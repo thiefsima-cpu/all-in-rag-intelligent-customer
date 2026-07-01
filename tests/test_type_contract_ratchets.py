@@ -7,9 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NO_EXPLICIT_ANY_TARGETS = (
-    ROOT / "rag_modules" / "app" / "provider_components" / "contracts.py",
-    ROOT / "rag_modules" / "app" / "provider_components" / "query_understanding.py",
-    ROOT / "rag_modules" / "app" / "provider_components" / "retrieval.py",
+    ROOT / "rag_modules" / "app" / "providers.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_contracts.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_support.py",
     ROOT / "rag_modules" / "app" / "services" / "answer_models.py",
