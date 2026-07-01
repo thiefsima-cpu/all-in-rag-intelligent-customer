@@ -504,6 +504,20 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "Found scripts/tests still importing retired query facades:\n" + "\n".join(violations),
         )
 
+    def test_unversioned_query_policy_resources_and_helpers_are_retired(self) -> None:
+        policy_dir = RAG_MODULES_DIR / "query_policy"
+
+        self.assertFalse((policy_dir / "defaults.json").exists())
+        self.assertFalse((policy_dir / "planner_prompt.txt").exists())
+
+        package_source = (policy_dir / "__init__.py").read_text(encoding="utf-8")
+        loader_source = (policy_dir / "loader.py").read_text(encoding="utf-8")
+        for retired_name in ("get_planner_prompt_template", "flatten_term_groups"):
+            with self.subTest(retired_name=retired_name):
+                self.assertNotIn(retired_name, package_source)
+                self.assertNotIn(retired_name, loader_source)
+        self.assertNotIn("class QueryPolicy", loader_source)
+
     def test_retirement_plan_document_states_current_policy(self) -> None:
         plan_path = ROOT / "docs" / "public_surface_retirement_plan.md"
         self.assertTrue(plan_path.exists())

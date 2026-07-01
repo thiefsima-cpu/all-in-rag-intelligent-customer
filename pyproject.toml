@@ -61,7 +61,11 @@ include = ["rag_modules*", "scripts*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"rag_modules.query_policy" = ["defaults.json", "planner_prompt.txt"]
+"rag_modules.query_policy" = [
+  "resources/*/manifest.json",
+  "resources/*/policy.json",
+  "resources/*/prompts/*.txt",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -2,8 +2,6 @@
 
 from .loader import (
     default_policy_bundle_path,
-    flatten_term_groups,
-    get_planner_prompt_template,
     get_query_policy,
     load_policy_bundle,
 )
@@ -20,8 +18,6 @@ __all__ = [
     "PromptTemplates",
     "QueryPolicyBundle",
     "default_policy_bundle_path",
-    "flatten_term_groups",
-    "get_planner_prompt_template",
     "get_query_policy",
     "load_policy_bundle",
 ]

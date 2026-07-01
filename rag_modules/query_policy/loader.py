@@ -594,22 +594,3 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
 
 def get_query_policy(bundle_path: str | Path | None = None) -> QueryPolicyBundle:
     return load_policy_bundle(bundle_path)
-
-
-def get_planner_prompt_template() -> str:
-    return get_query_policy().prompts.query_planner
-
-
-def flatten_term_groups(*names: str) -> Tuple[str, ...]:
-    policy = get_query_policy()
-    merged: list[str] = []
-    for name in names:
-        merged.extend(policy.lexicon.term_group(name))
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for item in merged:
-        if item in seen:
-            continue
-        seen.add(item)
-        deduped.append(item)
-    return tuple(deduped)

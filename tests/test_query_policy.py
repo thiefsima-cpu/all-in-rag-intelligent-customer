@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_modules.query_policy import get_planner_prompt_template, get_query_policy
+from rag_modules.query_policy import get_query_policy
 
 
 def _minimal_policy_payload() -> dict:
@@ -221,7 +221,7 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertNotIn("鍏崇郴", policy.term_group("relation_markers"))
 
     def test_planner_prompt_template_has_required_placeholders(self) -> None:
-        template = get_planner_prompt_template()
+        template = get_query_policy().prompts.query_planner
 
         self.assertIn("{graph_query_types_text}", template)
         self.assertIn("{relation_types_text}", template)
@@ -269,7 +269,6 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertNotIn("POLICY.term_group", registry_source)
         self.assertNotIn("POLICY.regex_group", features_source)
         self.assertNotIn("POLICY.term_group", features_source)
-        self.assertNotIn("get_planner_prompt_template", prompting_source)
         self.assertNotIn("_RELATION_TYPE_HINTS", relation_index_source)
         self.assertNotIn('{"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}', prompting_source)
         self.assertNotIn("causal_relation_types = {", reasoning_source)

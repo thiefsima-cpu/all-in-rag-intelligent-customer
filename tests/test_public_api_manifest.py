@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -88,6 +89,24 @@ class PublicApiManifestTests(unittest.TestCase):
             ("internal_dependency_guard", "thin_wrapper_guard"),
             LEGACY_PUBLIC_SURFACE_SCAN_RULES,
         )
+
+    def test_query_policy_package_data_ships_versioned_bundle_only(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            pyproject = tomllib.load(file)
+
+        package_data = pyproject["tool"]["setuptools"]["package-data"]
+        query_policy_data = tuple(package_data["rag_modules.query_policy"])
+
+        self.assertEqual(
+            (
+                "resources/*/manifest.json",
+                "resources/*/policy.json",
+                "resources/*/prompts/*.txt",
+            ),
+            query_policy_data,
+        )
+        self.assertNotIn("defaults.json", query_policy_data)
+        self.assertNotIn("planner_prompt.txt", query_policy_data)
 
     def test_retired_facade_class_names_are_not_package_exports(self) -> None:
         import rag_modules
