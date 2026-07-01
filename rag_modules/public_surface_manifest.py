@@ -17,6 +17,7 @@ class PublicSurfaceEntry:
     scan_rules: tuple[str, ...] = ()
 
 
+# Package-version milestone for the final public import-facade removal; not API_VERSION.
 LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION = "0.2.0"
 LEGACY_PUBLIC_SURFACE_SCAN_RULES = (
     "internal_dependency_guard",

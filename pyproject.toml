@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graph-rag-c9"
-version = "0.1.0"
+version = "0.3.0"
 description = "GraphRAG serving, build, and offline evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"

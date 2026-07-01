@@ -67,6 +67,26 @@ graph-rag-verify-env
 Start with [docs/architecture.md](docs/architecture.md) for the runtime
 assembly, query-to-answer flow, and build workflow state machine diagrams.
 
+## Version Governance
+
+GraphRAG C9 tracks three separate version axes:
+
+- Package version: `0.3.0`, from `[project].version` in `pyproject.toml`. This
+  is the Python distribution and release version used for package publication,
+  release notes, and customer upgrade guidance.
+- API version: `1.0.0`, from `API_VERSION`, with API prefix: `/v1`. This is the
+  HTTP/OpenAPI contract version shared by the serving and build FastAPI apps.
+- Compatibility removal version: `0.2.0`, from
+  `LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`, plus row-level milestones in
+  [docs/public_surface_retirement_plan.md](docs/public_surface_retirement_plan.md).
+  These record the first package or API milestone where a compatibility surface
+  is gone.
+
+Package releases can keep the same API version, and API contract changes do not
+imply a package version match. Compatibility removals must name their version
+axis, such as package version `0.3.0` or API version `1.0.0`, before they are
+used in release notes or customer migration guidance.
+
 ## Common Commands
 
 ```powershell

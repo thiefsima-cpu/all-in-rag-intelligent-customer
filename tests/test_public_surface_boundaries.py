@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import ast
 import importlib
+import re
 import sys
+import tomllib
 import unittest
 from importlib.util import resolve_name
 from pathlib import Path
 
+from rag_modules.interfaces.api.versioning import API_PREFIX, API_VERSION
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
@@ -152,6 +155,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             return ()
         parts.append(current.id)
         return tuple(reversed(parts))
+
+    @staticmethod
+    def _version_tuple(version: str) -> tuple[int, int, int]:
+        major, minor, patch = (int(part) for part in version.split("."))
+        return major, minor, patch
 
     @classmethod
     def _resolve_import_from(cls, path: Path, node: ast.ImportFrom) -> str:
@@ -589,6 +597,58 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "will fail instead of forwarding",
         ):
             self.assertIn(expected, content)
+
+    def test_version_governance_distinguishes_package_api_and_compat_versions(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            package_version = tomllib.load(file)["project"]["version"]
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+        normalized_readme = " ".join(readme.split())
+        normalized_policy = " ".join(policy.split())
+
+        for expected in (
+            "## Version Governance",
+            f"Package version: `{package_version}`",
+            f"API version: `{API_VERSION}`",
+            f"API prefix: `{API_PREFIX}`",
+            f"Compatibility removal version: `{LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}`",
+            "Package releases can keep the same API version",
+            "Compatibility removals must name their version axis",
+        ):
+            self.assertIn(expected, normalized_readme)
+
+        for expected in (
+            "## Version Governance",
+            "`pyproject.toml`",
+            "`API_VERSION`",
+            "`LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`",
+            "package version, API version, and compatibility removal version are not interchangeable",
+        ):
+            self.assertIn(expected, normalized_policy)
+
+    def test_completed_package_retirement_milestones_do_not_exceed_package_version(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            package_version = tomllib.load(file)["project"]["version"]
+        package_version_tuple = self._version_tuple(package_version)
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+        package_removal_versions = {
+            LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+            *re.findall(
+                r"\| [^|\n]+ \| [^|\n]+ \| [^|\n]+ \| package version `([^`]+)` \|", policy
+            ),
+        }
+
+        self.assertTrue(package_removal_versions)
+        for removal_version in sorted(package_removal_versions):
+            with self.subTest(removal_version=removal_version):
+                self.assertLessEqual(
+                    self._version_tuple(removal_version),
+                    package_version_tuple,
+                    (
+                        "Completed package compatibility removals must not be documented "
+                        "beyond the current package version."
+                    ),
+                )
 
     def test_app_composition_maintenance_guide_documents_runtime_ownership(self) -> None:
         guide_path = ROOT / "docs" / "app_composition_maintenance_guide.md"

@@ -11,6 +11,28 @@ compatibility modules are not an alternate architecture.
 The machine-readable source of truth is
 [`rag_modules/public_surface_manifest.py`](../rag_modules/public_surface_manifest.py).
 
+## Version Governance
+
+The package version, API version, and compatibility removal version are not
+interchangeable:
+
+- Package version comes from `[project].version` in `pyproject.toml`. The
+  current package version is `0.3.0`, which is the release axis for Python
+  package publication and customer upgrade notes.
+- API version comes from `API_VERSION` in
+  `rag_modules/interfaces/api/versioning.py`. The current API version is
+  `1.0.0`, served under `/v1`, and describes the HTTP/OpenAPI contract for both
+  serving and build apps.
+- Compatibility removal version comes from
+  `LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION` for the final import-facade closure
+  and from the row-level milestones below for later closures. Each removal must
+  say whether it is a package-version milestone or an API-version milestone.
+
+The `0.2.0` import-facade retirement is a completed package-version milestone.
+The `0.3.0` routing compatibility closure is also a completed package-version
+milestone. The unversioned HTTP alias closure belongs to API version `1.0.0`;
+it does not imply API version `2.0.0` or package version `1.0.0`.
+
 ## Canonical Packages
 
 - Application: `rag_modules.app.*`
@@ -29,7 +51,7 @@ The machine-readable source of truth is
 
 No legacy bridge remains registered in `public_surface_manifest.py`.
 
-| Retired module | Canonical replacement | Status | Removal version |
+| Retired module | Canonical replacement | Status | Package removal version |
 | --- | --- | --- | --- |
 | `config.py` | `rag_modules.configuration` | retired in favor of canonical configuration imports | `0.2.0` |
 | `rag_modules.intelligent_query_router` | `rag_modules.routing.RoutingWorkflowService` | retired in favor of canonical routing workflow imports | `0.2.0` |
@@ -58,9 +80,9 @@ The already-completed `0.2.0` import-facade retirement is now joined by the
 active-layer closure. No active compatibility layers remain; compatibility
 paths are not alternate architecture paths.
 
-| Retired layer | Canonical replacement | Status | Removal version |
+| Retired layer | Canonical replacement | Status | Removal axis and version |
 | --- | --- | --- | --- |
-| unversioned HTTP API aliases | `/v1` serving and build routes | unversioned HTTP API aliases are retired | API version `2.0.0` |
+| unversioned HTTP API aliases | `/v1` serving and build routes | unversioned HTTP API aliases are retired | API version `1.0.0` |
 | `rag_modules.routing.IntelligentQueryRouter` | `rag_modules.routing.RoutingWorkflowService` or the routing workflow protocol | `rag_modules.routing.IntelligentQueryRouter` is retired | package version `0.3.0` |
 
 HTTP clients must use `/v1`. Python routing code must use
