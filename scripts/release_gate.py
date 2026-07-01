@@ -459,11 +459,7 @@ def _evaluate_metric_thresholds(
                 name=f"metric_available:{metric_path}",
                 passed=False,
                 expected="numeric_metric",
-                actual=(
-                    f"blocked_by:{blocking_failure_type}"
-                    if blocking_failure_type
-                    else None
-                ),
+                actual=(f"blocked_by:{blocking_failure_type}" if blocking_failure_type else None),
                 failure_type=blocking_failure_type or FAILURE_TYPE_METRIC_REGRESSION,
             )
             continue
