@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 ALLOWED_IMPORTERS = {
     Path("rag_modules/contracts/langchain_compat.py"),
     Path("rag_modules/langchain_document_adapter.py"),

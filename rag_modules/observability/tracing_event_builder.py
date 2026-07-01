@@ -45,7 +45,7 @@ class _TraceEventBuilderHost(Protocol):
     def _build_diagnostics(
         self,
         documents: list[EvidenceDocument],
-        error: RuntimeErrorDetail | None,
+        error: RuntimeErrorDetail,
         route_trace: RouteSnapshot,
         generation_trace: GenerationSnapshot,
     ) -> QueryDiagnostics: ...
