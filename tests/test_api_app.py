@@ -29,10 +29,7 @@ from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
-from rag_modules.interfaces.api.versioning import (
-    API_VERSION,
-    UNVERSIONED_API_ALIAS_REMOVAL_VERSION,
-)
+from rag_modules.interfaces.api.versioning import API_VERSION
 from rag_modules.runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -108,7 +105,7 @@ def _wait_for_job_status(
     deadline = time.time() + timeout
     last_payload: dict = {}
     while time.time() < deadline:
-        response = client.get(f"/jobs/{job_id}")
+        response = client.get(f"/v1/jobs/{job_id}")
         if response.status_code == 200:
             last_payload = response.json()["job"]
             if last_payload["status"] == expected_status:
@@ -681,7 +678,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with TestClient(app) as client:
-            response = client.get("/health", headers={"X-Request-ID": "client.req:42"})
+            response = client.get("/v1/health", headers={"X-Request-ID": "client.req:42"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["x-request-id"], "client.req:42")
@@ -690,8 +687,8 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with TestClient(app) as client:
-            missing = client.get("/health")
-            invalid = client.get("/health", headers={"X-Request-ID": "bad/id secret"})
+            missing = client.get("/v1/health")
+            invalid = client.get("/v1/health", headers={"X-Request-ID": "bad/id secret"})
 
         _assert_request_id(missing.headers["x-request-id"])
         _assert_request_id(invalid.headers["x-request-id"])
@@ -703,7 +700,7 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(app) as client:
             response = client.post(
-                "/answers",
+                "/v1/answers",
                 json={"question": secret_question},
                 headers={"X-Request-ID": "validation-42"},
             )
@@ -745,7 +742,7 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(app) as client:
             missing = client.get("/does-not-exist")
-            method = client.put("/health")
+            method = client.put("/v1/health")
 
         _assert_error_response(missing, status_code=404, code="NOT_FOUND")
         _assert_error_response(method, status_code=405, code="METHOD_NOT_ALLOWED")
@@ -758,7 +755,7 @@ class ApiAppTests(unittest.TestCase):
             schema = client.get("/openapi.json").json()
 
         self.assertIn("ErrorResponseModel", schema["components"]["schemas"])
-        validation_schema = schema["paths"]["/answers"]["post"]["responses"]["422"]
+        validation_schema = schema["paths"]["/v1/answers"]["post"]["responses"]["422"]
         self.assertEqual(
             validation_schema["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ErrorResponseModel",
@@ -770,7 +767,7 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(app) as client:
             response = client.post(
-                "/answers",
+                "/v1/answers",
                 json={"question": "safe question"},
                 headers={"X-Request-ID": "answer-failed-42"},
             )
@@ -790,7 +787,7 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             with client.stream(
                 "POST",
-                "/answers/stream",
+                "/v1/answers/stream",
                 json={"question": "safe question"},
                 headers={"X-Request-ID": "stream-failed-42"},
             ) as response:
@@ -809,7 +806,7 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(app) as client:
             response = client.post(
-                "/answers/stream",
+                "/v1/answers/stream",
                 json={"question": "safe question"},
             )
 
@@ -819,7 +816,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with TestClient(app) as client:
-            response = client.get("/health/live")
+            response = client.get("/v1/health/live")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
@@ -838,10 +835,10 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=system)
 
         with TestClient(app) as client:
-            unready_response = client.get("/health/ready")
+            unready_response = client.get("/v1/health/ready")
             system.system_ready = True
             system.serving_initialized = True
-            ready_response = client.get("/health/ready")
+            ready_response = client.get("/v1/health/ready")
 
         self.assertEqual(unready_response.status_code, 503)
         self.assertEqual(unready_response.json()["status"], "not_ready")
@@ -853,9 +850,9 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=system)
 
         with TestClient(app) as client:
-            unready_response = client.get("/health/ready")
+            unready_response = client.get("/v1/health/ready")
             system.build_initialized = True
-            ready_response = client.get("/health/ready")
+            ready_response = client.get("/v1/health/ready")
 
         self.assertEqual(unready_response.status_code, 503)
         self.assertEqual(ready_response.status_code, 200)
@@ -864,7 +861,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with _client(app) as client:
-            response = client.get("/health")
+            response = client.get("/v1/health")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -876,7 +873,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=_FakeApiSystem())
 
         with _client(app) as client:
-            response = client.get("/health")
+            response = client.get("/v1/health")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -891,8 +888,8 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=system)
 
         with _client(app) as client:
-            stats_response = client.get("/stats")
-            diagnostics_response = client.get("/diagnostics")
+            stats_response = client.get("/v1/stats")
+            diagnostics_response = client.get("/v1/diagnostics")
 
         self.assertEqual(stats_response.status_code, 200)
         stats_payload = stats_response.json()["stats"]
@@ -922,8 +919,8 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_PublicManifestErrorSystem(secret))
 
         with _client(app) as client:
-            diagnostics = client.get("/diagnostics")
-            stats = client.get("/stats")
+            diagnostics = client.get("/v1/diagnostics")
+            stats = client.get("/v1/stats")
 
         serialized = json.dumps(
             {"diagnostics": diagnostics.json(), "stats": stats.json()},
@@ -955,7 +952,7 @@ class ApiAppTests(unittest.TestCase):
             app = create_build_api_app(system=system, config=config)
 
             with _client(app) as client:
-                response = client.get("/diagnostics")
+                response = client.get("/v1/diagnostics")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()["diagnostics"]["build_job_store"]
@@ -987,7 +984,7 @@ class ApiAppTests(unittest.TestCase):
             app = create_build_api_app(system=system, config=config)
 
             with _client(app) as client:
-                response = client.get("/diagnostics")
+                response = client.get("/v1/diagnostics")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()["diagnostics"]["build_job_store"]
@@ -1031,8 +1028,8 @@ class ApiAppTests(unittest.TestCase):
                 headers={"Authorization": f"Bearer {_API_TOKEN}"},
                 raise_server_exceptions=False,
             ) as client:
-                jobs_response = client.get("/jobs")
-                diagnostics_response = client.get("/diagnostics")
+                jobs_response = client.get("/v1/jobs")
+                diagnostics_response = client.get("/v1/diagnostics")
 
         self.assertEqual(jobs_response.status_code, 200)
         self.assertEqual(jobs_response.json()["jobs"], [])
@@ -1049,7 +1046,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=system)
 
         with _client(app) as client:
-            response = client.post("/answers", json={"question": "Can I cook tofu?"})
+            response = client.post("/v1/answers", json={"question": "Can I cook tofu?"})
 
         _assert_error_response(response, status_code=409, code="SYSTEM_NOT_READY")
         self.assertEqual(system.initialize_serving_calls, 1)
@@ -1058,7 +1055,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with _client(app) as client:
-            response = client.post("/knowledge-base/build")
+            response = client.post("/v1/jobs/build")
 
         self.assertEqual(response.status_code, 404)
 
@@ -1066,7 +1063,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=_FakeApiSystem())
 
         with _client(app) as client:
-            response = client.post("/answers", json={"question": "Can I cook tofu?"})
+            response = client.post("/v1/answers", json={"question": "Can I cook tofu?"})
 
         self.assertEqual(response.status_code, 404)
 
@@ -1075,7 +1072,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=system)
 
         with _client(app) as client:
-            build_response = client.post("/knowledge-base/build")
+            build_response = client.post("/v1/jobs/build")
             job_payload = build_response.json()["job"]
             finished_job = _wait_for_job_status(
                 client,
@@ -1095,11 +1092,11 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=system)
 
         with _client(app) as client:
-            build_response = client.post("/jobs/build")
+            build_response = client.post("/v1/jobs/build")
             build_job = build_response.json()["job"]
             finished_job = _wait_for_job_status(client, build_job["job_id"], "succeeded")
-            list_response = client.get("/jobs")
-            detail_response = client.get(f"/jobs/{build_job['job_id']}")
+            list_response = client.get("/v1/jobs")
+            detail_response = client.get(f"/v1/jobs/{build_job['job_id']}")
 
         self.assertEqual(build_response.status_code, 202)
         self.assertEqual(list_response.status_code, 200)
@@ -1131,12 +1128,12 @@ class ApiAppTests(unittest.TestCase):
             with _client(app) as client:
                 job_ids: list[str] = []
                 for _ in range(3):
-                    submitted = client.post("/jobs/build").json()["job"]
+                    submitted = client.post("/v1/jobs/build").json()["job"]
                     finished = _wait_for_job_status(client, submitted["job_id"], "succeeded")
                     job_ids.append(finished["job_id"])
-                first_page = client.get("/jobs", params={"limit": 2})
+                first_page = client.get("/v1/jobs", params={"limit": 2})
                 cursor = first_page.json()["next_cursor"]
-                second_page = client.get("/jobs", params={"limit": 2, "cursor": cursor})
+                second_page = client.get("/v1/jobs", params={"limit": 2, "cursor": cursor})
 
         self.assertEqual(first_page.status_code, 200)
         self.assertEqual(second_page.status_code, 200)
@@ -1165,7 +1162,7 @@ class ApiAppTests(unittest.TestCase):
             app = create_build_api_app(system=system, config=config)
 
             with _client(app) as client:
-                response = client.get("/jobs", params={"cursor": "not-a-cursor"})
+                response = client.get("/v1/jobs", params={"cursor": "not-a-cursor"})
 
         self.assertEqual(response.status_code, 400)
         payload = response.json()
@@ -1197,7 +1194,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(repeated.json()["job"]["job_id"], job_id)
         self.assertIn("next_cursor", listed.json())
 
-    def test_knowledge_base_build_alias_accepts_idempotency_key(self) -> None:
+    def test_build_job_route_accepts_idempotency_key(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
                 {
@@ -1213,16 +1210,10 @@ class ApiAppTests(unittest.TestCase):
             app = create_build_api_app(system=system, config=config)
 
             with _client(app) as client:
-                first = client.post(
-                    "/knowledge-base/build",
-                    headers={"Idempotency-Key": "alias-key"},
-                )
+                first = client.post("/v1/jobs/build", headers={"Idempotency-Key": "job-key"})
                 job_id = first.json()["job"]["job_id"]
                 _wait_for_job_status(client, job_id, "succeeded")
-                repeated = client.post(
-                    "/knowledge-base/build",
-                    headers={"Idempotency-Key": "alias-key"},
-                )
+                repeated = client.post("/v1/jobs/build", headers={"Idempotency-Key": "job-key"})
 
         self.assertEqual(repeated.json()["job"]["job_id"], job_id)
 
@@ -1243,13 +1234,13 @@ class ApiAppTests(unittest.TestCase):
 
             with _client(app) as client:
                 first_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "retry-key-1"},
                 )
                 first_job = first_response.json()["job"]
                 _wait_for_job_status(client, first_job["job_id"], "succeeded")
                 second_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "retry-key-1"},
                 )
 
@@ -1275,13 +1266,13 @@ class ApiAppTests(unittest.TestCase):
 
             with _client(app) as client:
                 first_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "retry-key-2"},
                 )
                 first_job = first_response.json()["job"]
                 _wait_for_job_status(client, first_job["job_id"], "succeeded")
                 conflict_response = client.post(
-                    "/jobs/rebuild",
+                    "/v1/jobs/rebuild",
                     headers={"Idempotency-Key": "retry-key-2"},
                 )
 
@@ -1297,7 +1288,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=_FakeApiSystem())
 
         with _client(app) as client:
-            response = client.post("/jobs/build", headers={"Idempotency-Key": "../bad"})
+            response = client.post("/v1/jobs/build", headers={"Idempotency-Key": "../bad"})
 
         payload = _assert_error_response(response, status_code=400, code="INVALID_REQUEST")
         self.assertEqual(payload["error"]["details"]["field"], "Idempotency-Key")
@@ -1319,14 +1310,14 @@ class ApiAppTests(unittest.TestCase):
 
             with _client(app) as client:
                 first_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "active-key-1"},
                 )
                 first_job = first_response.json()["job"]
                 self.assertTrue(system.build_started.wait(timeout=1.0))
 
                 replay_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "active-key-1"},
                 )
 
@@ -1355,21 +1346,21 @@ class ApiAppTests(unittest.TestCase):
 
             with _client(app) as client:
                 first_response = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"Idempotency-Key": "active-key-2"},
                 )
                 first_job = first_response.json()["job"]
                 self.assertTrue(system.build_started.wait(timeout=1.0))
 
                 conflict_response = client.post(
-                    "/jobs/rebuild",
+                    "/v1/jobs/rebuild",
                     headers={"Idempotency-Key": "later-key"},
                 )
 
                 system.release_build.set()
                 _wait_for_job_status(client, first_job["job_id"], "succeeded")
                 accepted_response = client.post(
-                    "/jobs/rebuild",
+                    "/v1/jobs/rebuild",
                     headers={"Idempotency-Key": "later-key"},
                 )
                 accepted_job = accepted_response.json()["job"]
@@ -1384,11 +1375,11 @@ class ApiAppTests(unittest.TestCase):
         app = create_build_api_app(system=system)
 
         with _client(app) as client:
-            first_response = client.post("/jobs/build")
+            first_response = client.post("/v1/jobs/build")
             first_job = first_response.json()["job"]
             self.assertTrue(system.build_started.wait(timeout=1.0))
 
-            conflict_response = client.post("/jobs/rebuild")
+            conflict_response = client.post("/v1/jobs/rebuild")
 
             system.release_build.set()
             _wait_for_job_status(client, first_job["job_id"], "succeeded")
@@ -1419,7 +1410,7 @@ class ApiAppTests(unittest.TestCase):
 
             with _client(app) as client:
                 submitted = client.post(
-                    "/jobs/build",
+                    "/v1/jobs/build",
                     headers={"X-Request-ID": "build-http-42"},
                 ).json()["job"]
                 failed = _wait_for_job_status(client, submitted["job_id"], "failed")
@@ -1436,7 +1427,7 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(app) as client:
             answer_response = client.post(
-                "/answers",
+                "/v1/debug/answers",
                 json={
                     "question": "Can I cook tofu?",
                     "stream": False,
@@ -1612,7 +1603,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(schema["paths"]["/v1/health"]["get"]["security"], [])
         self.assertNotEqual(schema["paths"]["/v1/debug/answers"]["post"].get("security"), [])
 
-    def test_unversioned_serving_openapi_routes_are_deprecated_aliases(self) -> None:
+    def test_unversioned_serving_routes_are_retired(self) -> None:
         config = build_test_config(
             {
                 "api": {
@@ -1626,31 +1617,28 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             schema = client.get("/openapi.json").json()
 
-        expectations = {
-            ("/", "get"): "/v1/health",
-            ("/health", "get"): "/v1/health",
-            ("/health/live", "get"): "/v1/health/live",
-            ("/health/ready", "get"): "/v1/health/ready",
-            ("/stats", "get"): "/v1/stats",
-            ("/diagnostics", "get"): "/v1/diagnostics",
-            ("/runtime/serving/initialize", "post"): "/v1/runtime/serving/initialize",
-            ("/runtime/serving/refresh", "post"): "/v1/runtime/serving/refresh",
-            ("/answers", "post"): "/v1/answers",
-            ("/answers/stream", "post"): "/v1/answers/stream",
-        }
+            responses = {
+                "/": client.get("/"),
+                "/health": client.get("/health"),
+                "/health/live": client.get("/health/live"),
+                "/health/ready": client.get("/health/ready"),
+                "/stats": client.get("/stats"),
+                "/diagnostics": client.get("/diagnostics"),
+                "/runtime/serving/initialize": client.post("/runtime/serving/initialize"),
+                "/runtime/serving/refresh": client.post("/runtime/serving/refresh"),
+                "/answers": client.post("/answers", json={"question": "tofu"}),
+                "/answers/stream": client.post("/answers/stream", json={"question": "tofu"}),
+            }
 
-        for (path, method), canonical_path in expectations.items():
-            operation = schema["paths"][path][method]
-            self.assertTrue(operation.get("deprecated"), path)
-            description = operation.get("description", "")
-            self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, description)
-            self.assertIn(canonical_path, description)
+        for path, response in responses.items():
+            self.assertEqual(response.status_code, 404, path)
+            self.assertNotIn(path, schema["paths"])
 
-        self.assertFalse(schema["paths"]["/v1/health"]["get"].get("deprecated", False))
-        self.assertFalse(schema["paths"]["/v1/answers"]["post"].get("deprecated", False))
-        self.assertFalse(schema["paths"]["/v1/answers/stream"]["post"].get("deprecated", False))
+        self.assertIn("/v1/health", schema["paths"])
+        self.assertIn("/v1/answers", schema["paths"])
+        self.assertIn("/v1/answers/stream", schema["paths"])
 
-    def test_unversioned_build_openapi_routes_are_deprecated_aliases(self) -> None:
+    def test_unversioned_build_routes_are_retired(self) -> None:
         config = build_test_config(
             {
                 "api": {
@@ -1664,36 +1652,33 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             schema = client.get("/openapi.json").json()
 
-        expectations = {
-            ("/", "get"): "/v1/health",
-            ("/health", "get"): "/v1/health",
-            ("/health/live", "get"): "/v1/health/live",
-            ("/health/ready", "get"): "/v1/health/ready",
-            ("/stats", "get"): "/v1/stats",
-            ("/diagnostics", "get"): "/v1/diagnostics",
-            ("/runtime/build/initialize", "post"): "/v1/runtime/build/initialize",
-            ("/jobs", "get"): "/v1/jobs",
-            ("/jobs/{job_id}", "get"): "/v1/jobs/{job_id}",
-            ("/jobs/build", "post"): "/v1/jobs/build",
-            ("/jobs/rebuild", "post"): "/v1/jobs/rebuild",
-            ("/artifacts", "get"): "/v1/artifacts",
-            ("/knowledge-base/build", "post"): "/v1/jobs/build",
-            ("/knowledge-base/rebuild", "post"): "/v1/jobs/rebuild",
-        }
+            responses = {
+                "/": client.get("/"),
+                "/health": client.get("/health"),
+                "/health/live": client.get("/health/live"),
+                "/health/ready": client.get("/health/ready"),
+                "/stats": client.get("/stats"),
+                "/diagnostics": client.get("/diagnostics"),
+                "/runtime/build/initialize": client.post("/runtime/build/initialize"),
+                "/jobs": client.get("/jobs"),
+                f"/jobs/{'0' * 32}": client.get(f"/jobs/{'0' * 32}"),
+                "/jobs/build": client.post("/jobs/build"),
+                "/jobs/rebuild": client.post("/jobs/rebuild"),
+                "/artifacts": client.get("/artifacts"),
+                "/knowledge-base/build": client.post("/knowledge-base/build"),
+                "/knowledge-base/rebuild": client.post("/knowledge-base/rebuild"),
+                "/v1/knowledge-base/build": client.post("/v1/knowledge-base/build"),
+                "/v1/knowledge-base/rebuild": client.post("/v1/knowledge-base/rebuild"),
+            }
 
-        for (path, method), canonical_path in expectations.items():
-            operation = schema["paths"][path][method]
-            self.assertTrue(operation.get("deprecated"), path)
-            description = operation.get("description", "")
-            self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, description)
-            self.assertIn(canonical_path, description)
+        for path, response in responses.items():
+            self.assertEqual(response.status_code, 404, path)
+            templated_path = "/jobs/{job_id}" if path.startswith("/jobs/") else path
+            self.assertNotIn(templated_path, schema["paths"])
 
-        self.assertFalse(schema["paths"]["/v1/health"]["get"].get("deprecated", False))
-        self.assertFalse(schema["paths"]["/v1/jobs"]["get"].get("deprecated", False))
-        self.assertFalse(schema["paths"]["/v1/jobs/build"]["post"].get("deprecated", False))
-        self.assertFalse(
-            schema["paths"]["/v1/knowledge-base/build"]["post"].get("deprecated", False)
-        )
+        self.assertIn("/v1/health", schema["paths"])
+        self.assertIn("/v1/jobs", schema["paths"])
+        self.assertIn("/v1/jobs/build", schema["paths"])
 
     def test_openapi_distinguishes_public_and_debug_answer_schemas(self) -> None:
         config = build_test_config(
@@ -1778,7 +1763,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_PublicAnswerErrorSystem(secret))
 
         with _client(app) as client:
-            response = client.post("/answers", json={"question": "safe question"})
+            response = client.post("/v1/debug/answers", json={"question": "safe question"})
 
         self.assertEqual(response.status_code, 200)
         serialized = json.dumps(response.json(), ensure_ascii=False)
@@ -1867,7 +1852,7 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             with client.stream(
                 "POST",
-                "/answers",
+                "/v1/answers",
                 json={
                     "question": "Can I cook tofu?",
                     "stream": True,
@@ -1904,14 +1889,8 @@ class ApiAppTests(unittest.TestCase):
         )
         result_payload = events["result"][0]["response"]
         self.assertEqual(result_payload["summary"]["prompt_tokens"], 11)
-        self.assertEqual(
-            result_payload["traces"]["generation_trace"]["token_usage_source"],
-            "test",
-        )
-        self.assertEqual(
-            result_payload["diagnostics"]["diagnostics"]["overall_bucket"],
-            "ok",
-        )
+        self.assertEqual(result_payload["diagnostics"]["overall_bucket"], "ok")
+        self.assertNotIn("traces", result_payload)
         self.assertEqual(events["done"][0]["ok"], True)
 
     def test_answer_http_and_sse_paths_do_not_call_application_to_dict(self) -> None:
@@ -1948,8 +1927,8 @@ class ApiAppTests(unittest.TestCase):
             side_effect=AssertionError("application response serialized internally"),
         ):
             with _client(app) as client:
-                answer_response = client.post("/answers", json={"question": "tofu"})
-                stream_response = client.post("/answers/stream", json={"question": "tofu"})
+                answer_response = client.post("/v1/answers", json={"question": "tofu"})
+                stream_response = client.post("/v1/answers/stream", json={"question": "tofu"})
 
         self.assertEqual(answer_response.status_code, 200)
         self.assertEqual(answer_response.json()["response"]["summary"]["answer"], "answer:tofu")
@@ -1972,7 +1951,7 @@ class ApiAppTests(unittest.TestCase):
         with _client(app) as client:
             with client.stream(
                 "POST",
-                "/answers/stream",
+                "/v1/answers/stream",
                 json={
                     "question": "Explain mapo tofu",
                     "explain_routing": False,
@@ -1988,7 +1967,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("event: result", body)
 
         schema = openapi_response.json()
-        self.assertIn("/answers/stream", schema["paths"])
+        self.assertIn("/v1/answers/stream", schema["paths"])
         schemas = schema["components"]["schemas"]
         self.assertIn("GenerationSnapshotResponseModel", schemas)
         self.assertIn("QueryTraceEventResponseModel", schemas)
@@ -2003,7 +1982,7 @@ class ApiAppTests(unittest.TestCase):
             trace_event_schema["properties"]["diagnostics"]["$ref"],
             "#/components/schemas/QueryDiagnosticsResponseModel",
         )
-        stream_post = schema["paths"]["/answers/stream"]["post"]
+        stream_post = schema["paths"]["/v1/answers/stream"]["post"]
         self.assertEqual(
             stream_post["responses"]["200"]["content"].keys(),
             {"text/event-stream"},
@@ -2123,7 +2102,7 @@ class ApiAppTests(unittest.TestCase):
             self.assertTrue(system.answer_started.wait(timeout=1.0))
 
             response = client.post(
-                "/answers",
+                "/v1/answers",
                 json={
                     "question": "second tofu",
                     "stream": False,
@@ -2168,7 +2147,7 @@ class ApiAppTests(unittest.TestCase):
 
             with client.stream(
                 "POST",
-                "/answers/stream",
+                "/v1/answers/stream",
                 json={
                     "question": "blocked tofu",
                     "explain_routing": True,
@@ -2550,21 +2529,21 @@ class ApiAppTests(unittest.TestCase):
             schema = client.get("/openapi.json").json()
 
         self.assertEqual(schema["security"], [{"BearerAuth": []}, {"ApiKeyAuth": []}])
-        self.assertEqual(schema["paths"]["/health"]["get"]["security"], [])
-        self.assertNotEqual(schema["paths"]["/stats"]["get"].get("security"), [])
+        self.assertEqual(schema["paths"]["/v1/health"]["get"]["security"], [])
+        self.assertNotEqual(schema["paths"]["/v1/stats"]["get"].get("security"), [])
 
     def test_protected_routes_require_api_credentials(self) -> None:
         app = create_serving_api_app(system=_FakeApiSystem())
 
         with TestClient(app) as client:
-            health_response = client.get("/health")
-            unauthorized_response = client.get("/stats")
+            health_response = client.get("/v1/health")
+            unauthorized_response = client.get("/v1/stats")
             invalid_response = client.get(
-                "/stats",
+                "/v1/stats",
                 headers={"Authorization": "Bearer wrong-token"},
             )
             api_key_response = client.get(
-                "/stats",
+                "/v1/stats",
                 headers={"X-API-Key": _API_TOKEN},
             )
 
@@ -2582,7 +2561,7 @@ class ApiAppTests(unittest.TestCase):
         app = create_serving_api_app(system=_FakeApiSystem(), config=config)
 
         with TestClient(app) as client:
-            response = client.get("/stats")
+            response = client.get("/v1/stats")
 
         _assert_error_response(response, status_code=503, code="SERVICE_MISCONFIGURED")
 
@@ -2592,7 +2571,7 @@ class ApiAppTests(unittest.TestCase):
 
         with TestClient(app) as client:
             response = client.get(
-                "/stats",
+                "/v1/stats",
                 headers={"Authorization": "Bearer too-short"},
             )
 
@@ -2617,16 +2596,16 @@ class ApiAppTests(unittest.TestCase):
 
         with _client(body_limited_app) as client:
             oversized_body = client.post(
-                "/answers",
+                "/v1/answers",
                 json={"question": "x" * 2000},
             )
         with _client(field_limited_app) as client:
             oversized_question = client.post(
-                "/answers",
+                "/v1/answers",
                 json={"question": "x" * (MAX_QUESTION_CHARS + 1)},
             )
             blank_question = client.post(
-                "/answers",
+                "/v1/answers",
                 json={"question": "   "},
             )
 

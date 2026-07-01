@@ -60,10 +60,17 @@ def _job_from_response(response) -> dict[str, Any]:
     return dict(job)
 
 
+def _build_api_v1_url(settings: RuntimeBootstrapSettings, path: str) -> str:
+    base_url = settings.build_api_url
+    if not base_url.endswith("/v1"):
+        base_url = f"{base_url}/v1"
+    return f"{base_url}/{path.lstrip('/')}"
+
+
 def _submit_build_job(session, settings: RuntimeBootstrapSettings) -> dict[str, Any]:
     operation = "rebuild" if settings.force_rebuild else "build"
     response = session.post(
-        f"{settings.build_api_url}/jobs/{operation}",
+        _build_api_v1_url(settings, f"jobs/{operation}"),
         timeout=settings.request_timeout_seconds,
     )
     if response.status_code != 409:
@@ -97,7 +104,7 @@ def _wait_for_build_job(
         sleep(settings.poll_interval_seconds)
         job_id = str(job["job_id"])
         response = session.get(
-            f"{settings.build_api_url}/jobs/{job_id}",
+            _build_api_v1_url(settings, f"jobs/{job_id}"),
             timeout=settings.request_timeout_seconds,
         )
         response.raise_for_status()

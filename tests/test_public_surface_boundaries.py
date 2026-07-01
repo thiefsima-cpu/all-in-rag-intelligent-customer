@@ -7,7 +7,6 @@ import unittest
 from importlib.util import resolve_name
 from pathlib import Path
 
-from rag_modules.interfaces.api.versioning import UNVERSIONED_API_ALIAS_REMOVAL_VERSION
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
@@ -17,7 +16,6 @@ from rag_modules.public_surface_manifest import (
     repo_root_facade_module_names,
     root_facade_module_names,
 )
-from rag_modules.routing import INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
@@ -50,6 +48,7 @@ RETIRED_LEGACY_FACADE_MODULES = frozenset(
         "rag_modules.graph_data_preparation",
         "rag_modules.graph_indexing",
         "rag_modules.intelligent_query_router",
+        "rag_modules.routing.intelligent_query_router",
         "rag_modules.retrieval.hybrid_facade",
     }
 )
@@ -527,7 +526,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "## Current Policy",
             "## Canonical Packages",
             "## Legacy Bridge Status",
-            "## Active Compatibility Layers",
+            "## Compatibility Closure",
             "## Scan Rules",
             "## Internal Freeze Rule",
             "## Retired Facade Rule",
@@ -550,7 +549,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.configuration",
             "rag_modules.graph.data_preparation",
             "rag_modules.graph.indexing",
-            "rag_modules.routing.intelligent_query_router",
+            "rag_modules.routing.RoutingWorkflowService",
             "retired in favor of",
             "late-migration compatibility exports",
             "rag_modules.interfaces.api.models",
@@ -570,26 +569,29 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         ):
             self.assertIn(expected, content)
 
-    def test_active_compatibility_policy_documents_retirement_versions(self) -> None:
+    def test_active_compatibility_layers_are_retired_in_docs(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
 
         self.assertIn("Use `/v1` for new API clients", readme)
-        self.assertIn(UNVERSIONED_API_ALIAS_REMOVAL_VERSION, readme)
+        self.assertIn("Unversioned serving and build routes are retired", readme)
+        self.assertNotIn("compatibility aliases during the migration window", readme)
 
         for expected in (
-            "## Active Compatibility Layers",
-            "unversioned HTTP API aliases",
-            "rag_modules.routing.IntelligentQueryRouter",
-            UNVERSIONED_API_ALIAS_REMOVAL_VERSION,
-            INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION,
+            "## Compatibility Closure",
+            "No active compatibility layers remain",
+            "unversioned HTTP API aliases are retired",
+            "`rag_modules.routing.IntelligentQueryRouter` is retired",
+            "`rag_modules.routing.RoutingWorkflowService`",
             "already-completed `0.2.0` import-facade retirement",
         ):
             self.assertIn(expected, policy)
+        self.assertNotIn("remain active only for migration", policy)
 
-    def test_api_route_aliases_use_shared_registration_helper(self) -> None:
+    def test_api_routes_register_only_versioned_operational_paths(self) -> None:
         path = RAG_MODULES_DIR / "interfaces" / "api" / "routes.py"
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
         violations: list[str] = []
 
         def route_path(node: ast.AST) -> tuple[str, str] | None:
@@ -638,15 +640,15 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 else:
                     unversioned_paths.add(parsed)
 
-            for duplicated_path in sorted(unversioned_paths & versioned_paths):
-                violations.append(f"{node.name}: {duplicated_path}")
+            for unversioned_path in sorted(unversioned_paths):
+                violations.append(f"{node.name}: {unversioned_path}")
 
         self.assertEqual(
             [],
             violations,
-            "Register versioned/unversioned API aliases through the shared helper "
-            "instead of stacking matching app decorators on one endpoint.",
+            "API route decorators must use canonical /v1 paths only.",
         )
+        self.assertNotIn("_versioned_alias_route", source)
 
     def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {
@@ -730,6 +732,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             RAG_MODULES_DIR / "graph_data_preparation.py",
             RAG_MODULES_DIR / "graph_indexing.py",
             RAG_MODULES_DIR / "intelligent_query_router.py",
+            RAG_MODULES_DIR / "routing" / "intelligent_query_router.py",
             RAG_MODULES_DIR / "retrieval" / "hybrid_facade.py",
         }
 
@@ -1041,10 +1044,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
     def test_internal_and_script_routing_use_route_resolution_contract(self) -> None:
         violations: list[str] = []
-        allowed_definition = (
-            RAG_MODULES_DIR / "routing" / "intelligent_query_router.py",
-            "def route_query",
-        )
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
             for path in base_dir.rglob("*.py"):
@@ -1055,13 +1054,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
                 for node in ast.walk(tree):
                     if isinstance(node, ast.FunctionDef) and node.name == "route_query":
-                        if not (
-                            path == allowed_definition[0]
-                            and lines[node.lineno - 1].strip().startswith(allowed_definition[1])
-                        ):
-                            violations.append(
-                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
-                            )
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                     elif isinstance(node, ast.Call):
                         func = node.func
                         if isinstance(func, ast.Attribute) and func.attr == "route_query":

@@ -16,10 +16,6 @@ from .versioning import API_PREFIX
 
 _BASE_PUBLIC_PATHS = frozenset(
     {
-        "/",
-        "/health",
-        "/health/live",
-        "/health/ready",
         f"{API_PREFIX}/health",
         f"{API_PREFIX}/health/live",
         f"{API_PREFIX}/health/ready",

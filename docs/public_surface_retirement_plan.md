@@ -32,7 +32,7 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | Retired module | Canonical replacement | Status | Removal version |
 | --- | --- | --- | --- |
 | `config.py` | `rag_modules.configuration` | retired in favor of canonical configuration imports | `0.2.0` |
-| `rag_modules.intelligent_query_router` | `rag_modules.routing.intelligent_query_router` | retired in favor of canonical routing imports | `0.2.0` |
+| `rag_modules.intelligent_query_router` | `rag_modules.routing.RoutingWorkflowService` | retired in favor of canonical routing workflow imports | `0.2.0` |
 | `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | retired in favor of canonical graph data-preparation imports | `0.2.0` |
 | `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | retired in favor of canonical graph indexing imports | `0.2.0` |
 | `rag_modules.configuration.settings` | `rag_modules.configuration`, `rag_modules.configuration.models`, `rag_modules.configuration.loader` | late-migration compatibility exports retired | `0.2.0` |
@@ -52,21 +52,21 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | `rag_modules.retrieval.runtime_profile.planner_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
 | `rag_modules.retrieval.runtime_profile.semantic_settings` | `rag_modules.contracts` | replaced by independent contract kernel; no compatibility re-export remains | `0.2.0` |
 
-## Active Compatibility Layers
+## Compatibility Closure
 
-The already-completed `0.2.0` import-facade retirement does not remove every
-compatibility layer. The following adapters remain active only for migration
-windows and are not alternate architecture paths.
+The already-completed `0.2.0` import-facade retirement is now joined by the
+active-layer closure. No active compatibility layers remain; compatibility
+paths are not alternate architecture paths.
 
-| Active layer | Canonical replacement | Status | Removal version |
+| Retired layer | Canonical replacement | Status | Removal version |
 | --- | --- | --- | --- |
-| unversioned HTTP API aliases | `/v1` serving and build routes | deprecated compatibility aliases for existing HTTP clients | API version `2.0.0` |
-| `rag_modules.routing.IntelligentQueryRouter` | `rag_modules.routing.RoutingWorkflowService` or the routing workflow protocol | thin service adapter for callers still using the router-shaped API | package version `0.3.0` |
+| unversioned HTTP API aliases | `/v1` serving and build routes | unversioned HTTP API aliases are retired | API version `2.0.0` |
+| `rag_modules.routing.IntelligentQueryRouter` | `rag_modules.routing.RoutingWorkflowService` or the routing workflow protocol | `rag_modules.routing.IntelligentQueryRouter` is retired | package version `0.3.0` |
 
-New HTTP clients must use `/v1`. New Python routing code must use
-`RoutingWorkflowService` or the routing workflow protocol. Compatibility tests
-may import or call active adapters only to verify delegation, deprecation
-metadata, and removal-version policy.
+HTTP clients must use `/v1`. Python routing code must use
+`RoutingWorkflowService` or the routing workflow protocol. Tests may mention the
+retired layers only to verify removed routes, removed imports, and canonical
+replacement policy.
 
 ## Scan Rules
 
@@ -136,8 +136,9 @@ grouped runtime views.
   favor of `rag_modules.query_understanding` and `rag_modules.runtime`.
 - `rag_modules.compat` namespace retired.
 - `config.py` retired in favor of `rag_modules.configuration`.
-- `rag_modules.intelligent_query_router` retired in favor of
-  `rag_modules.routing.intelligent_query_router`.
+- `rag_modules.intelligent_query_router` and
+  `rag_modules.routing.IntelligentQueryRouter` retired in favor of
+  `rag_modules.routing.RoutingWorkflowService`.
 - `rag_modules.graph_data_preparation` retired in favor of
   `rag_modules.graph.data_preparation`.
 - `rag_modules.graph_indexing` retired in favor of

@@ -102,9 +102,9 @@ class RuntimeBootstrapTests(unittest.TestCase):
         self.assertTrue(result["graph_imported"])
         self.assertEqual(
             [
-                ("POST", "http://build-api:8001/jobs/build"),
-                ("GET", f"http://build-api:8001/jobs/{'a' * 32}"),
-                ("GET", f"http://build-api:8001/jobs/{'a' * 32}"),
+                ("POST", "http://build-api:8001/v1/jobs/build"),
+                ("GET", f"http://build-api:8001/v1/jobs/{'a' * 32}"),
+                ("GET", f"http://build-api:8001/v1/jobs/{'a' * 32}"),
             ],
             session.calls,
         )
@@ -126,7 +126,7 @@ class RuntimeBootstrapTests(unittest.TestCase):
 
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(
-            [("POST", "http://build-api:8001/jobs/rebuild")],
+            [("POST", "http://build-api:8001/v1/jobs/rebuild")],
             session.calls,
         )
 
@@ -148,7 +148,7 @@ class RuntimeBootstrapTests(unittest.TestCase):
         )
 
         self.assertEqual("succeeded", result["status"])
-        self.assertEqual(("GET", f"http://build-api:8001/jobs/{'c' * 32}"), session.calls[-1])
+        self.assertEqual(("GET", f"http://build-api:8001/v1/jobs/{'c' * 32}"), session.calls[-1])
 
     def test_failed_build_job_is_propagated(self) -> None:
         module = _bootstrap_module(self)

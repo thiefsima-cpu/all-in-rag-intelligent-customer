@@ -15,7 +15,7 @@ class AnswerRequestModel(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     stream: bool = Field(
         default=False,
-        description="Compatibility flag. Prefer POST /answers/stream for SSE responses.",
+        description="Compatibility flag. Prefer POST /v1/answers/stream for SSE responses.",
         deprecated=True,
     )
     explain_routing: bool = Field(

@@ -102,7 +102,7 @@ project `.env` file before starting the API profile; Compose forwards that
 value into the API containers. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
 forwarded as fallback provider keys. The serving API validates this lightweight
 model-provider requirement during startup so a missing key fails fast with a
-clear error instead of surfacing as the first `/answers` request.
+clear error instead of surfacing as the first `/v1/answers` request.
 
 With the default `AUTO_BOOTSTRAP=true`, the same Compose command also runs a
 one-shot bootstrap service. On fresh state it imports the CSV graph and builds
@@ -129,10 +129,10 @@ Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 
 ### Build job retries and history
 
-Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build`,
-`/v1/jobs/rebuild`, and their compatibility aliases. Reusing the same key for
-the same operation returns the original job. Reusing a key for a different
-operation returns `409 BUILD_JOB_CONFLICT`.
+Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build` and
+`/v1/jobs/rebuild`. Reusing the same key for the same operation returns the
+original job. Reusing a key for a different operation returns
+`409 BUILD_JOB_CONFLICT`.
 
 `GET /v1/jobs` returns a bounded page:
 
@@ -169,8 +169,8 @@ message, and the submission request ID.
 
 ### Versioned API and debug traces
 
-Use `/v1` for new API clients. The unversioned routes remain compatibility
-aliases during the migration window and will be removed in API version `2.0.0`.
+Use `/v1` for new API clients. Unversioned serving and build routes are retired;
+callers should use the matching `/v1` path instead.
 
 Public answer routes (`/v1/answers` and `/v1/answers/stream`) expose a
 field-level public contract:

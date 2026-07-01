@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 from .json_types import JsonObject, coerce_json_object
 
 if TYPE_CHECKING:
-    from ..retrieval.runtime_profile import RetrievalRuntimeProfile
     from ..routing.contracts import RoutingWorkflowProtocol
     from ..runtime_contracts import GraphDataModulePort, QueryTracerPort, VectorIndexModulePort
+    from .stats_ports import RuntimeProfilePayloadSource
 
 
 class DefaultRuntimeStatsAccess:
@@ -35,7 +35,7 @@ class DefaultRuntimeStatsAccess:
 
     def get_retrieval_runtime_profile(
         self,
-        retrieval_runtime_profile: RetrievalRuntimeProfile | None,
+        retrieval_runtime_profile: RuntimeProfilePayloadSource | None,
     ) -> JsonObject:
         if retrieval_runtime_profile is None:
             return {}
@@ -44,7 +44,10 @@ class DefaultRuntimeStatsAccess:
     def get_query_trace_stats(self, query_tracer: QueryTracerPort | None) -> JsonObject:
         if query_tracer is None:
             return {}
-        return coerce_json_object(query_tracer.stats())
+        stats = getattr(query_tracer, "stats", None)
+        if not callable(stats):
+            return {}
+        return coerce_json_object(stats())
 
 
 __all__ = ["DefaultRuntimeStatsAccess"]

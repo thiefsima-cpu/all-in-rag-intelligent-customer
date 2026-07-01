@@ -29,7 +29,7 @@ from rag_modules.retrieval.runtime_profile import (
     RetrievalPostProcessSettings,
     RetrievalRuntimeProfile,
 )
-from rag_modules.routing import IntelligentQueryRouter
+from rag_modules.routing import RoutingWorkflowService
 from rag_modules.runtime import GraphRetrievalSnapshot, QueryUnderstandingSnapshot
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule,
@@ -465,7 +465,7 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     hybrid_retrieval = _StaticHybridRetrieval(case)
     graph_retrieval = _StaticGraphRetrieval(case)
     config = build_test_config({"retrieval": {"top_k": case.top_k}})
-    router = IntelligentQueryRouter(
+    routing_workflow = RoutingWorkflowService(
         traditional_retrieval=hybrid_retrieval,
         graph_rag_retrieval=graph_retrieval,
         llm_client=None,
@@ -477,7 +477,7 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     tracer, sink = build_tracer()
     service = AnswerWorkflow(
         config=config,
-        query_router=router,
+        query_router=routing_workflow,
         generation_module=generation_module,
         query_tracer=tracer,
     )

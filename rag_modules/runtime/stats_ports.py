@@ -7,9 +7,14 @@ from typing import TYPE_CHECKING, Protocol
 from .json_types import JsonObject
 
 if TYPE_CHECKING:
-    from ..retrieval.runtime_profile import RetrievalRuntimeProfile
     from ..routing.contracts import RoutingWorkflowProtocol
     from ..runtime_contracts import GraphDataModulePort, QueryTracerPort, VectorIndexModulePort
+
+
+class RuntimeProfilePayloadSource(Protocol):
+    """Runtime-profile shaped object that can expose a JSON-compatible payload."""
+
+    def to_dict(self) -> object: ...
 
 
 class RuntimeStatsAccessPort(Protocol):
@@ -26,10 +31,10 @@ class RuntimeStatsAccessPort(Protocol):
 
     def get_retrieval_runtime_profile(
         self,
-        retrieval_runtime_profile: RetrievalRuntimeProfile | None,
+        retrieval_runtime_profile: RuntimeProfilePayloadSource | None,
     ) -> JsonObject: ...
 
     def get_query_trace_stats(self, query_tracer: QueryTracerPort | None) -> JsonObject: ...
 
 
-__all__ = ["RuntimeStatsAccessPort"]
+__all__ = ["RuntimeProfilePayloadSource", "RuntimeStatsAccessPort"]

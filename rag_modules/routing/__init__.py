@@ -5,8 +5,6 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
-    "INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION": ".intelligent_query_router",
-    "IntelligentQueryRouter": ".intelligent_query_router",
     "RouteExecutionRequest": ".search_orchestrator",
     "RouteSearchOrchestrator": ".search_orchestrator",
     "RouteStatisticsTracker": ".statistics",
@@ -16,8 +14,6 @@ _EXPORTS = {
 }
 
 __all__ = [
-    "INTELLIGENT_QUERY_ROUTER_REMOVAL_VERSION",
-    "IntelligentQueryRouter",
     "RouteExecutionRequest",
     "RouteSearchOrchestrator",
     "RouteStatisticsTracker",
