@@ -22,9 +22,7 @@ class ServingRuntimeFactory:
     ) -> None:
         self.provider = provider
         self.infrastructure = provider.infrastructure
-        self.generation = provider.generation
-        self.query_understanding = provider.query_understanding
-        self.retrieval = provider.retrieval
+        self.retrieval_runtime = provider.retrieval_runtime
         self.services = provider.services
 
     def build(
@@ -40,9 +38,7 @@ class ServingRuntimeFactory:
     ) -> ServingRuntime:
         config = resolve_config(config)
         infrastructure = self.infrastructure
-        generation_provider = self.generation
-        query_understanding_provider = self.query_understanding
-        retrieval_provider = self.retrieval
+        retrieval_runtime = self.retrieval_runtime
         services = self.services
 
         graph_manager = infrastructure.provide_neo4j_manager(
@@ -61,23 +57,19 @@ class ServingRuntimeFactory:
         tracer = infrastructure.provide_query_tracer(config, query_tracer)
 
         emit_progress(progress, "Initializing generation service...")
-        generation_service = generation_provider.provide_generation_module(config)
+        generation_service = self.provider.provide_generation_module(config)
         llm_client = getattr(generation_service, "llm_client", generation_service.client)
-        retrieval_runtime_profile = query_understanding_provider.provide_retrieval_runtime_profile(
-            config
-        )
+        retrieval_runtime_profile = retrieval_runtime.provide_retrieval_runtime_profile(config)
 
         emit_progress(progress, "Initializing query understanding service...")
-        query_understanding_service = (
-            query_understanding_provider.provide_query_understanding_service(
-                config=config,
-                llm_client=llm_client,
-                retrieval_profile=retrieval_runtime_profile,
-            )
+        query_understanding_service = retrieval_runtime.provide_query_understanding_service(
+            config=config,
+            llm_client=llm_client,
+            retrieval_profile=retrieval_runtime_profile,
         )
 
         emit_progress(progress, "Initializing hybrid retrieval module...")
-        traditional_retrieval = retrieval_provider.provide_traditional_retrieval(
+        traditional_retrieval = retrieval_runtime.provide_traditional_retrieval(
             config=config,
             milvus_module=index_module,
             data_module=data_module,
@@ -87,7 +79,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing graph retrieval module...")
-        graph_rag_retrieval = retrieval_provider.provide_graph_rag_retrieval(
+        graph_rag_retrieval = retrieval_runtime.provide_graph_rag_retrieval(
             config=config,
             llm_client=llm_client,
             neo4j_manager=graph_manager,
@@ -95,7 +87,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing routing workflow...")
-        query_router = retrieval_provider.provide_routing_workflow(
+        query_router = retrieval_runtime.provide_routing_workflow(
             config=config,
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,

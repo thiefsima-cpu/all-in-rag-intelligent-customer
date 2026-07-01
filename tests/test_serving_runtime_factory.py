@@ -404,17 +404,6 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
                 lambda config, existing=None: existing or SimpleNamespace(name="tracer")
             ),
         )
-        generation = SimpleNamespace(
-            provide_generation_module=lambda config: SimpleNamespace(
-                client=client,
-                llm_client=llm_client,
-            )
-        )
-        retrieval = SimpleNamespace(
-            provide_traditional_retrieval=lambda **kwargs: traditional_retrieval,
-            provide_graph_rag_retrieval=lambda **kwargs: graph_rag_retrieval,
-            provide_routing_workflow=lambda **kwargs: router,
-        )
         services = SimpleNamespace(
             provide_answer_workflow=lambda **kwargs: answer_workflow,
         )
@@ -423,15 +412,19 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.infrastructure = infrastructure
                 self.build_pipeline = SimpleNamespace()
-                self.diagnostics = SimpleNamespace()
-                self.lifecycle = SimpleNamespace()
-                self.generation = generation
-                self.query_understanding = self
-                self.retrieval = retrieval
+                self.retrieval_runtime = self
                 self.services = services
                 self.calls: list[str] = []
 
+            def provide_generation_module(self, config):
+                del config
+                return SimpleNamespace(
+                    client=client,
+                    llm_client=llm_client,
+                )
+
             def provide_retrieval_runtime_profile(self, config):
+                del config
                 self.calls.append("profile")
                 return profile
 
@@ -446,6 +439,18 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
                 self.last_llm_client = llm_client
                 self.last_profile = retrieval_profile
                 return understanding_service
+
+            def provide_traditional_retrieval(self, **kwargs):
+                del kwargs
+                return traditional_retrieval
+
+            def provide_graph_rag_retrieval(self, **kwargs):
+                del kwargs
+                return graph_rag_retrieval
+
+            def provide_routing_workflow(self, **kwargs):
+                del kwargs
+                return router
 
         provider = _RootProvider()
         factory = ServingRuntimeFactory(provider=provider)
@@ -485,16 +490,10 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         provider = SimpleNamespace(
             infrastructure=infrastructure,
             build_pipeline=SimpleNamespace(),
-            diagnostics=SimpleNamespace(),
-            lifecycle=SimpleNamespace(),
-            generation=SimpleNamespace(
-                provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace())
-            ),
-            query_understanding=SimpleNamespace(
+            provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace()),
+            retrieval_runtime=SimpleNamespace(
                 provide_retrieval_runtime_profile=lambda config: profile,
                 provide_query_understanding_service=lambda **kwargs: understanding_service,
-            ),
-            retrieval=SimpleNamespace(
                 provide_traditional_retrieval=lambda **kwargs: SimpleNamespace(name="traditional"),
                 provide_graph_rag_retrieval=lambda **kwargs: SimpleNamespace(name="graph"),
             ),

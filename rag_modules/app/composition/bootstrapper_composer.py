@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..provider_components.contracts import RuntimeComponentProvider
+from ..providers import RuntimeComponentProvider
 from .build_runtime_executor import BuildRuntimeExecutor
 from .build_runtime_factory import BuildRuntimeFactory
 from .contracts import (

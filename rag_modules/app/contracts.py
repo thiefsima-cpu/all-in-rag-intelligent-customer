@@ -11,7 +11,7 @@ from .composition.contracts import (
     SystemFacadeSupportProtocol,
     SystemOperationsProtocol,
 )
-from .provider_components.contracts import RuntimeComponentProvider
+from .providers import RuntimeComponentProvider
 from .services.answer_models import QuestionAnswerer
 
 __all__ = [

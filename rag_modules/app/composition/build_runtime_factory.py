@@ -18,7 +18,6 @@ class BuildRuntimeFactory:
         self.provider = provider
         self.infrastructure = provider.infrastructure
         self.build_pipeline = provider.build_pipeline
-        self.diagnostics = provider.diagnostics
         self.services = provider.services
 
     def build(
@@ -33,7 +32,6 @@ class BuildRuntimeFactory:
         config = resolve_config(config)
         infrastructure = self.infrastructure
         build_pipeline = self.build_pipeline
-        diagnostics = self.diagnostics
         services = self.services
 
         graph_manager = infrastructure.provide_neo4j_manager(config, neo4j_manager)
@@ -47,7 +45,7 @@ class BuildRuntimeFactory:
             manifest_store=manifest_store,
         )
         runtime_artifact_access = infrastructure.provide_runtime_artifact_access(config)
-        runtime_stats_access = diagnostics.provide_runtime_stats_access(config=config)
+        runtime_stats_access = services.provide_runtime_stats_access(config=config)
         document_artifact_builder = build_pipeline.provide_document_artifact_builder(
             config=config,
             manifest_store=manifest_store,

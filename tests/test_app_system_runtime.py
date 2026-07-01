@@ -230,16 +230,30 @@ def _serving_runtime(config) -> ServingRuntime:
 
 
 def _provider_stub(name: str = "provider"):
+    def _stats_access(*, config, existing=None):
+        del config, existing
+        return SimpleNamespace(name=f"{name}-stats")
+
+    def _diagnostics_service(*, config, existing=None, runtime_stats_access=None):
+        del existing, runtime_stats_access
+        return RuntimeDiagnosticsService(config)
+
+    def _shutdown_service(*, config, existing=None):
+        del config, existing
+        return RuntimeShutdownService()
+
     return SimpleNamespace(
         name=name,
         infrastructure=SimpleNamespace(name=f"{name}-infrastructure"),
         build_pipeline=SimpleNamespace(name=f"{name}-build-pipeline"),
-        diagnostics=SimpleNamespace(name=f"{name}-diagnostics"),
-        lifecycle=SimpleNamespace(name=f"{name}-lifecycle"),
-        generation=SimpleNamespace(name=f"{name}-generation"),
-        query_understanding=SimpleNamespace(name=f"{name}-understanding"),
-        retrieval=SimpleNamespace(name=f"{name}-retrieval"),
-        services=SimpleNamespace(name=f"{name}-services"),
+        retrieval_runtime=SimpleNamespace(name=f"{name}-retrieval-runtime"),
+        services=SimpleNamespace(
+            name=f"{name}-services",
+            provide_runtime_stats_access=_stats_access,
+            provide_runtime_diagnostics_service=_diagnostics_service,
+            provide_runtime_shutdown_service=_shutdown_service,
+        ),
+        provide_generation_module=lambda config: SimpleNamespace(name=f"{name}-generation"),
     )
 
 
@@ -329,7 +343,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         shutdown_service = RuntimeShutdownService()
         calls: list[str] = []
 
-        class _StubDiagnosticsProvider:
+        class _StubServicesProvider:
             def provide_runtime_stats_access(self, *, config, existing=None):
                 del config, existing
                 calls.append("stats")
@@ -348,7 +362,6 @@ class AppSystemRuntimeTests(unittest.TestCase):
                 calls.append("diagnostics")
                 return diagnostics_service
 
-        class _StubLifecycleProvider:
             def provide_runtime_shutdown_service(self, *, config, existing=None):
                 del config, existing
                 calls.append("shutdown")
@@ -359,12 +372,8 @@ class AppSystemRuntimeTests(unittest.TestCase):
             provider=provider,
             infrastructure=provider.infrastructure,
             build_pipeline=provider.build_pipeline,
-            diagnostics=_StubDiagnosticsProvider(),
-            lifecycle=_StubLifecycleProvider(),
-            generation=provider.generation,
-            query_understanding=provider.query_understanding,
-            retrieval=provider.retrieval,
-            services=provider.services,
+            retrieval_runtime=provider.retrieval_runtime,
+            services=_StubServicesProvider(),
         )
         lifecycle_services = RuntimeLifecycleServiceBundle(
             initialization_service=SimpleNamespace(),
@@ -525,11 +534,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
                         provider=provider,
                         infrastructure=provider.infrastructure,
                         build_pipeline=provider.build_pipeline,
-                        diagnostics=provider.diagnostics,
-                        lifecycle=provider.lifecycle,
-                        generation=provider.generation,
-                        query_understanding=provider.query_understanding,
-                        retrieval=provider.retrieval,
+                        retrieval_runtime=provider.retrieval_runtime,
                         services=provider.services,
                     ),
                     bootstrapper=bootstrapper,
@@ -572,11 +577,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
                         provider=provider,
                         infrastructure=provider.infrastructure,
                         build_pipeline=provider.build_pipeline,
-                        diagnostics=provider.diagnostics,
-                        lifecycle=provider.lifecycle,
-                        generation=provider.generation,
-                        query_understanding=provider.query_understanding,
-                        retrieval=provider.retrieval,
+                        retrieval_runtime=provider.retrieval_runtime,
                         services=provider.services,
                     ),
                     bootstrapper=bootstrapper,
@@ -765,7 +766,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
             serving_bootstrapper=_FakeServingBootstrapper(_serving_runtime(build_test_config())),
         )
 
-        self.assertEqual(called, ["stats", "diagnostics"])
+        self.assertEqual(called, ["stats", "diagnostics", "shutdown"])
 
     def test_system_uses_provider_backed_runtime_shutdown_service(self) -> None:
         called: list[str] = []

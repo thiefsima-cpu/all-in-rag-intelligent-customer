@@ -25,7 +25,7 @@ from .composition.serving_runtime_factory import ServingRuntimeFactory
 from .composition.serving_runtime_preparer import ServingRuntimePreparer
 from .composition.shared import ProgressCallback
 from .composition.system_runtime_bootstrap_service import SystemRuntimeBootstrapService
-from .provider_components.contracts import RuntimeComponentProvider
+from .providers import RuntimeComponentProvider
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view import SystemRuntime
 

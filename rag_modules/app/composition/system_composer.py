@@ -30,7 +30,7 @@ from .system_facade_support import SystemFacadeSupport
 
 if TYPE_CHECKING:
     from ..bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
-    from ..provider_components.contracts import RuntimeComponentProvider
+    from ..providers import RuntimeComponentProvider
 
 
 @dataclass(frozen=True)
@@ -103,17 +103,17 @@ class SystemRuntimeInfrastructureComposer:
         runtime_state_store: RuntimeStateStore | None = None,
         runtime_manager: SystemRuntimeManager | None = None,
     ) -> SystemRuntimeInfrastructure:
-        runtime_stats_access = provider_surface.diagnostics.provide_runtime_stats_access(
+        runtime_stats_access = provider_surface.services.provide_runtime_stats_access(
             config=config,
         )
         diagnostics_service = diagnostics_service or (
-            provider_surface.diagnostics.provide_runtime_diagnostics_service(
+            provider_surface.services.provide_runtime_diagnostics_service(
                 config=config,
                 runtime_stats_access=runtime_stats_access,
             )
         )
         shutdown_service = shutdown_service or (
-            provider_surface.lifecycle.provide_runtime_shutdown_service(config=config)
+            provider_surface.services.provide_runtime_shutdown_service(config=config)
         )
         runtime_state_store = runtime_state_store or RuntimeStateStore()
         runtime_manager = runtime_manager or SystemRuntimeManager(

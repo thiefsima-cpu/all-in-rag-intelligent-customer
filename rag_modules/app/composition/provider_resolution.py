@@ -5,23 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..provider_components.contracts import (
-    ApplicationServiceComponentProvider,
-    BuildPipelineComponentProvider,
-    DiagnosticsComponentProvider,
-    GenerationComponentProvider,
-    InfrastructureComponentProvider,
-    LifecycleComponentProvider,
-    QueryUnderstandingComponentProvider,
-    RetrievalComponentProvider,
+from ..providers import (
+    ApplicationServiceProvider,
+    BuildPipelineProvider,
+    InfrastructureProvider,
+    RetrievalRuntimeProvider,
     RuntimeComponentProvider,
+    create_default_runtime_provider,
 )
-
-
-def _create_default_runtime_provider() -> RuntimeComponentProvider:
-    from ..provider_components.runtime import DefaultRuntimeComponentProvider
-
-    return DefaultRuntimeComponentProvider()
 
 
 class RuntimeComponentProviderResolver:
@@ -32,7 +23,7 @@ class RuntimeComponentProviderResolver:
         *,
         default_provider_factory: Callable[[], RuntimeComponentProvider] | None = None,
     ) -> None:
-        self.default_provider_factory = default_provider_factory or _create_default_runtime_provider
+        self.default_provider_factory = default_provider_factory or create_default_runtime_provider
 
     def resolve(
         self,
@@ -58,14 +49,10 @@ class RuntimeProviderSurface:
     """Resolved provider plus all capability-specific provider facets."""
 
     provider: RuntimeComponentProvider
-    infrastructure: InfrastructureComponentProvider
-    build_pipeline: BuildPipelineComponentProvider
-    diagnostics: DiagnosticsComponentProvider
-    lifecycle: LifecycleComponentProvider
-    generation: GenerationComponentProvider
-    query_understanding: QueryUnderstandingComponentProvider
-    retrieval: RetrievalComponentProvider
-    services: ApplicationServiceComponentProvider
+    infrastructure: InfrastructureProvider
+    build_pipeline: BuildPipelineProvider
+    retrieval_runtime: RetrievalRuntimeProvider
+    services: ApplicationServiceProvider
 
     @classmethod
     def from_provider(
@@ -76,11 +63,7 @@ class RuntimeProviderSurface:
             provider=provider,
             infrastructure=provider.infrastructure,
             build_pipeline=provider.build_pipeline,
-            diagnostics=provider.diagnostics,
-            lifecycle=provider.lifecycle,
-            generation=provider.generation,
-            query_understanding=provider.query_understanding,
-            retrieval=provider.retrieval,
+            retrieval_runtime=provider.retrieval_runtime,
             services=provider.services,
         )
 
