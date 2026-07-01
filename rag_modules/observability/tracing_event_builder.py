@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Protocol
 
 from ..contracts import EvidenceDocument, ensure_evidence_documents
 from ..retrieval_observability import summarize_documents
@@ -23,6 +23,7 @@ from ..runtime import (
     RouteSnapshot,
     analysis_strategy_name,
 )
+from ..runtime.json_types import JsonObject, JsonValue, coerce_json_object
 from ..runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
@@ -41,8 +42,8 @@ class _TraceEventBuilderHost(Protocol):
 
     def _build_diagnostics(
         self,
-        documents: List[EvidenceDocument],
-        error: Optional[str],
+        documents: list[EvidenceDocument],
+        error: str | None,
         route_trace: RouteSnapshot,
         generation_trace: GenerationSnapshot,
     ) -> QueryDiagnostics: ...
@@ -54,15 +55,15 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
     def _build_event(
         self,
         query: str,
-        analysis: Any,
-        documents: List[EvidenceDocument] | RetrievalOutcome | AnswerContext,
-        evidence_documents: List[EvidenceDocument],
+        analysis: object,
+        documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
+        evidence_documents: list[EvidenceDocument],
         latency_ms: float,
-        answer: Optional[str],
-        error: Optional[str],
-        route_trace: Mapping[str, Any] | RouteSnapshot | None,
-        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None,
-        generation_trace: Mapping[str, Any] | GenerationSnapshot | None,
+        answer: str | None,
+        error: str | None,
+        route_trace: Mapping[str, JsonValue] | RouteSnapshot | None,
+        graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None,
+        generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None,
     ) -> QueryTraceEvent:
         plan = self._extract_plan(documents, evidence_documents)
         strategy = analysis_strategy_name(analysis) or None
@@ -95,7 +96,10 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             ),
             retrieval=RetrievalTraceSnapshot(
                 doc_count=len(evidence_documents or []),
-                evidence=summarize_documents(evidence_documents or [], limit=10),
+                evidence=[
+                    coerce_json_object(item)
+                    for item in summarize_documents(evidence_documents or [], limit=10)
+                ],
                 route_trace=route_snapshot,
                 graph_trace=graph_snapshot,
                 failure_reasons=list(diagnostics.failure_reasons or []),
@@ -108,8 +112,8 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
 
     @staticmethod
     def _normalize_evidence_documents(
-        documents: List[EvidenceDocument] | RetrievalOutcome | AnswerContext,
-    ) -> List[EvidenceDocument]:
+        documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
+    ) -> list[EvidenceDocument]:
         if isinstance(documents, AnswerContext):
             return list(documents.evidence_documents)
         if isinstance(documents, RetrievalOutcome):
@@ -118,38 +122,38 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
 
     @staticmethod
     def _extract_plan(
-        documents: List[EvidenceDocument] | RetrievalOutcome | AnswerContext,
-        evidence_documents: List[EvidenceDocument],
-    ) -> Dict[str, Any]:
+        documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
+        evidence_documents: list[EvidenceDocument],
+    ) -> JsonObject:
         if isinstance(documents, AnswerContext) and documents.understanding is not None:
-            return documents.understanding.query_plan.to_dict()
+            return coerce_json_object(documents.understanding.query_plan.to_dict())
         if isinstance(documents, RetrievalOutcome):
             metadata = dict(documents.metadata or {})
             understanding = metadata.get("query_understanding")
             if isinstance(understanding, Mapping):
                 query_plan = understanding.get("query_plan")
-                return dict(query_plan) if isinstance(query_plan, Mapping) else {}
+                return coerce_json_object(query_plan) if isinstance(query_plan, Mapping) else {}
             query_plan = metadata.get("query_plan")
-            return dict(query_plan) if isinstance(query_plan, Mapping) else {}
+            return coerce_json_object(query_plan) if isinstance(query_plan, Mapping) else {}
         if evidence_documents:
-            return dict(evidence_documents[0].metadata.get("query_plan") or {})
+            return coerce_json_object(evidence_documents[0].metadata.get("query_plan"))
         return {}
 
     @staticmethod
     def _normalize_route_snapshot(
-        route_trace: Mapping[str, Any] | RouteSnapshot | None,
+        route_trace: Mapping[str, JsonValue] | RouteSnapshot | None,
     ) -> RouteSnapshot:
         return clone_route_snapshot(route_trace)
 
     @staticmethod
     def _normalize_graph_snapshot(
-        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None,
+        graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None,
     ) -> GraphRetrievalSnapshot:
         return clone_graph_snapshot(graph_trace)
 
     @staticmethod
     def _normalize_generation_snapshot(
-        generation_trace: Mapping[str, Any] | GenerationSnapshot | None,
+        generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None,
     ) -> GenerationSnapshot:
         return clone_generation_snapshot(generation_trace)
 

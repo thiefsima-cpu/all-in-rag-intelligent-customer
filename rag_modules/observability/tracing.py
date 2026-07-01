@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, List, Optional
 
+from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument
 from ..runtime import (
     AnswerContext,
@@ -14,6 +14,7 @@ from ..runtime import (
     RetrievalOutcome,
     RouteSnapshot,
 )
+from ..runtime.json_types import JsonValue
 from ..trace_privacy import TraceSanitizer
 from .tracing_diagnostics import _TraceDiagnosticsMixin
 from .tracing_event_builder import _TraceEventBuilderMixin
@@ -26,7 +27,7 @@ class QueryTracer(
     _TraceEventBuilderMixin,
     _TraceSinkInteractionMixin,
 ):
-    def __init__(self, config, sink: QueryTraceSink | None = None):
+    def __init__(self, config: GraphRAGConfig, sink: QueryTraceSink | None = None) -> None:
         self.config = config
         self.models = config.models
         self.observability = config.observability
@@ -42,14 +43,14 @@ class QueryTracer(
     def record(
         self,
         query: str,
-        analysis: Any,
-        documents: List[EvidenceDocument] | RetrievalOutcome | AnswerContext,
+        analysis: object,
+        documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
         latency_ms: float,
-        answer: Optional[str] = None,
-        error: Optional[str] = None,
-        route_trace: Mapping[str, Any] | RouteSnapshot | None = None,
-        graph_trace: Mapping[str, Any] | GraphRetrievalSnapshot | None = None,
-        generation_trace: Mapping[str, Any] | GenerationSnapshot | None = None,
+        answer: str | None = None,
+        error: str | None = None,
+        route_trace: Mapping[str, JsonValue] | RouteSnapshot | None = None,
+        graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None = None,
+        generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None = None,
     ) -> QueryTraceEvent:
         evidence_documents = self._normalize_evidence_documents(documents)
         event = self._build_event(

@@ -171,15 +171,22 @@ class ServingRuntimePreparer:
         *,
         progress: ProgressCallback = None,
     ):
+        data_module = runtime.data_module
+        if data_module is None:
+            emit_progress(
+                progress,
+                "[WARN] Serving runtime is missing a graph data module.",
+            )
+            return []
         emit_progress(progress, "Loading graph data for serving artifact cache...")
         runtime_artifact_access = self._resolve_runtime_artifact_access(runtime.config)
-        runtime_artifact_access.load_graph_data(runtime.data_module)
+        runtime_artifact_access.load_graph_data(data_module)
         manifest_store = self._resolve_manifest_store(runtime.config)
         document_cache = self._resolve_document_artifact_cache(
             runtime.config,
             manifest_store=manifest_store,
         )
-        document_result = document_cache.load(runtime.data_module)
+        document_result = document_cache.load(data_module)
         if document_result is None:
             emit_progress(
                 progress,

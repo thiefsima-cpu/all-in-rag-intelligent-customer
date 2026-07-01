@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from typing import Optional
+from collections.abc import Mapping
 
 from ...runtime.artifact_ports import ArtifactManifestStorePort
 from ...runtime.artifacts import (
@@ -16,6 +16,7 @@ from ...runtime.artifacts import (
     read_documents,
     write_documents,
 )
+from ...runtime_contracts import GraphDataModulePort
 from ...safe_logging import log_failure
 from .manifest import DocumentArtifactManifestAssembler
 from .models import DocumentArtifactResult
@@ -60,7 +61,7 @@ class DocumentIndexCache:
     def chunks_path(self) -> str:
         return self.settings.chunks_path
 
-    def load(self, data_module) -> Optional[DocumentArtifactResult]:
+    def load(self, data_module: GraphDataModulePort) -> DocumentArtifactResult | None:
         if not self.settings.enable_index_cache:
             return None
         if not (os.path.exists(self.documents_path) and os.path.exists(self.chunks_path)):
@@ -141,7 +142,7 @@ class DocumentIndexCache:
         stage: str = ARTIFACT_STAGE_DOCUMENTS_READY,
         cache_hit: bool = False,
         base_manifest: ArtifactManifest | None = None,
-        build_metadata: Optional[dict] = None,
+        build_metadata: Mapping[str, object] | None = None,
     ) -> ArtifactManifest:
         documents = list(getattr(data_module, "documents", []) or [])
         chunks = list(getattr(data_module, "chunks", []) or [])

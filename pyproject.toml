@@ -127,6 +127,11 @@ module = [
   "rag_modules.generation.execution.engine",
   "rag_modules.generation.execution.streaming",
   "rag_modules.runtime.analysis_models",
+  "rag_modules.runtime.artifact_ports",
+  "rag_modules.graph.retrieval_components",
+  "rag_modules.graph.retrieval_runtime",
+  "rag_modules.observability.tracing",
+  "rag_modules.observability.tracing_event_builder",
   "tests.typecheck.type_contracts",
 ]
 check_untyped_defs = true
