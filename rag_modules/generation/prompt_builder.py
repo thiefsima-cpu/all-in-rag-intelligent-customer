@@ -7,6 +7,7 @@ from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from ..runtime import AnswerContext, PolicySnapshot
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt
 
@@ -14,10 +15,16 @@ from .models import AnswerPlan, GenerationSettings, RenderedPrompt
 class GenerationPromptBuilder:
     """Build prompts for planning, direct answering, and final composition."""
 
-    def __init__(self, settings: GenerationSettings, *, evidence_max_chars: int) -> None:
+    def __init__(
+        self,
+        settings: GenerationSettings,
+        *,
+        evidence_max_chars: int,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
         self.settings = settings
         self.evidence_max_chars = evidence_max_chars
-        self.policy_bundle = get_query_policy()
+        self.policy_bundle = policy_bundle or get_query_policy()
         self.generation_policy = self.policy_bundle.generation
         self.prompts = self.policy_bundle.prompts
         self.policy_snapshot = PolicySnapshot.from_metadata(self.policy_bundle.metadata)

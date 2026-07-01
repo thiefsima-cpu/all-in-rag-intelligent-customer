@@ -2,8 +2,21 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.generation.models import AnswerPlan, RenderedPrompt
+from rag_modules.configuration.models import GraphRAGConfig
+from rag_modules.generation.models import AnswerPlan, GenerationSettings, RenderedPrompt
 from rag_modules.generation.service import GenerationWorkflowService
+from rag_modules.query_policy.models import (
+    GenerationPolicy,
+    GraphPolicy,
+    GraphReasoningPolicy,
+    LexiconPolicy,
+    PolicyMetadata,
+    PromptTemplates,
+    QueryPolicyBundle,
+    RelationPolicy,
+    RoutingPolicy,
+    ScoringPolicy,
+)
 from rag_modules.runtime import GenerationSnapshot
 
 
@@ -109,6 +122,70 @@ class _StubPromptBuilder:
         )
 
 
+def _policy_bundle(*, policy_version: str = "test-policy-v1") -> QueryPolicyBundle:
+    return QueryPolicyBundle(
+        metadata=PolicyMetadata(
+            schema_version="policy-bundle-v1",
+            policy_version=policy_version,
+            prompt_version="test-prompts-v1",
+            policy_hash="sha256:policy",
+            prompt_hash="sha256:prompt",
+            bundle_name="test-policy",
+        ),
+        lexicon=LexiconPolicy(term_sets={}, regex_rules={}),
+        relations=RelationPolicy(
+            graph_routing_strategies=(),
+            graph_query_types=(),
+            graph_relation_types=(),
+            preferred_relation_excluded_types=(),
+            semantic_relation_hints={},
+            relation_index_keywords={},
+            relation_index_suffix_templates={},
+            relation_query_markers={},
+            entity_linker_preferred_labels=(),
+            entity_linker_query_type_priorities={},
+            entity_linker_relation_priorities={},
+        ),
+        scoring=ScoringPolicy(
+            structural_relationship_factor=1.0,
+            length_norm_chars=100,
+            weights={},
+            boosts={},
+        ),
+        routing=RoutingPolicy(
+            graph_first_query_types=(),
+            multi_hop_graph_first_relation_hits=1,
+            meaningful_constraint_fields=(),
+            validation_labels={},
+        ),
+        graph=GraphPolicy(
+            max_depth={},
+            max_nodes={},
+            sub_questions=(),
+            reasoning=GraphReasoningPolicy(
+                causal_relation_types=(),
+                compositional_relation_types=(),
+                comparison_markers=(),
+                semantic_relation_key_specs={},
+            ),
+        ),
+        generation=GenerationPolicy(
+            answer_types={},
+            relation_explanation_markers=(),
+            rule_plan={},
+            decision={"default_answer_type": "direct_answer"},
+            fallback_answer={},
+        ),
+        runtime_defaults={},
+        prompts=PromptTemplates(
+            query_planner="query",
+            answer_plan="plan {question} {evidence_summary}",
+            answer_compose="compose {question} {plan_json} {evidence_text}",
+            answer_direct="direct {question} {evidence_text}",
+        ),
+    )
+
+
 def _service() -> GenerationWorkflowService:
     service = object.__new__(GenerationWorkflowService)
     service.context_factory = _StubContextFactory()
@@ -119,6 +196,82 @@ def _service() -> GenerationWorkflowService:
 
 
 class GenerationWorkflowServiceContextTests(unittest.TestCase):
+    def test_constructor_accepts_settings_client_factory_and_prompt_policy(self) -> None:
+        client = object()
+        settings = GenerationSettings(
+            model_name="settings-model",
+            temperature=0.35,
+            max_tokens=1536,
+            request_retries=3,
+        )
+
+        service = GenerationWorkflowService(
+            settings=settings,
+            client_factory=lambda: client,
+            prompt_policy=_policy_bundle(policy_version="constructor-policy-v1"),
+            evidence_max_chars=1200,
+            base_url="https://llm.example/v1",
+            circuit_breaker_failure_threshold=7,
+            circuit_breaker_recovery_seconds=12.5,
+        )
+
+        self.assertIs(service.settings, settings)
+        self.assertEqual(service.model_name, "settings-model")
+        self.assertEqual(service.temperature, 0.35)
+        self.assertEqual(service.max_tokens, 1536)
+        self.assertIs(service.client, client)
+        self.assertEqual(service.base_url, "https://llm.example/v1")
+        self.assertEqual(service.evidence_max_chars, 1200)
+        self.assertEqual(
+            service.prompt_builder.policy_snapshot.policy_version,
+            "constructor-policy-v1",
+        )
+
+    def test_from_config_maps_to_generation_settings_and_injected_dependencies(self) -> None:
+        client = object()
+        config = GraphRAGConfig.from_dict(
+            {
+                "models": {
+                    "llm_model": "config-model",
+                    "llm_base_url": "https://config.example/v1",
+                    "circuit_breaker_failure_threshold": 9,
+                    "circuit_breaker_recovery_seconds": 15.0,
+                    "llm_input_cost_per_million_tokens": 0.5,
+                    "llm_output_cost_per_million_tokens": 1.5,
+                },
+                "generation": {
+                    "temperature": 0.25,
+                    "max_tokens": 1024,
+                    "generation_timeout_seconds": 12,
+                    "generation_stream_timeout_seconds": 13,
+                    "generation_request_retries": 4,
+                    "generation_evidence_max_chars": 900,
+                },
+            }
+        )
+
+        service = GenerationWorkflowService.from_config(
+            config,
+            client_factory=lambda: client,
+            prompt_policy=_policy_bundle(policy_version="config-policy-v1"),
+        )
+
+        self.assertEqual(service.settings.model_name, "config-model")
+        self.assertEqual(service.settings.temperature, 0.25)
+        self.assertEqual(service.settings.max_tokens, 1024)
+        self.assertEqual(service.settings.timeout_seconds, 12)
+        self.assertEqual(service.settings.stream_timeout_seconds, 13)
+        self.assertEqual(service.settings.request_retries, 4)
+        self.assertEqual(service.settings.input_cost_per_million_tokens, 0.5)
+        self.assertEqual(service.settings.output_cost_per_million_tokens, 1.5)
+        self.assertIs(service.client, client)
+        self.assertEqual(service.base_url, "https://config.example/v1")
+        self.assertEqual(service.evidence_max_chars, 900)
+        self.assertEqual(
+            service.prompt_builder.policy_snapshot.policy_version,
+            "config-policy-v1",
+        )
+
     def test_generate_answer_from_context_normalizes_dict_context(self) -> None:
         service = _service()
 
