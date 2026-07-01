@@ -5,7 +5,8 @@ which provider, factory, or lifecycle service owns the edit?
 
 The short rule is:
 
-- `rag_modules/app/providers.py` owns concrete collaborator selection.
+- `rag_modules/app/providers/` owns concrete collaborator selection behind
+  the public `rag_modules.app.providers` facade.
 - `rag_modules/app/composition/*_factory.py` owns runtime object graph assembly.
 - `rag_modules/app/composition/*_lifecycle_service.py` owns runtime state transitions.
 - `SystemRuntimeManager` coordinates already-composed services and stores active state.
@@ -18,11 +19,11 @@ canonical provider surface is `rag_modules.app.providers`.
 
 | Capability change | Edit here | Notes |
 | --- | --- | --- |
-| Neo4j manager, graph data module, Milvus/vector index, trace sink, artifact stores, query tracer | `InfrastructureProvider` in `rag_modules/app/providers.py` | Infrastructure adapters are reused by build and serving runtime factories. |
-| Document artifact builder or semantic graph schema sync | `BuildPipelineProvider` in `rag_modules/app/providers.py` | Build-only services that materialize artifacts belong here, not in lifecycle services. |
-| Retrieval runtime profile, query understanding service, hybrid retrieval, graph retrieval, routing workflow | `RetrievalRuntimeProvider` in `rag_modules/app/providers.py` | Query understanding and retrieval are one serving runtime facet because routing needs both. |
-| Grounded generation workflow construction | `RuntimeComponentProvider.provide_generation_module` in `rag_modules/app/providers.py` | Generation is a top-level provider method because serving assembly wires it directly into answer workflow. |
-| Runtime stats, diagnostics, shutdown, knowledge base service, answer workflow | `ApplicationServiceProvider` in `rag_modules/app/providers.py` | Application services sit above infrastructure and retrieval/generation collaborators. |
+| Neo4j manager, graph data module, Milvus/vector index, trace sink, artifact stores, query tracer | `InfrastructureProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/infrastructure.py` | Infrastructure adapters are reused by build and serving runtime factories. |
+| Document artifact builder or semantic graph schema sync | `BuildPipelineProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/build_pipeline.py` | Build-only services that materialize artifacts belong here, not in lifecycle services. |
+| Retrieval runtime profile, query understanding service, hybrid retrieval, graph retrieval, routing workflow | `RetrievalRuntimeProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/retrieval_runtime.py` | Query understanding and retrieval are one serving runtime facet because routing needs both. |
+| Grounded generation workflow construction | `RuntimeComponentProvider.provide_generation_module` in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/generation.py` | Generation is a top-level provider method because serving assembly wires it directly into answer workflow. |
+| Runtime stats, diagnostics, shutdown, knowledge base service, answer workflow | `ApplicationServiceProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/services.py` | Application services sit above infrastructure and retrieval/generation collaborators. |
 
 ## Factory Map
 

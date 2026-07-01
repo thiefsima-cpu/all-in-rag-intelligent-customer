@@ -7,7 +7,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NO_EXPLICIT_ANY_TARGETS = (
-    ROOT / "rag_modules" / "app" / "providers.py",
+    ROOT / "rag_modules" / "app" / "providers" / "__init__.py",
+    ROOT / "rag_modules" / "app" / "providers" / "build_pipeline.py",
+    ROOT / "rag_modules" / "app" / "providers" / "contracts.py",
+    ROOT / "rag_modules" / "app" / "providers" / "default.py",
+    ROOT / "rag_modules" / "app" / "providers" / "generation.py",
+    ROOT / "rag_modules" / "app" / "providers" / "infrastructure.py",
+    ROOT / "rag_modules" / "app" / "providers" / "retrieval_runtime.py",
+    ROOT / "rag_modules" / "app" / "providers" / "services.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_contracts.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_support.py",
     ROOT / "rag_modules" / "app" / "services" / "answer_models.py",

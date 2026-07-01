@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import unittest
 from types import SimpleNamespace
 
@@ -750,6 +751,36 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertFalse(hasattr(provider, "query_understanding"))
         self.assertFalse(hasattr(provider, "lifecycle"))
         self.assertFalse(hasattr(provider, "diagnostics"))
+
+    def test_default_runtime_provider_implementation_lives_in_focused_modules(self) -> None:
+        provider_modules = {
+            name: importlib.import_module(f"rag_modules.app.providers.{name}")
+            for name in (
+                "infrastructure",
+                "build_pipeline",
+                "retrieval_runtime",
+                "services",
+                "generation",
+            )
+        }
+
+        self.assertTrue(
+            callable(getattr(provider_modules["infrastructure"], "_DefaultInfrastructureProvider"))
+        )
+        self.assertTrue(
+            callable(getattr(provider_modules["build_pipeline"], "_DefaultBuildPipelineProvider"))
+        )
+        self.assertTrue(
+            callable(
+                getattr(provider_modules["retrieval_runtime"], "_DefaultRetrievalRuntimeProvider")
+            )
+        )
+        self.assertTrue(
+            callable(getattr(provider_modules["services"], "_DefaultApplicationServiceProvider"))
+        )
+        self.assertTrue(
+            callable(getattr(provider_modules["generation"], "_DefaultGenerationProvider"))
+        )
 
     def test_system_uses_provider_backed_runtime_diagnostics_service(self) -> None:
         called: list[str] = []
