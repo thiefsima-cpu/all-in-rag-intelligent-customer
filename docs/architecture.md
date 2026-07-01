@@ -269,8 +269,9 @@ stateDiagram-v2
 
 Primary code paths:
 
-- `rag_modules/interfaces/api/routes.py` registers `/jobs/build`,
-  `/jobs/rebuild`, and compatibility aliases.
+- `rag_modules/interfaces/api/routes.py` registers the canonical
+  `/v1/jobs/build` and `/v1/jobs/rebuild` build routes; unversioned HTTP
+  aliases are retired.
 - `rag_modules/interfaces/api/services/build.py` owns submission locks,
   idempotency validation, executor submission, `_run_build_job`, and job result
   snapshots.
