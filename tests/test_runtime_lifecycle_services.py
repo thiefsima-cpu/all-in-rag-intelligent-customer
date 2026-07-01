@@ -10,7 +10,6 @@ from rag_modules.app.composition import (
     RuntimeLifecycleServiceComposer,
     RuntimeReadinessService,
     ServingRuntimeLifecycleService,
-    ServingRuntimeRefreshService,
     SystemRuntimeManager,
 )
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
@@ -178,7 +177,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         self.assertIsInstance(bundle, RuntimeLifecycleServiceBundle)
         self.assertIsInstance(bundle.initialization_service, RuntimeInitializationService)
         self.assertIsInstance(bundle.readiness_service, RuntimeReadinessService)
-        self.assertIsInstance(bundle.refresh_service, ServingRuntimeRefreshService)
+        self.assertIsInstance(bundle.serving_lifecycle_service, ServingRuntimeLifecycleService)
         self.assertIsInstance(bundle.build_lifecycle_service, BuildRuntimeLifecycleService)
 
     def test_initialization_service_prepares_existing_serving_runtime(self) -> None:
@@ -189,14 +188,10 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
             serving_runtime_factory=serving_bootstrapper,
             serving_runtime_preparer=serving_bootstrapper,
         )
-        refresh_service = ServingRuntimeRefreshService(
-            serving_runtime_lifecycle_service=serving_lifecycle_service
-        )
         service = RuntimeInitializationService(
             config=build_test_config(),
             build_runtime_factory=_FakeBuildBootstrapper(build_runtime),
             serving_runtime_lifecycle_service=serving_lifecycle_service,
-            serving_runtime_refresh_service=refresh_service,
         )
 
         result = service.initialize_serving_runtime(
@@ -237,15 +232,15 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         self.assertEqual(len(serving_bootstrapper.prepare_calls), 1)
         self.assertTrue(result.retrieval_engines_initialized)
 
-    def test_refresh_service_refreshes_initialized_serving_runtime_from_build(self) -> None:
+    def test_serving_lifecycle_refreshes_initialized_serving_runtime_from_build(
+        self,
+    ) -> None:
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(ready=True)
         serving_bootstrapper = _FakeServingBootstrapper(serving_runtime)
-        service = ServingRuntimeRefreshService(
-            serving_runtime_lifecycle_service=ServingRuntimeLifecycleService(
-                serving_runtime_factory=serving_bootstrapper,
-                serving_runtime_preparer=serving_bootstrapper,
-            )
+        service = ServingRuntimeLifecycleService(
+            serving_runtime_factory=serving_bootstrapper,
+            serving_runtime_preparer=serving_bootstrapper,
         )
 
         result = service.refresh_from_build(
@@ -270,16 +265,14 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         serving_runtime = _serving_runtime(ready=True)
         build_bootstrapper = _FakeBuildBootstrapper(build_runtime)
         serving_bootstrapper = _FakeServingBootstrapper(serving_runtime)
-        refresh_service = ServingRuntimeRefreshService(
-            serving_runtime_lifecycle_service=ServingRuntimeLifecycleService(
-                serving_runtime_factory=serving_bootstrapper,
-                serving_runtime_preparer=serving_bootstrapper,
-            )
+        serving_lifecycle_service = ServingRuntimeLifecycleService(
+            serving_runtime_factory=serving_bootstrapper,
+            serving_runtime_preparer=serving_bootstrapper,
         )
         readiness_service = RuntimeReadinessService()
         service = BuildRuntimeLifecycleService(
             build_runtime_executor=build_bootstrapper,
-            refresh_service=refresh_service,
+            serving_lifecycle_service=serving_lifecycle_service,
             readiness_service=readiness_service,
         )
 
@@ -292,31 +285,23 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         self.assertIs(result_serving, serving_runtime)
         self.assertEqual(build_bootstrapper.build_knowledge_base_calls, 1)
         self.assertEqual(
-            len(
-                refresh_service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls
-            ),
+            len(serving_lifecycle_service.serving_runtime_factory.prepare_calls),
             1,
         )
-        self.assertTrue(
-            refresh_service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls[
-                0
-            ]["force"]
-        )
+        self.assertTrue(serving_lifecycle_service.serving_runtime_factory.prepare_calls[0]["force"])
 
     def test_build_lifecycle_service_rebuilds_and_refreshes_serving_runtime(self) -> None:
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(ready=True)
         build_bootstrapper = _FakeBuildBootstrapper(build_runtime)
         serving_bootstrapper = _FakeServingBootstrapper(serving_runtime)
-        refresh_service = ServingRuntimeRefreshService(
-            serving_runtime_lifecycle_service=ServingRuntimeLifecycleService(
-                serving_runtime_factory=serving_bootstrapper,
-                serving_runtime_preparer=serving_bootstrapper,
-            )
+        serving_lifecycle_service = ServingRuntimeLifecycleService(
+            serving_runtime_factory=serving_bootstrapper,
+            serving_runtime_preparer=serving_bootstrapper,
         )
         service = BuildRuntimeLifecycleService(
             build_runtime_executor=build_bootstrapper,
-            refresh_service=refresh_service,
+            serving_lifecycle_service=serving_lifecycle_service,
             readiness_service=RuntimeReadinessService(),
         )
 
@@ -329,16 +314,10 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         self.assertIs(result_serving, serving_runtime)
         self.assertEqual(build_bootstrapper.rebuild_knowledge_base_calls, 1)
         self.assertEqual(
-            len(
-                refresh_service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls
-            ),
+            len(serving_lifecycle_service.serving_runtime_factory.prepare_calls),
             1,
         )
-        self.assertTrue(
-            refresh_service.serving_runtime_lifecycle_service.serving_runtime_factory.prepare_calls[
-                0
-            ]["force"]
-        )
+        self.assertTrue(serving_lifecycle_service.serving_runtime_factory.prepare_calls[0]["force"])
 
     def test_runtime_manager_delegates_to_injected_services(self) -> None:
         build_runtime = _build_runtime()
@@ -361,7 +340,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
                 calls.append("system-init")
                 return build_runtime, serving_runtime
 
-        class _StubRefreshService:
+        class _StubServingLifecycleService:
             def prepare_existing(self, runtime, **kwargs):
                 del kwargs
                 calls.append("prepare-existing")
@@ -405,7 +384,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
         lifecycle_bundle = RuntimeLifecycleServiceBundle(
             initialization_service=_StubInitializationService(),
             readiness_service=_StubReadinessService(),
-            refresh_service=_StubRefreshService(),
+            serving_lifecycle_service=_StubServingLifecycleService(),
             build_lifecycle_service=_StubBuildLifecycleService(),
         )
         manager = SystemRuntimeManager(
@@ -443,7 +422,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
                 initialize_system=lambda **kw: (build_runtime, serving_runtime),
             ),
             readiness_service=RuntimeReadinessService(),
-            refresh_service=SimpleNamespace(
+            serving_lifecycle_service=SimpleNamespace(
                 prepare_existing=lambda runtime, **kw: runtime,
             ),
             build_lifecycle_service=SimpleNamespace(
@@ -461,7 +440,10 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
 
         self.assertIs(manager.initialization_service, lifecycle_bundle.initialization_service)
         self.assertIs(manager.readiness_service, lifecycle_bundle.readiness_service)
-        self.assertIs(manager.refresh_service, lifecycle_bundle.refresh_service)
+        self.assertIs(
+            manager.serving_lifecycle_service,
+            lifecycle_bundle.serving_lifecycle_service,
+        )
         self.assertIs(manager.build_lifecycle_service, lifecycle_bundle.build_lifecycle_service)
 
     def test_runtime_manager_close_clears_runtime_state_store(self) -> None:
@@ -474,7 +456,7 @@ class RuntimeLifecycleServiceTests(unittest.TestCase):
             lifecycle_services=RuntimeLifecycleServiceBundle(
                 initialization_service=SimpleNamespace(),
                 readiness_service=RuntimeReadinessService(),
-                refresh_service=SimpleNamespace(),
+                serving_lifecycle_service=SimpleNamespace(),
                 build_lifecycle_service=SimpleNamespace(),
             ),
         )

@@ -2029,13 +2029,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                         )
                 elif isinstance(node.func, ast.Attribute):
                     chain = ".".join(self._attribute_chain(node.func))
-                    if chain == "provider_surface.diagnostics.provide_runtime_stats_access":
+                    if chain == "provider_surface.services.provide_runtime_stats_access":
                         found_stats_access_call = True
-                    elif (
-                        chain == "provider_surface.diagnostics.provide_runtime_diagnostics_service"
-                    ):
+                    elif chain == "provider_surface.services.provide_runtime_diagnostics_service":
                         found_diagnostics_provider_call = True
-                    elif chain == "provider_surface.lifecycle.provide_runtime_shutdown_service":
+                    elif chain == "provider_surface.services.provide_runtime_shutdown_service":
                         found_shutdown_provider_call = True
                 elif (
                     isinstance(node.func, ast.Name)
@@ -2062,11 +2060,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(
             found_diagnostics_provider_call,
-            "runtime infrastructure composer should resolve diagnostics_service from the diagnostics provider",
+            "runtime infrastructure composer should resolve diagnostics_service from the services provider",
         )
         self.assertTrue(
             found_shutdown_provider_call,
-            "runtime infrastructure composer should resolve shutdown_service from the lifecycle provider",
+            "runtime infrastructure composer should resolve shutdown_service from the services provider",
         )
         self.assertTrue(
             found_state_store_return,
@@ -2545,7 +2543,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         prohibited = {
             "self.build_bootstrapper.build_knowledge_base",
             "self.build_bootstrapper.rebuild_knowledge_base",
-            "self.refresh_service.refresh_from_build",
+            "self.serving_lifecycle_service.refresh_from_build",
         }
         violations: list[str] = []
 
@@ -2602,9 +2600,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             RAG_MODULES_DIR / "app" / "composition" / "serving_runtime_lifecycle_service.py": {
                 "self.serving_runtime_factory.prepare",
                 "self.serving_runtime_factory.prepare_with_shared_runtime",
-            },
-            RAG_MODULES_DIR / "app" / "composition" / "runtime_refresh_service.py": {
-                "self.serving_bootstrapper.prepare_with_shared_runtime",
             },
         }
         violations: list[str] = []

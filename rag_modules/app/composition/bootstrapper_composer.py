@@ -82,7 +82,12 @@ class ServingBootstrapperComposer:
             provider=provider
         )
         resolved_factory = factory or ServingRuntimeFactory(provider=resolved_provider)
-        resolved_preparer = preparer or ServingRuntimePreparer(provider=resolved_provider)
+        if preparer is None:
+            resolved_preparer: ServingRuntimePreparerProtocol = ServingRuntimePreparer(
+                provider=resolved_provider
+            )
+        else:
+            resolved_preparer = preparer
         resolved_lifecycle_service = lifecycle_service or ServingRuntimeLifecycleService(
             serving_runtime_factory=resolved_factory,
             serving_runtime_preparer=resolved_preparer,

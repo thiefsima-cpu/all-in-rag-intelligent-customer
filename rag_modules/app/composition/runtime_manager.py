@@ -30,7 +30,7 @@ class SystemRuntimeManager:
         self.shutdown_service = shutdown_service
         self.initialization_service = lifecycle_services.initialization_service
         self.readiness_service = lifecycle_services.readiness_service
-        self.refresh_service = lifecycle_services.refresh_service
+        self.serving_lifecycle_service = lifecycle_services.serving_lifecycle_service
         self.build_lifecycle_service = lifecycle_services.build_lifecycle_service
         self.runtime_state_store = runtime_state_store or RuntimeStateStore()
 
@@ -139,7 +139,7 @@ class SystemRuntimeManager:
         progress: ProgressCallback = None,
         force: bool = False,
     ) -> ServingRuntime | None:
-        self.serving_runtime = self.refresh_service.prepare_existing(
+        self.serving_runtime = self.serving_lifecycle_service.prepare_existing(
             self.serving_runtime,
             shared_runtime=self.build_runtime,
             progress=progress,
@@ -154,7 +154,7 @@ class SystemRuntimeManager:
         force: bool = True,
     ) -> ServingRuntime:
         runtime = self.readiness_service.require_serving_runtime(self.serving_runtime)
-        refreshed_runtime = self.refresh_service.prepare_existing(
+        refreshed_runtime = self.serving_lifecycle_service.prepare_existing(
             runtime,
             shared_runtime=None,
             progress=progress,

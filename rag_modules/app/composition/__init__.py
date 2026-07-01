@@ -32,7 +32,6 @@ from .runtime_lifecycle_service_composer import (
 )
 from .runtime_manager import SystemRuntimeManager
 from .runtime_readiness_service import RuntimeReadinessService
-from .runtime_refresh_service import ServingRuntimeRefreshService
 from .runtime_state_store import RuntimeStateStore
 from .serving_runtime_factory import ServingRuntimeFactory
 from .serving_runtime_lifecycle_service import ServingRuntimeLifecycleService
@@ -83,7 +82,6 @@ __all__ = [
     "RuntimeProviderSurface",
     "RuntimeProviderSurfaceResolver",
     "RuntimeReadinessService",
-    "ServingRuntimeRefreshService",
     "RuntimeStateStore",
     "ServingBootstrapperComponents",
     "ServingBootstrapperComposer",

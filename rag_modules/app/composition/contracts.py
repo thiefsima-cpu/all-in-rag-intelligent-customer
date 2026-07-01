@@ -117,6 +117,32 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         force: bool = False,
     ) -> ServingRuntime: ...
 
+    def prepare_existing(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None: ...
+
+    def prepare_if_needed(
+        self,
+        runtime: ServingRuntime,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+    ) -> ServingRuntime: ...
+
+    def refresh_from_build(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        build_runtime: BuildRuntime,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None: ...
+
 
 class SystemOperationsProtocol(Protocol):
     """Application-facing runtime lifecycle and diagnostics operations."""
