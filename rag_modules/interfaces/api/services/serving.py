@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-import queue
-import threading
-import time
-from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 from ....app.application_protocol import GraphRAGApplication
@@ -15,53 +9,17 @@ from ....app.services.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
-from ....safe_logging import log_failure
-from ..answer_models import (
-    AnswerPayloadModel,
-    AnswerStreamEventModel,
-    PublicAnswerPayloadModel,
-)
-from ..error_models import ErrorCode
+from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
-from .errors import (
-    AnswerFailedError,
-    ApiBackpressureError,
-    SystemNotReadyError,
-    _StreamCancelledError,
+from .errors import AnswerFailedError
+from .serving_admission import (
+    DEFAULT_MAX_CONCURRENT_ANSWERS,
+    ServingAnswerAdmissionController,
 )
-
-logger = logging.getLogger(__name__)
-
-_DEFAULT_MAX_CONCURRENT_ANSWERS = 4
-_STREAM_QUEUE_POLL_SECONDS = 0.1
-
-
-class _StreamEnd:
-    pass
-
-
-_STREAM_END = _StreamEnd()
-
-
-class _AnswerAdmissionController:
-    def __init__(self, *, max_concurrent_answers: int, acquire_timeout_seconds: float) -> None:
-        self.max_concurrent_answers = max(
-            1,
-            int(max_concurrent_answers or _DEFAULT_MAX_CONCURRENT_ANSWERS),
-        )
-        self.acquire_timeout_seconds = max(0.0, float(acquire_timeout_seconds or 0.0))
-        self._semaphore = threading.BoundedSemaphore(self.max_concurrent_answers)
-
-    @contextmanager
-    def permit(self) -> Iterator[None]:
-        semaphore = self._semaphore
-        if not semaphore.acquire(timeout=self.acquire_timeout_seconds):
-            raise ApiBackpressureError()
-        try:
-            yield
-        finally:
-            semaphore.release()
+from .serving_hot_refresh import ServingHotRefreshCoordinator
+from .serving_readiness import ServingRuntimeReadinessGuard
+from .serving_streams import ServingSseRunner
 
 
 class GraphRAGServingApiService(_BaseGraphRAGApiService):
@@ -78,15 +36,13 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
     ) -> None:
         self._validate_startup_config = system is None
         super().__init__(system=system, config=config)
-        self._stream_executor: ThreadPoolExecutor | None = None
-        self._stream_executor_lock = threading.Lock()
         resolved_config = config or getattr(self.system, "config", None)
         api_settings = getattr(resolved_config, "api", None)
-        self._answer_admission = _AnswerAdmissionController(
+        self._answer_admission = ServingAnswerAdmissionController(
             max_concurrent_answers=getattr(
                 api_settings,
                 "max_concurrent_answers",
-                _DEFAULT_MAX_CONCURRENT_ANSWERS,
+                DEFAULT_MAX_CONCURRENT_ANSWERS,
             ),
             acquire_timeout_seconds=getattr(
                 api_settings,
@@ -94,31 +50,40 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                 0.25,
             ),
         )
-        self._stream_executor_max_workers = max(
-            1,
-            int(getattr(api_settings, "stream_executor_max_workers", 4)),
+        stream_executor_max_workers = getattr(api_settings, "stream_executor_max_workers", 4)
+        stream_queue_max_size = getattr(api_settings, "stream_queue_max_size", 64)
+        self._runtime_readiness = ServingRuntimeReadinessGuard(
+            system=self.system,
+            ensure_runtime_initialized=self._ensure_runtime_initialized,
+            collect_startup_diagnostics=self._collect_startup_diagnostics_unlocked,
+            mode=self._MODE,
         )
-        self._stream_queue_max_size = max(
-            1,
-            int(getattr(api_settings, "stream_queue_max_size", 64)),
-        )
-        self._artifact_registry = artifact_registry
-        if self._artifact_registry is None and resolved_config is not None:
-            self._artifact_registry = ArtifactRegistry(ArtifactManifestStore(resolved_config))
-        api_settings = getattr(resolved_config, "api", None)
-        self._hot_refresh_enabled = bool(getattr(api_settings, "serving_hot_refresh_enabled", True))
-        self._hot_refresh_interval_seconds = max(
-            0.1,
-            float(
-                getattr(
-                    api_settings,
-                    "serving_hot_refresh_interval_seconds",
-                    2.0,
-                )
+        resolved_artifact_registry = artifact_registry
+        if resolved_artifact_registry is None and resolved_config is not None:
+            resolved_artifact_registry = ArtifactRegistry(ArtifactManifestStore(resolved_config))
+        self._hot_refresh = ServingHotRefreshCoordinator(
+            system=self.system,
+            artifact_registry=resolved_artifact_registry,
+            enabled=getattr(api_settings, "serving_hot_refresh_enabled", True),
+            interval_seconds=getattr(
+                api_settings,
+                "serving_hot_refresh_interval_seconds",
+                2.0,
             ),
+            exclusive_runtime_operation=self._exclusive_runtime_operation,
+            invalidate_runtime_cache=self._invalidate_runtime_cache,
         )
-        self._last_hot_refresh_check = 0.0
-        self._hot_refresh_check_lock = threading.Lock()
+        self._stream_runner = ServingSseRunner(
+            system=self.system,
+            admission_controller=self._answer_admission,
+            answer_operation=self._locks.answer_operation,
+            readiness_guard=self._runtime_readiness,
+            answer_payload_factory=self._answer_payload,
+            max_workers=stream_executor_max_workers,
+            queue_max_size=stream_queue_max_size,
+        )
+        self._stream_executor_max_workers = self._stream_runner.max_workers
+        self._stream_queue_max_size = self._stream_runner.queue_max_size
 
     def _validate_required_model_api_key(self) -> None:
         if not self._validate_startup_config:
@@ -133,45 +98,17 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         )
 
     def _ensure_serving_runtime_initialized(self) -> None:
-        self._ensure_runtime_initialized(
-            is_initialized=self.system.is_serving_initialized,
-            initializer=self.system.initialize_serving_runtime,
-        )
+        self._runtime_readiness.ensure_initialized()
 
     def _raise_if_system_not_ready(self) -> None:
-        if self.system.system_ready:
-            return
-        raise SystemNotReadyError(
-            "Serving runtime is assembled, but required artifacts are not ready. "
-            "Build the knowledge base first.",
-            diagnostics=self._collect_startup_diagnostics_unlocked(self._MODE),
-        )
+        self._runtime_readiness.raise_if_system_not_ready()
 
     def _refresh_serving_runtime_if_stale(self, *, force_check: bool = False) -> bool:
-        if not self._hot_refresh_enabled or self._artifact_registry is None:
-            return False
-        now = time.monotonic()
-        with self._hot_refresh_check_lock:
-            if (
-                not force_check
-                and now - self._last_hot_refresh_check < self._hot_refresh_interval_seconds
-            ):
-                return False
-            self._last_hot_refresh_check = now
-        current_manifest = getattr(self.system, "artifact_manifest", None)
-        if not self._artifact_registry.has_newer_active(current_manifest):
-            return False
-        refresher = getattr(self.system, "refresh_serving_runtime", None)
-        if not callable(refresher):
-            return False
-        with self._exclusive_runtime_operation():
-            current_manifest = getattr(self.system, "artifact_manifest", None)
-            if not self._artifact_registry.has_newer_active(current_manifest):
-                return False
-            refresher(force=True)
-            self._stats_cache = None
-            self._diagnostics_cache.clear()
-        return True
+        return self._hot_refresh.refresh_if_stale(force_check=force_check)
+
+    def _invalidate_runtime_cache(self) -> None:
+        self._stats_cache = None
+        self._diagnostics_cache.clear()
 
     def startup(self, *, auto_initialize_serving: bool = False) -> None:
         self._validate_required_model_api_key()
@@ -207,23 +144,15 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
 
     def refresh_serving_runtime(self) -> dict[str, Any]:
         self._ensure_serving_runtime_initialized()
-        refresher = getattr(self.system, "refresh_serving_runtime", None)
-        if not callable(refresher):
-            raise RuntimeError("Application does not support serving-runtime refresh.")
-        with self._exclusive_runtime_operation():
-            refresher(force=True)
-            self._stats_cache = None
-            self._diagnostics_cache.clear()
-            return self._operation_response(
+        return self._hot_refresh.refresh_runtime(
+            after_refresh=lambda: self._operation_response(
                 message="Serving runtime refreshed from the active artifact manifest.",
                 mode=self._MODE,
             )
+        )
 
     def shutdown(self) -> None:
-        executor = self._stream_executor
-        self._stream_executor = None
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
+        self._stream_runner.shutdown()
         super().shutdown()
 
     @staticmethod
@@ -265,138 +194,12 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         self._refresh_serving_runtime_if_stale()
         self._raise_if_system_not_ready()
         resolved_request_id = normalize_or_generate_request_id(request_id)
-        return self._iter_stream_answer_question_events(
+        return self._stream_runner.stream_answer_question_events(
             question=question,
             explain_routing=explain_routing,
             request_id=resolved_request_id,
             include_traces=include_traces,
         )
-
-    def _iter_stream_answer_question_events(
-        self,
-        *,
-        question: str,
-        explain_routing: bool = False,
-        request_id: str,
-        include_traces: bool = True,
-    ) -> Iterator[AnswerStreamEventModel]:
-        event_queue: "queue.Queue[AnswerStreamEventModel | _StreamEnd]" = queue.Queue(
-            maxsize=self._stream_queue_max_size
-        )
-        stream_closed = threading.Event()
-
-        def emit(event: AnswerStreamEventModel) -> None:
-            while True:
-                if stream_closed.is_set():
-                    raise _StreamCancelledError()
-                try:
-                    event_queue.put(event, timeout=_STREAM_QUEUE_POLL_SECONDS)
-                    return
-                except queue.Full:
-                    continue
-
-        def finish_stream() -> None:
-            while True:
-                if stream_closed.is_set():
-                    return
-                try:
-                    event_queue.put(_STREAM_END, timeout=_STREAM_QUEUE_POLL_SECONDS)
-                    return
-                except queue.Full:
-                    continue
-
-        def on_message(message: str) -> None:
-            emit(AnswerStreamEventModel.message(str(message)))
-
-        def on_chunk(chunk: str) -> None:
-            emit(AnswerStreamEventModel.chunk(str(chunk)))
-
-        def emit_error(code: ErrorCode) -> None:
-            if not stream_closed.is_set():
-                emit(AnswerStreamEventModel.error(code=code, request_id=request_id))
-
-        def runner() -> None:
-            try:
-                with self._answer_admission.permit():
-                    with self._locks.answer_operation():
-                        self._raise_if_system_not_ready()
-                        response = self.system.answer_question_response(
-                            question=question,
-                            stream=True,
-                            explain_routing=explain_routing,
-                            message_callback=on_message,
-                            chunk_callback=on_chunk,
-                        )
-                answer_payload = self._answer_payload(response)
-                result_payload: AnswerPayloadModel | PublicAnswerPayloadModel = answer_payload
-                if not include_traces:
-                    result_payload = PublicAnswerPayloadModel.from_debug_payload(answer_payload)
-                emit(AnswerStreamEventModel.result(result_payload))
-            except ApiBackpressureError:
-                emit_error(ErrorCode.RATE_LIMITED)
-            except _StreamCancelledError:
-                pass
-            except SystemNotReadyError:
-                emit_error(ErrorCode.SYSTEM_NOT_READY)
-            except AnswerFailedError:
-                emit_error(ErrorCode.ANSWER_FAILED)
-            except Exception as exc:
-                log_failure(
-                    logger,
-                    logging.ERROR,
-                    "answer_workflow_failed",
-                    code=ErrorCode.ANSWER_FAILED.value,
-                    error=exc,
-                    request_id=request_id,
-                )
-                emit_error(ErrorCode.ANSWER_FAILED)
-            finally:
-                finish_stream()
-
-        try:
-            future: Future[None] = self._resolve_stream_executor().submit(runner)
-        except RuntimeError:
-            yield AnswerStreamEventModel.error(
-                code=ErrorCode.SYSTEM_NOT_READY,
-                request_id=request_id,
-            )
-            yield AnswerStreamEventModel.done()
-            return
-
-        try:
-            while True:
-                try:
-                    item = event_queue.get(timeout=_STREAM_QUEUE_POLL_SECONDS)
-                except queue.Empty:
-                    if future.done():
-                        yield AnswerStreamEventModel.error(
-                            code=ErrorCode.SYSTEM_NOT_READY,
-                            request_id=request_id,
-                        )
-                        yield AnswerStreamEventModel.done()
-                        break
-                    continue
-                if isinstance(item, _StreamEnd):
-                    yield AnswerStreamEventModel.done()
-                    break
-                yield item
-        finally:
-            stream_closed.set()
-            future.cancel()
-
-    def _resolve_stream_executor(self) -> ThreadPoolExecutor:
-        executor = self._stream_executor
-        if executor is not None:
-            return executor
-        with self._stream_executor_lock:
-            executor = self._stream_executor
-            if executor is None:
-                executor = ThreadPoolExecutor(
-                    max_workers=self._stream_executor_max_workers,
-                    thread_name_prefix="graph-rag-answer",
-                )
-                self._stream_executor = executor
-        return executor
 
 
 __all__ = ["GraphRAGServingApiService"]
