@@ -3,12 +3,11 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from langchain_core.documents import Document
-
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
+from rag_modules.text_document import TextDocument
 
 
 class _StubVectorRetriever:
@@ -100,7 +99,7 @@ class _StubParentDocumentService:
 
     def build_parent_doc_map(self, state):
         self.build_calls += 1
-        state.parent_doc_map = {"parent": Document(page_content="doc")}
+        state.parent_doc_map = {"parent": TextDocument(content="doc")}
         return state.parent_doc_map
 
     def attach_documents(self, state, docs, *, top_n=None):
@@ -140,14 +139,14 @@ class _StubIndexService:
         self.graph_indexed = True
 
     def _build_parent_doc_map(self):
-        return {"parent": Document(page_content="doc")}
+        return {"parent": TextDocument(content="doc")}
 
 
 class _StubBm25Retriever:
     def __init__(self, *, ready=False) -> None:
         self.ready = ready
         self.bm25 = "bm25" if ready else None
-        self.corpus_docs = [Document(page_content="cached")] if ready else []
+        self.corpus_docs = [TextDocument(content="cached")] if ready else []
         self.calls = []
 
     def search(self, query, *, top_k):
@@ -189,7 +188,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         )
 
     def test_initialize_builds_driver_adapters_and_applies_artifacts(self) -> None:
-        parent_doc = Document(page_content="parent")
+        parent_doc = TextDocument(content="parent")
         artifacts = HybridIndexArtifacts(
             bm25="bm25-cache",
             bm25_corpus_docs=[parent_doc],
@@ -209,7 +208,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
             parent_documents=parent_documents,
         )
 
-        runtime.initialize([Document(page_content="chunk")])
+        runtime.initialize([TextDocument(content="chunk")])
 
         self.assertEqual(driver_service.ensure_calls, 1)
         self.assertEqual(index_service.initialize_calls[0]["driver"], "driver")
@@ -231,7 +230,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
             parent_documents=_StubParentDocumentService(),
         )
         runtime.state.bm25 = "cached-bm25"
-        runtime.state.bm25_corpus_docs = [Document(page_content="cached-doc")]
+        runtime.state.bm25_corpus_docs = [TextDocument(content="cached-doc")]
 
         docs = runtime.bm25_candidates("spicy tofu", top_k=4)
 
@@ -240,7 +239,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         self.assertEqual(bm25_retriever.calls[1], ("spicy tofu", 4))
 
     def test_sync_bm25_state_refreshes_runtime_state_from_retriever(self) -> None:
-        cached_doc = Document(page_content="cached")
+        cached_doc = TextDocument(content="cached")
         bm25_retriever = _StubBm25Retriever(ready=True)
         bm25_retriever.bm25 = "restored-bm25"
         bm25_retriever.corpus_docs = [cached_doc]

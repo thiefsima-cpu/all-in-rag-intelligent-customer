@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ...langchain_document_adapter import to_langchain_text_documents
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,
     DocumentArtifactCachePort,
@@ -84,7 +83,7 @@ class ServingRuntimePreparer:
         if traditional_retrieval is None or graph_rag_retrieval is None:
             raise ValueError("Serving runtime is missing retrieval engines.")
         try:
-            traditional_retrieval.initialize(to_langchain_text_documents(chunks))
+            traditional_retrieval.initialize(chunks)
             graph_rag_retrieval.initialize()
         except Exception as exc:
             runtime.retrieval_engines_initialized = False

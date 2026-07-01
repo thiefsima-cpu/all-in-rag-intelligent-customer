@@ -5,12 +5,11 @@ import logging
 import unittest
 from pathlib import Path
 
-from langchain_core.documents import Document
-
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink
 from rag_modules.retrieval.adapters.bm25_retriever import BM25Retriever
 from rag_modules.runtime import QueryTraceEvent
 from rag_modules.safe_logging import log_failure
+from rag_modules.text_document import TextDocument
 
 _LOGGER_METHODS = {"debug", "info", "warning", "error", "exception", "critical"}
 _FORBIDDEN_NAMES = {
@@ -73,7 +72,7 @@ class SafeLoggingTests(unittest.TestCase):
     def test_bm25_log_contains_counts_but_not_query_or_tokens(self) -> None:
         secret = "private_query_token_7281"
         retriever = BM25Retriever()
-        retriever.build([Document(page_content=secret, metadata={"recipe_name": "safe"})])
+        retriever.build([TextDocument(content=secret, metadata={"recipe_name": "safe"})])
 
         with self.assertLogs(
             "rag_modules.retrieval.adapters.bm25_retriever",

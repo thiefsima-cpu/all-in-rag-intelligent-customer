@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from langchain_core.documents import Document
-
-from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest, to_langchain_documents
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
 from ..fusion import FusionRanker
 from ..runtime_contracts import Neo4jManagerPort
+from ..text_document import TextDocument
 from .adapters import tokenize_chinese
 from .evidence import RecipeConstraintMatcher
 from .hybrid_components import (
@@ -79,7 +78,7 @@ class HybridRetrievalService:
         return self._executor.bm25
 
     @property
-    def bm25_corpus_docs(self) -> List[Document]:
+    def bm25_corpus_docs(self) -> List[TextDocument]:
         return self._executor.bm25_corpus_docs
 
     @property
@@ -87,7 +86,7 @@ class HybridRetrievalService:
         return self._executor.graph_indexed
 
     @property
-    def _parent_doc_map(self) -> Dict[str, Document]:
+    def _parent_doc_map(self) -> Dict[str, TextDocument]:
         return self._executor.parent_doc_map
 
     @property
@@ -102,7 +101,7 @@ class HybridRetrievalService:
     def dual_level_service(self):
         return self._executor.dual_level_service
 
-    def initialize(self, chunks: List[Document]):
+    def initialize(self, chunks: List[TextDocument]):
         self._executor.initialize(chunks)
 
     def _apply_index_artifacts(self, artifacts: HybridIndexArtifacts) -> None:
@@ -137,7 +136,7 @@ class HybridRetrievalService:
             metadata=metadata,
         )
 
-    def _cache_signature(self, chunks: List[Document]) -> str:
+    def _cache_signature(self, chunks: List[TextDocument]) -> str:
         return self._executor.cache_signature(chunks)
 
     def _cache_path(self) -> str:
@@ -156,7 +155,7 @@ class HybridRetrievalService:
     def _build_graph_index(self):
         self._executor.build_graph_index()
 
-    def _build_parent_doc_map(self) -> Dict[str, Document]:
+    def _build_parent_doc_map(self) -> Dict[str, TextDocument]:
         return self._executor.build_parent_doc_map()
 
     def extract_query_keywords(self, query: str) -> Tuple[List[str], List[str]]:
@@ -172,7 +171,7 @@ class HybridRetrievalService:
         top_k: int = 5,
         entity_keywords: Optional[List[str]] = None,
         topic_keywords: Optional[List[str]] = None,
-    ) -> List[Document]:
+    ) -> List[EvidenceDocument]:
         request = self._build_request(
             query,
             top_k=top_k,
@@ -180,21 +179,21 @@ class HybridRetrievalService:
             entity_keywords=entity_keywords,
             topic_keywords=topic_keywords,
         )
-        return to_langchain_documents(self._dual_level_candidates(request))
+        return self._dual_level_candidates(request)
 
     def _dual_level_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self._executor.dual_level_candidates(request)
 
-    def vector_search_enhanced(self, query: str, top_k: int = 5) -> List[Document]:
+    def vector_search_enhanced(self, query: str, top_k: int = 5) -> List[EvidenceDocument]:
         request = self._build_request(query, top_k=top_k, candidate_k=top_k)
-        return to_langchain_documents(self._vector_candidates(request))
+        return self._vector_candidates(request)
 
     def _vector_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self._executor.vector_candidates(request)
 
-    def bm25_search(self, query: str, top_k: int = 5) -> List[Document]:
+    def bm25_search(self, query: str, top_k: int = 5) -> List[EvidenceDocument]:
         request = self._build_request(query, top_k=top_k, candidate_k=top_k)
-        return to_langchain_documents(self._bm25_candidates(request))
+        return self._bm25_candidates(request)
 
     def _bm25_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self._executor.bm25_candidates(request)
@@ -203,14 +202,14 @@ class HybridRetrievalService:
         self,
         constraints: Optional[QueryConstraints],
         top_k: int = 20,
-    ) -> List[Document]:
+    ) -> List[EvidenceDocument]:
         request = RetrievalRequest.from_inputs(
             query="",
             top_k=top_k,
             candidate_k=top_k,
             constraints=constraints,
         )
-        return to_langchain_documents(self._constraint_candidates(request))
+        return self._constraint_candidates(request)
 
     def _constraint_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self._executor.constraint_candidates(request)
@@ -225,16 +224,16 @@ class HybridRetrievalService:
 
     def _attach_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self._executor.attach_parent_documents(docs, top_n=top_n)
 
     def enrich_to_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self._executor.enrich_to_parent_documents(docs, top_n=top_n)
 
     def enrich_to_parent_evidence_documents(
@@ -290,7 +289,7 @@ class HybridRetrievalService:
         constraints: Optional[QueryConstraints] = None,
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
-    ) -> List[Document]:
+    ) -> List[EvidenceDocument]:
         outcome = self.hybrid_evidence_search(
             request_or_query,
             top_k=top_k,
@@ -298,9 +297,7 @@ class HybridRetrievalService:
             candidate_k=candidate_k,
             query_plan=query_plan,
         )
-        return to_langchain_documents(
-            outcome.documents,
-        )
+        return list(outcome.documents)
 
     def close(self):
         self._executor.close()

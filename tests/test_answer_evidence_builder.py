@@ -4,6 +4,7 @@ import unittest
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.contracts import EvidenceDocument
+from rag_modules.text_document import TextDocument
 
 
 class AnswerEvidenceBuilderTests(unittest.TestCase):
@@ -46,16 +47,18 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(package.items[0].citation, "菜谱证据 1")
         self.assertIn("麻辣", package.items[0].matched_terms)
 
-    def test_document_wrapper_stays_compatible(self) -> None:
-        evidence = EvidenceDocument(
+    def test_document_wrapper_accepts_text_document_input(self) -> None:
+        document = TextDocument(
             content="宫保鸡丁是一道经典川菜。",
-            recipe_id="recipe-2",
-            recipe_name="宫保鸡丁",
-            source="hybrid",
-            score=0.9,
+            metadata={
+                "recipe_id": "recipe-2",
+                "recipe_name": "宫保鸡丁",
+                "source": "hybrid",
+                "score": 0.9,
+            },
         )
 
-        package = self.builder.build_from_documents("宫保鸡丁怎么做？", [evidence.to_langchain()])
+        package = self.builder.build_from_documents("宫保鸡丁怎么做？", [document])
 
         self.assertEqual(len(package.items), 1)
         self.assertEqual(package.items[0].recipe_name, "宫保鸡丁")

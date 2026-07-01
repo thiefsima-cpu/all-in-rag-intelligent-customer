@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from langchain_core.documents import Document
-
 from ..contracts import EvidenceDocument, QueryPlan, QuerySemanticProfile
 from ..domain.shared.query_constraints import QueryConstraints
 from .analysis_models import QueryAnalysis, SearchStrategy, ensure_query_analysis
@@ -217,10 +215,6 @@ class AnswerContext:
             evidence_package=coerce_json_object(evidence_package),
             metadata=metadata or resolution.metadata,
         )
-
-    @property
-    def documents(self) -> list[Document]:
-        return self.retrieval.documents
 
     @property
     def evidence_documents(self) -> list[EvidenceDocument]:

@@ -1,11 +1,5 @@
 """Canonical cross-subsystem contract kernel."""
 
-from .langchain_compat import (
-    PageDocumentLike,
-    ensure_evidence_documents,
-    from_langchain_documents,
-    to_langchain_documents,
-)
 from .query import (
     GraphQueryType,
     QueryPlan,
@@ -15,7 +9,12 @@ from .query import (
     SearchStrategy,
 )
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
-from .retrieval import EvidenceDocument, RetrievalRequest
+from .retrieval import (
+    EvidenceDocument,
+    PageDocumentLike,
+    RetrievalRequest,
+    ensure_evidence_documents,
+)
 
 __all__ = [
     "EvidenceDocument",
@@ -30,6 +29,4 @@ __all__ = [
     "RetrievalRequest",
     "SearchStrategy",
     "ensure_evidence_documents",
-    "from_langchain_documents",
-    "to_langchain_documents",
 ]

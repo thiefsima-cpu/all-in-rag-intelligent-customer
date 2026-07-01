@@ -9,12 +9,11 @@ import logging
 import os
 from typing import Any, Dict, List, Mapping, Optional
 
-from langchain_core.documents import Document
-
 from .domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .graph_index.snapshot import GRAPH_INDEX_VERSION
 from .runtime.artifacts import write_json_atomic
 from .safe_logging import log_failure
+from .text_document import TextDocument
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +46,9 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_json_bytes(value)).hexdigest()
 
 
-def _serialize_document(document: Document) -> Dict[str, Any]:
+def _serialize_document(document: TextDocument) -> Dict[str, Any]:
     return {
-        "page_content": str(document.page_content or ""),
+        "page_content": str(document.content or ""),
         "metadata": _json_safe(document.metadata or {}),
     }
 
@@ -63,7 +62,7 @@ class RetrievalCacheStore:
         self.models = config.models
         self.graph = config.graph
 
-    def signature(self, chunks: List[Document]) -> str:
+    def signature(self, chunks: List[TextDocument]) -> str:
         return _sha256(
             {
                 "schema_version": HYBRID_CACHE_SCHEMA_VERSION,
@@ -88,7 +87,7 @@ class RetrievalCacheStore:
         os.makedirs(cache_dir, exist_ok=True)
         return os.path.join(cache_dir, "hybrid_index.json")
 
-    def load(self, chunks: List[Document]) -> Optional[Dict[str, Any]]:
+    def load(self, chunks: List[TextDocument]) -> Optional[Dict[str, Any]]:
         path = self.path()
         if not os.path.isfile(path):
             return None
@@ -128,7 +127,7 @@ class RetrievalCacheStore:
             )
             return None
 
-    def save(self, chunks: List[Document], payload: Dict[str, Any]) -> None:
+    def save(self, chunks: List[TextDocument], payload: Dict[str, Any]) -> None:
         path = self.path()
         try:
             artifacts = _json_safe(dict(payload or {}))

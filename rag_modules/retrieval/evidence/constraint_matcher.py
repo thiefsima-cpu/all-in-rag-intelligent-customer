@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from langchain_core.documents import Document
-
 from ...domain.shared.query_constraints import QueryConstraints, parse_minutes
+from ...text_document import TextDocument
 
 
 class RecipeConstraintMatcher:
-    def __init__(self, documents: List[Document]):
+    def __init__(self, documents: List[TextDocument]):
         self.documents = documents
 
     @staticmethod
-    def _haystack(doc: Document) -> str:
+    def _haystack(doc: TextDocument) -> str:
         metadata = doc.metadata or {}
         pieces = [
-            doc.page_content or "",
+            doc.content or "",
             str(metadata.get("recipe_name", "")),
             str(metadata.get("category", "")),
             str(metadata.get("cuisine_type", "")),
@@ -46,7 +45,7 @@ class RecipeConstraintMatcher:
 
     @staticmethod
     def _recipe_minutes(
-        doc: Document,
+        doc: TextDocument,
     ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
         metadata = doc.metadata or {}
         prep = parse_minutes(metadata.get("prep_time"))
@@ -58,7 +57,7 @@ class RecipeConstraintMatcher:
 
     def score(
         self,
-        doc: Document,
+        doc: TextDocument,
         constraints: QueryConstraints,
     ) -> Tuple[bool, float, List[str]]:
         if not constraints or not constraints.has_constraints():
@@ -140,7 +139,7 @@ class RecipeConstraintMatcher:
         constraints: QueryConstraints,
         min_score: float = 0.0,
         limit: int = 20,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         scored = []
         for doc in self.documents:
             keep, score, reasons = self.score(doc, constraints)
@@ -153,7 +152,7 @@ class RecipeConstraintMatcher:
                 "search_type",
                 "constraint_recipe",
             )
-            scored.append(Document(page_content=doc.page_content, metadata=metadata))
+            scored.append(doc.copy_with(metadata=metadata))
 
         scored.sort(
             key=lambda d: d.metadata.get("constraint_score", 0.0),

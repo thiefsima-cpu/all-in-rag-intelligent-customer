@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from langchain_core.documents import Document
-
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.runtime import RouteSnapshot, RouteStageSnapshot
 from rag_modules.runtime.retrieval_models import RetrievalOutcome
@@ -26,21 +24,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(outcome.doc_count, 1)
         self.assertEqual(outcome.evidence_documents[0].recipe_name, "宫保鸡丁")
-        self.assertEqual(outcome.documents[0].metadata["recipe_name"], "宫保鸡丁")
-
-    def test_retrieval_outcome_accepts_legacy_documents_input(self) -> None:
-        legacy_doc = Document(
-            page_content="水煮肉片通常带有麻辣鲜香的风味。",
-            metadata={
-                "recipe_name": "水煮肉片",
-                "source": "graph_rag",
-                "score": 0.88,
-            },
-        )
-        outcome = RetrievalOutcome(documents_input=[legacy_doc])
-
-        self.assertEqual(len(outcome.evidence_documents), 1)
-        self.assertEqual(outcome.evidence_documents[0].recipe_name, "水煮肉片")
+        self.assertFalse(hasattr(outcome, "documents"))
 
     def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
         route_trace = RouteSnapshot(
@@ -105,7 +89,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(len(context.evidence_documents), 1)
         self.assertEqual(context.evidence_documents[0].recipe_name, "水煮肉片")
-        self.assertEqual(context.documents[0].metadata["recipe_name"], "水煮肉片")
+        self.assertFalse(hasattr(context, "documents"))
 
 
 if __name__ == "__main__":

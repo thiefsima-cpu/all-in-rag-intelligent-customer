@@ -8,11 +8,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from langchain_core.documents import Document
-
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
 from ..safe_logging import log_failure
+from ..text_document import TextDocument
 from .adapters import BM25Retriever
 from .evidence import RecipeConstraintMatcher
 
@@ -22,9 +21,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HybridIndexArtifacts:
     bm25: Any = None
-    bm25_corpus_docs: List[Document] = field(default_factory=list)
+    bm25_corpus_docs: List[TextDocument] = field(default_factory=list)
     graph_indexed: bool = False
-    parent_doc_map: Dict[str, Document] = field(default_factory=dict)
+    parent_doc_map: Dict[str, TextDocument] = field(default_factory=dict)
     recipe_matcher: Optional[RecipeConstraintMatcher] = None
 
 
@@ -51,7 +50,7 @@ class HybridIndexService:
         self.graph_indexed = False
         self.database = self.storage.neo4j_database
 
-    def initialize(self, chunks: List[Document], driver) -> HybridIndexArtifacts:
+    def initialize(self, chunks: List[TextDocument], driver) -> HybridIndexArtifacts:
         if self.storage.enable_index_cache:
             cached = self.load_index_cache(chunks)
             if cached:
@@ -67,7 +66,7 @@ class HybridIndexService:
             self.save_index_cache(chunks, artifacts)
         return artifacts
 
-    def load_index_cache(self, chunks: List[Document]) -> Optional[HybridIndexArtifacts]:
+    def load_index_cache(self, chunks: List[TextDocument]) -> Optional[HybridIndexArtifacts]:
         payload = self.cache_store.load(chunks)
         if not payload:
             return None
@@ -105,7 +104,7 @@ class HybridIndexService:
             return None
         return artifacts
 
-    def save_index_cache(self, chunks: List[Document], artifacts: HybridIndexArtifacts) -> None:
+    def save_index_cache(self, chunks: List[TextDocument], artifacts: HybridIndexArtifacts) -> None:
         payload = {
             "bm25_retriever": self.bm25_retriever.to_cache_dict(),
             "parent_documents": self._serialize_parent_documents(artifacts.parent_doc_map),
@@ -121,24 +120,24 @@ class HybridIndexService:
 
     @staticmethod
     def _serialize_parent_documents(
-        parent_doc_map: Dict[str, Document],
+        parent_doc_map: Dict[str, TextDocument],
     ) -> Dict[str, Dict[str, Any]]:
         return {
             str(node_id): {
-                "page_content": str(document.page_content or ""),
+                "page_content": str(document.content or ""),
                 "metadata": dict(document.metadata or {}),
             }
             for node_id, document in (parent_doc_map or {}).items()
         }
 
     @staticmethod
-    def _deserialize_parent_documents(payload: Any) -> Dict[str, Document]:
+    def _deserialize_parent_documents(payload: Any) -> Dict[str, TextDocument]:
         if not isinstance(payload, dict):
             return {}
         try:
             return {
-                str(node_id): Document(
-                    page_content=str(item.get("page_content") or ""),
+                str(node_id): TextDocument(
+                    content=str(item.get("page_content") or ""),
                     metadata=dict(item.get("metadata") or {}),
                 )
                 for node_id, item in payload.items()
@@ -158,7 +157,7 @@ class HybridIndexService:
             recipe_matcher=RecipeConstraintMatcher(list(parent_doc_map.values())),
         )
 
-    def _build_parent_doc_map(self) -> Dict[str, Document]:
+    def _build_parent_doc_map(self) -> Dict[str, TextDocument]:
         docs = getattr(self.data_module, "documents", None) or []
         return self.parent_enricher.rebuild(docs)
 

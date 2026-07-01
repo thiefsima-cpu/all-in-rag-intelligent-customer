@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
-from langchain_core.documents import Document
-
 from ...contracts import EvidenceDocument
 from ...runtime import (
     AnswerContext,
@@ -41,10 +39,6 @@ class QuestionAnswerResult:
     @property
     def evidence_documents(self) -> list[EvidenceDocument]:
         return list(self.retrieval_outcome.evidence_documents or [])
-
-    @property
-    def documents(self) -> list[Document]:
-        return self.retrieval_outcome.documents
 
     @property
     def strategy(self) -> str:

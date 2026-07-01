@@ -10,15 +10,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
-from langchain_core.documents import Document
-
-from ..contracts import (
-    EvidenceDocument,
-    ensure_evidence_documents,
-    to_langchain_documents,
-)
+from ..contracts import EvidenceDocument
 from ..dashscope_clients import DashScopeRerankClient
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
 from ..runtime_contracts import RerankClientPort
@@ -121,20 +115,6 @@ class RetrievalPostProcessor:
                 )
             )
         return normalized_docs
-
-    def post_process_documents(
-        self,
-        documents: Iterable[Document | EvidenceDocument],
-        top_k: int,
-        context: RetrievalPostProcessContext,
-    ) -> List[Document]:
-        return to_langchain_documents(
-            self.post_process(
-                ensure_evidence_documents(documents),
-                top_k=top_k,
-                context=context,
-            )
-        )
 
     def _rerank_documents(
         self,

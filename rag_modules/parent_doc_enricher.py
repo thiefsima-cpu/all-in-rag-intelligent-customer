@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, Iterable, List, Optional
 
-from langchain_core.documents import Document
-
 from .contracts import EvidenceDocument
+from .text_document import TextDocument
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +22,15 @@ def _iter_metadata_values(value: object) -> list[object]:
 class ParentDocumentEnricher:
     """Replace top ranked chunks or graph snippets with full recipe documents."""
 
-    def __init__(self, config, documents: Optional[Iterable[Document]] = None):
+    def __init__(self, config, documents: Optional[Iterable[TextDocument]] = None):
         self.config = config
         self.retrieval = config.retrieval
-        self.parent_doc_map: Dict[str, Document] = {}
+        self.parent_doc_map: Dict[str, TextDocument] = {}
         if documents is not None:
             self.rebuild(documents)
 
-    def rebuild(self, documents: Iterable[Document]) -> Dict[str, Document]:
-        mapping: Dict[str, Document] = {}
+    def rebuild(self, documents: Iterable[TextDocument]) -> Dict[str, TextDocument]:
+        mapping: Dict[str, TextDocument] = {}
         for doc in documents or []:
             node_id = doc.metadata.get("node_id")
             if node_id is not None:
@@ -39,14 +38,14 @@ class ParentDocumentEnricher:
         self.parent_doc_map = mapping
         return mapping
 
-    def attach(self, docs: List[Document], top_n: Optional[int] = None) -> List[Document]:
+    def attach(self, docs: List[TextDocument], top_n: Optional[int] = None) -> List[TextDocument]:
         if not self.parent_doc_map:
             logger.warning("Parent document map is empty; parent-document attachment is skipped.")
             return docs
 
         top_n = self._resolved_top_n(top_n)
         max_chars = self._max_chars()
-        enriched: List[Document] = []
+        enriched: List[TextDocument] = []
         for index, doc in enumerate(docs):
             if index >= top_n:
                 enriched.append(doc)
@@ -56,10 +55,8 @@ class ParentDocumentEnricher:
                 enriched.append(doc)
                 continue
             enriched.append(
-                Document(
-                    page_content=self._truncate_parent_content(
-                        parent.page_content or "", max_chars
-                    ),
+                TextDocument(
+                    content=self._truncate_parent_content(parent.content or "", max_chars),
                     metadata=dict(doc.metadata or {}),
                 )
             )
@@ -92,7 +89,7 @@ class ParentDocumentEnricher:
             )
             enriched.append(
                 doc.copy_with(
-                    content=self._truncate_parent_content(parent.page_content or "", max_chars),
+                    content=self._truncate_parent_content(parent.content or "", max_chars),
                     node_id=doc.node_id or str(parent.metadata.get("node_id") or ""),
                     recipe_name=doc.recipe_name or str(parent.metadata.get("recipe_name") or ""),
                     metadata=metadata,
@@ -101,12 +98,12 @@ class ParentDocumentEnricher:
         return enriched
 
     def enrich_graph_documents(
-        self, docs: List[Document], top_n: Optional[int] = None
-    ) -> List[Document]:
+        self, docs: List[TextDocument], top_n: Optional[int] = None
+    ) -> List[TextDocument]:
         if not docs or not self.parent_doc_map:
             return docs
 
-        enriched: List[Document] = []
+        enriched: List[TextDocument] = []
         for doc in docs:
             replacement = self._find_parent(doc.metadata or {})
             if replacement is None:
@@ -117,13 +114,13 @@ class ParentDocumentEnricher:
             metadata["search_source"] = doc.metadata.get(
                 "search_source", doc.metadata.get("search_type", "graph")
             )
-            graph_context = (doc.page_content or "").strip()
-            parent_context = replacement.page_content or ""
+            graph_context = (doc.content or "").strip()
+            parent_context = replacement.content or ""
             if graph_context and graph_context not in parent_context:
                 page_content = f"{parent_context}\n\n[Graph retrieval evidence]\n{graph_context}"
             else:
                 page_content = parent_context
-            enriched.append(Document(page_content=page_content, metadata=metadata))
+            enriched.append(TextDocument(content=page_content, metadata=metadata))
 
         return self.attach(enriched, top_n=top_n)
 
@@ -148,7 +145,7 @@ class ParentDocumentEnricher:
                 doc.search_type or doc.search_method or doc.source or "graph",
             )
             graph_context = (doc.content or "").strip()
-            parent_context = replacement.page_content or ""
+            parent_context = replacement.content or ""
             if graph_context and graph_context not in parent_context:
                 content = f"{parent_context}\n\n[Graph retrieval evidence]\n{graph_context}"
             else:
@@ -166,7 +163,7 @@ class ParentDocumentEnricher:
 
         return self.attach_evidence(enriched, top_n=top_n)
 
-    def _find_parent(self, metadata: Dict[str, object]) -> Optional[Document]:
+    def _find_parent(self, metadata: Dict[str, object]) -> Optional[TextDocument]:
         for node_id in _iter_metadata_values(metadata.get("recipe_node_ids")):
             parent = self.parent_doc_map.get(str(node_id))
             if parent:

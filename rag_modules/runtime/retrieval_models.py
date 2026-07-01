@@ -3,27 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 
-from langchain_core.documents import Document
-
-from ..contracts import (
-    EvidenceDocument,
-    ensure_evidence_documents,
-    to_langchain_documents,
-)
+from ..contracts import EvidenceDocument
 from .json_types import JsonObject, coerce_json_object
 from .route_models import RouteSnapshot
 
 
 def _coerce_evidence_documents(
     evidence_documents: Iterable[EvidenceDocument] | None,
-    legacy_documents: Iterable[Document] | None = None,
 ) -> list[EvidenceDocument]:
     if evidence_documents:
-        return [doc for doc in evidence_documents]
-    if legacy_documents:
-        return ensure_evidence_documents(legacy_documents)
+        return [
+            doc
+            if isinstance(doc, EvidenceDocument)
+            else EvidenceDocument.from_dict(coerce_json_object(doc))
+            for doc in evidence_documents
+        ]
     return []
 
 
@@ -35,13 +31,9 @@ class RetrievalOutcome:
     route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
     degradation_summary: JsonObject = field(default_factory=dict)
     metadata: JsonObject = field(default_factory=dict)
-    documents_input: InitVar[Iterable[Document] | None] = None
 
-    def __post_init__(self, documents_input: Iterable[Document] | None) -> None:
-        self.evidence_documents = _coerce_evidence_documents(
-            self.evidence_documents,
-            documents_input,
-        )
+    def __post_init__(self) -> None:
+        self.evidence_documents = _coerce_evidence_documents(self.evidence_documents)
         if isinstance(self.route_trace, dict):
             self.route_trace = RouteSnapshot.from_dict(self.route_trace)
         elif not isinstance(self.route_trace, RouteSnapshot):
@@ -69,12 +61,7 @@ class RetrievalOutcome:
             route_trace=RouteSnapshot.from_dict(_mapping_or_none(payload.get("route_trace"))),
             degradation_summary=coerce_json_object(payload.get("degradation_summary")),
             metadata=coerce_json_object(payload.get("metadata")),
-            documents_input=_document_list(payload.get("documents")),
         )
-
-    @property
-    def documents(self) -> list[Document]:
-        return to_langchain_documents(self.evidence_documents)
 
     @property
     def doc_count(self) -> int:
@@ -128,9 +115,3 @@ __all__ = ["RetrievalOutcome"]
 
 def _mapping_or_none(value: object) -> Mapping[str, object] | None:
     return value if isinstance(value, Mapping) else None
-
-
-def _document_list(value: object) -> list[Document]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, Document)]

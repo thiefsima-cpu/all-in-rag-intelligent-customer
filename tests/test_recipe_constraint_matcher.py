@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import unittest
 
-from langchain_core.documents import Document
-
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.evidence import RecipeConstraintMatcher
+from rag_modules.text_document import TextDocument
 
 
 class RecipeConstraintMatcherTests(unittest.TestCase):
     def test_filter_and_rank_scores_matching_recipe_terms(self) -> None:
         docs = [
-            Document(
-                page_content="Mapo tofu with tofu and chili",
+            TextDocument(
+                content="Mapo tofu with tofu and chili",
                 metadata={
                     "recipe_name": "Mapo Tofu",
                     "category": "main",
@@ -21,8 +20,8 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
                     "prep_time": "10 min",
                 },
             ),
-            Document(
-                page_content="Home tofu with tofu",
+            TextDocument(
+                content="Home tofu with tofu",
                 metadata={
                     "recipe_name": "Home Tofu",
                     "category": "main",
@@ -54,12 +53,12 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
 
     def test_filter_and_rank_excludes_blocked_terms_and_cuisine(self) -> None:
         docs = [
-            Document(
-                page_content="Pork belly with garlic",
+            TextDocument(
+                content="Pork belly with garlic",
                 metadata={"recipe_name": "Pork Belly", "cuisine_type": "Sichuan"},
             ),
-            Document(
-                page_content="Light tofu soup",
+            TextDocument(
+                content="Light tofu soup",
                 metadata={"recipe_name": "Tofu Soup", "cuisine_type": "Cantonese"},
             ),
         ]
@@ -78,16 +77,16 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
 
     def test_filter_and_rank_applies_time_limits(self) -> None:
         docs = [
-            Document(
-                page_content="Quick tofu",
+            TextDocument(
+                content="Quick tofu",
                 metadata={
                     "recipe_name": "Quick Tofu",
                     "prep_time": "5 min",
                     "cook_time": "10 min",
                 },
             ),
-            Document(
-                page_content="Slow stew tofu",
+            TextDocument(
+                content="Slow stew tofu",
                 metadata={
                     "recipe_name": "Slow Tofu",
                     "prep_time": "20 min",

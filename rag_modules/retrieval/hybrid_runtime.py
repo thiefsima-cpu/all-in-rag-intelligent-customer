@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
 from ..configuration.models import GraphRAGConfig
@@ -13,6 +12,7 @@ from ..contracts import EvidenceDocument, RetrievalRequest
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
+from ..text_document import TextDocument
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
 from .evidence import RecipeConstraintMatcher
@@ -79,7 +79,7 @@ class HybridRetrievalRuntime:
         return self.state.bm25
 
     @property
-    def bm25_corpus_docs(self) -> List[Document]:
+    def bm25_corpus_docs(self) -> List[TextDocument]:
         return list(self.state.bm25_corpus_docs or [])
 
     @property
@@ -87,7 +87,7 @@ class HybridRetrievalRuntime:
         return bool(self.state.graph_indexed)
 
     @property
-    def parent_doc_map(self) -> Dict[str, Document]:
+    def parent_doc_map(self) -> Dict[str, TextDocument]:
         return dict(self.state.parent_doc_map or {})
 
     @property
@@ -102,7 +102,7 @@ class HybridRetrievalRuntime:
     def dual_level_service(self) -> DualLevelRetriever | None:
         return self.state.dual_level_service
 
-    def initialize(self, chunks: List[Document]) -> None:
+    def initialize(self, chunks: List[TextDocument]) -> None:
         logger.info("Initializing hybrid retrieval module...")
         self.driver_service.ensure_driver(self.state)
         self.state.vector_retriever = self._new_vector_retriever()
@@ -153,14 +153,14 @@ class HybridRetrievalRuntime:
         self.index_service._build_graph_index(self.driver)
         self.state.graph_indexed = bool(self.index_service.graph_indexed)
 
-    def build_parent_doc_map(self) -> Dict[str, Document]:
+    def build_parent_doc_map(self) -> Dict[str, TextDocument]:
         return self.parent_documents.build_parent_doc_map(self.state)
 
     def attach_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.parent_documents.attach_documents(
             self.state,
             docs,
@@ -169,9 +169,9 @@ class HybridRetrievalRuntime:
 
     def enrich_to_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.parent_documents.enrich_documents(
             self.state,
             docs,
