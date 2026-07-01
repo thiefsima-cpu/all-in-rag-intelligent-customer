@@ -17,6 +17,7 @@ from rag_modules.generation import (
     build_evidence_only_fallback_answer,
     decide_generation_mode,
 )
+from rag_modules.generation.clients import GenerationLatencyBudgetExceeded
 from rag_modules.query_policy import get_query_policy
 from rag_modules.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis, SearchStrategy
 
@@ -378,6 +379,52 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(trace.failure_code, "generation_provider_empty_choices")
         self.assertNotIn("no choices", answer.lower())
 
+    def test_generation_provider_failure_records_typed_error_without_message(self) -> None:
+        secret = "provider timed out with token abc123"
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([RuntimeError(secret)]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+
+        self.assertIn("模型", answer)
+        self.assertEqual(trace.failure_code, "generation_provider_error")
+        self.assertEqual(
+            trace.error.to_dict(),
+            {"code": "GENERATION_PROVIDER_ERROR", "detail": "generation_provider_error"},
+        )
+        self.assertNotIn(secret, str(trace.to_dict()))
+
+    def test_generation_timeout_and_latency_budget_use_stable_error_details(self) -> None:
+        timeout_trace = self._trace_for_generation_error(TimeoutError("secret timeout body"))
+        budget_trace = self._trace_for_generation_error(
+            GenerationLatencyBudgetExceeded("secret budget body")
+        )
+
+        self.assertEqual(
+            timeout_trace.error.to_dict(),
+            {
+                "code": "GENERATION_PROVIDER_TIMEOUT",
+                "detail": "generation_provider_timeout",
+            },
+        )
+        self.assertEqual(
+            budget_trace.error.to_dict(),
+            {
+                "code": "GENERATION_LATENCY_BUDGET_EXCEEDED",
+                "detail": "generation_latency_budget_exceeded",
+            },
+        )
+        self.assertNotIn("secret", str(timeout_trace.to_dict()))
+        self.assertNotIn("secret", str(budget_trace.to_dict()))
+
     def test_generation_timeout_is_capped_by_total_latency_budget(self) -> None:
         client = _FakeClientAdapter([_FakeResponse("budgeted answer")])
         engine = GenerationExecutionEngine(
@@ -401,6 +448,21 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(len(client.timeouts), 1)
         self.assertGreater(client.timeouts[0], 0)
         self.assertLessEqual(client.timeouts[0], 2)
+
+    def _trace_for_generation_error(self, error: Exception) -> GenerationSnapshot:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([error]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+        return trace
 
 
 if __name__ == "__main__":

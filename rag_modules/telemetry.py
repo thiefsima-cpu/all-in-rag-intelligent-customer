@@ -166,8 +166,10 @@ class RuntimeTelemetry:
         }
         for key, value in _span_attributes(attributes).items():
             span.set_attribute(key, value)
-        if getattr(result, "error", ""):
-            span.set_status(Status(StatusCode.ERROR, str(result.error)))
+        error = getattr(result, "error", None)
+        if error:
+            error_code = str(getattr(error, "code", "") or "INTERNAL_ERROR")
+            span.set_status(Status(StatusCode.ERROR, error_code))
 
     def prometheus_payload(self) -> bytes:
         return generate_latest(self.registry)

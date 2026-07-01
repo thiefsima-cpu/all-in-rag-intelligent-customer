@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...runtime.error_models import generation_error_detail
+
 
 class GenerationProviderResponseError(RuntimeError):
     """Raised when a model provider returns a structurally invalid response."""
@@ -18,14 +20,7 @@ class GenerationLatencyBudgetExceeded(TimeoutError):
 
 
 def generation_failure_code(error: Exception) -> str:
-    explicit_code = str(getattr(error, "failure_code", "") or "")
-    if explicit_code:
-        return explicit_code
-    error_name = error.__class__.__name__.lower()
-    error_text = str(error).lower()
-    if "timeout" in error_name or "timed out" in error_text or "readtimeout" in error_name:
-        return "generation_provider_timeout"
-    return "generation_provider_error"
+    return generation_error_detail(error).detail
 
 
 def is_retryable_generation_error(error: Exception) -> bool:

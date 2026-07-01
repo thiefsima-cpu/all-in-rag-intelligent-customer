@@ -18,6 +18,7 @@ from ..runtime import (
     RouteResolution,
     RouteSnapshot,
 )
+from ..runtime.error_models import routing_error_detail
 from ..runtime.json_types import JsonObject
 from .search_orchestrator import RouteExecutionRequest, RouteSearchOrchestrator
 from .statistics import RouteStatisticsTracker
@@ -129,15 +130,16 @@ class RoutingWorkflowService:
             route_trace = trace.finalize(
                 total_start_time=route_start,
                 final_doc_count=len(evidence_documents),
-                error="QUERY_PROCESSING_FAILED",
+                error=routing_error_detail(exc),
             )
+            error_detail = routing_error_detail(exc)
             resolution = self._build_resolution(
                 understanding=understanding,
                 query=query,
                 strategy=execution_request.analysis.strategy_name,
                 evidence_documents=evidence_documents,
                 route_trace=route_trace,
-                metadata={"error": str(exc)},
+                metadata={"error": error_detail.to_dict()},
             )
             return resolution, RouteSnapshot.from_dict(route_trace.to_dict())
 

@@ -163,8 +163,10 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             candidate_set.degraded_details[0],
             {
                 "source": "vector",
-                "error_code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
-                "error_type": "TimeoutError",
+                "error": {
+                    "code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+                    "detail": "candidate_source_retrieval_failed",
+                },
             },
         )
         self.assertEqual(len(bm25.requests), 1)
@@ -190,8 +192,10 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             candidate_set.degraded_details[0],
             {
                 "source": "vector",
-                "error_code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
-                "error_type": "RuntimeError",
+                "error": {
+                    "code": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+                    "detail": "candidate_source_retrieval_failed",
+                },
             },
         )
 
@@ -229,15 +233,15 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
         self.assertEqual(len(vector.requests), 2)
         self.assertEqual(len(bm25.requests), 3)
         self.assertEqual(
-            first.degraded_details[0]["error_code"],
+            first.degraded_details[0]["error"]["code"],
             CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
         )
         self.assertEqual(
-            second.degraded_details[0]["error_code"],
+            second.degraded_details[0]["error"]["code"],
             CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
         )
         self.assertEqual(
-            third.degraded_details[0]["error_code"],
+            third.degraded_details[0]["error"]["code"],
             CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
         )
 
@@ -306,8 +310,10 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             second.degraded_details[0],
             {
                 "source": "vector",
-                "error_code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
-                "error_type": "CircuitOpenError",
+                "error": {
+                    "code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+                    "detail": "candidate_source_circuit_open",
+                },
             },
         )
         self.assertEqual(second.bm25_docs[0].recipe_name, "B")
@@ -350,8 +356,10 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             candidate_set.degraded_details[0],
             {
                 "source": "vector",
-                "error_code": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
-                "error_type": "",
+                "error": {
+                    "code": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+                    "detail": "candidate_source_request_skipped",
+                },
             },
         )
         self.assertEqual(candidate_set.to_stage_details()["candidate_counts"]["bm25"], 1)

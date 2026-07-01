@@ -17,6 +17,7 @@ from .artifact_ports import (
     DocumentArtifactCachePort,
     RuntimeArtifactAccessPort,
 )
+from .error_models import RuntimeErrorDetail
 from .generation_models import GenerationMode, GenerationSnapshot
 from .graph_models import (
     GraphRetrievalSnapshot,
@@ -62,6 +63,7 @@ __all__ = [
     "RouteSnapshot",
     "RouteStageSnapshot",
     "RuntimeArtifactAccessPort",
+    "RuntimeErrorDetail",
     "RuntimeStatsAccessPort",
     "SearchStrategy",
     "analysis_payload",

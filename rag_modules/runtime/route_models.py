@@ -6,10 +6,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ..contracts import RetrievalRequest
+from .error_models import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    RuntimeErrorDetail,
+    ensure_runtime_error_detail,
+)
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 from .policy_models import PolicySnapshot
-
-CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN = "CANDIDATE_SOURCE_CIRCUIT_OPEN"
 
 
 @dataclass
@@ -136,7 +139,7 @@ class RouteSnapshot:
     diagnostics: RouteDiagnostics = field(default_factory=RouteDiagnostics)
     total_latency_ms: float = 0.0
     final_doc_count: int = 0
-    error: str = ""
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
 
     def __post_init__(self) -> None:
         self.query = str(self.query or "")
@@ -165,7 +168,7 @@ class RouteSnapshot:
             self.diagnostics = RouteDiagnostics()
         self.total_latency_ms = round(float(self.total_latency_ms or 0.0), 2)
         self.final_doc_count = max(0, int(self.final_doc_count or 0))
-        self.error = str(self.error or "")
+        self.error = ensure_runtime_error_detail(self.error)
         self.refresh_diagnostics()
 
     @classmethod
@@ -182,7 +185,7 @@ class RouteSnapshot:
             diagnostics=RouteDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
             total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
             final_doc_count=coerce_json_int(payload.get("final_doc_count")),
-            error=str(payload.get("error") or ""),
+            error=ensure_runtime_error_detail(payload.get("error")),
         )
 
     def add_stage(self, name: str, stage: RouteStageSnapshot | Mapping[str, object]) -> None:
@@ -197,11 +200,17 @@ class RouteSnapshot:
             self.fallbacks.append(normalized)
             self.refresh_diagnostics()
 
-    def finalize(self, *, total_latency_ms: float, final_doc_count: int, error: str = "") -> None:
+    def finalize(
+        self,
+        *,
+        total_latency_ms: float,
+        final_doc_count: int,
+        error: object = None,
+    ) -> None:
         self.total_latency_ms = round(float(total_latency_ms or 0.0), 2)
         self.final_doc_count = max(0, int(final_doc_count or 0))
         if error:
-            self.error = str(error)
+            self.error = ensure_runtime_error_detail(error)
         self.refresh_diagnostics()
 
     def refresh_diagnostics(self) -> RouteDiagnostics:
@@ -285,7 +294,7 @@ class RouteSnapshot:
             "diagnostics": self.diagnostics.to_dict(),
             "total_latency_ms": self.total_latency_ms,
             "final_doc_count": self.final_doc_count,
-            "error": self.error,
+            "error": self.error.to_dict(),
         }
 
     def has_content(self) -> bool:
@@ -330,11 +339,7 @@ def _summarize_stage_degradation(
                 continue
             degraded_candidates.append(item)
             degraded_sources.append(str(item.get("source") or ""))
-            if (
-                item.get("error_code") == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
-                or item.get("reason") == "circuit_open"
-                or item.get("circuit_state") == "open"
-            ):
+            if _candidate_error_code(item) == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN:
                 circuit_breaker_triggered = True
         if details.get("circuit_breaker_triggered"):
             circuit_breaker_triggered = True
@@ -391,3 +396,10 @@ def _stage_mapping(value: object) -> dict[str, RouteStageSnapshot]:
         )
         for name, stage in value.items()
     }
+
+
+def _candidate_error_code(candidate: Mapping[str, object]) -> str:
+    error = candidate.get("error")
+    if isinstance(error, Mapping):
+        return str(error.get("code") or "").strip()
+    return ""

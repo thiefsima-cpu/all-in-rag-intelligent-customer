@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List
 
 from ..contracts import EvidenceDocument
-from ..runtime import GenerationSnapshot, QueryDiagnostics, RouteSnapshot
+from ..runtime import GenerationSnapshot, QueryDiagnostics, RouteSnapshot, RuntimeErrorDetail
 
 
 class _TraceDiagnosticsMixin:
@@ -14,7 +14,7 @@ class _TraceDiagnosticsMixin:
     def _build_diagnostics(
         self,
         documents: List[EvidenceDocument],
-        error: Optional[str],
+        error: RuntimeErrorDetail,
         route_trace: RouteSnapshot,
         generation_trace: GenerationSnapshot,
     ) -> QueryDiagnostics:
@@ -48,7 +48,7 @@ class _TraceDiagnosticsMixin:
     @staticmethod
     def _failure_reasons(
         documents: List[EvidenceDocument],
-        error: Optional[str],
+        error: RuntimeErrorDetail,
         route_trace: RouteSnapshot,
     ) -> List[str]:
         reasons = []
@@ -75,7 +75,7 @@ class _TraceDiagnosticsMixin:
     def _classify_retrieval_state(
         documents: List[EvidenceDocument],
         route_trace: RouteSnapshot,
-        error: Optional[str],
+        error: RuntimeErrorDetail,
     ) -> str:
         if error and not documents:
             return "retrieval_and_generation_failed"
@@ -104,7 +104,7 @@ class _TraceDiagnosticsMixin:
     @staticmethod
     def _classify_generation_state(
         generation_trace: GenerationSnapshot,
-        error: Optional[str],
+        error: RuntimeErrorDetail,
     ) -> str:
         if not generation_trace.is_recorded():
             return "generation_not_recorded"
@@ -129,7 +129,7 @@ class _TraceDiagnosticsMixin:
     @staticmethod
     def _answer_impacted(
         documents: List[EvidenceDocument],
-        error: Optional[str],
+        error: RuntimeErrorDetail,
         route_trace: RouteSnapshot,
         generation_trace: GenerationSnapshot,
     ) -> bool:
@@ -147,7 +147,7 @@ class _TraceDiagnosticsMixin:
     def _combine_buckets(
         retrieval_bucket: str,
         generation_bucket: str,
-        error: Optional[str],
+        error: RuntimeErrorDetail,
     ) -> str:
         if error:
             return "query_failed"

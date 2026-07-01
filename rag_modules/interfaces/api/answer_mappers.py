@@ -10,13 +10,11 @@ from ...contracts import (
 )
 from ...domain.shared.query_constraints import QueryConstraints
 from ...retrieval.candidate_generator import (
-    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     CANDIDATE_SOURCE_ERROR_DEGRADED,
-    CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
-    CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
 )
+from ...runtime import RuntimeErrorDetail
+from ...runtime.error_models import ensure_runtime_error_detail
 from ...runtime.json_types import JsonObject, coerce_json_object
-from .error_models import ErrorCode
 
 
 def constraints_payload(value: QueryConstraints) -> JsonObject:
@@ -123,33 +121,24 @@ def retrieval_request_payload(value: RetrievalRequest | None) -> JsonObject:
     }
 
 
-def public_answer_error(value: str) -> str:
-    return ErrorCode.ANSWER_FAILED.value if str(value or "") else ""
-
-
-_LEGACY_DEGRADED_CANDIDATE_ERROR_CODES = {
-    "exception": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
-    "circuit_open": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
-    "request_skip": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
-}
+def public_answer_error(value: object) -> JsonObject:
+    detail = ensure_runtime_error_detail(value)
+    return detail.to_dict()
 
 
 def _public_degraded_candidate(value: object) -> JsonObject:
     candidate = coerce_json_object(value)
     if not candidate:
         return {}
-    error_code = str(candidate.get("error_code") or "").strip()
-    if not error_code:
-        reason = str(candidate.get("reason") or "").strip()
-        error_code = _LEGACY_DEGRADED_CANDIDATE_ERROR_CODES.get(reason, "")
-    if not error_code and str(candidate.get("circuit_state") or "").strip().lower() == "open":
-        error_code = CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
-    if not error_code:
-        error_code = CANDIDATE_SOURCE_ERROR_DEGRADED
+    error = RuntimeErrorDetail.from_dict(coerce_json_object(candidate.get("error")))
+    if not error:
+        error = RuntimeErrorDetail(
+            code=CANDIDATE_SOURCE_ERROR_DEGRADED,
+            detail="candidate_source_degraded",
+        )
     return {
         "source": str(candidate.get("source") or "").strip(),
-        "error_code": error_code,
-        "error_type": str(candidate.get("error_type") or "").strip(),
+        "error": error.to_dict(),
     }
 
 

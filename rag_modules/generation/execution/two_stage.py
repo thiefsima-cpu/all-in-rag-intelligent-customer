@@ -8,6 +8,7 @@ import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnswerContext, GenerationSnapshot
+from ...runtime.error_models import generation_error_detail
 from ...safe_logging import log_failure
 from ..clients import generation_failure_code
 from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
@@ -62,6 +63,7 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                     trace.status = "degraded"
                     trace.fallback_used = True
                     trace.failure_code = generation_failure_code(exc)
+                    trace.error = generation_error_detail(exc)
                     trace.fallback_reason = "two_stage_to_direct_model"
                     trace.direct_latency_ms = direct_latency_ms
                     trace.provider_latency_ms = (
@@ -131,6 +133,7 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
         trace.status = "degraded"
         trace.fallback_used = True
         trace.failure_code = generation_failure_code(error)
+        trace.error = generation_error_detail(error)
         trace.fallback_reason = trace.failure_code
         trace.total_latency_ms = self._elapsed_ms(total_start)
         trace.provider_latency_ms = max(

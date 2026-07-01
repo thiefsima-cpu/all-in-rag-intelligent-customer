@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from ..infra.neo4j import create_neo4j_driver
 from ..runtime import GraphRetrievalSnapshot
+from ..runtime.error_models import graph_error_detail
 from ..safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
@@ -147,12 +148,12 @@ class GraphRetrievalExecutor:
                 trace,
                 "validate_driver",
                 status="error",
-                details={"error": "neo4j_not_connected"},
+                details={"error": graph_error_detail(detail="neo4j_not_connected").to_dict()},
             )
             final_trace = self.runtime.finalize_trace(
                 trace,
                 start_time=start_time,
-                error="neo4j_not_connected",
+                error=graph_error_detail(detail="neo4j_not_connected"),
             )
             return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
 
@@ -202,12 +203,12 @@ class GraphRetrievalExecutor:
                 trace,
                 "graph_retrieval_failed",
                 status="error",
-                details={"error": "GRAPH_OPERATION_FAILED"},
+                details={"error": graph_error_detail(exc).to_dict()},
             )
             final_trace = self.runtime.finalize_trace(
                 trace,
                 start_time=start_time,
-                error="GRAPH_OPERATION_FAILED",
+                error=graph_error_detail(exc),
             )
             return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
 

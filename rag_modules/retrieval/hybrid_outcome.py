@@ -77,9 +77,7 @@ class HybridRetrievalOutcome:
     @property
     def circuit_breaker_triggered(self) -> bool:
         return any(
-            item.get("error_code") == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
-            or item.get("reason") == "circuit_open"
-            or item.get("circuit_state") == "open"
+            _candidate_error_code(item) == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
             for item in self.degraded_candidates
         )
 
@@ -106,3 +104,10 @@ class HybridRetrievalOutcome:
 
 
 __all__ = ["HybridRetrievalOutcome"]
+
+
+def _candidate_error_code(candidate: Dict[str, Any]) -> str:
+    error = candidate.get("error")
+    if isinstance(error, dict):
+        return str(error.get("code") or "").strip()
+    return ""

@@ -26,8 +26,10 @@ from rag_modules.runtime import (
     RouteResolution,
     RouteSnapshot,
     RouteStageSnapshot,
+    RuntimeErrorDetail,
     SearchStrategy,
 )
+from rag_modules.runtime.error_models import routing_error_detail
 
 
 def _build_resolution(
@@ -68,7 +70,7 @@ class _FakeQueryTracer:
         self.calls.append(kwargs)
         return QueryTraceEvent(
             query=kwargs["query"],
-            error=str(kwargs.get("error") or ""),
+            error=kwargs.get("error") or RuntimeErrorDetail(),
         )
 
 
@@ -366,12 +368,10 @@ class AnswerWorkflowTests(unittest.TestCase):
                         "degraded_candidates": [
                             {
                                 "source": "vector",
-                                "rank_name": "vector",
-                                "reason": "circuit_open",
-                                "error_type": "CircuitOpenError",
-                                "message": "Circuit breaker open",
-                                "circuit_state": "open",
-                                "failure_count": 2,
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
                             }
                         ],
                     },
@@ -399,7 +399,10 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertEqual(diagnostics.degraded_sources, ["vector"])
         self.assertTrue(diagnostics.circuit_breaker_triggered)
         self.assertFalse(diagnostics.answer_impacted)
-        self.assertEqual(diagnostics.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertEqual(
+            diagnostics.degraded_candidates[0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
 
     def test_result_uses_request_scoped_route_trace_over_router_last_trace(self) -> None:
         question = "Explain the active route trace."
@@ -678,7 +681,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         secret = "router exploded"
         router = _FakeQueryRouter(
             route_error=RuntimeError(secret),
-            route_trace=RouteSnapshot(query=question, error=secret),
+            route_trace=RouteSnapshot(query=question, error=routing_error_detail()),
         )
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
@@ -690,7 +693,12 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertNotIn(secret, result.answer)
         self.assertIsNone(result.analysis)
         self.assertEqual(len(tracer.calls), 1)
-        self.assertEqual(result.trace_event.error, secret)
+        self.assertEqual(
+            result.trace_event.error.to_dict(),
+            {"code": "ANSWER_FAILED", "detail": "answer_failed"},
+        )
+        serialized = str(result.to_dict())
+        self.assertNotIn(secret, serialized)
 
     def test_result_factory_from_error_does_not_place_raw_exception_in_answer(self) -> None:
         secret = "raw provider payload"

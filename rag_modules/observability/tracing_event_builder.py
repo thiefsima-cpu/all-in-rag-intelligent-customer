@@ -21,8 +21,10 @@ from ..runtime import (
     RetrievalOutcome,
     RetrievalTraceSnapshot,
     RouteSnapshot,
+    RuntimeErrorDetail,
     analysis_strategy_name,
 )
+from ..runtime.error_models import ensure_runtime_error_detail
 from ..runtime.json_types import JsonObject, JsonValue, coerce_json_object
 from ..runtime.snapshot_utils import (
     clone_generation_snapshot,
@@ -43,7 +45,7 @@ class _TraceEventBuilderHost(Protocol):
     def _build_diagnostics(
         self,
         documents: list[EvidenceDocument],
-        error: str | None,
+        error: RuntimeErrorDetail | None,
         route_trace: RouteSnapshot,
         generation_trace: GenerationSnapshot,
     ) -> QueryDiagnostics: ...
@@ -60,7 +62,7 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
         evidence_documents: list[EvidenceDocument],
         latency_ms: float,
         answer: str | None,
-        error: str | None,
+        error: RuntimeErrorDetail | Mapping[str, JsonValue] | None,
         route_trace: Mapping[str, JsonValue] | RouteSnapshot | None,
         graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None,
         generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None,
@@ -75,9 +77,10 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             graph_snapshot,
             generation_snapshot,
         )
+        error_detail = ensure_runtime_error_detail(error)
         diagnostics = self._build_diagnostics(
             evidence_documents,
-            error,
+            error_detail,
             route_snapshot,
             generation_snapshot,
         )
@@ -107,7 +110,7 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             generation=generation_snapshot,
             diagnostics=diagnostics,
             answer=AnswerTraceSnapshot(chars=len(answer or ""), preview=(answer or "")[:300]),
-            error=error or "",
+            error=error_detail,
         )
 
     @staticmethod

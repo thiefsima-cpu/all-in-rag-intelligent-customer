@@ -41,12 +41,10 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
                         "degraded_candidates": [
                             {
                                 "source": "vector",
-                                "rank_name": "vector",
-                                "reason": "circuit_open",
-                                "error_type": "CircuitOpenError",
-                                "message": "Circuit breaker open",
-                                "circuit_state": "open",
-                                "failure_count": 2,
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
                             }
                         ],
                     },
@@ -66,8 +64,8 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         self.assertTrue(outcome.degradation_summary["circuit_breaker_triggered"])
         self.assertFalse(outcome.degradation_summary["answer_impacted"])
         self.assertEqual(
-            outcome.to_dict()["degradation_summary"]["degraded_candidates"][0]["reason"],
-            "circuit_open",
+            outcome.to_dict()["degradation_summary"]["degraded_candidates"][0]["error"]["detail"],
+            "candidate_source_circuit_open",
         )
 
     def test_answer_context_round_trips_from_dict_payload(self) -> None:

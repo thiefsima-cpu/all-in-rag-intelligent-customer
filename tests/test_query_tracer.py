@@ -19,6 +19,7 @@ from rag_modules.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )
+from rag_modules.runtime.error_models import answer_error_detail, routing_error_detail
 
 
 class _CapturingSink:
@@ -109,7 +110,7 @@ class QueryTracerTests(unittest.TestCase):
             documents=[EvidenceDocument(content="private evidence")],
             latency_ms=3.0,
             answer="private answer",
-            error=f"Authorization: Bearer {secret}",
+            error=answer_error_detail(RuntimeError(secret)),
             route_trace=RouteSnapshot(
                 query=question,
                 stages={
@@ -124,12 +125,11 @@ class QueryTracerTests(unittest.TestCase):
                         }
                     )
                 },
-                error=f"request failed with token={secret}",
+                error=routing_error_detail(RuntimeError(secret)),
             ),
             graph_trace=GraphRetrievalSnapshot(
                 query=question,
                 retrieval_plan={"question": question, "authorization": secret},
-                error=f"provider rejected {secret}",
             ),
         )
 
@@ -139,6 +139,7 @@ class QueryTracerTests(unittest.TestCase):
         self.assertNotIn("database-password", serialized)
         self.assertNotIn("private answer", serialized)
         self.assertNotIn("private evidence", serialized)
+        self.assertIn("ANSWER_FAILED", serialized)
         self.assertIn("sha256:", serialized)
 
     def test_query_tracer_honors_disabled_flag(self) -> None:
@@ -308,12 +309,10 @@ class QueryTracerTests(unittest.TestCase):
                         "degraded_candidates": [
                             {
                                 "source": "vector",
-                                "rank_name": "vector",
-                                "reason": "circuit_open",
-                                "error_type": "CircuitOpenError",
-                                "message": "Circuit breaker open",
-                                "circuit_state": "open",
-                                "failure_count": 2,
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
                             }
                         ],
                     },
@@ -336,7 +335,10 @@ class QueryTracerTests(unittest.TestCase):
         self.assertEqual(event.diagnostics.degraded_sources, ["vector"])
         self.assertTrue(event.diagnostics.circuit_breaker_triggered)
         self.assertFalse(event.diagnostics.answer_impacted)
-        self.assertEqual(event.diagnostics.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertEqual(
+            event.diagnostics.degraded_candidates[0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
         self.assertIn("retrieval_degraded", event.diagnostics.failure_reasons)
 
 

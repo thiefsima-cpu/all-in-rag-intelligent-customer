@@ -10,6 +10,7 @@ from ..contracts import QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
 from ..query_policy import get_query_policy
 from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
+from ..runtime.error_models import ensure_runtime_error_detail
 from ..runtime.json_types import JsonObject
 from .query_resolution import GraphQueryFactory
 from .retrieval_types import GraphQuery
@@ -92,13 +93,13 @@ class GraphRetrievalRuntime:
         start_time: float,
         doc_count: int = 0,
         evidence_unit_count: int = 0,
-        error: str = "",
+        error: object = None,
     ) -> GraphRetrievalSnapshot:
         trace.doc_count = max(0, int(doc_count or 0))
         trace.evidence_unit_count = max(0, int(evidence_unit_count or 0))
         trace.total_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
         if error:
-            trace.error = str(error)
+            trace.error = ensure_runtime_error_detail(error)
         return trace
 
     @staticmethod

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ..contracts import RetrievalRequest
+from .error_models import RuntimeErrorDetail, ensure_runtime_error_detail
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
 from .policy_models import PolicySnapshot
 
@@ -63,7 +64,7 @@ class GraphRetrievalSnapshot:
     retrieval_plan: JsonObject = field(default_factory=dict)
     events: list[GraphTraceEventSnapshot] = field(default_factory=list)
     total_latency_ms: float = 0.0
-    error: str = ""
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
 
     def __post_init__(self) -> None:
         self.query = str(self.query or "")
@@ -106,7 +107,7 @@ class GraphRetrievalSnapshot:
             for event in (self.events or [])
         ]
         self.total_latency_ms = round(float(self.total_latency_ms or 0.0), 2)
-        self.error = str(self.error or "")
+        self.error = ensure_runtime_error_detail(self.error)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object] | None) -> "GraphRetrievalSnapshot":
@@ -133,7 +134,7 @@ class GraphRetrievalSnapshot:
             total_latency_ms=coerce_json_float(
                 payload.get("total_latency_ms", payload.get("latency_ms", 0.0))
             ),
-            error=str(payload.get("error") or ""),
+            error=ensure_runtime_error_detail(payload.get("error")),
         )
 
     def add_event(
@@ -180,7 +181,7 @@ class GraphRetrievalSnapshot:
             "graph_requested_top_k": self.requested_top_k,
         }
         if self.error:
-            details["graph_error"] = self.error
+            details["graph_error"] = self.error.to_dict()
         return details
 
     def to_dict(self) -> JsonObject:
@@ -208,7 +209,7 @@ class GraphRetrievalSnapshot:
             "retrieval_plan": dict(self.retrieval_plan or {}),
             "events": [event.to_dict() for event in self.events],
             "total_latency_ms": self.total_latency_ms,
-            "error": self.error,
+            "error": self.error.to_dict(),
         }
 
     def has_content(self) -> bool:

@@ -9,6 +9,14 @@ from typing import Dict, List, Sequence, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
+from ..runtime import RuntimeErrorDetail
+from ..runtime.error_models import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    CANDIDATE_SOURCE_ERROR_DEGRADED,
+    CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
+    CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
+    retrieval_error_detail,
+)
 from ..safe_logging import log_failure
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
 
@@ -27,22 +35,6 @@ SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_
 SUPPORTED_SOURCE_DEGRADATION_STRATEGIES = {
     strategy.value for strategy in CandidateSourceDegradationStrategy
 }
-CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED = "CANDIDATE_SOURCE_RETRIEVAL_FAILED"
-CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN = "CANDIDATE_SOURCE_CIRCUIT_OPEN"
-CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED = "CANDIDATE_SOURCE_REQUEST_SKIPPED"
-CANDIDATE_SOURCE_ERROR_DEGRADED = "CANDIDATE_SOURCE_DEGRADED"
-_SOURCE_DEGRADATION_ERROR_CODES = {
-    "exception": CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
-    "circuit_open": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
-    "request_skip": CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
-}
-
-
-def _candidate_source_error_code(reason: str) -> str:
-    return _SOURCE_DEGRADATION_ERROR_CODES.get(
-        str(reason or "").strip(),
-        CANDIDATE_SOURCE_ERROR_DEGRADED,
-    )
 
 
 def _normalize_source_degradation_strategy(
@@ -72,16 +64,13 @@ class CandidateSourceDegradation:
 
     spec: CandidateSourceSpec
     reason: str
-    error_type: str = ""
-    message: str = ""
-    circuit_state: str = ""
-    failure_count: int = 0
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
 
     def to_dict(self) -> Dict[str, object]:
+        error = self.error or retrieval_error_detail(self.reason)
         return {
             "source": self.spec.name,
-            "error_code": _candidate_source_error_code(self.reason),
-            "error_type": self.error_type,
+            "error": error.to_dict(),
         }
 
 
@@ -285,13 +274,10 @@ class RetrievalCandidateGenerator:
         breaker: CircuitBreaker,
         error: Exception | None = None,
     ) -> CandidateSourceDegradation:
-        snapshot = breaker.snapshot()
         return CandidateSourceDegradation(
             spec=spec,
             reason=reason,
-            error_type=type(error).__name__ if error else "",
-            circuit_state=snapshot.state,
-            failure_count=snapshot.failure_count,
+            error=retrieval_error_detail(reason, error),
         )
 
     @staticmethod

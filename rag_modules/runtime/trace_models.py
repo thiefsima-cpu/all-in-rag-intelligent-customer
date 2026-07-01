@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from .error_models import RuntimeErrorDetail, ensure_runtime_error_detail
 from .generation_models import GenerationSnapshot
 from .graph_models import GraphRetrievalSnapshot
 from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
@@ -179,7 +180,7 @@ class QueryTraceEvent:
     generation: GenerationSnapshot = field(default_factory=GenerationSnapshot)
     diagnostics: QueryDiagnostics = field(default_factory=QueryDiagnostics)
     answer: AnswerTraceSnapshot = field(default_factory=AnswerTraceSnapshot)
-    error: str = ""
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
 
     def __post_init__(self) -> None:
         if isinstance(self.models, dict):
@@ -207,7 +208,7 @@ class QueryTraceEvent:
         elif not isinstance(self.answer, AnswerTraceSnapshot):
             self.answer = AnswerTraceSnapshot()
         self.plan = coerce_json_object(self.plan)
-        self.error = str(self.error or "")
+        self.error = ensure_runtime_error_detail(self.error)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object] | None) -> "QueryTraceEvent":
@@ -225,7 +226,7 @@ class QueryTraceEvent:
             generation=GenerationSnapshot.from_dict(_mapping_or_none(payload.get("generation"))),
             diagnostics=QueryDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
             answer=AnswerTraceSnapshot.from_dict(_mapping_or_none(payload.get("answer"))),
-            error=str(payload.get("error") or ""),
+            error=ensure_runtime_error_detail(payload.get("error")),
         )
 
     def to_dict(self) -> JsonObject:
@@ -242,7 +243,7 @@ class QueryTraceEvent:
             "generation": self.generation.to_dict(),
             "diagnostics": self.diagnostics.to_dict(),
             "answer": self.answer.to_dict(),
-            "error": self.error,
+            "error": self.error.to_dict(),
         }
 
 

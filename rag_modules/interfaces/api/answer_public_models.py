@@ -43,7 +43,7 @@ class AnswerSummaryModel(BaseModel):
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
     token_usage_source: str = ""
-    error: str = ""
+    error: JsonObject = Field(default_factory=dict)
 
     @classmethod
     def from_dto(cls, summary: QuestionAnswerSummary) -> "AnswerSummaryModel":

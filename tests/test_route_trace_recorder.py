@@ -97,12 +97,10 @@ class RouteTraceRecorderTests(unittest.TestCase):
                         "degraded_candidates": [
                             {
                                 "source": "vector",
-                                "rank_name": "vector",
-                                "reason": "circuit_open",
-                                "error_type": "CircuitOpenError",
-                                "message": "Circuit breaker open",
-                                "circuit_state": "open",
-                                "failure_count": 2,
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
                             }
                         ],
                     },
@@ -117,7 +115,10 @@ class RouteTraceRecorderTests(unittest.TestCase):
         self.assertEqual(snapshot.diagnostics.degraded_sources, ["vector"])
         self.assertTrue(snapshot.diagnostics.circuit_breaker_triggered)
         self.assertFalse(snapshot.diagnostics.answer_impacted)
-        self.assertEqual(snapshot.diagnostics.degraded_candidates[0]["reason"], "circuit_open")
+        self.assertEqual(
+            snapshot.diagnostics.degraded_candidates[0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
 
 
 if __name__ == "__main__":

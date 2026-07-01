@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..query_policy import get_query_policy
-from ..runtime import PolicySnapshot, RouteSnapshot, RouteStageSnapshot
+from ..runtime import PolicySnapshot, RouteSnapshot, RouteStageSnapshot, RuntimeErrorDetail
 from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
 
@@ -95,7 +95,7 @@ class RouteTraceRecorder:
         *,
         total_start_time: float,
         final_doc_count: int,
-        error: str = "",
+        error: RuntimeErrorDetail | None = None,
     ) -> RouteSnapshot:
         self.snapshot.finalize(
             total_latency_ms=self._elapsed_ms(total_start_time),

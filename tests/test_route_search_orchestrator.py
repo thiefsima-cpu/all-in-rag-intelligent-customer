@@ -184,14 +184,17 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
                             "degraded_candidates": [
                                 {
                                     "source": "vector",
-                                    "rank_name": "vector",
-                                    "reason": "circuit_open",
-                                    "circuit_state": "open",
+                                    "error": {
+                                        "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                        "detail": "candidate_source_circuit_open",
+                                    },
                                 },
                                 {
                                     "source": "bm25",
-                                    "rank_name": "bm25",
-                                    "reason": "request_skip",
+                                    "error": {
+                                        "code": "CANDIDATE_SOURCE_REQUEST_SKIPPED",
+                                        "detail": "candidate_source_request_skipped",
+                                    },
                                 },
                             ],
                         },

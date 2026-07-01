@@ -8,6 +8,7 @@ from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
+from ...runtime.error_models import generation_error_detail
 from ...safe_logging import log_failure
 from ..clients import generation_failure_code
 from ..decision import decide_generation_mode
@@ -141,6 +142,7 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                         trace.plan_latency_ms + trace.compose_latency_ms + trace.direct_latency_ms
                     )
                     trace.failure_code = generation_failure_code(exc)
+                    trace.error = generation_error_detail(exc)
                     trace.request_retries += self._consume_retry_count()
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return self._finalize_trace(trace)

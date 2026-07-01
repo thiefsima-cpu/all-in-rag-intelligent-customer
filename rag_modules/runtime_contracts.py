@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         QueryTraceEvent,
         RetrievalOutcome,
         RouteSnapshot,
+        RuntimeErrorDetail,
     )
     from .runtime.json_types import JsonObject, JsonValue
     from .text_document import TextDocument
@@ -119,7 +120,7 @@ class QueryTracerPort(Protocol):
         documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
         latency_ms: float,
         answer: str | None = None,
-        error: str | None = None,
+        error: RuntimeErrorDetail | Mapping[str, JsonValue] | None = None,
         route_trace: Mapping[str, JsonValue] | RouteSnapshot | None = None,
         graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None = None,
         generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None = None,

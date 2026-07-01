@@ -15,6 +15,7 @@ from rag_modules.retrieval.candidate_generator import (
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
+from rag_modules.runtime.error_models import retrieval_error_detail
 
 
 class _FakeFusionRanker:
@@ -76,7 +77,7 @@ class _StubCandidateGenerator:
                 CandidateSourceDegradation(
                     spec=vector_spec,
                     reason="circuit_open",
-                    error_type="CircuitOpenError",
+                    error=retrieval_error_detail("circuit_open"),
                 )
             )
         return CandidateSet(
@@ -163,7 +164,7 @@ class HybridSearchServiceTests(unittest.TestCase):
         self.assertTrue(outcome.circuit_breaker_triggered)
         self.assertFalse(outcome.answer_impacted)
         self.assertEqual(
-            outcome.degraded_candidates[0]["error_code"],
+            outcome.degraded_candidates[0]["error"]["code"],
             CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
         )
         self.assertEqual(outcome.to_stage_details()["candidate_counts"]["vector"], 1)

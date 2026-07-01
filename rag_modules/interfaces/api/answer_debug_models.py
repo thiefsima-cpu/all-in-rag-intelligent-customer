@@ -210,7 +210,7 @@ class RouteSnapshotResponseModel(BaseModel):
     )
     total_latency_ms: float = 0.0
     final_doc_count: int = 0
-    error: str = ""
+    error: JsonObject = Field(default_factory=dict)
 
     @classmethod
     def from_dto(cls, snapshot: RouteSnapshot) -> "RouteSnapshotResponseModel":
@@ -405,7 +405,7 @@ class GraphRetrievalSnapshotResponseModel(BaseModel):
     retrieval_plan: JsonObject = Field(default_factory=dict)
     events: list[GraphTraceEventSnapshotResponseModel] = Field(default_factory=list)
     total_latency_ms: float = 0.0
-    error: str = ""
+    error: JsonObject = Field(default_factory=dict)
 
     @classmethod
     def from_dto(
@@ -457,6 +457,7 @@ class GenerationSnapshotResponseModel(BaseModel):
     fallback_used: bool = False
     fallback_reason: str = ""
     failure_code: str = ""
+    error: JsonObject = Field(default_factory=dict)
     total_latency_ms: float = 0.0
     provider_latency_ms: float = 0.0
     request_retries: int = 0
@@ -481,6 +482,7 @@ class GenerationSnapshotResponseModel(BaseModel):
             fallback_used=snapshot.fallback_used,
             fallback_reason=snapshot.fallback_reason,
             failure_code=snapshot.failure_code,
+            error=public_answer_error(snapshot.error),
             total_latency_ms=snapshot.total_latency_ms,
             provider_latency_ms=snapshot.provider_latency_ms,
             request_retries=snapshot.request_retries,
@@ -571,7 +573,7 @@ class QueryTraceEventResponseModel(BaseModel):
     answer: AnswerTraceSnapshotResponseModel = Field(
         default_factory=AnswerTraceSnapshotResponseModel
     )
-    error: str = ""
+    error: JsonObject = Field(default_factory=dict)
 
     @classmethod
     def from_dto(cls, event: QueryTraceEvent) -> "QueryTraceEventResponseModel":

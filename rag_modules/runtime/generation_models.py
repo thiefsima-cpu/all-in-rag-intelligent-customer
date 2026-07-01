@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .error_models import RuntimeErrorDetail, ensure_runtime_error_detail
 from .json_types import JsonObject, coerce_json_float, coerce_json_int
 from .policy_models import PolicySnapshot
 
@@ -55,6 +56,7 @@ class GenerationSnapshot:
     fallback_used: bool = False
     fallback_reason: str = ""
     failure_code: str = ""
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
     total_latency_ms: float = 0.0
     provider_latency_ms: float = 0.0
     request_retries: int = 0
@@ -70,6 +72,7 @@ class GenerationSnapshot:
             self.policy = PolicySnapshot.from_dict(self.policy)
         elif not isinstance(self.policy, PolicySnapshot):
             self.policy = PolicySnapshot()
+        self.error = ensure_runtime_error_detail(self.error)
 
     @property
     def mode_value(self) -> str:
@@ -91,6 +94,7 @@ class GenerationSnapshot:
             fallback_used=bool(payload.get("fallback_used")),
             fallback_reason=str(payload.get("fallback_reason") or ""),
             failure_code=str(payload.get("failure_code") or ""),
+            error=ensure_runtime_error_detail(payload.get("error")),
             total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
             provider_latency_ms=coerce_json_float(payload.get("provider_latency_ms")),
             request_retries=coerce_json_int(payload.get("request_retries")),
@@ -115,6 +119,7 @@ class GenerationSnapshot:
             "fallback_used": self.fallback_used,
             "fallback_reason": self.fallback_reason,
             "failure_code": self.failure_code,
+            "error": self.error.to_dict(),
             "total_latency_ms": self.total_latency_ms,
             "provider_latency_ms": self.provider_latency_ms,
             "request_retries": self.request_retries,
@@ -140,6 +145,7 @@ class GenerationSnapshot:
                 bool(self.fallback_used),
                 bool(self.fallback_reason),
                 bool(self.failure_code),
+                bool(self.error),
                 self.total_latency_ms != 0.0,
                 self.provider_latency_ms != 0.0,
                 self.request_retries != 0,

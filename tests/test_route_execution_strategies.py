@@ -159,12 +159,10 @@ class _DegradedTraditionalRetrieval(_FakeTraditionalRetrieval):
             degraded_candidates=[
                 {
                     "source": "bm25",
-                    "rank_name": "bm25",
-                    "reason": "circuit_open",
-                    "error_type": "CircuitOpenError",
-                    "message": "Circuit breaker open",
-                    "circuit_state": "open",
-                    "failure_count": 3,
+                    "error": {
+                        "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                        "detail": "candidate_source_circuit_open",
+                    },
                 }
             ],
         )

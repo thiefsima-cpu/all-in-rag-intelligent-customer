@@ -16,6 +16,7 @@ from ...runtime import (
     RetrievalOutcome,
     RouteResolution,
     RouteSnapshot,
+    RuntimeErrorDetail,
 )
 from ...runtime.json_types import JsonObject
 
@@ -51,8 +52,8 @@ class QuestionAnswerResult:
         return len(self.evidence_documents)
 
     @property
-    def error(self) -> str:
-        return str(self.trace_event.error or "")
+    def error(self) -> RuntimeErrorDetail:
+        return self.trace_event.error
 
     @property
     def status(self) -> str:
@@ -85,7 +86,7 @@ class QuestionAnswerSummary:
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
     token_usage_source: str = ""
-    error: str = ""
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
 
     def to_dict(self) -> JsonObject:
         return {
@@ -103,7 +104,7 @@ class QuestionAnswerSummary:
             "total_tokens": self.total_tokens,
             "estimated_cost_usd": self.estimated_cost_usd,
             "token_usage_source": self.token_usage_source,
-            "error": self.error,
+            "error": self.error.to_dict(),
         }
 
 
@@ -229,7 +230,7 @@ class QuestionAnswerResponse:
         return self.summary.failure_code
 
     @property
-    def error(self) -> str:
+    def error(self) -> RuntimeErrorDetail:
         return self.summary.error
 
     @property

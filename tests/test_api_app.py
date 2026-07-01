@@ -43,6 +43,7 @@ from rag_modules.runtime import (
     RouteSnapshot,
 )
 from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
+from rag_modules.runtime.error_models import answer_error_detail
 
 _API_TOKEN = "test-api-access-token"
 _API_CONFIG = build_test_config({"api": {"access_token": _API_TOKEN}})
@@ -328,8 +329,8 @@ class _FailedAnswerResponse(_DummyAnswerResponse):
         self.secret = secret
         self._response.summary.status = "failed"
         self._response.summary.answer = f"raw failure: {self.secret}"
-        self._response.summary.error = self.secret
-        self._response.traces.route_trace.error = self.secret
+        self._response.summary.error = answer_error_detail(RuntimeError(self.secret))
+        self._response.traces.route_trace.error = answer_error_detail(RuntimeError(self.secret))
 
     def to_dict(self) -> dict:
         return self._response.to_dict()
@@ -446,10 +447,11 @@ class _ErrorTraceAnswerResponse(_DummyAnswerResponse):
     def __init__(self, question: str, secret: str) -> None:
         super().__init__(question, False, False)
         self.secret = secret
-        self._response.summary.error = self.secret
-        self._response.traces.route_trace.error = self.secret
-        self._response.traces.graph_trace.error = self.secret
-        self._response.traces.trace_event.error = self.secret
+        safe_error = answer_error_detail(RuntimeError(self.secret))
+        self._response.summary.error = safe_error
+        self._response.traces.route_trace.error = safe_error
+        self._response.traces.graph_trace.error = safe_error
+        self._response.traces.trace_event.error = safe_error
 
     def to_dict(self) -> dict:
         return self._response.to_dict()

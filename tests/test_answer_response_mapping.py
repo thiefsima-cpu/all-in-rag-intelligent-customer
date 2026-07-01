@@ -132,20 +132,14 @@ def test_public_answer_payload_rejects_debug_only_fields() -> None:
     assert ("diagnostics", "analysis") in error_locations
 
 
-def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> None:
+def test_answer_payload_exposes_typed_degraded_candidate_errors() -> None:
     result = _complete_result()
-    legacy_candidate = {
-        "source": "vector",
-        "reason": "circuit_open",
-        "error_type": "CircuitOpenError",
-        "message": "postgres://user:secret@example.internal/db token=abc123",
-        "circuit_state": "open",
-        "failure_count": 2,
-    }
     safe_candidate = {
         "source": "vector",
-        "error_code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
-        "error_type": "CircuitOpenError",
+        "error": {
+            "code": CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+            "detail": "candidate_source_circuit_open",
+        },
     }
     result.route_trace.add_stage(
         "hybrid",
@@ -155,19 +149,19 @@ def test_answer_payload_sanitizes_degraded_candidates_from_legacy_trace() -> Non
             sources={"vector": 0},
             details={
                 "degraded_sources": ["vector"],
-                "degraded_candidates": [legacy_candidate],
+                "degraded_candidates": [safe_candidate],
             },
         ),
     )
     result.retrieval_outcome.degradation_summary = {
         "retrieval_degraded": True,
         "degraded_sources": ["vector"],
-        "degraded_candidates": [legacy_candidate],
+        "degraded_candidates": [safe_candidate],
     }
     result.trace_event.diagnostics = QueryDiagnostics(
         retrieval_degraded=True,
         degraded_sources=["vector"],
-        degraded_candidates=[legacy_candidate],
+        degraded_candidates=[safe_candidate],
     )
 
     payload = AnswerPayloadModel.from_dto(result.to_response()).model_dump()

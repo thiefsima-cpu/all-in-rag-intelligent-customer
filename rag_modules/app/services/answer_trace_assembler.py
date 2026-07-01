@@ -7,6 +7,7 @@ from ...runtime import (
     GraphRetrievalSnapshot,
     QueryTraceEvent,
     RouteSnapshot,
+    RuntimeErrorDetail,
 )
 from ...runtime.snapshot_utils import (
     clone_generation_snapshot,
@@ -36,7 +37,7 @@ class AnswerTraceAssembler:
         state: AnswerPipelineState,
         latency_ms: float,
         answer: str | None = None,
-        error: str | None = None,
+        error: RuntimeErrorDetail | None = None,
     ) -> AnswerTraceBundle:
         route_trace = self._state_route_snapshot(state)
         graph_trace = self._state_graph_snapshot(state)

@@ -6,6 +6,7 @@ import logging
 import time
 
 from ...configuration.models import GraphRAGConfig
+from ...runtime.error_models import answer_error_detail
 from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
@@ -111,7 +112,7 @@ class AnswerWorkflow:
                 trace_bundle = self.trace_assembler.record(
                     state=state,
                     latency_ms=latency_ms,
-                    error=str(exc),
+                    error=answer_error_detail(exc),
                 )
                 state.trace_event = trace_bundle.trace_event
                 result = self.result_factory.from_error(

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
+from rag_modules.runtime.error_models import ensure_runtime_error_detail
 from rag_modules.runtime.graph_models import GraphRetrievalSnapshot
 
 
@@ -34,7 +35,7 @@ class _FakeGraphRuntime:
         del start_time
         trace.doc_count = doc_count
         trace.evidence_unit_count = evidence_unit_count
-        trace.error = error
+        trace.error = ensure_runtime_error_detail(error)
         return trace
 
     def record_event(
@@ -187,7 +188,10 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         results, trace = executor.execute_with_trace(request)
 
         self.assertEqual(results, [])
-        self.assertEqual(trace.error, "neo4j_not_connected")
+        self.assertEqual(
+            trace.error.to_dict(),
+            {"code": "GRAPH_OPERATION_FAILED", "detail": "neo4j_not_connected"},
+        )
         self.assertIn("validate_driver", [event.name for event in trace.events])
 
     def test_graph_runtime_records_policy_metadata_and_policy_sub_questions(self) -> None:
