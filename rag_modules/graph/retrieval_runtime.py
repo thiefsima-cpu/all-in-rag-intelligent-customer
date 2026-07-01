@@ -5,14 +5,15 @@ Request shaping and trace lifecycle for graph retrieval.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ..contracts import QueryPlan, RetrievalRequest
+from ..domain.shared.query_constraints import QueryConstraints
+from ..query_policy import get_query_policy
+from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
+from ..runtime.error_models import ensure_runtime_error_detail
+from ..runtime.json_types import JsonObject
 from .query_resolution import GraphQueryFactory
 from .retrieval_types import GraphQuery
-from ..query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import RetrievalRequest
-from ..runtime import GraphRetrievalSnapshot
 
 
 class GraphRetrievalRuntime:
@@ -23,11 +24,11 @@ class GraphRetrievalRuntime:
 
     def build_request(
         self,
-        request_or_query: Union[str, RetrievalRequest],
+        request_or_query: str | RetrievalRequest,
         *,
         top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        query_plan: Optional[QueryPlan] = None,
+        constraints: QueryConstraints | None = None,
+        query_plan: QueryPlan | None = None,
     ) -> RetrievalRequest:
         if isinstance(request_or_query, RetrievalRequest):
             return request_or_query
@@ -40,7 +41,7 @@ class GraphRetrievalRuntime:
             strategy="graph_rag",
         )
 
-    def resolve_request_context(self, request: RetrievalRequest) -> Tuple[GraphQuery, List[str]]:
+    def resolve_request_context(self, request: RetrievalRequest) -> tuple[GraphQuery, list[str]]:
         graph_query = (
             self.query_factory.graph_query_from_plan(request.query_plan)
             if request.query_plan
@@ -52,16 +53,21 @@ class GraphRetrievalRuntime:
         return graph_query, evidence_goals
 
     @staticmethod
+    def _policy_snapshot() -> PolicySnapshot:
+        return PolicySnapshot.from_metadata(get_query_policy().metadata)
+
+    @staticmethod
     def start_trace(
         query: str,
         *,
         requested_top_k: int = 0,
-        retrieval_request: Optional[RetrievalRequest] = None,
+        retrieval_request: RetrievalRequest | None = None,
     ) -> GraphRetrievalSnapshot:
         return GraphRetrievalSnapshot(
             query=query,
             strategy="graph_rag",
             requested_top_k=requested_top_k,
+            policy=GraphRetrievalRuntime._policy_snapshot(),
             retrieval_request=retrieval_request,
         )
 
@@ -70,13 +76,15 @@ class GraphRetrievalRuntime:
         trace: GraphRetrievalSnapshot,
         *,
         graph_query: GraphQuery,
-        evidence_goals: List[str],
+        evidence_goals: list[str],
     ) -> None:
         trace.query_type = graph_query.query_type.value
         trace.source_entities = list(graph_query.source_entities or [])
         trace.target_entities = list(graph_query.target_entities or [])
         trace.relation_types = list(graph_query.relation_types or [])
         trace.sub_questions = list(evidence_goals or [])
+        if not trace.policy.is_recorded():
+            trace.policy = GraphRetrievalRuntime._policy_snapshot()
 
     @staticmethod
     def finalize_trace(
@@ -85,13 +93,13 @@ class GraphRetrievalRuntime:
         start_time: float,
         doc_count: int = 0,
         evidence_unit_count: int = 0,
-        error: str = "",
+        error: object = None,
     ) -> GraphRetrievalSnapshot:
         trace.doc_count = max(0, int(doc_count or 0))
         trace.evidence_unit_count = max(0, int(evidence_unit_count or 0))
         trace.total_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
         if error:
-            trace.error = str(error)
+            trace.error = ensure_runtime_error_detail(error)
         return trace
 
     @staticmethod
@@ -99,10 +107,10 @@ class GraphRetrievalRuntime:
         trace: GraphRetrievalSnapshot,
         name: str,
         *,
-        start_time: Optional[float] = None,
-        latency_ms: Optional[float] = None,
+        start_time: float | None = None,
+        latency_ms: float | None = None,
         status: str = "ok",
-        details: Optional[Dict[str, Any]] = None,
+        details: JsonObject | None = None,
     ) -> None:
         if latency_ms is None:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2) if start_time else 0.0
@@ -112,5 +120,3 @@ class GraphRetrievalRuntime:
             latency_ms=latency_ms,
             details=details or {},
         )
-
-

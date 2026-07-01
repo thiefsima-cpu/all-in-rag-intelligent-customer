@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from ..configuration.models import GraphRAGConfig
-
+from ..runtime.artifacts import ArtifactManifest
 from .bootstrap_facade_support import (
     BuildBootstrapperInvocationAdapter,
     GraphBootstrapperInvocationAdapter,
@@ -25,13 +25,16 @@ from .composition.serving_runtime_factory import ServingRuntimeFactory
 from .composition.serving_runtime_preparer import ServingRuntimePreparer
 from .composition.shared import ProgressCallback
 from .composition.system_runtime_bootstrap_service import SystemRuntimeBootstrapService
-from .provider_components.contracts import RuntimeComponentProvider
+from .providers import RuntimeComponentProvider
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view import SystemRuntime
 
 
-class BuildBootstrapper(_ComposedBootstrapperFacade):
+class BuildBootstrapper(_ComposedBootstrapperFacade[BuildBootstrapperInvocationAdapter]):
     """Public build bootstrapper backed by the canonical build composition root."""
+
+    executor: BuildRuntimeExecutor
+    factory: BuildRuntimeFactory
 
     def __init__(
         self,
@@ -41,7 +44,7 @@ class BuildBootstrapper(_ComposedBootstrapperFacade):
         executor: BuildRuntimeExecutor | None = None,
         bootstrapper_composer: BuildBootstrapperComposer | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
-    ):
+    ) -> None:
         super().__init__(invocations=BuildBootstrapperInvocationAdapter())
         self._compose_and_bind(
             composer=bootstrapper_composer or BuildBootstrapperComposer(),
@@ -55,9 +58,9 @@ class BuildBootstrapper(_ComposedBootstrapperFacade):
         self,
         config: Optional[GraphRAGConfig] = None,
         *,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
         return self._invocations.build_runtime(
@@ -94,8 +97,10 @@ class BuildBootstrapper(_ComposedBootstrapperFacade):
         )
 
 
-class ServingBootstrapper(_ComposedBootstrapperFacade):
+class ServingBootstrapper(_ComposedBootstrapperFacade[ServingBootstrapperInvocationAdapter]):
     """Public serving bootstrapper backed by the canonical serving composition root."""
+
+    lifecycle_service: ServingRuntimeLifecycleServiceProtocol
 
     def __init__(
         self,
@@ -106,7 +111,7 @@ class ServingBootstrapper(_ComposedBootstrapperFacade):
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol | None = None,
         bootstrapper_composer: ServingBootstrapperComposer | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
-    ):
+    ) -> None:
         super().__init__(invocations=ServingBootstrapperInvocationAdapter())
         self._compose_and_bind(
             composer=bootstrapper_composer or ServingBootstrapperComposer(),
@@ -122,10 +127,10 @@ class ServingBootstrapper(_ComposedBootstrapperFacade):
         config: Optional[GraphRAGConfig] = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer=None,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime:
         return self._invocations.build_serving_runtime(
@@ -143,8 +148,8 @@ class ServingBootstrapper(_ComposedBootstrapperFacade):
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
-        artifact_manifest=None,
+        chunks: Any | None = None,
+        artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
     ) -> ServingRuntime:
@@ -174,8 +179,12 @@ class ServingBootstrapper(_ComposedBootstrapperFacade):
         )
 
 
-class GraphRAGBootstrapper(_ComposedBootstrapperFacade):
+class GraphRAGBootstrapper(_ComposedBootstrapperFacade[GraphBootstrapperInvocationAdapter]):
     """Compatibility facade that exposes split bootstrappers under one surface."""
+
+    bootstrap_service: SystemRuntimeBootstrapService
+    build_bootstrapper: BuildBootstrapper
+    serving_bootstrapper: ServingBootstrapper
 
     def __init__(
         self,
@@ -186,7 +195,7 @@ class GraphRAGBootstrapper(_ComposedBootstrapperFacade):
         bootstrap_service: SystemRuntimeBootstrapService | None = None,
         bootstrapper_composer: GraphRAGBootstrapperComposer | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
-    ):
+    ) -> None:
         super().__init__(invocations=GraphBootstrapperInvocationAdapter())
         self._compose_and_bind(
             composer=bootstrapper_composer or GraphRAGBootstrapperComposer(),
@@ -201,8 +210,8 @@ class GraphRAGBootstrapper(_ComposedBootstrapperFacade):
         self,
         config: Optional[GraphRAGConfig] = None,
         *,
-        query_tracer=None,
-        neo4j_manager=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
         progress: ProgressCallback = None,
     ) -> SystemRuntime:
         return self._invocations.build_system_runtime(

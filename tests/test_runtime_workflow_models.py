@@ -4,15 +4,15 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, QueryPlan
+from rag_modules.observability.tracing import QueryTracer
 from rag_modules.runtime import (
     AnswerContext,
     QueryUnderstandingSnapshot,
     RetrievalOutcome,
     RouteResolution,
+    SearchStrategy,
 )
-from rag_modules.tracing import QueryTracer
 
 
 class RuntimeWorkflowModelTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
 
         self.assertEqual(context.question, "why does dish A work")
         self.assertEqual(context.analysis.strategy_name, "graph_rag")
-        self.assertEqual(context.understanding.query_plan.strategy, "graph_rag")
+        self.assertIs(context.understanding.query_plan.strategy, SearchStrategy.GRAPH_RAG)
         self.assertEqual(len(context.evidence_documents), 1)
 
     def test_answer_context_round_trips_with_evidence_package_payload(self) -> None:

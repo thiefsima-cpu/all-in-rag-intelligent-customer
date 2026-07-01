@@ -5,17 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
+from ...contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .candidate_settings import RetrievalCandidateSizingSettings
-from .planner_settings import QueryPlannerRuntimeSettings
+from .candidate_source_settings import RetrievalCandidateSourceSettings
 from .postprocess_settings import RetrievalPostProcessSettings
-from .semantic_settings import QuerySemanticRuntimeSettings
 
 
 @dataclass
 class RetrievalRuntimeProfile:
     planner: QueryPlannerRuntimeSettings = field(default_factory=QueryPlannerRuntimeSettings)
     semantics: QuerySemanticRuntimeSettings = field(default_factory=QuerySemanticRuntimeSettings)
-    candidates: RetrievalCandidateSizingSettings = field(default_factory=RetrievalCandidateSizingSettings)
+    candidates: RetrievalCandidateSizingSettings = field(
+        default_factory=RetrievalCandidateSizingSettings
+    )
+    candidate_sources: RetrievalCandidateSourceSettings = field(
+        default_factory=RetrievalCandidateSourceSettings
+    )
     postprocess: RetrievalPostProcessSettings = field(default_factory=RetrievalPostProcessSettings)
 
     @classmethod
@@ -29,6 +34,7 @@ class RetrievalRuntimeProfile:
             "planner": self.planner.to_dict(),
             "semantics": self.semantics.to_dict(),
             "candidates": self.candidates.to_dict(),
+            "candidate_sources": self.candidate_sources.to_dict(),
             "postprocess": self.postprocess.to_dict(),
         }
 

@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from ..runtime_view import SystemRuntime
+
 
 class RuntimeShutdownService:
     """Close runtime resources through grouped runtime views."""
 
-    def close(self, *, runtime) -> None:
+    def close(self, *, runtime: SystemRuntime) -> None:
         serving_runtime = runtime.serving_runtime
         if serving_runtime is not None:
             self._close_if_present(runtime.infrastructure.query_tracer)
+            self._close_if_present(getattr(runtime.retrieval, "routing_workflow", None))
             self._close_if_present(runtime.retrieval.traditional_retrieval)
             self._close_if_present(runtime.retrieval.graph_rag_retrieval)
             serving_runtime.retrieval_engines_initialized = False
@@ -22,7 +27,7 @@ class RuntimeShutdownService:
         self._close_if_present(runtime.infrastructure.neo4j_manager)
 
     @staticmethod
-    def _close_if_present(resource) -> None:
+    def _close_if_present(resource: Any) -> None:
         if resource is not None and hasattr(resource, "close"):
             resource.close()
 

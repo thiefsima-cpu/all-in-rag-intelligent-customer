@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
 from rag_modules.app.bootstrap import GraphRAGBootstrapper, ServingBootstrapper
 from rag_modules.app.composition.bootstrapper_composer import (
     GraphBootstrapperSurface,
@@ -14,25 +13,15 @@ from rag_modules.app.composition.bootstrapper_composer import (
     ServingBootstrapperComposer,
     SystemRuntimeBootstrapServiceComposer,
 )
-from rag_modules.app.composition.serving_runtime_assembler import ServingRuntimeAssembler
+from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
 from rag_modules.app.composition.serving_runtime_lifecycle_service import (
     ServingRuntimeLifecycleService,
 )
-from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
-from rag_modules.artifacts import ArtifactManifest
+from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
 from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.runtime.artifacts import ArtifactManifest
 from rag_modules.text_document import TextDocument
-
-
-class _StubAssembler:
-    def __init__(self, runtime):
-        self.runtime = runtime
-        self.calls: list[dict] = []
-
-    def assemble(self, config=None, **kwargs):
-        self.calls.append({"config": config, **kwargs})
-        return self.runtime
 
 
 class _StubPreparer:
@@ -174,33 +163,10 @@ class _FailingGraphRetrieval:
 
 
 class ServingRuntimeFactoryTests(unittest.TestCase):
-    def test_build_only_assembles_runtime(self) -> None:
-        runtime = SimpleNamespace(prepared=False)
-        assembler = _StubAssembler(runtime)
-        preparer = _StubPreparer()
-        factory = ServingRuntimeFactory(
-            provider=SimpleNamespace(),
-            assembler=assembler,
-        )
-
-        result = factory.build(config=SimpleNamespace(name="cfg"), shared_runtime=SimpleNamespace())
-
-        self.assertIs(result, runtime)
-        self.assertEqual(len(assembler.calls), 1)
-        self.assertEqual(preparer.shared_prepare_calls, [])
-        self.assertFalse(runtime.prepared)
-        self.assertFalse(hasattr(factory, "prepare"))
-        self.assertFalse(hasattr(factory, "prepare_with_shared_runtime"))
-        self.assertFalse(hasattr(factory, "build_ready"))
-
     def test_lifecycle_service_prepare_with_shared_runtime_delegates_to_preparer(self) -> None:
         runtime = SimpleNamespace(prepared=False)
         preparer = _StubPreparer()
-        assembler = _StubAssembler(runtime)
-        factory = ServingRuntimeFactory(
-            provider=SimpleNamespace(),
-            assembler=assembler,
-        )
+        factory = _StubServingFactory(runtime)
         lifecycle_service = ServingRuntimeLifecycleService(
             serving_runtime_factory=factory,
             serving_runtime_preparer=preparer,
@@ -216,7 +182,7 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         self.assertTrue(runtime.prepared)
         self.assertEqual(len(preparer.shared_prepare_calls), 1)
         self.assertIs(preparer.shared_prepare_calls[0]["shared_runtime"], shared_runtime)
-        self.assertEqual(assembler.calls, [])
+        self.assertEqual(factory.build_calls, [])
 
     def test_preparer_loads_artifacts_through_infrastructure_provider_boundary(self) -> None:
         ready_manifest = ArtifactManifest(
@@ -245,7 +211,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         document_cache = _FakeDocumentArtifactCache(cache_result)
         runtime_artifact_access = _FakeRuntimeArtifactAccess()
         infrastructure = SimpleNamespace(
-            provide_artifact_manifest_store=lambda config, existing=None: existing or manifest_store,
+            provide_artifact_manifest_store=lambda config, existing=None: (
+                existing or manifest_store
+            ),
             provide_document_artifact_cache=(
                 lambda config, existing=None, *, manifest_store=None: existing or document_cache
             ),
@@ -320,8 +288,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
                 lambda config, existing=None: existing or _FakeManifestStore(ready_manifest)
             ),
             provide_document_artifact_cache=(
-                lambda config, existing=None, *, manifest_store=None: existing
-                or _FakeDocumentArtifactCache(cache_result)
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or _FakeDocumentArtifactCache(cache_result)
+                )
             ),
             provide_runtime_artifact_access=(
                 lambda config, existing=None: existing or _FakeRuntimeArtifactAccess()
@@ -341,12 +310,16 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
             graph_rag_retrieval=_FailingGraphRetrieval(),
         )
 
-        with self.assertRaisesRegex(RuntimeError, "Serving runtime retrieval initialization failed"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Serving runtime retrieval initialization failed"
+        ):
             preparer.prepare(runtime)
 
         self.assertFalse(runtime.retrieval_engines_initialized)
 
-    def test_preparer_marks_manifest_stale_when_cached_artifacts_mismatch_index_signature(self) -> None:
+    def test_preparer_marks_manifest_stale_when_cached_artifacts_mismatch_index_signature(
+        self,
+    ) -> None:
         ready_manifest = ArtifactManifest(
             stage="ready",
             manifest_path="manifest.json",
@@ -369,8 +342,9 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
                 lambda config, existing=None: existing or _FakeManifestStore(ready_manifest)
             ),
             provide_document_artifact_cache=(
-                lambda config, existing=None, *, manifest_store=None: existing
-                or _FakeDocumentArtifactCache(cache_result)
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or _FakeDocumentArtifactCache(cache_result)
+                )
             ),
             provide_runtime_artifact_access=(
                 lambda config, existing=None: existing or _FakeRuntimeArtifactAccess()
@@ -402,10 +376,11 @@ class ServingRuntimeFactoryTests(unittest.TestCase):
         self.assertEqual(graph_rag_retrieval.initialize_calls, 0)
 
 
-class ServingRuntimeAssemblerTests(unittest.TestCase):
-    def test_assembler_falls_back_to_root_provider_for_query_understanding(self) -> None:
+class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
+    def test_build_uses_query_understanding_capability_provider(self) -> None:
         config = build_test_config()
         client = SimpleNamespace(name="client")
+        llm_client = SimpleNamespace(name="llm-client")
         profile = SimpleNamespace(name="profile")
         understanding_service = SimpleNamespace(name="understanding")
         traditional_retrieval = SimpleNamespace(name="traditional")
@@ -414,10 +389,13 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         answer_workflow = SimpleNamespace(name="workflow")
 
         infrastructure = SimpleNamespace(
-            provide_neo4j_manager=lambda config, existing=None: existing or SimpleNamespace(name="neo4j"),
+            provide_neo4j_manager=(
+                lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
+            ),
             provide_data_module=(
-                lambda config, neo4j_manager, existing=None: existing
-                or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                lambda config, neo4j_manager, existing=None: (
+                    existing or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                )
             ),
             provide_index_module=(
                 lambda config, existing=None: existing or SimpleNamespace(name="index")
@@ -426,31 +404,27 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
                 lambda config, existing=None: existing or SimpleNamespace(name="tracer")
             ),
         )
-        generation = SimpleNamespace(
-            provide_generation_module=lambda config: SimpleNamespace(client=client)
-        )
-        retrieval = SimpleNamespace(
-            provide_traditional_retrieval=lambda **kwargs: traditional_retrieval,
-            provide_graph_rag_retrieval=lambda **kwargs: graph_rag_retrieval,
-            provide_routing_workflow=lambda **kwargs: router,
-        )
         services = SimpleNamespace(
             provide_answer_workflow=lambda **kwargs: answer_workflow,
-            provide_question_answer_service=lambda **kwargs: SimpleNamespace(
-                name="question-answer-service",
-                workflow=kwargs["answer_workflow"],
-            ),
         )
 
         class _RootProvider:
             def __init__(self) -> None:
                 self.infrastructure = infrastructure
-                self.generation = generation
-                self.retrieval = retrieval
+                self.build_pipeline = SimpleNamespace()
+                self.retrieval_runtime = self
                 self.services = services
                 self.calls: list[str] = []
 
+            def provide_generation_module(self, config):
+                del config
+                return SimpleNamespace(
+                    client=client,
+                    llm_client=llm_client,
+                )
+
             def provide_retrieval_runtime_profile(self, config):
+                del config
                 self.calls.append("profile")
                 return profile
 
@@ -466,32 +440,45 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
                 self.last_profile = retrieval_profile
                 return understanding_service
 
-        provider = _RootProvider()
-        assembler = ServingRuntimeAssembler(provider=provider)
+            def provide_traditional_retrieval(self, **kwargs):
+                del kwargs
+                return traditional_retrieval
 
-        runtime = assembler.assemble(config=config)
+            def provide_graph_rag_retrieval(self, **kwargs):
+                del kwargs
+                return graph_rag_retrieval
+
+            def provide_routing_workflow(self, **kwargs):
+                del kwargs
+                return router
+
+        provider = _RootProvider()
+        factory = ServingRuntimeFactory(provider=provider)
+
+        runtime = factory.build(config=config)
 
         self.assertEqual(provider.calls, ["profile", "service"])
-        self.assertIs(provider.last_llm_client, client)
+        self.assertIs(provider.last_llm_client, llm_client)
         self.assertIs(provider.last_profile, profile)
         self.assertIs(runtime.retrieval_runtime_profile, profile)
         self.assertIs(runtime.query_understanding_service, understanding_service)
         self.assertIs(runtime.query_router, router)
         self.assertIs(runtime.answer_workflow, answer_workflow)
-        self.assertEqual(runtime.question_answer_service.name, "question-answer-service")
-        self.assertIs(runtime.question_answer_service.workflow, answer_workflow)
+        self.assertFalse(hasattr(runtime, "question_answer_service"))
 
-    def test_assembler_falls_back_to_legacy_query_router_provider(self) -> None:
+    def test_build_requires_canonical_routing_workflow_provider(self) -> None:
         config = build_test_config()
         profile = SimpleNamespace(name="profile")
         understanding_service = SimpleNamespace(name="understanding")
-        legacy_router = SimpleNamespace(name="legacy-router")
 
         infrastructure = SimpleNamespace(
-            provide_neo4j_manager=lambda config, existing=None: existing or SimpleNamespace(name="neo4j"),
+            provide_neo4j_manager=(
+                lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
+            ),
             provide_data_module=(
-                lambda config, neo4j_manager, existing=None: existing
-                or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                lambda config, neo4j_manager, existing=None: (
+                    existing or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                )
             ),
             provide_index_module=(
                 lambda config, existing=None: existing or SimpleNamespace(name="index")
@@ -502,33 +489,23 @@ class ServingRuntimeAssemblerTests(unittest.TestCase):
         )
         provider = SimpleNamespace(
             infrastructure=infrastructure,
-            generation=SimpleNamespace(
-                provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace())
-            ),
-            query_understanding=SimpleNamespace(
+            build_pipeline=SimpleNamespace(),
+            provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace()),
+            retrieval_runtime=SimpleNamespace(
                 provide_retrieval_runtime_profile=lambda config: profile,
                 provide_query_understanding_service=lambda **kwargs: understanding_service,
-            ),
-            retrieval=SimpleNamespace(
                 provide_traditional_retrieval=lambda **kwargs: SimpleNamespace(name="traditional"),
                 provide_graph_rag_retrieval=lambda **kwargs: SimpleNamespace(name="graph"),
-                provide_query_router=lambda **kwargs: legacy_router,
             ),
             services=SimpleNamespace(
                 provide_answer_workflow=lambda **kwargs: SimpleNamespace(name="workflow"),
-                provide_question_answer_service=lambda **kwargs: SimpleNamespace(
-                    name="question-answer-service",
-                    workflow=kwargs["answer_workflow"],
-                ),
             ),
         )
 
-        assembler = ServingRuntimeAssembler(provider=provider)
+        factory = ServingRuntimeFactory(provider=provider)
 
-        runtime = assembler.assemble(config=config)
-
-        self.assertIs(runtime.query_router, legacy_router)
-        self.assertEqual(runtime.question_answer_service.name, "question-answer-service")
+        with self.assertRaisesRegex(AttributeError, "provide_routing_workflow"):
+            factory.build(config=config)
 
 
 class ServingBootstrapperTests(unittest.TestCase):
@@ -544,9 +521,7 @@ class ServingBootstrapperTests(unittest.TestCase):
 
         self.assertIsInstance(components, ServingBootstrapperComponents)
         self.assertTrue(callable(getattr(components.factory, "build", None)))
-        self.assertTrue(
-            callable(getattr(components.preparer, "prepare_with_shared_runtime", None))
-        )
+        self.assertTrue(callable(getattr(components.preparer, "prepare_with_shared_runtime", None)))
         self.assertIsInstance(components.lifecycle_service, ServingRuntimeLifecycleService)
 
     def test_public_bootstrapper_binds_serving_components_from_composer_dataclass(self) -> None:
@@ -670,9 +645,7 @@ class GraphRAGBootstrapperTests(unittest.TestCase):
                 adapt_calls.append(kwargs)
                 return SimpleNamespace(
                     build_runtime_factory=_StubBuildBootstrapper(),
-                    serving_runtime_lifecycle_service=_StubServingLifecycleService(
-                        serving_runtime
-                    ),
+                    serving_runtime_lifecycle_service=_StubServingLifecycleService(serving_runtime),
                 )
 
         composer = GraphRAGBootstrapperComposer()
@@ -815,6 +788,8 @@ class GraphRAGBootstrapperTests(unittest.TestCase):
         bootstrap_service = _StubSystemBootstrapService(runtime)
         bootstrapper = GraphRAGBootstrapper(
             provider=SimpleNamespace(),
+            build_bootstrapper=SimpleNamespace(name="build"),
+            serving_bootstrapper=SimpleNamespace(name="serve"),
             bootstrap_service=bootstrap_service,
         )
 

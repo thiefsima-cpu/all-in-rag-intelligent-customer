@@ -5,17 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import GenerationSnapshot
-from ..models import GenerationDecision
+from ...runtime import GenerationSnapshot, PolicySnapshot
+from ..models import GenerationDecision, GenerationMode
+from .contracts import _GenerationExecutionHost
 
 
-class _GenerationTraceMixin:
+class _GenerationTraceMixin(_GenerationExecutionHost):
     @staticmethod
     def _clone_trace(trace: GenerationSnapshot) -> GenerationSnapshot:
         return GenerationSnapshot.from_dict(trace.to_dict())
 
     def _snapshot_trace(self, trace: GenerationSnapshot) -> GenerationSnapshot:
         return self._clone_trace(trace)
+
+    def _policy_snapshot(self) -> PolicySnapshot:
+        policy_snapshot = getattr(self.prompt_builder, "policy_snapshot", None)
+        if isinstance(policy_snapshot, PolicySnapshot):
+            return PolicySnapshot.from_dict(policy_snapshot.to_dict())
+        return PolicySnapshot()
 
     def _new_trace(
         self,
@@ -29,6 +36,7 @@ class _GenerationTraceMixin:
             decision_reason=decision.reason,
             total_evidence_items=len(package.items),
             selected_evidence_items=len(selected_package.items),
+            policy=self._policy_snapshot(),
         )
 
     def _record_empty_trace(
@@ -36,12 +44,13 @@ class _GenerationTraceMixin:
     ) -> tuple[str, GenerationSnapshot]:
         trace = GenerationSnapshot(
             status="failed",
-            mode="empty",
+            mode=GenerationMode.EMPTY,
             decision_reason=reason,
             failure_code="no_evidence",
             total_evidence_items=0,
             selected_evidence_items=0,
             total_latency_ms=self._elapsed_ms(total_start),
+            policy=self._policy_snapshot(),
         )
         return self.empty_evidence_answer, self._snapshot_trace(trace)
 
@@ -76,15 +85,11 @@ class _GenerationTraceMixin:
         )
         snapshot.estimated_cost_usd = round(
             (
-                snapshot.prompt_tokens
-                * self.settings.input_cost_per_million_tokens
-                + snapshot.completion_tokens
-                * self.settings.output_cost_per_million_tokens
+                snapshot.prompt_tokens * self.settings.input_cost_per_million_tokens
+                + snapshot.completion_tokens * self.settings.output_cost_per_million_tokens
             )
             / 1_000_000,
             8,
         )
-        snapshot.token_usage_source = str(
-            usage.get("token_usage_source") or ""
-        )
+        snapshot.token_usage_source = str(usage.get("token_usage_source") or "")
         return snapshot

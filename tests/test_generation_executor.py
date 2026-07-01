@@ -6,11 +6,20 @@ from types import SimpleNamespace
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation import (
     AnswerPlan,
+    GenerationDecision,
     GenerationExecutionEngine,
+    GenerationMode,
+    GenerationPlannerMode,
+    GenerationPromptBuilder,
     GenerationSettings,
+    GenerationTrace,
     RenderedPrompt,
+    build_evidence_only_fallback_answer,
+    decide_generation_mode,
 )
-from rag_modules.runtime import AnswerContext, QueryAnalysis, SearchStrategy
+from rag_modules.generation.clients import GenerationLatencyBudgetExceeded
+from rag_modules.query_policy import get_query_policy
+from rag_modules.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis, SearchStrategy
 
 
 class _FakePromptBuilder:
@@ -22,7 +31,9 @@ class _FakePromptBuilder:
         item_count = len(answer_context.evidence_package.get("items") or [])
         return f"direct::{question}::{item_count}"
 
-    def render_direct_answer_prompt_from_context(self, answer_context: AnswerContext) -> RenderedPrompt:
+    def render_direct_answer_prompt_from_context(
+        self, answer_context: AnswerContext
+    ) -> RenderedPrompt:
         return RenderedPrompt(
             prompt_type="direct",
             question=answer_context.question,
@@ -128,19 +139,88 @@ class _FakeClientAdapter:
 
 
 class GenerationExecutionEngineTests(unittest.TestCase):
-    def test_generation_execution_canonical_and_compat_imports_match(self) -> None:
+    def test_generation_execution_package_exports_canonical_engine(self) -> None:
         from rag_modules.generation.execution import (
             GenerationExecutionEngine as PackageEngine,
         )
         from rag_modules.generation.execution.engine import (
             GenerationExecutionEngine as CanonicalEngine,
         )
-        from rag_modules.generation.executor import (
-            GenerationExecutionEngine as CompatEngine,
-        )
 
         self.assertIs(PackageEngine, CanonicalEngine)
-        self.assertIs(CompatEngine, CanonicalEngine)
+
+    def test_generation_settings_normalizes_planner_mode_to_enum(self) -> None:
+        settings = GenerationSettings(planner_mode="hybrid")
+
+        self.assertIs(settings.planner_mode, GenerationPlannerMode.HYBRID)
+
+    def test_generation_decision_normalizes_mode_to_enum(self) -> None:
+        decision = GenerationDecision(mode="direct", reason="fixture", evidence_limit=2)
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_decide_generation_mode_returns_generation_mode_enum(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_generation_decision_uses_policy_reason_strings(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertEqual("two_stage_disabled", decision.reason)
+
+    def test_generation_trace_records_policy_metadata(self) -> None:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False),
+            client_adapter=_FakeClientAdapter([_FakeResponse("answer")]),
+            prompt_builder=GenerationPromptBuilder(
+                settings=GenerationSettings(),
+                evidence_max_chars=700,
+            ),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="policy trace",
+            package=self._build_package(),
+        )
+
+        self.assertTrue(trace.policy.is_recorded())
+        self.assertEqual("c9-default-policy-v1", trace.policy.policy_version)
+
+    def test_evidence_only_fallback_uses_policy_templates(self) -> None:
+        policy = get_query_policy().generation.fallback_answer
+
+        answer = build_evidence_only_fallback_answer(
+            package=self._build_package(),
+            error=RuntimeError("provider failed"),
+            max_items=1,
+        )
+
+        self.assertIn(policy["heading"], answer)
+        self.assertIn(policy["boundary"], answer)
+        self.assertIn(policy["model_unavailable"], answer)
+
+    def test_generation_trace_and_snapshot_serialize_mode_as_string(self) -> None:
+        trace = GenerationTrace(
+            mode="two_stage",
+            decision_reason="fixture",
+            total_evidence_items=2,
+            selected_evidence_items=1,
+        )
+        snapshot = GenerationSnapshot(mode=GenerationMode.TWO_STAGE)
+
+        self.assertIs(trace.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(trace.to_dict()["mode"], "two_stage")
+        self.assertIs(snapshot.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(snapshot.to_dict()["mode"], "two_stage")
 
     def _build_package(self) -> AnswerEvidencePackage:
         return AnswerEvidencePackage(
@@ -299,6 +379,52 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(trace.failure_code, "generation_provider_empty_choices")
         self.assertNotIn("no choices", answer.lower())
 
+    def test_generation_provider_failure_records_typed_error_without_message(self) -> None:
+        secret = "provider timed out with token abc123"
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([RuntimeError(secret)]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+
+        self.assertIn("模型", answer)
+        self.assertEqual(trace.failure_code, "generation_provider_error")
+        self.assertEqual(
+            trace.error.to_dict(),
+            {"code": "GENERATION_PROVIDER_ERROR", "detail": "generation_provider_error"},
+        )
+        self.assertNotIn(secret, str(trace.to_dict()))
+
+    def test_generation_timeout_and_latency_budget_use_stable_error_details(self) -> None:
+        timeout_trace = self._trace_for_generation_error(TimeoutError("secret timeout body"))
+        budget_trace = self._trace_for_generation_error(
+            GenerationLatencyBudgetExceeded("secret budget body")
+        )
+
+        self.assertEqual(
+            timeout_trace.error.to_dict(),
+            {
+                "code": "GENERATION_PROVIDER_TIMEOUT",
+                "detail": "generation_provider_timeout",
+            },
+        )
+        self.assertEqual(
+            budget_trace.error.to_dict(),
+            {
+                "code": "GENERATION_LATENCY_BUDGET_EXCEEDED",
+                "detail": "generation_latency_budget_exceeded",
+            },
+        )
+        self.assertNotIn("secret", str(timeout_trace.to_dict()))
+        self.assertNotIn("secret", str(budget_trace.to_dict()))
+
     def test_generation_timeout_is_capped_by_total_latency_budget(self) -> None:
         client = _FakeClientAdapter([_FakeResponse("budgeted answer")])
         engine = GenerationExecutionEngine(
@@ -322,6 +448,21 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(len(client.timeouts), 1)
         self.assertGreater(client.timeouts[0], 0)
         self.assertLessEqual(client.timeouts[0], 2)
+
+    def _trace_for_generation_error(self, error: Exception) -> GenerationSnapshot:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([error]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+        return trace
 
 
 if __name__ == "__main__":

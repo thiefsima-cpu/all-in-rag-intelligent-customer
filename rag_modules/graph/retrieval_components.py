@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Protocol
 
+from ..configuration.models import GraphRAGConfig
 from ..entity_linker import EntityLinker
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..runtime_contracts import LLMClientPort, Neo4jManagerPort
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
 from .evidence_builder import GraphEvidenceBuilder
@@ -18,7 +21,6 @@ from .retrieval_executor import GraphRetrievalExecutor
 from .retrieval_plan import GraphPlanBuilder
 from .retrieval_postprocess import GraphRetrievalPostProcessor
 from .retrieval_runtime import GraphRetrievalRuntime
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 
 
 @dataclass
@@ -44,9 +46,9 @@ class GraphRetrievalComponentFactory(Protocol):
     def build(
         self,
         *,
-        config: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
+        config: GraphRAGConfig,
+        llm_client: LLMClientPort,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database_name: str,
     ) -> GraphRetrievalComponents: ...
@@ -58,9 +60,9 @@ class DefaultGraphRetrievalComponentFactory:
     def build(
         self,
         *,
-        config: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
+        config: GraphRAGConfig,
+        llm_client: LLMClientPort,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database_name: str,
     ) -> GraphRetrievalComponents:
@@ -113,6 +115,3 @@ class DefaultGraphRetrievalComponentFactory:
             cache_warmup=cache_warmup,
             executor=executor,
         )
-
-
-

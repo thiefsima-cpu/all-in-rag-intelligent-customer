@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
-from .adapters import VectorRetriever
+from ..runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
+from .adapters import GraphKVRetriever, VectorRetriever
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 from .dual_level_evidence_service import DualLevelEvidenceService
 from .dual_level_retriever import DualLevelRetriever
+from .keyword_service import QueryKeywordExtractor
 
 
 class HybridRuntimeAdapterFactory(Protocol):
@@ -16,18 +18,18 @@ class HybridRuntimeAdapterFactory(Protocol):
     def create_vector_retriever(
         self,
         *,
-        milvus_module: Any,
-        driver: Any,
+        milvus_module: VectorIndexModulePort,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> VectorRetriever: ...
 
     def create_dual_level_retriever(
         self,
         *,
-        graph_indexing: Any,
-        graph_kv_retriever: Any,
-        keyword_extractor: Any,
-        driver: Any,
+        graph_indexing: object,
+        graph_kv_retriever: GraphKVRetriever,
+        keyword_extractor: QueryKeywordExtractor,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> DualLevelRetriever: ...
 
@@ -38,8 +40,8 @@ class DefaultHybridRuntimeAdapterFactory:
     @staticmethod
     def create_vector_retriever(
         *,
-        milvus_module: Any,
-        driver: Any,
+        milvus_module: VectorIndexModulePort,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> VectorRetriever:
         return VectorRetriever(
@@ -51,10 +53,10 @@ class DefaultHybridRuntimeAdapterFactory:
     @staticmethod
     def create_dual_level_retriever(
         *,
-        graph_indexing: Any,
-        graph_kv_retriever: Any,
-        keyword_extractor: Any,
-        driver: Any,
+        graph_indexing: object,
+        graph_kv_retriever: GraphKVRetriever,
+        keyword_extractor: QueryKeywordExtractor,
+        driver: Neo4jDriverPort | None,
         database: str,
     ) -> DualLevelRetriever:
         return DualLevelRetriever(

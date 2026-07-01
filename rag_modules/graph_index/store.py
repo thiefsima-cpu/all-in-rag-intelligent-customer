@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List
+from typing import DefaultDict, Dict, Iterable, List
 
 from ..query_understanding import dedupe_preserve_order
 from .models import EntityKeyValue, RelationKeyValue
@@ -22,8 +22,8 @@ class GraphIndexStore:
     def __init__(self) -> None:
         self.entity_kv_store: Dict[str, EntityKeyValue] = {}
         self.relation_kv_store: Dict[str, RelationKeyValue] = {}
-        self.key_to_entities = defaultdict(list)
-        self.key_to_relations = defaultdict(list)
+        self.key_to_entities: DefaultDict[str, List[str]] = defaultdict(list)
+        self.key_to_relations: DefaultDict[str, List[str]] = defaultdict(list)
 
     def add_entity(
         self,
@@ -65,7 +65,9 @@ class GraphIndexStore:
 
     def get_relations_by_key(self, key: str) -> List[RelationKeyValue]:
         relation_ids = self.key_to_relations.get(str(key), [])
-        return [self.relation_kv_store[rid] for rid in relation_ids if rid in self.relation_kv_store]
+        return [
+            self.relation_kv_store[rid] for rid in relation_ids if rid in self.relation_kv_store
+        ]
 
     def deduplicate_entities_and_relations(self) -> None:
         name_to_entities = defaultdict(list)
@@ -95,9 +97,7 @@ class GraphIndexStore:
 
         relation_signature_to_ids = defaultdict(list)
         for relation_id, relation_kv in self.relation_kv_store.items():
-            signature = (
-                f"{relation_kv.source_entity}_{relation_kv.target_entity}_{relation_kv.relation_type}"
-            )
+            signature = f"{relation_kv.source_entity}_{relation_kv.target_entity}_{relation_kv.relation_type}"
             relation_signature_to_ids[signature].append(str(relation_id))
 
         relations_to_remove: List[str] = []
@@ -127,10 +127,18 @@ class GraphIndexStore:
             "total_entities": len(self.entity_kv_store),
             "total_relations": len(self.relation_kv_store),
             "total_entity_keys": sum(len(kv.index_keys) for kv in self.entity_kv_store.values()),
-            "total_relation_keys": sum(len(kv.index_keys) for kv in self.relation_kv_store.values()),
+            "total_relation_keys": sum(
+                len(kv.index_keys) for kv in self.relation_kv_store.values()
+            ),
             "entity_types": {
-                "Recipe": len([kv for kv in self.entity_kv_store.values() if kv.entity_type == "Recipe"]),
-                "Ingredient": len([kv for kv in self.entity_kv_store.values() if kv.entity_type == "Ingredient"]),
-                "CookingStep": len([kv for kv in self.entity_kv_store.values() if kv.entity_type == "CookingStep"]),
+                "Recipe": len(
+                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "Recipe"]
+                ),
+                "Ingredient": len(
+                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "Ingredient"]
+                ),
+                "CookingStep": len(
+                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "CookingStep"]
+                ),
             },
         }

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
+import json
 import unittest
+from contextlib import redirect_stdout
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from rag_modules.configuration.testing import build_test_config
 from scripts.eval_queries import (
@@ -9,7 +13,10 @@ from scripts.eval_queries import (
     EvalCase,
     build_eval_report,
     evaluate_case,
+    evaluate_offline_quality_queries,
+    evaluate_queries,
     load_eval_cases,
+    run_eval,
 )
 
 
@@ -22,12 +29,20 @@ class _FakeResponse:
         evidence_documents: list[dict],
         route_resolution: dict,
         latency_ms: float = 12.5,
+        generation_trace: dict | None = None,
+        route_trace: dict | None = None,
+        diagnostics: dict | None = None,
+        degradation_summary: dict | None = None,
     ) -> None:
         self.answer = answer
         self.strategy = strategy
         self.evidence_documents = list(evidence_documents)
         self.route_resolution = dict(route_resolution)
         self.latency_ms = latency_ms
+        self.generation_trace = dict(generation_trace or {"mode": "two_stage"})
+        self.route_trace = dict(route_trace or {"strategy": self.strategy})
+        self.diagnostics = dict(diagnostics or {})
+        self.degradation_summary = dict(degradation_summary or {})
 
     def to_dict(self) -> dict:
         return {
@@ -37,14 +52,18 @@ class _FakeResponse:
                 "latency_ms": self.latency_ms,
                 "doc_count": len(self.evidence_documents),
                 "has_evidence": bool(self.evidence_documents),
+                "fallback_used": bool(self.generation_trace.get("fallback_used")),
                 "error": "",
             },
             "grounding": {
                 "retrieval_outcome": {
-                    "query": self.route_resolution.get("understanding", {}).get("query_plan", {}).get("query", ""),
+                    "query": self.route_resolution.get("understanding", {})
+                    .get("query_plan", {})
+                    .get("query", ""),
                     "strategy": self.strategy,
                     "doc_count": len(self.evidence_documents),
                     "evidence_documents": list(self.evidence_documents),
+                    "degradation_summary": dict(self.degradation_summary),
                 },
                 "answer_context": {},
                 "route_resolution": dict(self.route_resolution),
@@ -57,9 +76,9 @@ class _FakeResponse:
                 "diagnostics": {},
             },
             "traces": {
-                "route_trace": {"strategy": self.strategy},
+                "route_trace": dict(self.route_trace),
                 "graph_trace": {},
-                "generation_trace": {"mode": "two_stage"},
+                "generation_trace": dict(self.generation_trace),
                 "trace_event": {"strategy": self.strategy},
             },
         }
@@ -74,9 +93,7 @@ class _FakeRouteResolution:
         query: str,
     ) -> None:
         self.retrieval = SimpleNamespace(evidence_documents=list(evidence_documents))
-        self.analysis = SimpleNamespace(
-            recommended_strategy=SimpleNamespace(value=strategy)
-        )
+        self.analysis = SimpleNamespace(recommended_strategy=SimpleNamespace(value=strategy))
         self.understanding = SimpleNamespace(
             query_plan=SimpleNamespace(
                 to_dict=lambda: {
@@ -131,15 +148,97 @@ class _FakeSystem:
 
 
 class EvalQueriesTests(unittest.TestCase):
+    def test_evaluate_queries_returns_report_and_closes_system(self) -> None:
+        config = build_test_config()
+        config.profile_name = "eval_quality"
+        case = EvalCase(query="quality query")
+        item = {"query": case.query, "passed": True}
+        metrics = {"case_count": 1, "pass_rate": 1.0}
+        system = MagicMock()
+
+        with (
+            patch("scripts.eval_queries.load_eval_cases", return_value=[case]),
+            patch("scripts.eval_queries.load_config", return_value=config) as load_config,
+            patch("scripts.eval_queries.AdvancedGraphRAGSystem", return_value=system),
+            patch("scripts.eval_queries.evaluate_case", return_value=item),
+            patch("scripts.eval_queries.calculate_eval_metrics", return_value=metrics),
+        ):
+            report = evaluate_queries(
+                top_k=6,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        load_config.assert_called_once_with(profile="eval_quality", profile_path=None)
+        system.initialize_system.assert_called_once_with()
+        system.build_knowledge_base.assert_called_once_with()
+        system.close.assert_called_once_with()
+        self.assertEqual(report["metrics"]["case_count"], 1)
+        self.assertEqual(report["results"], [item])
+        self.assertEqual(report["failures"], [])
+        self.assertEqual(report["profile"]["name"], "eval_quality")
+        self.assertTrue(report["generate"])
+
+    def test_run_eval_preserves_json_output_and_failure_exit_code(self) -> None:
+        item = {"query": "quality query", "passed": False}
+        report = {
+            "generated_at": "2026-06-27T00:00:00+00:00",
+            "profile": {"name": "eval_quality", "path": "", "hash": ""},
+            "corpus": str(DEFAULT_CORPUS_PATH.resolve()),
+            "top_k": 6,
+            "generate": True,
+            "metrics": {"case_count": 1, "pass_rate": 0.0},
+            "results": [item],
+            "failures": [item],
+        }
+
+        with (
+            patch("scripts.eval_queries.evaluate_queries", return_value=report),
+            redirect_stdout(io.StringIO()) as stdout,
+        ):
+            exit_code = run_eval(
+                top_k=6,
+                as_json=True,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(stdout.getvalue()), report)
+
     def test_curated_eval_corpus_loads_from_fixture(self) -> None:
         self.assertTrue(DEFAULT_CORPUS_PATH.exists())
 
         cases = load_eval_cases(DEFAULT_CORPUS_PATH)
 
-        self.assertGreaterEqual(len(cases), 4)
+        self.assertGreaterEqual(len(cases), 9)
         self.assertTrue(any(case.expected_strategy == "graph_rag" for case in cases))
+        self.assertTrue(any(case.category == "subgraph" for case in cases))
+        self.assertTrue(any(case.category == "constrained_recommendation" for case in cases))
         self.assertTrue(any("水煮肉片" in case.query for case in cases))
         self.assertFalse(any("\ufffd" in case.query for case in cases))
+
+    def test_offline_quality_queries_return_gate_metrics_without_runtime_services(self) -> None:
+        with patch("scripts.eval_queries.AdvancedGraphRAGSystem") as system:
+            report = evaluate_offline_quality_queries(
+                top_k=6,
+                generate=True,
+                profile="eval_quality",
+            )
+
+        system.assert_not_called()
+        metrics = report["metrics"]
+        self.assertGreaterEqual(metrics["case_count"], 9)
+        self.assertEqual(metrics["pass_rate"], 1.0)
+        self.assertGreaterEqual(metrics["recall_at_k"], 0.8)
+        self.assertGreaterEqual(metrics["faithfulness"], 0.8)
+        self.assertGreaterEqual(metrics["citation_accuracy"], 0.8)
+        self.assertEqual(metrics["fallback_rate"], 0.0)
+        self.assertEqual(metrics["retrieval_degradation_rate"], 0.0)
+        self.assertLessEqual(metrics["p95_latency_ms"], 2000.0)
+        self.assertLessEqual(metrics["estimated_cost_usd"], 1.0)
+        self.assertEqual(report["profile"]["name"], "eval_quality")
+        self.assertFalse(report["failures"])
 
     def test_evaluate_case_generate_returns_response_native_contract(self) -> None:
         case = EvalCase(
@@ -232,6 +331,88 @@ class EvalQueriesTests(unittest.TestCase):
         )
         self.assertEqual(item["retrieval"]["doc_count"], 1)
 
+    def test_evaluate_case_reports_fallback_and_degraded_sources(self) -> None:
+        case = EvalCase(
+            query="解释带降级的回答",
+            category="complex_relation",
+            expected_strategy="graph_rag",
+            expected_recipe_names=["水煮肉片"],
+            expected_answer_terms=["依据"],
+        )
+        evidence_documents = [
+            {
+                "recipe_name": "水煮肉片",
+                "doc_id": "doc-1",
+                "recipe_id": "recipe-1",
+                "score": 0.96,
+                "content": "水煮肉片使用花椒和豆瓣酱形成麻辣风味。",
+                "graph_evidence": {"relationships": [{"type": "CONTRIBUTES_TO"}]},
+                "evidence_units": [
+                    {"claim": "花椒和豆瓣酱共同贡献麻辣风味。", "is_graph_evidence": True}
+                ],
+            }
+        ]
+        response = _FakeResponse(
+            answer="依据 Evidence 1，花椒和豆瓣酱共同贡献麻辣风味。",
+            strategy="graph_rag",
+            evidence_documents=evidence_documents,
+            route_resolution={
+                "understanding": {
+                    "query_plan": {
+                        "query": case.query,
+                        "used_cache": False,
+                        "validation_errors": [],
+                    }
+                }
+            },
+            generation_trace={
+                "status": "degraded",
+                "mode": "two_stage",
+                "fallback_used": True,
+                "fallback_reason": "two_stage_to_direct_model",
+            },
+            route_trace={
+                "strategy": "graph_rag",
+                "fallbacks": ["graph_empty_to_hybrid"],
+                "diagnostics": {
+                    "used_fallback": True,
+                    "fallback_count": 1,
+                    "retrieval_degraded": True,
+                    "degraded_sources": ["vector"],
+                    "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+                },
+            },
+            diagnostics={
+                "retrieval_degraded": True,
+                "degraded_sources": ["vector"],
+                "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+            },
+            degradation_summary={
+                "retrieval_degraded": True,
+                "degraded_sources": ["vector"],
+                "degraded_candidates": [{"source": "vector", "reason": "circuit_open"}],
+            },
+        )
+
+        item = evaluate_case(
+            _FakeSystem(response=response),
+            case,
+            top_k=3,
+            generate=True,
+        )
+
+        self.assertTrue(item["resilience"]["fallback_used"])
+        self.assertEqual(
+            item["resilience"]["fallback_reasons"],
+            ["two_stage_to_direct_model", "graph_empty_to_hybrid"],
+        )
+        self.assertTrue(item["resilience"]["retrieval_degraded"])
+        self.assertEqual(item["resilience"]["degraded_sources"], ["vector"])
+        self.assertEqual(
+            item["resilience"]["degraded_candidates"],
+            [{"source": "vector", "reason": "circuit_open"}],
+        )
+
     def test_build_eval_report_includes_profile_metadata(self) -> None:
         config = build_test_config()
         config.profile_name = "eval_fast"
@@ -254,6 +435,9 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertEqual(report["top_k"], 3)
         self.assertFalse(report["generate"])
         self.assertEqual(report["metrics"]["pass_rate"], 1.0)
+        self.assertEqual(report["policy"]["policy_version"], "c9-default-policy-v1")
+        self.assertEqual(report["policy"]["prompt_version"], "c9-default-prompts-v1")
+        self.assertTrue(report["policy"]["policy_hash"].startswith("sha256:"))
 
 
 if __name__ == "__main__":

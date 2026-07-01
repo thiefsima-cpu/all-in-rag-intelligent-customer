@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 from rag_modules.app.diagnostics import StartupDiagnostics, SystemStatsDiagnostics
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from rag_modules.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
 
 
 class _FakeRuntimeStatsAccess:
@@ -76,9 +76,7 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
                 index_module=SimpleNamespace(stats={"row_count": 4}),
             ),
             retrieval=SimpleNamespace(
-                routing_workflow=SimpleNamespace(
-                    get_route_statistics=lambda: {"total_queries": 3}
-                ),
+                routing_workflow=SimpleNamespace(get_route_statistics=lambda: {"total_queries": 3}),
                 retrieval_runtime_profile=SimpleNamespace(
                     to_dict=lambda: {"planner": {"max_candidates": 8}}
                 ),

@@ -5,28 +5,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from langchain_core.documents import Document
-
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.retrieval_cache import (
     HYBRID_CACHE_SCHEMA_VERSION,
     RetrievalCacheStore,
 )
+from rag_modules.text_document import TextDocument
 
 
 class RetrievalCacheStoreTests(unittest.TestCase):
     def _store(self, cache_dir: str) -> RetrievalCacheStore:
-        config = build_test_config(
-            {"storage": {"index_cache_dir": cache_dir}}
-        )
+        config = build_test_config({"storage": {"index_cache_dir": cache_dir}})
         return RetrievalCacheStore(config)
 
     def test_json_cache_round_trip_and_full_chunk_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = self._store(tmpdir)
             chunks = [
-                Document(
-                    page_content=f"chunk-{index}",
+                TextDocument(
+                    content=f"chunk-{index}",
                     metadata={"chunk_id": str(index), "nested": {"value": index}},
                 )
                 for index in range(25)
@@ -40,8 +37,8 @@ class RetrievalCacheStoreTests(unittest.TestCase):
             store.save(chunks, payload)
             loaded = store.load(chunks)
             changed_chunks = list(chunks)
-            changed_chunks[-1] = Document(
-                page_content="changed-final-chunk",
+            changed_chunks[-1] = TextDocument(
+                content="changed-final-chunk",
                 metadata=chunks[-1].metadata,
             )
 
@@ -57,7 +54,7 @@ class RetrievalCacheStoreTests(unittest.TestCase):
     def test_tampered_cache_payload_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = self._store(tmpdir)
-            chunks = [Document(page_content="chunk", metadata={"chunk_id": "1"})]
+            chunks = [TextDocument(content="chunk", metadata={"chunk_id": "1"})]
             store.save(chunks, {"value": "original"})
 
             path = Path(store.path())

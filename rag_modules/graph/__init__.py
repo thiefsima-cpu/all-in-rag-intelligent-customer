@@ -5,7 +5,6 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Dict
 
-
 _EXPORTS: Dict[str, str] = {
     "DefaultGraphRetrievalComponentFactory": ".retrieval_components",
     "EntityKeyValue": ".indexing",

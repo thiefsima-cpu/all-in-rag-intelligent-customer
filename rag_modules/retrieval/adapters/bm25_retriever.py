@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from typing import List, Optional
 
-import jieba
-from langchain_core.documents import Document
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="pkg_resources is deprecated as an API.*",
+        category=UserWarning,
+        module=r"jieba\._compat",
+    )
+    import jieba
 from rank_bm25 import BM25Okapi
 
-from ..contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
+from ...safe_logging import log_failure
+from ...text_document import TextDocument
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +42,7 @@ def load_custom_dict(dict_path: str = "storage/jieba_dict.txt") -> None:
         return
     if os.path.isfile(dict_path):
         jieba.load_userdict(dict_path)
-        logger.info("Loaded jieba custom dictionary: %s", dict_path)
+        logger.info("Loaded jieba custom dictionary")
     _CUSTOM_DICT_LOADED = True
 
 
@@ -50,20 +59,20 @@ def tokenize_chinese(text: str) -> List[str]:
 
 
 class BM25Retriever:
-    """Standalone BM25 retriever over a corpus of LangChain Documents."""
+    """Standalone BM25 retriever over an internal text-document corpus."""
 
     def __init__(self) -> None:
         self.bm25: Optional[BM25Okapi] = None
-        self.corpus_docs: List[Document] = []
+        self.corpus_docs: List[TextDocument] = []
 
     @property
     def ready(self) -> bool:
         return self.bm25 is not None and bool(self.corpus_docs)
 
-    def build(self, chunks: List[Document]) -> None:
+    def build(self, chunks: List[TextDocument]) -> None:
         load_custom_dict()
         self.corpus_docs = list(chunks)
-        tokenized = [tokenize_chinese(document.page_content) for document in chunks]
+        tokenized = [tokenize_chinese(document.content) for document in chunks]
         self.bm25 = BM25Okapi(tokenized)
         avg_tokens = sum(len(tokens) for tokens in tokenized) / max(1, len(tokenized))
         logger.info("BM25 index built: documents=%d avg_tokens=%.1f", len(chunks), avg_tokens)
@@ -77,8 +86,13 @@ class BM25Retriever:
         if not tokenized_query:
             return []
 
-        scores = self.bm25.get_scores(tokenized_query)
-        top_indices = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)[:top_k]
+        bm25 = self.bm25
+        if bm25 is None:
+            return []
+        scores = bm25.get_scores(tokenized_query)
+        top_indices = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)[
+            :top_k
+        ]
 
         docs: List[EvidenceDocument] = []
         for idx in top_indices:
@@ -100,7 +114,7 @@ class BM25Retriever:
             )
             docs.append(
                 EvidenceDocument(
-                    content=src.page_content,
+                    content=src.content,
                     node_id=str(
                         metadata.get("node_id")
                         or metadata.get("parent_id")
@@ -120,15 +134,15 @@ class BM25Retriever:
                 )
             )
 
-        logger.info("BM25 search complete: returned=%d query_tokens=%s", len(docs), tokenized_query)
+        logger.info("BM25 search complete: returned=%d", len(docs))
         return docs
 
     def to_cache_dict(self) -> dict:
-        tokenized = [tokenize_chinese(document.page_content) for document in self.corpus_docs]
+        tokenized = [tokenize_chinese(document.content) for document in self.corpus_docs]
         return {
             "tokenized_corpus": tokenized,
             "corpus_docs": [
-                {"page_content": document.page_content, "metadata": document.metadata}
+                {"page_content": document.content, "metadata": document.metadata}
                 for document in self.corpus_docs
             ],
         }
@@ -142,21 +156,25 @@ class BM25Retriever:
             if len(tokenized) != len(corpus_docs) or not corpus_docs:
                 return False
             self.corpus_docs = [
-                Document(
-                    page_content=str(item["page_content"]),
+                TextDocument(
+                    content=str(item["page_content"]),
                     metadata=dict(item.get("metadata") or {}),
                 )
                 for item in corpus_docs
             ]
             normalized_tokens = [
-                [str(token) for token in row]
-                for row in tokenized
-                if isinstance(row, list)
+                [str(token) for token in row] for row in tokenized if isinstance(row, list)
             ]
             if len(normalized_tokens) != len(self.corpus_docs):
                 return False
             self.bm25 = BM25Okapi(normalized_tokens)
             return True
         except Exception as exc:
-            logger.warning("Failed to restore BM25 cache: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return False

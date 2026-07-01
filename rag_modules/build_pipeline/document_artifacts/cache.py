@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
-import hmac
-from typing import Optional
+from collections.abc import Mapping
 
-from ...artifacts import (
+from ...runtime.artifact_ports import ArtifactManifestStorePort
+from ...runtime.artifacts import (
     ARTIFACT_STAGE_DOCUMENTS_READY,
     ArtifactManifest,
     ArtifactManifestStore,
@@ -15,6 +16,8 @@ from ...artifacts import (
     read_documents,
     write_documents,
 )
+from ...runtime_contracts import GraphDataModulePort
+from ...safe_logging import log_failure
 from .manifest import DocumentArtifactManifestAssembler
 from .models import DocumentArtifactResult
 from .settings import DocumentArtifactSettings
@@ -32,7 +35,7 @@ class DocumentIndexCache:
         config,
         *,
         settings: DocumentArtifactSettings | None = None,
-        manifest_store: ArtifactManifestStore | None = None,
+        manifest_store: ArtifactManifestStorePort | None = None,
         signature_collector: DocumentArtifactSignatureCollector | None = None,
         stats_collector: DocumentArtifactStatsCollector | None = None,
         manifest_assembler: DocumentArtifactManifestAssembler | None = None,
@@ -41,7 +44,9 @@ class DocumentIndexCache:
         self.settings = settings or DocumentArtifactSettings.from_config(config)
         os.makedirs(self.settings.cache_dir, exist_ok=True)
         self.manifest_store = manifest_store or ArtifactManifestStore(config)
-        self.signature_collector = signature_collector or DocumentArtifactSignatureCollector(self.settings)
+        self.signature_collector = signature_collector or DocumentArtifactSignatureCollector(
+            self.settings
+        )
         self.stats_collector = stats_collector or DocumentArtifactStatsCollector()
         self.manifest_assembler = manifest_assembler or DocumentArtifactManifestAssembler(
             settings=self.settings,
@@ -56,7 +61,7 @@ class DocumentIndexCache:
     def chunks_path(self) -> str:
         return self.settings.chunks_path
 
-    def load(self, data_module) -> Optional[DocumentArtifactResult]:
+    def load(self, data_module: GraphDataModulePort) -> DocumentArtifactResult | None:
         if not self.settings.enable_index_cache:
             return None
         if not (os.path.exists(self.documents_path) and os.path.exists(self.chunks_path)):
@@ -86,14 +91,16 @@ class DocumentIndexCache:
             documents = read_documents(self.documents_path)
             chunks = read_documents(self.chunks_path)
         except Exception as exc:
-            logger.warning("Failed to load document artifact cache. Rebuilding: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "document_cache_load_failed",
+                code="BUILD_FAILED",
+                error=exc,
+            )
             return None
-        expected_documents_digest = str(
-            manifest.build_metadata.get("documents_sha256") or ""
-        )
-        expected_chunks_digest = str(
-            manifest.build_metadata.get("chunks_sha256") or ""
-        )
+        expected_documents_digest = str(manifest.build_metadata.get("documents_sha256") or "")
+        expected_chunks_digest = str(manifest.build_metadata.get("chunks_sha256") or "")
         actual_documents_digest = compute_documents_digest(documents)
         actual_chunks_digest = compute_documents_digest(chunks)
         if not (
@@ -135,7 +142,7 @@ class DocumentIndexCache:
         stage: str = ARTIFACT_STAGE_DOCUMENTS_READY,
         cache_hit: bool = False,
         base_manifest: ArtifactManifest | None = None,
-        build_metadata: Optional[dict] = None,
+        build_metadata: Mapping[str, object] | None = None,
     ) -> ArtifactManifest:
         documents = list(getattr(data_module, "documents", []) or [])
         chunks = list(getattr(data_module, "chunks", []) or [])
@@ -162,11 +169,8 @@ class DocumentIndexCache:
         save_candidate = getattr(self.manifest_store, "save_candidate", None)
         if callable(save_candidate):
             saved_manifest = save_candidate(manifest)
-            logger.info(
-                "Document artifact candidate manifest saved to %s",
-                getattr(self.manifest_store, "candidate_path", self.manifest_store.manifest_path),
-            )
+            logger.info("Document artifact candidate manifest saved")
         else:
             saved_manifest = self.manifest_store.save(manifest)
-            logger.info("Document artifact manifest saved to %s", self.manifest_store.manifest_path)
+            logger.info("Document artifact manifest saved")
         return saved_manifest

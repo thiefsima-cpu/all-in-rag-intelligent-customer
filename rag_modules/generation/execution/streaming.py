@@ -4,27 +4,31 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import AnswerContext, GenerationSnapshot
-from ..client import generation_failure_code
+from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
+from ...runtime.error_models import generation_error_detail
+from ...safe_logging import log_failure
+from ..clients import generation_failure_code
 from ..decision import decide_generation_mode
 from ..fallback import should_skip_model_fallback
+from ..models import GenerationMode
+from .contracts import _GenerationExecutionHost
 
 logger = logging.getLogger(__name__)
 
 
-class _StreamingGenerationMixin:
+class _StreamingGenerationMixin(_GenerationExecutionHost):
     def stream(
         self,
         *,
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         max_retries: int | None = None,
-    ):
+    ) -> Generator[str, None, GenerationSnapshot]:
         self._consume_token_usage()
         answer_context, package = self._resolve_answer_context(
             answer_context=answer_context,
@@ -50,7 +54,7 @@ class _StreamingGenerationMixin:
         resolved_retries = max(1, int(max_retries or self.settings.stream_retries))
 
         try:
-            if decision.mode == "two_stage":
+            if decision.mode is GenerationMode.TWO_STAGE:
                 plan_start = time.perf_counter()
                 plan = self._build_answer_plan(
                     selected_context,
@@ -102,9 +106,15 @@ class _StreamingGenerationMixin:
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return self._finalize_trace(trace)
         except Exception as exc:
-            logger.warning("Streaming answer generation failed: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
             trace.request_retries += self._consume_retry_count()
-            if decision.mode == "two_stage" and not should_skip_model_fallback(
+            if decision.mode is GenerationMode.TWO_STAGE and not should_skip_model_fallback(
                 exc,
                 fallback_on_timeout=self.settings.fallback_on_timeout,
             ):
@@ -129,16 +139,21 @@ class _StreamingGenerationMixin:
                     trace.status = "degraded"
                     trace.direct_latency_ms = self._elapsed_ms(direct_start)
                     trace.provider_latency_ms = (
-                        trace.plan_latency_ms
-                        + trace.compose_latency_ms
-                        + trace.direct_latency_ms
+                        trace.plan_latency_ms + trace.compose_latency_ms + trace.direct_latency_ms
                     )
                     trace.failure_code = generation_failure_code(exc)
+                    trace.error = generation_error_detail(exc)
                     trace.request_retries += self._consume_retry_count()
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return self._finalize_trace(trace)
                 except Exception as fallback_exc:
-                    logger.warning("Streaming direct fallback also failed: %s", fallback_exc)
+                    log_failure(
+                        logger,
+                        logging.WARNING,
+                        "generation_fallback_failed",
+                        code="GENERATION_FAILED",
+                        error=fallback_exc,
+                    )
                     trace.request_retries += self._consume_retry_count()
                     exc = fallback_exc
 
@@ -157,9 +172,9 @@ class _StreamingGenerationMixin:
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         max_retries: int | None = None,
-        chunk_callback=None,
+        chunk_callback: Callable[[str], None] | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         chunks: list[str] = []
         generator = self.stream(

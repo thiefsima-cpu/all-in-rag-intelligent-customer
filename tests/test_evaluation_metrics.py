@@ -38,10 +38,7 @@ class EvaluationMetricTests(unittest.TestCase):
 
     def test_grounding_metrics_score_support_and_citation_validity(self) -> None:
         metrics = grounding_metrics(
-            (
-                "Tofu provides protein. Evidence 1. "
-                "The moon is made of cheese. Evidence 3."
-            ),
+            ("Tofu provides protein. Evidence 1. The moon is made of cheese. Evidence 3."),
             [
                 {
                     "content": "Tofu is a protein-rich ingredient.",
@@ -114,6 +111,56 @@ class EvaluationMetricTests(unittest.TestCase):
         self.assertEqual(metrics["p95_latency_ms"], 125.0)
         self.assertEqual(metrics["total_tokens"], 15)
         self.assertEqual(metrics["estimated_cost_usd"], 0.001)
+
+    def test_report_aggregation_includes_fallback_and_degraded_sources(self) -> None:
+        metrics = calculate_eval_metrics(
+            [
+                {
+                    "passed": True,
+                    "category": "test",
+                    "evaluation": {"answer_checked": True, "answer_preview": "Evidence 1"},
+                    "retrieval": {"evidence": []},
+                    "grounding": {},
+                    "runtime": {"latency_ms": 100.0},
+                    "cost": {},
+                    "resilience": {
+                        "fallback_used": True,
+                        "fallback_reasons": [
+                            "two_stage_to_direct_model",
+                            "graph_empty_to_hybrid",
+                        ],
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                    },
+                },
+                {
+                    "passed": True,
+                    "category": "test",
+                    "evaluation": {"answer_checked": True, "answer_preview": "Evidence 1"},
+                    "retrieval": {"evidence": []},
+                    "grounding": {},
+                    "runtime": {"latency_ms": 125.0},
+                    "cost": {},
+                    "resilience": {
+                        "fallback_used": False,
+                        "fallback_reasons": [],
+                        "retrieval_degraded": False,
+                        "degraded_sources": [],
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(metrics["fallback_case_count"], 1)
+        self.assertEqual(metrics["fallback_rate"], 0.5)
+        self.assertEqual(
+            metrics["fallback_reasons"],
+            {"graph_empty_to_hybrid": 1, "two_stage_to_direct_model": 1},
+        )
+        self.assertEqual(metrics["retrieval_degraded_case_count"], 1)
+        self.assertEqual(metrics["retrieval_degradation_rate"], 0.5)
+        self.assertEqual(metrics["degraded_sources"], ["vector"])
+        self.assertEqual(metrics["degraded_source_counts"], {"vector": 1})
 
 
 if __name__ == "__main__":

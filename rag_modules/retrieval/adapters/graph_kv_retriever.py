@@ -6,7 +6,7 @@ import logging
 import math
 from typing import Any, Dict, List
 
-from ..contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,12 @@ class GraphKVRetriever:
                     continue
 
                 score = round(
-                    min(match_score * 0.6 + _richness_factor(entity) + _degree_factor(entity.metadata), 1.0),
+                    min(
+                        match_score * 0.6
+                        + _richness_factor(entity)
+                        + _degree_factor(entity.metadata),
+                        1.0,
+                    ),
                     4,
                 )
                 metadata = {
@@ -117,7 +122,9 @@ class GraphKVRetriever:
                     continue
                 seen.add(relation.relation_id)
 
-                best_key_score = max((_match_score(keyword, key) for key in relation.index_keys), default=0.0)
+                best_key_score = max(
+                    (_match_score(keyword, key) for key in relation.index_keys), default=0.0
+                )
                 if best_key_score <= 0:
                     continue
 

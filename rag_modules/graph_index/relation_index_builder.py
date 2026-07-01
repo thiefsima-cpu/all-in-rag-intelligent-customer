@@ -3,31 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
+from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
+from ..query_policy import get_query_policy
 from ..query_understanding import dedupe_preserve_order, relation_index_terms
-from ..semantic_schema import SEMANTIC_RELATION_TYPES
 from .models import EntityKeyValue, RelationKeyValue
 from .store import GraphIndexStore
 
 logger = logging.getLogger(__name__)
-
-_RELATION_TYPE_HINTS: Dict[str, Tuple[str, ...]] = {
-    "REQUIRES": ("食材搭配", "烹饪原料"),
-    "CONTAINS_STEP": ("制作步骤", "烹饪过程", "制作方法"),
-    "BELONGS_TO_CATEGORY": ("菜品分类", "美食类别"),
-    "HAS_FLAVOR": ("口味", "风味"),
-    "USES_TECHNIQUE": ("技法", "技巧"),
-    "HAS_DIET_TAG": ("饮食偏好", "素食", "素菜"),
-    "HAS_HEALTH_TAG": ("健康限制", "少油", "低脂", "低糖", "控糖", "低盐", "减脂"),
-    "HAS_CUISINE_STYLE": ("菜系", "风格"),
-    "HAS_INGREDIENT_CATEGORY": ("食材类别", "分类"),
-    "HAS_TIME_PROFILE": ("时间", "时长", "快手", "省时"),
-    "HAS_DIFFICULTY_LEVEL": ("难度", "简单", "新手", "易做"),
-    "CONTRIBUTES_TO": ("贡献", "形成", "影响"),
-    "INGREDIENT_CONTRIBUTES_TO": ("调味", "口感", "风味"),
-    "TECHNIQUE_MODIFIES_TEXTURE": ("口感", "软嫩", "酥脆", "质地"),
-}
 
 
 class RelationIndexBuilder:
@@ -36,6 +20,10 @@ class RelationIndexBuilder:
     def __init__(self, config, llm_client=None) -> None:
         self.config = config
         self.llm_client = llm_client
+        policy = get_query_policy()
+        self.relation_index_keywords = policy.relations.relation_index_keywords
+        self.relation_index_suffix_templates = policy.relations.relation_index_suffix_templates
+        self.semantic_relation_key_specs = dict(policy.graph.reasoning.semantic_relation_key_specs)
 
     def build(
         self,
@@ -43,7 +31,7 @@ class RelationIndexBuilder:
         relationships: List[Tuple[str, str, str]],
         store: GraphIndexStore,
     ) -> Dict[str, RelationKeyValue]:
-        logger.info("开始构建关系键值索引...")
+        logger.info("Building relation key-value index...")
         for index, (source_id, relation_type, target_id) in enumerate(relationships):
             source_entity = store.entity_kv_store.get(str(source_id))
             target_entity = store.entity_kv_store.get(str(target_id))
@@ -53,9 +41,9 @@ class RelationIndexBuilder:
             relation_id = f"rel_{index}_{source_id}_{target_id}"
             value_content = "\n".join(
                 [
-                    f"关系类型: {relation_type}",
-                    f"源实体: {source_entity.entity_name} ({source_entity.entity_type})",
-                    f"目标实体: {target_entity.entity_name} ({target_entity.entity_type})",
+                    f"relation_type: {relation_type}",
+                    f"source_entity: {source_entity.entity_name} ({source_entity.entity_type})",
+                    f"target_entity: {target_entity.entity_name} ({target_entity.entity_type})",
                 ]
             )
             relation_kv = RelationKeyValue(
@@ -78,7 +66,10 @@ class RelationIndexBuilder:
             store.add_relation(relation_kv)
 
         self._add_semantic_relation_key_values(store)
-        logger.info("关系键值索引构建完成，共 %s 个关系", len(store.relation_kv_store))
+        logger.info(
+            "Relation key-value index built with %s relations.",
+            len(store.relation_kv_store),
+        )
         return store.relation_kv_store
 
     def _add_semantic_relation_key_values(self, store: GraphIndexStore) -> None:
@@ -86,8 +77,7 @@ class RelationIndexBuilder:
         simple_semantic_relations = [
             rel_type
             for rel_type in SEMANTIC_RELATION_TYPES
-            if rel_type
-            not in {"CONTRIBUTES_TO", "INGREDIENT_CONTRIBUTES_TO", "TECHNIQUE_MODIFIES_TEXTURE"}
+            if rel_type not in self.semantic_relation_key_specs
         ]
 
         for source_id, source_entity in list(store.entity_kv_store.items()):
@@ -95,50 +85,22 @@ class RelationIndexBuilder:
                 continue
             props = source_entity.metadata.get("properties", {}) or {}
             semantic_relations = props.get("semantic_relations", {}) or {}
-            semantic_items = []
+            semantic_items: List[Tuple[str, str, List[str]]] = []
 
             for rel_type in simple_semantic_relations:
                 for target in semantic_relations.get(rel_type, []) or []:
-                    semantic_items.append((rel_type, target, [target, rel_type]))
+                    semantic_items.append((rel_type, str(target), [str(target), rel_type]))
 
-            for item in semantic_relations.get("CONTRIBUTES_TO", []) or []:
-                effect = item.get("effect")
-                causes = item.get("causes", [])
-                if effect:
-                    semantic_items.append(("CONTRIBUTES_TO", effect, [effect, *list(causes or [])]))
-
-            for item in semantic_relations.get("INGREDIENT_CONTRIBUTES_TO", []) or []:
-                source = item.get("source")
-                effect = item.get("effect")
-                if source and effect:
-                    semantic_items.append(
-                        (
-                            "INGREDIENT_CONTRIBUTES_TO",
-                            effect,
-                            [source, effect, "INGREDIENT_CONTRIBUTES_TO"],
-                        )
-                    )
-
-            for item in semantic_relations.get("TECHNIQUE_MODIFIES_TEXTURE", []) or []:
-                source = item.get("source")
-                effect = item.get("effect")
-                if source and effect:
-                    semantic_items.append(
-                        (
-                            "TECHNIQUE_MODIFIES_TEXTURE",
-                            effect,
-                            [source, effect, "TECHNIQUE_MODIFIES_TEXTURE"],
-                        )
-                    )
+            semantic_items.extend(self._semantic_relation_items(semantic_relations))
 
             for rel_type, target_name, keys in semantic_items:
                 relation_id = f"semantic_rel_{counter}_{source_id}_{rel_type}_{target_name}"
                 counter += 1
                 value_content = "\n".join(
                     [
-                        f"关系类型: {rel_type}",
-                        f"源菜品: {source_entity.entity_name}",
-                        f"语义目标: {target_name}",
+                        f"relation_type: {rel_type}",
+                        f"source_recipe: {source_entity.entity_name}",
+                        f"semantic_target: {target_name}",
                     ]
                 )
                 relation_kv = RelationKeyValue(
@@ -170,18 +132,19 @@ class RelationIndexBuilder:
             target_entity.entity_name,
         )
         keys.extend(
-            [
+            str(value)
+            for value in (
                 source_props.get("category"),
                 source_props.get("cuisineType"),
                 target_props.get("category"),
                 target_props.get("cuisineType"),
-                *_RELATION_TYPE_HINTS.get(relation_type, ()),
-            ]
+                *self.relation_index_keywords.get(relation_type, ()),
+            )
+            if value
         )
-        if relation_type == "REQUIRES":
-            keys.append(f"{source_entity.entity_name}_食材")
-        if relation_type == "CONTAINS_STEP":
-            keys.append(f"{source_entity.entity_name}_步骤")
+        suffix_template = self.relation_index_suffix_templates.get(relation_type)
+        if suffix_template:
+            keys.append(suffix_template.format(source_entity=source_entity.entity_name))
 
         if getattr(self.config, "enable_llm_relation_keys", False):
             keys.extend(
@@ -192,6 +155,27 @@ class RelationIndexBuilder:
                 )
             )
         return dedupe_preserve_order(keys)
+
+    def _semantic_relation_items(
+        self,
+        semantic_relations: dict[str, Any],
+    ) -> List[Tuple[str, str, List[str]]]:
+        items: List[Tuple[str, str, List[str]]] = []
+        for relation_type, spec in self.semantic_relation_key_specs.items():
+            for payload in semantic_relations.get(relation_type, []) or []:
+                if not isinstance(payload, dict):
+                    continue
+                target = str(payload.get(spec.target_field) or "").strip()
+                keys: List[str] = []
+                for field in spec.key_fields:
+                    value = payload.get(field)
+                    if isinstance(value, (list, tuple)):
+                        keys.extend(str(item) for item in value if str(item).strip())
+                    elif str(value or "").strip():
+                        keys.append(str(value))
+                if target:
+                    items.append((str(relation_type), target, keys))
+        return items
 
     @staticmethod
     def _compat_relation_key_expansion(

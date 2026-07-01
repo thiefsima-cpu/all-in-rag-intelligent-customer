@@ -11,13 +11,16 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
-from rag_modules.artifacts import ARTIFACT_HEALTH_READY
+from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerSummary
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.interfaces.api.service import GraphRAGServingApiService
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.interfaces.api.services import GraphRAGServingApiService
 from rag_modules.interfaces.api.services.errors import ApiBackpressureError
-from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.tracing import QueryTracer
-from rag_modules.tracing_sinks import AsyncQueryTraceSink
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink
+from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_READY
+
+DEFAULT_MAX_CONCURRENT_ANSWERS = 4
 
 
 class _SlowCaptureTraceSink:
@@ -46,24 +49,6 @@ class _SlowCaptureTraceSink:
             "dropped_events": 0,
             "queued_events": 0,
             "closed": self.closed,
-        }
-
-
-class _DummyAnswerResponse:
-    def __init__(self, *, question: str, latency_ms: float) -> None:
-        self.question = question
-        self.latency_ms = latency_ms
-
-    def to_dict(self) -> dict:
-        return {
-            "summary": {
-                "answer": f"answer:{self.question}",
-                "strategy": "hybrid_traditional",
-                "latency_ms": self.latency_ms,
-                "doc_count": 1,
-                "has_evidence": True,
-                "error": "",
-            }
         }
 
 
@@ -157,7 +142,15 @@ class _PressureTestSystem:
             latency_ms=latency_ms,
             answer="ok",
         )
-        return _DummyAnswerResponse(question=question, latency_ms=latency_ms)
+        return QuestionAnswerResponse(
+            summary=QuestionAnswerSummary(
+                answer=f"answer:{question}",
+                strategy="hybrid_traditional",
+                latency_ms=latency_ms,
+                doc_count=1,
+                has_evidence=True,
+            )
+        )
 
     def close(self) -> None:
         self.query_tracer.close()
@@ -233,7 +226,7 @@ def run_pressure_test(
         config=build_test_config(
             {
                 "api": {
-                    "max_concurrent_answers": max(0, int(max_concurrent_answers)),
+                    "max_concurrent_answers": max(1, int(max_concurrent_answers)),
                     "answer_acquire_timeout_seconds": max(
                         0.0,
                         float(answer_acquire_timeout_seconds),
@@ -290,7 +283,9 @@ def run_pressure_test(
         completed_requests=completed_requests,
         rejected_requests=rejected_requests,
         total_duration_ms=total_duration_ms,
-        throughput_rps=(completed_requests / (total_duration_ms / 1000.0)) if total_duration_ms else 0.0,
+        throughput_rps=(completed_requests / (total_duration_ms / 1000.0))
+        if total_duration_ms
+        else 0.0,
         avg_latency_ms=(sum(latencies) / len(latencies)) if latencies else 0.0,
         p95_latency_ms=_percentile(latencies, 0.95),
         trace_stats=trace_stats,
@@ -306,7 +301,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--answer-delay-ms", type=float, default=20.0)
     parser.add_argument("--trace-delay-ms", type=float, default=5.0)
     parser.add_argument("--trace-queue-size", type=int, default=32)
-    parser.add_argument("--max-concurrent-answers", type=int, default=0)
+    parser.add_argument(
+        "--max-concurrent-answers",
+        type=int,
+        default=DEFAULT_MAX_CONCURRENT_ANSWERS,
+    )
     parser.add_argument("--answer-acquire-timeout-seconds", type=float, default=0.25)
     parser.add_argument("--json", action="store_true", help="Emit summary as JSON.")
     return parser.parse_args()
@@ -320,7 +319,7 @@ def main() -> None:
         answer_delay_ms=max(0.0, args.answer_delay_ms),
         trace_delay_ms=max(0.0, args.trace_delay_ms),
         trace_queue_size=max(0, args.trace_queue_size),
-        max_concurrent_answers=max(0, args.max_concurrent_answers),
+        max_concurrent_answers=max(1, args.max_concurrent_answers),
         answer_acquire_timeout_seconds=max(0.0, args.answer_acquire_timeout_seconds),
     )
     payload = result.to_dict()

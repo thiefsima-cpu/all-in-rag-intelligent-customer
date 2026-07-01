@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from neo4j import GraphDatabase
+from ..infra.neo4j import create_neo4j_driver
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,10 @@ class HybridDriverService:
             state.driver = self.neo4j_manager.driver
             state.owns_driver = False
             return state.driver
-        state.driver = GraphDatabase.driver(
+        state.driver = create_neo4j_driver(
             self.storage.neo4j_uri,
-            auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+            self.storage.neo4j_user,
+            self.storage.neo4j_password,
         )
         state.owns_driver = True
         return state.driver

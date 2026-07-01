@@ -1,29 +1,314 @@
 from __future__ import annotations
 
 import ast
-from importlib.util import resolve_name
+import importlib
+import re
+import sys
+import tomllib
 import unittest
+from dataclasses import dataclass
+from importlib.util import resolve_name
 from pathlib import Path
 
-from rag_modules.app.legacy_surface import GROUPED_LEGACY_ATTRIBUTE_MAP
+from rag_modules.interfaces.api.versioning import API_PREFIX, API_VERSION
 from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     LEGACY_PUBLIC_SURFACE,
+    LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+    LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     ROOT_PUBLIC_SURFACE,
     repo_root_facade_module_names,
     root_facade_module_names,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
-ALLOWED_ROOT_WRAPPERS = {
-    f"{entry.module_name}.py"
-    for entry in ROOT_PUBLIC_SURFACE
-}
+ALLOWED_ROOT_WRAPPERS = {f"{entry.module_name}.py" for entry in ROOT_PUBLIC_SURFACE}
 PROHIBITED_ROOT_MODULES = root_facade_module_names()
 PROHIBITED_REPO_ROOT_MODULES = repo_root_facade_module_names()
 LEGACY_FACADE_MODULES = PROHIBITED_ROOT_MODULES | PROHIBITED_REPO_ROOT_MODULES
+MIGRATED_ROOT_SHARED_MODULE_FILES = frozenset(
+    {
+        "artifact_documents.py",
+        "artifact_json.py",
+        "artifact_manifest.py",
+        "artifact_manifest_store.py",
+        "artifact_registry.py",
+        "artifact_signatures.py",
+        "artifacts.py",
+        "query_constraints.py",
+        "retrieval_post_processor.py",
+        "semantic_schema.py",
+        "tracing.py",
+        "tracing_sinks.py",
+    }
+)
+RETIRED_LEGACY_FACADE_MODULES = frozenset(
+    {
+        "config",
+        "rag_modules.app.runtime_service_resolver",
+        "rag_modules.app.services.question_answer_service",
+        "rag_modules.generation.integration",
+        "rag_modules.graph_data_preparation",
+        "rag_modules.graph_indexing",
+        "rag_modules.intelligent_query_router",
+        "rag_modules.routing.intelligent_query_router",
+        "rag_modules.retrieval.hybrid_facade",
+    }
+)
+PROHIBITED_LEGACY_FACADE_MODULES = LEGACY_FACADE_MODULES | RETIRED_LEGACY_FACADE_MODULES
+RETIRED_LATE_MIGRATION_COMPAT_EXPORTS = {
+    "rag_modules.configuration.section_loaders": RAG_MODULES_DIR
+    / "configuration"
+    / "section_loaders.py",
+    "rag_modules.configuration.settings": RAG_MODULES_DIR / "configuration" / "settings.py",
+    "rag_modules.generation.client": RAG_MODULES_DIR / "generation" / "client.py",
+    "rag_modules.generation.executor": RAG_MODULES_DIR / "generation" / "executor.py",
+    "rag_modules.interfaces.api.models": RAG_MODULES_DIR / "interfaces" / "api" / "models.py",
+    "rag_modules.interfaces.api.service": RAG_MODULES_DIR / "interfaces" / "api" / "service.py",
+    "rag_modules.retrieval.bm25_retriever": RAG_MODULES_DIR / "retrieval" / "bm25_retriever.py",
+    "rag_modules.retrieval.constraint_retriever": RAG_MODULES_DIR
+    / "retrieval"
+    / "constraint_retriever.py",
+    "rag_modules.retrieval.graph_kv_retriever": RAG_MODULES_DIR
+    / "retrieval"
+    / "graph_kv_retriever.py",
+    "rag_modules.retrieval.retrieval_contracts": RAG_MODULES_DIR
+    / "retrieval"
+    / "retrieval_contracts.py",
+    "rag_modules.retrieval.runtime_settings": RAG_MODULES_DIR / "retrieval" / "runtime_settings.py",
+    "rag_modules.retrieval.vector_retriever": RAG_MODULES_DIR / "retrieval" / "vector_retriever.py",
+}
+RETIRED_INTERNAL_COMPAT_SHELLS = {
+    "rag_modules.app.composition.build_runtime_assembler": RAG_MODULES_DIR
+    / "app"
+    / "composition"
+    / "build_runtime_assembler.py",
+    "rag_modules.app.composition.serving_runtime_assembler": RAG_MODULES_DIR
+    / "app"
+    / "composition"
+    / "serving_runtime_assembler.py",
+    "rag_modules.app.runtime": RAG_MODULES_DIR / "app" / "runtime.py",
+}
+RETIRED_INTERNAL_COMPAT_NAMES = frozenset(
+    {
+        "BuildRuntimeAssembler",
+        "ServingRuntimeAssembler",
+        "provide_query_router",
+    }
+)
+RETIRED_PROVIDER_COMPONENTS_PACKAGE = "rag_modules.app.provider_components"
+RETIRED_PROVIDER_COMPONENTS_PATH = RAG_MODULES_DIR / "app" / "provider_components"
+RETIRED_PROVIDER_COMPONENTS_MODULES = frozenset(
+    {
+        RETIRED_PROVIDER_COMPONENTS_PACKAGE,
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.build_pipeline",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.contracts",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.diagnostics",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.generation",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.infrastructure",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.lifecycle",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.query_understanding",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.retrieval",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.runtime",
+        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.services",
+    }
+)
+
+
+@dataclass(frozen=True)
+class AttributeBoundaryRule:
+    path: Path
+    prohibited_chains: frozenset[str]
+    reason: str
+    prohibited_prefixes: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class CallBoundaryRule:
+    path: Path
+    prohibited_names: frozenset[str]
+    reason: str
+    scope_name: str | None = None
+    prohibited_name_patterns: tuple[re.Pattern[str], ...] = ()
+
+
+@dataclass(frozen=True)
+class DefinitionBoundaryRule:
+    path: Path
+    prohibited_names: frozenset[str]
+    reason: str
+
+
+@dataclass(frozen=True)
+class DynamicLookupBoundaryRule:
+    path: Path
+    owner_names: frozenset[str]
+    owner_chains: frozenset[str]
+    reason: str
+
+
+@dataclass(frozen=True)
+class ImportBoundaryRule:
+    path: Path
+    prohibited_modules: frozenset[str]
+    reason: str
+
+
+APP_COMPOSITION_IMPORT_BOUNDARIES = (
+    ImportBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "runtime_view.py",
+        prohibited_modules=frozenset(
+            {
+                "rag_modules.app.runtime_service_resolver",
+                "rag_modules.app.services.question_answer_service",
+            }
+        ),
+        reason="runtime view must not depend on retired runtime resolver or app service facades",
+    ),
+    ImportBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "system.py",
+        prohibited_modules=frozenset({"rag_modules.interfaces.cli_console"}),
+        reason="API-only system facade must not depend on retired CLI modules",
+    ),
+    ImportBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "composition" / "bootstrapper_composer.py",
+        prohibited_modules=frozenset({RETIRED_PROVIDER_COMPONENTS_PACKAGE}),
+        reason="composition roots must not depend on the retired provider_components package",
+    ),
+)
+
+APP_COMPOSITION_CALL_BOUNDARIES = (
+    CallBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "runtime_view.py",
+        prohibited_names=frozenset(
+            {
+                "QuestionAnswerService",
+                "QuestionAnswerServiceResolver",
+            }
+        ),
+        prohibited_name_patterns=(re.compile(r"^System.*View$"),),
+        reason="runtime view facade must not assemble grouped views or legacy services inline",
+    ),
+    CallBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "composition" / "runtime_manager.py",
+        prohibited_names=frozenset({"compose", "getattr"}),
+        reason="runtime manager constructor must not resolve lifecycle collaborators dynamically",
+        scope_name="__init__",
+    ),
+    CallBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "bootstrap.py",
+        prohibited_names=frozenset(
+            {
+                "BuildBootstrapper",
+                "BuildRuntimeExecutor",
+                "BuildRuntimeFactory",
+                "ServingBootstrapper",
+                "ServingRuntimeFactory",
+                "ServingRuntimePreparer",
+                "SystemRuntimeBootstrapService",
+            }
+        ),
+        reason="public bootstrapper facades must delegate runtime assembly instead of constructing it",
+    ),
+    CallBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "system.py",
+        prohibited_names=frozenset(
+            {
+                "InteractiveCliConsole",
+                "merge_legacy_dir_names",
+                "resolve_grouped_legacy_attribute",
+            }
+        ),
+        reason="system facade must stay API-only and avoid retired legacy surface helpers",
+    ),
+)
+
+APP_COMPOSITION_DEFINITION_BOUNDARIES = (
+    DefinitionBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "runtime_view.py",
+        prohibited_names=frozenset(
+            {
+                "_resolve_data_module",
+                "_resolve_index_module",
+                "_resolve_neo4j_manager",
+                "_resolve_query_tracer",
+            }
+        ),
+        reason="runtime view facade must not grow private grouped-view resolver helpers",
+    ),
+)
+
+APP_COMPOSITION_DYNAMIC_LOOKUP_BOUNDARIES = (
+    DynamicLookupBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "bootstrap.py",
+        owner_names=frozenset(),
+        owner_chains=frozenset(
+            {"self.build_bootstrapper", "self.factory", "self.serving_bootstrapper"}
+        ),
+        reason="public bootstrapper facade must not inspect split bootstrappers dynamically",
+    ),
+    DynamicLookupBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "system.py",
+        owner_names=frozenset({"bootstrapper", "build_bootstrapper", "serving_bootstrapper"}),
+        owner_chains=frozenset(),
+        reason="system facade must not resolve bootstrapper surfaces inline",
+    ),
+    DynamicLookupBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "composition" / "system_composer.py",
+        owner_names=frozenset({"bootstrapper", "build_bootstrapper", "serving_bootstrapper"}),
+        owner_chains=frozenset(),
+        reason="system composition must use explicit provider-surface contracts, not ad hoc lookup",
+    ),
+)
+
+APP_COMPOSITION_ATTRIBUTE_BOUNDARIES = (
+    AttributeBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "system.py",
+        prohibited_chains=frozenset(
+            {
+                "services.answer_workflow",
+                "self.facade_support.answer_question",
+                "self.facade_support.answer_question_response",
+                "self.interactive_service.run_interactive",
+                "self.runtime_manager",
+                "self.runtime_manager.build_knowledge_base",
+                "self.runtime_manager.close",
+                "self.runtime_manager.collect_startup_diagnostics",
+                "self.runtime_manager.collect_system_stats",
+                "self.runtime_manager.initialize_build_runtime",
+                "self.runtime_manager.initialize_serving_runtime",
+                "self.runtime_manager.initialize_system",
+                "self.runtime_manager.is_build_initialized",
+                "self.runtime_manager.is_initialized",
+                "self.runtime_manager.is_serving_initialized",
+                "self.runtime_manager.rebuild_knowledge_base",
+                "self.runtime_manager.require_ready",
+                "self.runtime_manager.runtime",
+                "self.runtime_manager.runtime_view",
+            }
+        ),
+        prohibited_prefixes=frozenset({"self.interactive_service"}),
+        reason="system facade must access operations and runtime state through its public collaborators",
+    ),
+    AttributeBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "composition" / "system_facade_support.py",
+        prohibited_chains=frozenset(),
+        prohibited_prefixes=frozenset({"self.runtime_manager."}),
+        reason="facade support must not reach back into runtime manager internals",
+    ),
+    AttributeBoundaryRule(
+        path=RAG_MODULES_DIR / "app" / "composition" / "system_answering_service.py",
+        prohibited_chains=frozenset(
+            {
+                "self.facade_support.answer_question",
+                "self.facade_support.answer_question_response",
+            }
+        ),
+        prohibited_prefixes=frozenset({"self.runtime_manager."}),
+        reason="answering service must not route back through facade support or runtime manager",
+    ),
+)
 
 
 class PublicSurfaceBoundaryTests(unittest.TestCase):
@@ -67,6 +352,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         parts.append(current.id)
         return tuple(reversed(parts))
 
+    @staticmethod
+    def _version_tuple(version: str) -> tuple[int, int, int]:
+        major, minor, patch = (int(part) for part in version.split("."))
+        return major, minor, patch
+
     @classmethod
     def _resolve_import_from(cls, path: Path, node: ast.ImportFrom) -> str:
         module = node.module or ""
@@ -75,6 +365,157 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         relative_name = "." * node.level + module
         return resolve_name(relative_name, cls._package_name_for_path(path))
 
+    @classmethod
+    def _iter_resolved_imports(cls, path: Path):
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
+        lines = source.splitlines()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    yield node.lineno, lines[node.lineno - 1].strip(), alias.name, alias.name
+            elif isinstance(node, ast.ImportFrom):
+                module_name = cls._resolve_import_from(path, node)
+                yield node.lineno, lines[node.lineno - 1].strip(), module_name, module_name
+                for alias in node.names:
+                    if alias.name != "*":
+                        yield (
+                            node.lineno,
+                            lines[node.lineno - 1].strip(),
+                            module_name,
+                            f"{module_name}.{alias.name}",
+                        )
+
+    @staticmethod
+    def _source_tree_and_lines(path: Path) -> tuple[ast.Module, list[str]]:
+        source = path.read_text(encoding="utf-8-sig")
+        return ast.parse(source, filename=str(path)), source.splitlines()
+
+    @classmethod
+    def _nodes_in_scope(cls, tree: ast.Module, scope_name: str | None):
+        if scope_name is None:
+            yield from ast.walk(tree)
+            return
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == scope_name
+            ):
+                yield from ast.walk(node)
+                return
+
+    @staticmethod
+    def _call_name(node: ast.Call) -> str | None:
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr
+        return None
+
+    @staticmethod
+    def _violation(path: Path, lineno: int, lines: list[str], reason: str) -> str:
+        rel = path.relative_to(ROOT)
+        return f"{rel}:{lineno}: {lines[lineno - 1].strip()} ({reason})"
+
+    @classmethod
+    def _collect_import_boundary_violations(cls, rule: ImportBoundaryRule) -> list[str]:
+        tree, lines = cls._source_tree_and_lines(rule.path)
+        violations: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_names = {alias.name for alias in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                module_name = cls._resolve_import_from(rule.path, node)
+                imported_names = {module_name}
+                imported_names.update(
+                    f"{module_name}.{alias.name}" for alias in node.names if alias.name != "*"
+                )
+            else:
+                continue
+            if any(
+                cls._module_matches(name, set(rule.prohibited_modules)) for name in imported_names
+            ):
+                violations.append(cls._violation(rule.path, node.lineno, lines, rule.reason))
+        return violations
+
+    @classmethod
+    def _collect_call_boundary_violations(cls, rule: CallBoundaryRule) -> list[str]:
+        tree, lines = cls._source_tree_and_lines(rule.path)
+        violations: list[str] = []
+        for node in cls._nodes_in_scope(tree, rule.scope_name):
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = cls._call_name(node)
+            if call_name is None:
+                continue
+            if call_name in rule.prohibited_names or any(
+                pattern.match(call_name) for pattern in rule.prohibited_name_patterns
+            ):
+                violations.append(cls._violation(rule.path, node.lineno, lines, rule.reason))
+        return violations
+
+    @classmethod
+    def _collect_definition_boundary_violations(cls, rule: DefinitionBoundaryRule) -> list[str]:
+        tree, lines = cls._source_tree_and_lines(rule.path)
+        violations: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node.name in rule.prohibited_names:
+                    violations.append(cls._violation(rule.path, node.lineno, lines, rule.reason))
+        return violations
+
+    @classmethod
+    def _collect_dynamic_lookup_boundary_violations(
+        cls,
+        rule: DynamicLookupBoundaryRule,
+    ) -> list[str]:
+        tree, lines = cls._source_tree_and_lines(rule.path)
+        violations: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "getattr":
+                continue
+            if not node.args:
+                continue
+            owner = node.args[0]
+            owner_name = owner.id if isinstance(owner, ast.Name) else ""
+            owner_chain = ".".join(cls._attribute_chain(owner))
+            if owner_name in rule.owner_names or owner_chain in rule.owner_chains:
+                violations.append(cls._violation(rule.path, node.lineno, lines, rule.reason))
+        return violations
+
+    @classmethod
+    def _collect_attribute_boundary_violations(cls, rule: AttributeBoundaryRule) -> list[str]:
+        tree, lines = cls._source_tree_and_lines(rule.path)
+        violations: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute):
+                continue
+            chain = ".".join(cls._attribute_chain(node))
+            if chain in rule.prohibited_chains or any(
+                chain.startswith(prefix) for prefix in rule.prohibited_prefixes
+            ):
+                violations.append(cls._violation(rule.path, node.lineno, lines, rule.reason))
+        return violations
+
+    @staticmethod
+    def _module_matches(module_name: str, prohibited: set[str]) -> bool:
+        return any(
+            module_name == prohibited_name or module_name.startswith(f"{prohibited_name}.")
+            for prohibited_name in prohibited
+        )
+
+    def test_migrated_shared_modules_are_not_at_rag_modules_root(self) -> None:
+        remaining = {
+            path.name
+            for path in RAG_MODULES_DIR.glob("*.py")
+            if path.name in MIGRATED_ROOT_SHARED_MODULE_FILES
+        }
+
+        self.assertEqual(set(), remaining)
+
     def test_internal_modules_do_not_depend_on_compat_or_root_facades(self) -> None:
         violations: list[str] = []
 
@@ -82,9 +523,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             rel = path.relative_to(RAG_MODULES_DIR)
             if "__pycache__" in rel.parts:
                 continue
-            if len(rel.parts) == 1 and (
-                rel.name in ALLOWED_ROOT_WRAPPERS or rel.stem.startswith("graph_")
-            ):
+            if len(rel.parts) == 1 and rel.name in ALLOWED_ROOT_WRAPPERS:
                 continue
 
             source = path.read_text(encoding="utf-8-sig")
@@ -94,15 +533,21 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name == "config" or alias.name.startswith("rag_modules.compat"):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                        if alias.name in PROHIBITED_ROOT_MODULES:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                        if alias.name in PROHIBITED_LEGACY_FACADE_MODULES or alias.name.startswith(
+                            "rag_modules.compat"
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
                 elif isinstance(node, ast.ImportFrom):
                     module_name = self._resolve_import_from(path, node)
-                    if module_name == "config" or module_name.startswith("rag_modules.compat"):
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                    if module_name in PROHIBITED_ROOT_MODULES:
+                    imported_names = {module_name}
+                    imported_names.update(
+                        f"{module_name}.{alias.name}" for alias in node.names if alias.name != "*"
+                    )
+                    if module_name.startswith("rag_modules.compat") or (
+                        imported_names & PROHIBITED_LEGACY_FACADE_MODULES
+                    ):
                         violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
 
         self.assertFalse(
@@ -121,25 +566,23 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             lines = source.splitlines()
 
             for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module in PROHIBITED_REPO_ROOT_MODULES:
+                if isinstance(node, ast.ImportFrom) and node.module == "config":
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name in PROHIBITED_REPO_ROOT_MODULES:
+                        if alias.name == "config":
                             violations.append(
                                 f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
                             )
 
         self.assertFalse(
             violations,
-            "Found scripts importing repo-root configuration facades:\n"
-            + "\n".join(violations),
+            "Found scripts importing repo-root configuration facades:\n" + "\n".join(violations),
         )
 
     def test_scripts_and_non_compat_tests_do_not_import_remaining_legacy_facades(self) -> None:
         violations: list[str] = []
         allowed_test_files = {
-            ROOT / "tests" / "test_intelligent_query_router.py",
             ROOT / "tests" / "test_public_surface_boundaries.py",
         }
 
@@ -155,11 +598,19 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
                         module_name = self._resolve_import_from(path, node)
-                        if module_name in LEGACY_FACADE_MODULES:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                        imported_names = {module_name}
+                        imported_names.update(
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        )
+                        if imported_names & PROHIBITED_LEGACY_FACADE_MODULES:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
                     elif isinstance(node, ast.Import):
                         for alias in node.names:
-                            if alias.name in LEGACY_FACADE_MODULES:
+                            if alias.name in PROHIBITED_LEGACY_FACADE_MODULES:
                                 violations.append(
                                     f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
                                 )
@@ -186,7 +637,10 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 lines = source.splitlines()
 
                 for node in ast.walk(tree):
-                    if isinstance(node, ast.ImportFrom) and node.module == "rag_modules.runtime_models":
+                    if (
+                        isinstance(node, ast.ImportFrom)
+                        and node.module == "rag_modules.runtime_models"
+                    ):
                         violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                     elif isinstance(node, ast.Import):
                         for alias in node.names:
@@ -198,6 +652,152 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertFalse(
             violations,
             "Found scripts/tests still importing the runtime_models facade:\n"
+            + "\n".join(violations),
+        )
+
+    def test_contract_kernel_does_not_depend_on_runtime_or_feature_packages(self) -> None:
+        contracts_dir = RAG_MODULES_DIR / "contracts"
+        prohibited = {
+            "rag_modules.app",
+            "rag_modules.generation",
+            "rag_modules.graph",
+            "rag_modules.query_understanding",
+            "rag_modules.retrieval",
+            "rag_modules.routing",
+            "rag_modules.runtime",
+        }
+        violations: list[str] = []
+
+        if not contracts_dir.exists():
+            violations.append("rag_modules/contracts package is missing")
+        else:
+            for path in contracts_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                    if self._module_matches(module_name, prohibited):
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Contract kernel must not import runtime or feature packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_runtime_models_do_not_depend_on_retrieval_or_query_understanding(self) -> None:
+        prohibited = {
+            "rag_modules.query_understanding",
+            "rag_modules.retrieval",
+        }
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "runtime").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if self._module_matches(module_name, prohibited):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Runtime contracts must depend on rag_modules.contracts instead of feature packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_domain_shared_does_not_import_langchain(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "domain" / "shared").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if module_name == "langchain_core" or module_name.startswith("langchain_core."):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Domain shared modules must stay free of LangChain dependencies:\n"
+            + "\n".join(violations),
+        )
+
+    def test_domain_shared_does_not_import_contracts(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "domain" / "shared").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if module_name == "rag_modules.contracts" or module_name.startswith(
+                    "rag_modules.contracts."
+                ):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Domain shared modules must stay free of contracts dependencies:\n"
+            + "\n".join(violations),
+        )
+
+    def test_domain_shared_does_not_export_recipe_constraint_matcher(self) -> None:
+        domain_shared = importlib.import_module("rag_modules.domain.shared")
+
+        self.assertFalse(hasattr(domain_shared, "RecipeConstraintMatcher"))
+        self.assertNotIn("RecipeConstraintMatcher", getattr(domain_shared, "__all__", ()))
+
+    def test_recipe_constraint_matcher_is_not_imported_from_domain_shared(self) -> None:
+        violations: list[str] = []
+        old_matcher_import = "rag_modules.domain.shared.query_constraints.RecipeConstraintMatcher"
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                if "__pycache__" in rel.parts:
+                    continue
+                if path == ROOT / "tests" / "test_public_surface_boundaries.py":
+                    continue
+                for lineno, line, _module_name, imported_name in self._iter_resolved_imports(path):
+                    if imported_name == old_matcher_import:
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "RecipeConstraintMatcher must be imported from rag_modules.retrieval.evidence:\n"
+            + "\n".join(violations),
+        )
+
+    def test_query_understanding_does_not_depend_on_retrieval_package(self) -> None:
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "query_understanding").rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if self._module_matches(module_name, {"rag_modules.retrieval"}):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Query-understanding must not import retrieval runtime/profile packages:\n"
+            + "\n".join(violations),
+        )
+
+    def test_repository_uses_contract_kernel_for_shared_dtos(self) -> None:
+        violations: list[str] = []
+        prohibited_old_contract_modules = {"rag_modules.retrieval.contracts"}
+        prohibited_query_exports = {
+            "rag_modules.query_understanding.QueryPlan",
+            "rag_modules.query_understanding.QuerySemanticProfile",
+        }
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                rel = path.relative_to(ROOT)
+                if "__pycache__" in rel.parts:
+                    continue
+                for lineno, line, module_name, imported_name in self._iter_resolved_imports(path):
+                    if self._module_matches(module_name, prohibited_old_contract_modules):
+                        violations.append(f"{rel}:{lineno}: {line}")
+                    elif imported_name in prohibited_query_exports:
+                        violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Shared DTOs/settings must be imported from rag_modules.contracts:\n"
             + "\n".join(violations),
         )
 
@@ -234,9 +834,22 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found scripts/tests still importing retired query facades:\n"
-            + "\n".join(violations),
+            "Found scripts/tests still importing retired query facades:\n" + "\n".join(violations),
         )
+
+    def test_unversioned_query_policy_resources_and_helpers_are_retired(self) -> None:
+        policy_dir = RAG_MODULES_DIR / "query_policy"
+
+        self.assertFalse((policy_dir / "defaults.json").exists())
+        self.assertFalse((policy_dir / "planner_prompt.txt").exists())
+
+        package_source = (policy_dir / "__init__.py").read_text(encoding="utf-8")
+        loader_source = (policy_dir / "loader.py").read_text(encoding="utf-8")
+        for retired_name in ("get_planner_prompt_template", "flatten_term_groups"):
+            with self.subTest(retired_name=retired_name):
+                self.assertNotIn(retired_name, package_source)
+                self.assertNotIn(retired_name, loader_source)
+        self.assertNotIn("class QueryPolicy", loader_source)
 
     def test_retirement_plan_document_states_current_policy(self) -> None:
         plan_path = ROOT / "docs" / "public_surface_retirement_plan.md"
@@ -246,16 +859,22 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         for heading in (
             "## Current Policy",
             "## Canonical Packages",
-            "## Remaining Legacy Bridges",
+            "## Legacy Bridge Status",
+            "## Compatibility Closure",
+            "## Scan Rules",
             "## Internal Freeze Rule",
-            "## Thin Wrapper Rule",
+            "## Retired Facade Rule",
             "## Retired Facade History",
-            "## Final Retirement Criteria",
+            "## 0.2.0 Compatibility Note",
         ):
             self.assertIn(heading, content)
         self.assertNotIn("E:/ai-project/all-in-rag/code/C9/", content)
         self.assertIn("public_surface_manifest.py", content)
         self.assertIn("canonical imports", content)
+        self.assertIn(LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION, content)
+        self.assertIn("internal_dependency_guard", content)
+        self.assertIn("thin_wrapper_guard", content)
+        self.assertIn("No legacy bridge remains registered", content)
         for expected in (
             "config.py",
             "rag_modules.graph_data_preparation",
@@ -264,32 +883,210 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.configuration",
             "rag_modules.graph.data_preparation",
             "rag_modules.graph.indexing",
-            "rag_modules.routing.intelligent_query_router",
-            "external callers",
-            "canonical module directly",
+            "rag_modules.routing.RoutingWorkflowService",
+            "retired in favor of",
+            "late-migration compatibility exports",
+            "rag_modules.interfaces.api.models",
+            "rag_modules.interfaces.api.services",
+            "rag_modules.generation.clients",
+            "rag_modules.generation.execution",
+            "rag_modules.contracts",
+            "rag_modules.retrieval.runtime_profile",
+            "rag_modules.app.runtime",
+            "rag_modules.app.composition.build_runtime_assembler",
+            "rag_modules.app.composition.serving_runtime_assembler",
+            "provide_query_router",
+            "rag_modules.app.provider_components",
+            "rag_modules.app.providers",
+            "ServingRuntimeRefreshService",
+            "ServingRuntimeLifecycleService",
             "rag_modules.compat.*",
-            "may not own business logic",
-            "new dependencies",
-            "one release cycle",
+            "contract kernel",
+            "must not recreate",
+            "will fail instead of forwarding",
         ):
             self.assertIn(expected, content)
 
-    def test_manifest_covers_remaining_legacy_public_surface(self) -> None:
+    def test_version_governance_distinguishes_package_api_and_compat_versions(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            package_version = tomllib.load(file)["project"]["version"]
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+        normalized_readme = " ".join(readme.split())
+        normalized_policy = " ".join(policy.split())
+
+        for expected in (
+            "## Version Governance",
+            f"Package version: `{package_version}`",
+            f"API version: `{API_VERSION}`",
+            f"API prefix: `{API_PREFIX}`",
+            f"Compatibility removal version: `{LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}`",
+            "Package releases can keep the same API version",
+            "Compatibility removals must name their version axis",
+        ):
+            self.assertIn(expected, normalized_readme)
+
+        for expected in (
+            "## Version Governance",
+            "`pyproject.toml`",
+            "`API_VERSION`",
+            "`LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`",
+            "package version, API version, and compatibility removal version are not interchangeable",
+        ):
+            self.assertIn(expected, normalized_policy)
+
+    def test_completed_package_retirement_milestones_do_not_exceed_package_version(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            package_version = tomllib.load(file)["project"]["version"]
+        package_version_tuple = self._version_tuple(package_version)
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+        package_removal_versions = {
+            LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+            *re.findall(
+                r"\| [^|\n]+ \| [^|\n]+ \| [^|\n]+ \| package version `([^`]+)` \|", policy
+            ),
+        }
+
+        self.assertTrue(package_removal_versions)
+        for removal_version in sorted(package_removal_versions):
+            with self.subTest(removal_version=removal_version):
+                self.assertLessEqual(
+                    self._version_tuple(removal_version),
+                    package_version_tuple,
+                    (
+                        "Completed package compatibility removals must not be documented "
+                        "beyond the current package version."
+                    ),
+                )
+
+    def test_app_composition_maintenance_guide_documents_runtime_ownership(self) -> None:
+        guide_path = ROOT / "docs" / "app_composition_maintenance_guide.md"
+        self.assertTrue(guide_path.exists())
+        guide = guide_path.read_text(encoding="utf-8")
+        architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+
+        for expected in (
+            "Provider Map",
+            "Factory Map",
+            "Lifecycle Map",
+            "InfrastructureProvider",
+            "BuildPipelineProvider",
+            "RetrievalRuntimeProvider",
+            "ApplicationServiceProvider",
+            "ServingRuntimeLifecycleService",
+            "BuildRuntimeLifecycleService",
+            "SystemRuntimeManager",
+            "Do not reintroduce `rag_modules/app/provider_components`",
+            "Do not reintroduce `ServingRuntimeRefreshService`",
+        ):
+            self.assertIn(expected, guide)
+
+        self.assertIn("app_composition_maintenance_guide.md", architecture)
+        self.assertIn("rag_modules.app.provider_components", policy)
+        self.assertIn("ServingRuntimeRefreshService", policy)
+
+    def test_active_compatibility_layers_are_retired_in_docs(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+
+        self.assertIn("Use `/v1` for new API clients", readme)
+        self.assertIn("Unversioned serving and build routes are retired", readme)
+        self.assertNotIn("compatibility aliases during the migration window", readme)
+
+        for expected in (
+            "## Compatibility Closure",
+            "No active compatibility layers remain",
+            "unversioned HTTP API aliases are retired",
+            "`rag_modules.routing.IntelligentQueryRouter` is retired",
+            "`rag_modules.routing.RoutingWorkflowService`",
+            "already-completed `0.2.0` import-facade retirement",
+        ):
+            self.assertIn(expected, policy)
+        self.assertNotIn("remain active only for migration", policy)
+
+    def test_api_routes_register_only_versioned_operational_paths(self) -> None:
+        path = RAG_MODULES_DIR / "interfaces" / "api" / "routes.py"
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
+        violations: list[str] = []
+
+        def route_path(node: ast.AST) -> tuple[str, str] | None:
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return ("unversioned", node.value)
+            if not isinstance(node, ast.JoinedStr):
+                return None
+            has_api_prefix = any(
+                isinstance(value, ast.FormattedValue)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "API_PREFIX"
+                for value in node.values
+            )
+            if not has_api_prefix:
+                return None
+            suffix = "".join(
+                value.value
+                for value in node.values
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            )
+            return ("versioned", suffix)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            unversioned_paths: set[str] = set()
+            versioned_paths: set[str] = set()
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                func = decorator.func
+                if (
+                    not isinstance(func, ast.Attribute)
+                    or func.attr not in {"get", "post"}
+                    or not isinstance(func.value, ast.Name)
+                    or func.value.id != "app"
+                    or not decorator.args
+                ):
+                    continue
+                parsed_path = route_path(decorator.args[0])
+                if parsed_path is None:
+                    continue
+                kind, parsed = parsed_path
+                if kind == "versioned":
+                    versioned_paths.add(parsed)
+                else:
+                    unversioned_paths.add(parsed)
+
+            for unversioned_path in sorted(unversioned_paths):
+                violations.append(f"{node.name}: {unversioned_path}")
+
+        self.assertEqual(
+            [],
+            violations,
+            "API route decorators must use canonical /v1 paths only.",
+        )
+        self.assertNotIn("_versioned_alias_route", source)
+
+    def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {
             path.stem
             for path in RAG_MODULES_DIR.glob("*.py")
             if path.name != "__init__.py"
-            and (
-                path.name in ALLOWED_ROOT_WRAPPERS
-                or path.stem.startswith("graph_")
-            )
+            and (path.name in ALLOWED_ROOT_WRAPPERS or path.stem.startswith("graph_"))
         }
         manifest_root = {entry.module_name for entry in ROOT_PUBLIC_SURFACE}
         manifest_external = {entry.module_name for entry in EXTERNAL_PUBLIC_SURFACE}
 
-        self.assertEqual(root_files, manifest_root)
+        self.assertEqual(set(), root_files)
+        self.assertEqual(set(), manifest_root)
         self.assertFalse((RAG_MODULES_DIR / "compat").exists())
-        self.assertEqual({"config"}, manifest_external)
+        self.assertEqual(set(), manifest_external)
+        self.assertEqual((), LEGACY_PUBLIC_SURFACE)
+        self.assertEqual("0.2.0", LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
+        self.assertEqual(
+            ("internal_dependency_guard", "thin_wrapper_guard"),
+            LEGACY_PUBLIC_SURFACE_SCAN_RULES,
+        )
 
     def test_remaining_legacy_facades_are_thin_registered_wrappers(self) -> None:
         violations: list[str] = []
@@ -327,7 +1124,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     for target in node.targets
                 ):
                     continue
-                violations.append(f"{rel}:{node.lineno}: {source.splitlines()[node.lineno - 1].strip()}")
+                violations.append(
+                    f"{rel}:{node.lineno}: {source.splitlines()[node.lineno - 1].strip()}"
+                )
 
             self.assertIn(
                 entry.canonical_module,
@@ -341,14 +1140,249 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_retired_legacy_facade_files_are_removed(self) -> None:
+        retired_paths = {
+            ROOT / "config.py",
+            RAG_MODULES_DIR / "app" / "runtime_service_resolver.py",
+            RAG_MODULES_DIR / "app" / "services" / "question_answer_service.py",
+            RAG_MODULES_DIR / "generation" / "integration.py",
+            RAG_MODULES_DIR / "graph_data_preparation.py",
+            RAG_MODULES_DIR / "graph_indexing.py",
+            RAG_MODULES_DIR / "intelligent_query_router.py",
+            RAG_MODULES_DIR / "routing" / "intelligent_query_router.py",
+            RAG_MODULES_DIR / "retrieval" / "hybrid_facade.py",
+        }
+
+        self.assertEqual(
+            set(),
+            {path.relative_to(ROOT) for path in retired_paths if path.exists()},
+        )
+
+    def test_retired_facade_import_paths_fail_instead_of_forwarding(self) -> None:
+        for module_name in sorted(RETIRED_LEGACY_FACADE_MODULES):
+            with self.subTest(module_name=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_late_migration_compat_export_modules_are_removed(self) -> None:
+        existing_paths = [
+            path.relative_to(ROOT)
+            for path in RETIRED_LATE_MIGRATION_COMPAT_EXPORTS.values()
+            if path.exists()
+        ]
+        self.assertEqual(set(), set(existing_paths))
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_LATE_MIGRATION_COMPAT_EXPORTS):
+            with self.subTest(module_name=module_name):
+                sys.modules.pop(module_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_retired_internal_compat_shells_are_removed(self) -> None:
+        existing_paths = [
+            path.relative_to(ROOT)
+            for path in RETIRED_INTERNAL_COMPAT_SHELLS.values()
+            if path.exists()
+        ]
+        self.assertEqual(set(), set(existing_paths))
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_INTERNAL_COMPAT_SHELLS):
+            with self.subTest(module_name=module_name):
+                sys.modules.pop(module_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_retired_provider_components_package_is_removed(self) -> None:
+        self.assertFalse(RETIRED_PROVIDER_COMPONENTS_PATH.exists())
+
+        importlib.invalidate_caches()
+        for module_name in sorted(RETIRED_PROVIDER_COMPONENTS_MODULES):
+            with self.subTest(module_name=module_name):
+                for cached_name in list(sys.modules):
+                    if cached_name == RETIRED_PROVIDER_COMPONENTS_PACKAGE or cached_name.startswith(
+                        f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}."
+                    ):
+                        sys.modules.pop(cached_name, None)
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_code_does_not_import_retired_provider_components_package(self) -> None:
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {
+                            module_name,
+                            *(
+                                f"{module_name}.{alias.name}"
+                                for alias in node.names
+                                if alias.name != "*"
+                            ),
+                        }
+                        if any(
+                            name == RETIRED_PROVIDER_COMPONENTS_PACKAGE
+                            or name.startswith(f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.")
+                            for name in imported_names
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == RETIRED_PROVIDER_COMPONENTS_PACKAGE or (
+                                alias.name.startswith(f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.")
+                            ):
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found imports of retired provider_components package:\n" + "\n".join(violations),
+        )
+
+    def test_internal_code_and_tests_do_not_reference_retired_internal_compat_names(
+        self,
+    ) -> None:
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        }
+                        if (
+                            module_name in RETIRED_INTERNAL_COMPAT_SHELLS
+                            or imported_names & set(RETIRED_INTERNAL_COMPAT_SHELLS)
+                            or any(
+                                alias.name in RETIRED_INTERNAL_COMPAT_NAMES for alias in node.names
+                            )
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name in RETIRED_INTERNAL_COMPAT_SHELLS:
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+                    elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if node.name in RETIRED_INTERNAL_COMPAT_NAMES:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+
+        self.assertFalse(
+            violations,
+            "Found references to retired internal compatibility shells:\n" + "\n".join(violations),
+        )
+
+    def test_internal_scripts_and_tests_use_canonical_imports_after_compat_retirement(
+        self,
+    ) -> None:
+        retired_modules = set(RETIRED_LATE_MIGRATION_COMPAT_EXPORTS)
+        allowed_files = {
+            ROOT / "tests" / "test_public_surface_boundaries.py",
+        }
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
+            for path in base_dir.rglob("*.py"):
+                if path in allowed_files:
+                    continue
+                rel = path.relative_to(ROOT)
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        imported_names = {module_name}
+                        imported_names.update(
+                            f"{module_name}.{alias.name}"
+                            for alias in node.names
+                            if alias.name != "*"
+                        )
+                        if imported_names & retired_modules:
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name in retired_modules:
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found imports of retired late-migration compatibility exports:\n"
+            + "\n".join(violations),
+        )
+
+    def test_runtime_metadata_does_not_advertise_retired_facade_modules(self) -> None:
+        violations: list[str] = []
+
+        for path in RAG_MODULES_DIR.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+            lines = source.splitlines()
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign):
+                    continue
+                if not any(
+                    isinstance(target, ast.Attribute) and target.attr == "__module__"
+                    for target in node.targets
+                ):
+                    continue
+                if (
+                    isinstance(node.value, ast.Constant)
+                    and node.value.value in RETIRED_LEGACY_FACADE_MODULES
+                ):
+                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+
+        self.assertFalse(
+            violations,
+            "Found runtime metadata still pointing at retired facade modules:\n"
+            + "\n".join(violations),
+        )
+
     def test_refactored_compat_modules_are_thin_exports(self) -> None:
         expected_imports = {
-            RAG_MODULES_DIR / "interfaces" / "api" / "service.py": {
-                "rag_modules.interfaces.api.services",
-            },
-            RAG_MODULES_DIR / "generation" / "executor.py": {
-                "rag_modules.generation.execution",
-            },
             RAG_MODULES_DIR / "infra" / "milvus_index_construction.py": {
                 "rag_modules.infra.milvus",
             },
@@ -397,22 +1431,86 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found refactored compatibility modules with local logic:\n"
+            "Found refactored compatibility modules with local logic:\n" + "\n".join(violations),
+        )
+
+    def test_graph_database_driver_creation_stays_in_neo4j_infra_adapter(self) -> None:
+        allowed_dir = RAG_MODULES_DIR / "infra" / "neo4j"
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
+            for path in base_dir.rglob("*.py"):
+                if "__pycache__" in path.parts or path.is_relative_to(allowed_dir):
+                    continue
+
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+                rel = path.relative_to(ROOT)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom) and node.module == "neo4j":
+                        if any(alias.name == "GraphDatabase" for alias in node.names):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Name) and node.id == "GraphDatabase":
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                    elif isinstance(node, ast.Attribute) and node.attr == "GraphDatabase":
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+
+        self.assertFalse(
+            violations,
+            "Found direct GraphDatabase usage outside rag_modules.infra.neo4j:\n"
             + "\n".join(violations),
         )
 
-    def test_composer_modules_are_grouped_by_composition_root(self) -> None:
+    def test_neo4j_driver_library_imports_stay_in_neo4j_infra_adapter(self) -> None:
+        allowed_dir = RAG_MODULES_DIR / "infra" / "neo4j"
+        violations: list[str] = []
+
+        for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
+            for path in base_dir.rglob("*.py"):
+                if "__pycache__" in path.parts or path.is_relative_to(allowed_dir):
+                    continue
+
+                source = path.read_text(encoding="utf-8-sig")
+                tree = ast.parse(source, filename=str(path))
+                lines = source.splitlines()
+                rel = path.relative_to(ROOT)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        module_name = self._resolve_import_from(path, node)
+                        if module_name == "neo4j" or module_name.startswith("neo4j."):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == "neo4j" or alias.name.startswith("neo4j."):
+                                violations.append(
+                                    f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                                )
+
+        self.assertFalse(
+            violations,
+            "Found Neo4j driver package imports outside rag_modules.infra.neo4j:\n"
+            + "\n".join(violations),
+        )
+
+    def test_composer_modules_stay_under_composition_root_without_fixed_topology(self) -> None:
         composition_dir = RAG_MODULES_DIR / "app" / "composition"
-        composer_modules = {
-            path.name for path in composition_dir.glob("*composer.py")
-        }
-        self.assertEqual(
-            {
-                "bootstrapper_composer.py",
-                "runtime_lifecycle_service_composer.py",
-                "system_composer.py",
-            },
-            composer_modules,
+        misplaced = [
+            path.relative_to(ROOT)
+            for path in (RAG_MODULES_DIR / "app").rglob("*composer.py")
+            if not path.is_relative_to(composition_dir)
+        ]
+
+        self.assertFalse(
+            misplaced,
+            "Composer modules should live under rag_modules/app/composition without "
+            f"pinning the exact composer file set:\n{misplaced}",
         )
 
     def test_runtime_model_dependencies_are_one_way(self) -> None:
@@ -427,10 +1525,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
     def test_internal_and_script_routing_use_route_resolution_contract(self) -> None:
         violations: list[str] = []
-        allowed_definition = (
-            RAG_MODULES_DIR / "routing" / "intelligent_query_router.py",
-            "def route_query",
-        )
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
             for path in base_dir.rglob("*.py"):
@@ -441,30 +1535,24 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
                 for node in ast.walk(tree):
                     if isinstance(node, ast.FunctionDef) and node.name == "route_query":
-                        if not (
-                            path == allowed_definition[0]
-                            and lines[node.lineno - 1].strip().startswith(allowed_definition[1])
-                        ):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                     elif isinstance(node, ast.Call):
                         func = node.func
                         if isinstance(func, ast.Attribute) and func.attr == "route_query":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
-            "Found routing calls that bypass RouteResolution.route():\n"
-            + "\n".join(violations),
+            "Found routing calls that bypass RouteResolution.route():\n" + "\n".join(violations),
         )
 
     def test_internal_generation_assembly_uses_workflow_service_not_legacy_facade(self) -> None:
         violations: list[str] = []
         allowed_files = {
-            RAG_MODULES_DIR / "__init__.py",
             RAG_MODULES_DIR / "generation_integration.py",
             RAG_MODULES_DIR / "compat" / "generation_integration.py",
-            RAG_MODULES_DIR / "generation" / "__init__.py",
-            RAG_MODULES_DIR / "generation" / "integration.py",
         }
 
         for path in RAG_MODULES_DIR.rglob("*.py"):
@@ -483,7 +1571,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.generation.integration":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -506,9 +1596,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "build_answer_plan",
             "build_answer_plan_from_documents",
         }
-        allowed_files = {
-            RAG_MODULES_DIR / "generation" / "integration.py",
-        }
+        allowed_files: set[Path] = set()
         violations: list[str] = []
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
@@ -524,7 +1612,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                     if isinstance(node, ast.Call):
                         func = node.func
                         if isinstance(func, ast.Attribute) and func.attr in prohibited_methods:
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -535,7 +1625,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
     def test_internal_query_understanding_imports_use_domain_service(self) -> None:
         allowed_files = {
             RAG_MODULES_DIR / "app" / "services" / "__init__.py",
-            RAG_MODULES_DIR / "app" / "services" / "query_understanding_service.py",
         }
         violations: list[str] = []
 
@@ -555,7 +1644,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.app.services.query_understanding_service":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -563,12 +1654,19 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_internal_query_understanding_facade_is_removed(self) -> None:
+        facade_path = RAG_MODULES_DIR / "app" / "services" / "query_understanding_service.py"
+
+        self.assertFalse(
+            facade_path.exists(),
+            "app/services/query_understanding_service.py is a retired internal facade; "
+            "use rag_modules.query_understanding.service instead.",
+        )
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("rag_modules.app.services.query_understanding_service")
+
     def test_internal_question_answering_imports_use_workflow_or_contracts(self) -> None:
-        allowed_files = {
-            RAG_MODULES_DIR / "app" / "services" / "__init__.py",
-            RAG_MODULES_DIR / "app" / "services" / "question_answer_service.py",
-            RAG_MODULES_DIR / "app" / "runtime_service_resolver.py",
-        }
+        allowed_files: set[Path] = set()
         violations: list[str] = []
 
         for path in RAG_MODULES_DIR.rglob("*.py"):
@@ -587,7 +1685,9 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "rag_modules.app.services.question_answer_service":
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
 
         self.assertFalse(
             violations,
@@ -595,85 +1695,27 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_runtime_view_delegates_grouped_views_to_builder(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "runtime_view.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
+    def test_runtime_view_facade_does_not_assemble_grouped_views_inline(self) -> None:
         violations: list[str] = []
-        found_builder_import = False
-        found_builder_calls: set[str] = set()
-        prohibited_helpers = {
-            "_resolve_query_tracer",
-            "_resolve_neo4j_manager",
-            "_resolve_data_module",
-            "_resolve_index_module",
-        }
-        prohibited_constructors = {
-            "SystemInfrastructureView",
-            "SystemRetrievalView",
-            "SystemServicesView",
-            "QuestionAnswerService",
-            "QuestionAnswerServiceResolver",
-        }
+        for rule in APP_COMPOSITION_IMPORT_BOUNDARIES:
+            if rule.path.name == "runtime_view.py":
+                violations.extend(self._collect_import_boundary_violations(rule))
+        for rule in APP_COMPOSITION_DEFINITION_BOUNDARIES:
+            if rule.path.name == "runtime_view.py":
+                violations.extend(self._collect_definition_boundary_violations(rule))
+        for rule in APP_COMPOSITION_CALL_BOUNDARIES:
+            if rule.path.name == "runtime_view.py":
+                violations.extend(self._collect_call_boundary_violations(rule))
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module_name = self._resolve_import_from(path, node)
-                if module_name.endswith("runtime_view_builder") and any(
-                    alias.name == "SystemRuntimeViewBuilder" for alias in node.names
-                ):
-                    found_builder_import = True
-                elif module_name in {
-                    "rag_modules.app.services.question_answer_service",
-                    "rag_modules.app.runtime_service_resolver",
-                }:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "rag_modules.app.runtime_view_builder":
-                        found_builder_import = True
-                    elif alias.name in {
-                        "rag_modules.app.services.question_answer_service",
-                        "rag_modules.app.runtime_service_resolver",
-                    }:
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.FunctionDef) and node.name in prohibited_helpers:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Call):
-                func_name = (
-                    node.func.id
-                    if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
-                )
-                if func_name in prohibited_constructors:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                if isinstance(node.func, ast.Attribute):
-                    chain = ".".join(self._attribute_chain(node.func))
-                    if chain.startswith("self._view_builder.build_"):
-                        found_builder_calls.add(chain)
-
-        self.assertTrue(
-            found_builder_import,
-            "runtime view should import SystemRuntimeViewBuilder instead of assembling grouped views inline",
-        )
-        self.assertEqual(
-            found_builder_calls,
-            {
-                "self._view_builder.build_infrastructure_view",
-                "self._view_builder.build_retrieval_view",
-                "self._view_builder.build_services_view",
-            },
-            "runtime view should delegate grouped view assembly to SystemRuntimeViewBuilder",
-        )
         self.assertFalse(
             violations,
-            "Found runtime-view assembly that should live in the builder/resolver layer:\n"
+            "Found runtime-view assembly that should stay behind runtime view boundaries:\n"
             + "\n".join(violations),
         )
 
-    def test_internal_and_script_answer_generation_do_not_route_through_compat_service(self) -> None:
+    def test_internal_and_script_answer_generation_do_not_route_through_compat_service(
+        self,
+    ) -> None:
         violations: list[str] = []
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts"):
@@ -737,11 +1779,11 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_legacy_grouped_attributes_are_data_driven(self) -> None:
-        legacy_attribute_names = set(GROUPED_LEGACY_ATTRIBUTE_MAP)
+    def test_app_runtime_surfaces_do_not_use_legacy_flat_attribute_resolution(self) -> None:
         targets = {
             RAG_MODULES_DIR / "app" / "runtime_view.py",
             RAG_MODULES_DIR / "app" / "system.py",
+            RAG_MODULES_DIR / "app" / "composition" / "system_facade_support.py",
         }
         violations: list[str] = []
 
@@ -751,12 +1793,50 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             tree = ast.parse(source, filename=str(path))
 
             for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in legacy_attribute_names:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+                    "__getattr__",
+                    "__dir__",
+                    "resolve_legacy_attribute",
+                    "legacy_dir",
+                }:
                     violations.append(f"{rel}:{node.lineno}: def {node.name}(...)")
+                elif isinstance(node, ast.ImportFrom):
+                    module_name = self._resolve_import_from(path, node)
+                    if module_name == "rag_modules.app.legacy_surface":
+                        violations.append(f"{rel}:{node.lineno}: legacy_surface import")
+
+        legacy_surface_path = RAG_MODULES_DIR / "app" / "legacy_surface.py"
+        if legacy_surface_path.exists():
+            violations.append(
+                f"{legacy_surface_path.relative_to(ROOT)}: compatibility module still exists"
+            )
 
         self.assertFalse(
             violations,
-            "Found legacy flat attribute accessors that should be served by grouped legacy mapping:\n"
+            "Found retired legacy flat runtime attribute support:\n" + "\n".join(violations),
+        )
+
+    def test_only_package_exports_use_module_getattr(self) -> None:
+        violations: list[str] = []
+
+        for path in RAG_MODULES_DIR.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            if "__pycache__" in rel.parts:
+                continue
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "__getattr__"
+                    and path.name != "__init__.py"
+                ):
+                    violations.append(f"{rel}:{node.lineno}: def __getattr__(...)")
+
+        self.assertFalse(
+            violations,
+            "Found object-level dynamic attribute delegation outside package lazy exports:\n"
             + "\n".join(violations),
         )
 
@@ -839,21 +1919,18 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_runtime_manager_constructor_uses_precomposed_lifecycle_bundle(self) -> None:
+    def test_runtime_manager_constructor_does_not_resolve_lifecycle_collaborators_inline(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "runtime_manager.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
         violations: list[str] = []
-        found_init = False
-        found_lifecycle_services_param = False
 
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name == "__init__":
-                found_init = True
                 param_names = [arg.arg for arg in node.args.args + node.args.kwonlyargs]
-                found_lifecycle_services_param = "lifecycle_services" in param_names
                 prohibited_params = {
                     "build_bootstrapper",
                     "serving_bootstrapper",
@@ -865,151 +1942,60 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
                 }
                 for param in prohibited_params.intersection(param_names):
                     violations.append(f"{rel}:{node.lineno}: unexpected ctor param '{param}'")
-            elif isinstance(node, ast.Call):
-                func_name = (
-                    node.func.id
-                    if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
-                )
-                if func_name in {"getattr", "compose"}:
+        for rule in APP_COMPOSITION_CALL_BOUNDARIES:
+            if rule.path == path:
+                violations.extend(self._collect_call_boundary_violations(rule))
+
+        self.assertFalse(
+            violations,
+            "Found runtime-manager constructor logic that resolves lifecycle collaborators inline:\n"
+            + "\n".join(violations),
+        )
+
+    def test_public_bootstrapper_facades_do_not_resolve_split_bootstrappers_inline(self) -> None:
+        violations: list[str] = []
+
+        for rule in APP_COMPOSITION_DYNAMIC_LOOKUP_BOUNDARIES:
+            if rule.path.name == "bootstrap.py":
+                violations.extend(self._collect_dynamic_lookup_boundary_violations(rule))
+
+        self.assertFalse(
+            violations,
+            "Found public bootstrapper facade logic that inspects split bootstrappers inline:\n"
+            + "\n".join(violations),
+        )
+
+    def test_public_bootstrapper_facades_do_not_bind_components_inline(self) -> None:
+        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
+        rel = path.relative_to(ROOT)
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
+        lines = source.splitlines()
+        violations: list[str] = []
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            value_chain = ".".join(self._attribute_chain(node.value))
+            for target in node.targets:
+                if not isinstance(target, ast.Attribute):
+                    continue
+                target_chain = ".".join(self._attribute_chain(target))
+                if target_chain.startswith("self.") and value_chain.startswith("components."):
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
 
-        self.assertTrue(found_init, "runtime manager should define __init__")
-        self.assertTrue(
-            found_lifecycle_services_param,
-            "runtime manager should accept a lifecycle_services bundle",
-        )
         self.assertFalse(
             violations,
-            "Found runtime-manager constructor logic that should be replaced by a precomposed lifecycle bundle:\n"
+            "Found public bootstrapper component binding that belongs behind a helper boundary:\n"
             + "\n".join(violations),
         )
 
-    def test_graph_bootstrapper_uses_composer_not_inline_adapter_logic(self) -> None:
+    def test_public_bootstrappers_do_not_call_runtime_collaborators_directly(self) -> None:
         path = RAG_MODULES_DIR / "app" / "bootstrap.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
         lines = source.splitlines()
-        violations: list[str] = []
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "getattr":
-                continue
-            if not node.args:
-                continue
-            owner = ".".join(self._attribute_chain(node.args[0]))
-            if owner in {"self.build_bootstrapper", "self.serving_bootstrapper"}:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertFalse(
-            violations,
-            "Found graph-bootstrapper constructor adapter logic that should live in RuntimeLifecycleServiceComposer:\n"
-            + "\n".join(violations),
-        )
-
-    def test_public_bootstrappers_share_component_binding_base(self) -> None:
-        support_path = RAG_MODULES_DIR / "app" / "bootstrap_facade_support.py"
-        support_rel = support_path.relative_to(ROOT)
-        support_source = support_path.read_text(encoding="utf-8-sig")
-        support_tree = ast.parse(support_source, filename=str(support_path))
-        support_lines = support_source.splitlines()
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        found_base_class = False
-        found_compose_and_bind = False
-        found_build_invocation_adapter = False
-        found_serving_invocation_adapter = False
-        found_graph_invocation_adapter = False
-        found_support_import = False
-        violations: list[str] = []
-
-        for node in ast.walk(support_tree):
-            if isinstance(node, ast.ClassDef) and node.name == "_ComposedBootstrapperFacade":
-                found_base_class = True
-            elif isinstance(node, ast.ClassDef) and node.name == "BuildBootstrapperInvocationAdapter":
-                found_build_invocation_adapter = True
-            elif isinstance(node, ast.ClassDef) and node.name == "ServingBootstrapperInvocationAdapter":
-                found_serving_invocation_adapter = True
-            elif isinstance(node, ast.ClassDef) and node.name == "GraphBootstrapperInvocationAdapter":
-                found_graph_invocation_adapter = True
-            elif isinstance(node, ast.FunctionDef) and node.name == "_compose_and_bind":
-                found_compose_and_bind = True
-            elif isinstance(node, ast.Assign):
-                value_chain = ".".join(self._attribute_chain(node.value))
-                for target in node.targets:
-                    if not isinstance(target, ast.Attribute):
-                        continue
-                    target_chain = ".".join(self._attribute_chain(target))
-                    if target_chain.startswith("self.") and value_chain.startswith("components."):
-                        violations.append(
-                            f"{support_rel}:{node.lineno}: {support_lines[node.lineno - 1].strip()}"
-                        )
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module_name = self._resolve_import_from(path, node)
-                imported_names = {alias.name for alias in node.names}
-                if module_name.endswith("bootstrap_facade_support") and {
-                    "_ComposedBootstrapperFacade",
-                    "BuildBootstrapperInvocationAdapter",
-                    "ServingBootstrapperInvocationAdapter",
-                    "GraphBootstrapperInvocationAdapter",
-                }.issubset(imported_names):
-                    found_support_import = True
-            elif isinstance(node, ast.ClassDef) and node.name == "_ComposedBootstrapperFacade":
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Assign):
-                value_chain = ".".join(self._attribute_chain(node.value))
-                for target in node.targets:
-                    if not isinstance(target, ast.Attribute):
-                        continue
-                    target_chain = ".".join(self._attribute_chain(target))
-                    if target_chain.startswith("self.") and value_chain.startswith("components."):
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertTrue(
-            found_base_class,
-            "bootstrap facade support should define a shared _ComposedBootstrapperFacade base",
-        )
-        self.assertTrue(
-            found_compose_and_bind,
-            "bootstrap facade support should centralize component binding in _compose_and_bind()",
-        )
-        self.assertTrue(
-            found_build_invocation_adapter,
-            "bootstrap facade support should define a BuildBootstrapperInvocationAdapter",
-        )
-        self.assertTrue(
-            found_serving_invocation_adapter,
-            "bootstrap facade support should define a ServingBootstrapperInvocationAdapter",
-        )
-        self.assertTrue(
-            found_graph_invocation_adapter,
-            "bootstrap facade support should define a GraphBootstrapperInvocationAdapter",
-        )
-        self.assertTrue(
-            found_support_import,
-            "bootstrap module should import the shared facade base and invocation strategies from bootstrap_facade_support",
-        )
-        self.assertFalse(
-            violations,
-            "Found inline component binding that should use the shared bootstrapper facade base:\n"
-            + "\n".join(violations),
-        )
-
-    def test_public_bootstrappers_use_invocation_adapter_not_direct_boundary_calls(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        found_invocation_calls: set[str] = set()
         violations: list[str] = []
         prohibited = {
             "self.factory.build",
@@ -1027,572 +2013,97 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             chain = ".".join(self._attribute_chain(node))
             if chain in prohibited:
                 violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            if chain.startswith("self._invocations."):
-                found_invocation_calls.add(chain)
-
-        self.assertEqual(
-            found_invocation_calls,
-            {
-                "self._invocations.build_runtime",
-                "self._invocations.build_knowledge_base",
-                "self._invocations.rebuild_knowledge_base",
-                "self._invocations.build_serving_runtime",
-                "self._invocations.prepare_serving_runtime",
-                "self._invocations.prepare_serving_runtime_with_shared_runtime",
-                "self._invocations.build_system_runtime",
-            },
-            "bootstrap module should route public operations through BootstrapperInvocationAdapter",
-        )
         self.assertFalse(
             violations,
-            "Found direct boundary calls that should be routed through BootstrapperInvocationAdapter:\n"
+            "Found public bootstrapper direct calls into runtime collaborators:\n"
             + "\n".join(violations),
         )
 
-    def test_graph_bootstrapper_uses_bootstrapper_composer_not_inline_service_assembly(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
+    def test_public_bootstrapper_facades_do_not_construct_runtime_components(self) -> None:
         violations: list[str] = []
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if isinstance(node.func, ast.Name) and node.func.id in {
-                "BuildBootstrapper",
-                "ServingBootstrapper",
-                "SystemRuntimeBootstrapService",
-            }:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+        for rule in APP_COMPOSITION_CALL_BOUNDARIES:
+            if rule.path.name == "bootstrap.py":
+                violations.extend(self._collect_call_boundary_violations(rule))
 
         self.assertFalse(
             violations,
-            "Found graph-bootstrapper assembly that should live in GraphRAGBootstrapperComposer:\n"
-            + "\n".join(violations),
+            "Found public bootstrapper runtime-component construction:\n" + "\n".join(violations),
         )
 
-    def test_serving_bootstrapper_uses_composer_not_inline_lifecycle_resolution(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
+    def test_system_facade_and_composition_do_not_resolve_bootstrapper_surfaces_inline(
+        self,
+    ) -> None:
         violations: list[str] = []
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "getattr":
-                continue
-            if not node.args:
-                continue
-            owner = ".".join(self._attribute_chain(node.args[0]))
-            if owner == "self.factory":
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+        for rule in APP_COMPOSITION_DYNAMIC_LOOKUP_BOUNDARIES:
+            if rule.path.name in {"system.py", "system_composer.py"}:
+                violations.extend(self._collect_dynamic_lookup_boundary_violations(rule))
 
         self.assertFalse(
             violations,
-            "Found serving-bootstrapper lifecycle resolution that should live in ServingBootstrapperComposer:\n"
+            "Found inline bootstrapper-surface resolution outside explicit provider contracts:\n"
             + "\n".join(violations),
         )
 
-    def test_build_bootstrapper_uses_composer_not_inline_component_resolution(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
+    def test_app_composition_roots_do_not_import_retired_provider_components(self) -> None:
         violations: list[str] = []
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if isinstance(node.func, ast.Name) and node.func.id in {
-                "BuildRuntimeFactory",
-                "BuildRuntimeExecutor",
-            }:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+        for rule in APP_COMPOSITION_IMPORT_BOUNDARIES:
+            if rule.path.name == "bootstrapper_composer.py":
+                violations.extend(self._collect_import_boundary_violations(rule))
 
         self.assertFalse(
             violations,
-            "Found build-bootstrapper assembly that should live in BuildBootstrapperComposer:\n"
+            "Found retired provider_components imports in app composition roots:\n"
             + "\n".join(violations),
         )
 
-    def test_system_constructor_uses_system_composer_not_inline_provider_resolution(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "system.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        violations: list[str] = []
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "getattr":
-                continue
-            if not node.args:
-                continue
-            owner = node.args[0]
-            if isinstance(owner, ast.Name) and owner.id in {
-                "bootstrapper",
-                "build_bootstrapper",
-                "serving_bootstrapper",
-            }:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertFalse(
-            violations,
-            "Found system constructor provider/bootstrapper resolution that should live in AdvancedGraphRAGSystemComposer:\n"
-            + "\n".join(violations),
-        )
-
-    def test_system_composer_uses_provider_surface_resolver_not_inline_provider_resolution(self) -> None:
+    def test_runtime_manager_is_not_wired_with_public_bootstrapper_surfaces(self) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
         violations: list[str] = []
+        prohibited_keywords = {
+            "build_bootstrapper",
+            "lifecycle_service_composer",
+            "serving_bootstrapper",
+        }
 
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+            if not isinstance(node, ast.Call) or self._call_name(node) != "SystemRuntimeManager":
                 continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "getattr":
-                continue
-            if not node.args:
-                continue
-            owner = node.args[0]
-            if isinstance(owner, ast.Name) and owner.id in {
-                "bootstrapper",
-                "build_bootstrapper",
-                "serving_bootstrapper",
+            keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
+            for keyword in prohibited_keywords.intersection(keyword_names):
+                violations.append(f"{rel}:{node.lineno}: unexpected manager kw '{keyword}'")
+
+        self.assertFalse(
+            violations,
+            "Found runtime-manager wiring that depends on public bootstrapper surfaces:\n"
+            + "\n".join(violations),
+        )
+
+    def test_system_facade_collaborators_respect_runtime_access_boundaries(self) -> None:
+        violations: list[str] = []
+
+        for rule in APP_COMPOSITION_IMPORT_BOUNDARIES:
+            if rule.path.name == "system.py":
+                violations.extend(self._collect_import_boundary_violations(rule))
+        for rule in APP_COMPOSITION_CALL_BOUNDARIES:
+            if rule.path.name == "system.py":
+                violations.extend(self._collect_call_boundary_violations(rule))
+        for rule in APP_COMPOSITION_ATTRIBUTE_BOUNDARIES:
+            if rule.path.name in {
+                "system.py",
+                "system_answering_service.py",
+                "system_facade_support.py",
             }:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                violations.extend(self._collect_attribute_boundary_violations(rule))
 
         self.assertFalse(
             violations,
-            "Found system-composer provider resolution that should live in RuntimeProviderSurfaceResolver:\n"
-            + "\n".join(violations),
-        )
-
-    def test_bootstrapper_composers_use_provider_resolver(self) -> None:
-        target_paths = {
-            RAG_MODULES_DIR / "app" / "composition" / "bootstrapper_composer.py",
-        }
-        violations: list[str] = []
-
-        for path in target_paths:
-            rel = path.relative_to(ROOT)
-            source = path.read_text(encoding="utf-8-sig")
-            tree = ast.parse(source, filename=str(path))
-            lines = source.splitlines()
-            found_provider_resolver_import = False
-
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom):
-                    module_name = self._resolve_import_from(path, node)
-                    if module_name.endswith("provider_resolution") and any(
-                        alias.name == "RuntimeComponentProviderResolver" for alias in node.names
-                    ):
-                        found_provider_resolver_import = True
-                    if module_name.endswith("provider_components.runtime") and any(
-                        alias.name == "DefaultRuntimeComponentProvider" for alias in node.names
-                    ):
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        if alias.name.endswith("provider_resolution"):
-                            found_provider_resolver_import = True
-                        if alias.name.endswith("provider_components.runtime"):
-                            violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-            self.assertTrue(
-                found_provider_resolver_import,
-                f"{rel} should import RuntimeComponentProviderResolver",
-            )
-
-        self.assertFalse(
-            violations,
-            "Found inline default-provider resolution that should live in RuntimeComponentProviderResolver:\n"
-            + "\n".join(violations),
-        )
-
-    def test_graph_bootstrapper_composer_resolves_surface_and_builds_bootstrap_service(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "bootstrapper_composer.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        class_node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "GraphRAGBootstrapperComposer"
-        )
-        lines = source.splitlines()
-        found_surface_composer = False
-        found_bootstrap_service_composer = False
-        violations: list[str] = []
-
-        for node in ast.walk(class_node):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-                continue
-            if node.func.id == "GraphBootstrapperSurfaceComposer":
-                found_surface_composer = True
-            elif node.func.id == "SystemRuntimeBootstrapServiceComposer":
-                found_bootstrap_service_composer = True
-            elif node.func.id in {
-                "BuildBootstrapper",
-                "ServingBootstrapper",
-            }:
-                violations.append(
-                    f"{rel}:{node.lineno}: {node.func.id} should be composed by the surface composer"
-                )
-        self.assertTrue(
-            found_surface_composer,
-            "graph bootstrapper composer should delegate split bootstrapper assembly to GraphBootstrapperSurfaceComposer",
-        )
-        self.assertTrue(
-            found_bootstrap_service_composer,
-            "graph bootstrapper composer should delegate bootstrap-service assembly",
-        )
-        self.assertFalse(
-            violations,
-            "Found graph-bootstrapper assembly boundary violations:\n"
-            + "\n".join(violations),
-        )
-
-    def test_bootstrap_service_composer_wires_system_runtime_bootstrap_service(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "bootstrapper_composer.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        class_node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "SystemRuntimeBootstrapServiceComposer"
-        )
-        lines = source.splitlines()
-        found_lifecycle_composer = False
-        found_bootstrap_service = False
-        violations: list[str] = []
-
-        for node in ast.walk(class_node):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-                continue
-            if node.func.id == "RuntimeLifecycleServiceComposer":
-                found_lifecycle_composer = True
-            elif node.func.id == "SystemRuntimeBootstrapService":
-                found_bootstrap_service = True
-                keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                for required in (
-                    "build_runtime_factory",
-                    "serving_runtime_lifecycle_service",
-                ):
-                    if required not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing {required}=")
-
-        self.assertTrue(
-            found_lifecycle_composer,
-            "bootstrap-service composer should adapt bootstrappers through RuntimeLifecycleServiceComposer",
-        )
-        self.assertTrue(
-            found_bootstrap_service,
-            "bootstrap-service composer should construct SystemRuntimeBootstrapService",
-        )
-        self.assertFalse(
-            violations,
-            "Found bootstrap-service composer wiring gaps:\n" + "\n".join(violations),
-        )
-
-    def test_runtime_infrastructure_composer_wires_runtime_manager_with_lifecycle_bundle(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        class_node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "SystemRuntimeInfrastructureComposer"
-        )
-        lines = source.splitlines()
-        found_runtime_manager_call = False
-        saw_lifecycle_services_keyword = False
-        found_stats_access_call = False
-        found_diagnostics_provider_call = False
-        found_shutdown_provider_call = False
-        found_state_store_return = False
-        violations: list[str] = []
-
-        for node in ast.walk(class_node):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == "SystemRuntimeManager":
-                    found_runtime_manager_call = True
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    saw_lifecycle_services_keyword = "lifecycle_services" in keyword_names
-                    prohibited_keywords = {
-                        "build_bootstrapper",
-                        "serving_bootstrapper",
-                        "lifecycle_service_composer",
-                    }
-                    for keyword in prohibited_keywords.intersection(keyword_names):
-                        violations.append(f"{rel}:{node.lineno}: unexpected manager kw '{keyword}'")
-                    if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing runtime_state_store=")
-                    if not saw_lifecycle_services_keyword:
-                        violations.append(f"{rel}:{node.lineno}: missing lifecycle_services=")
-                    if "diagnostics_service" not in keyword_names or "shutdown_service" not in keyword_names:
-                        violations.append(
-                            f"{rel}:{node.lineno}: manager should be wired with explicit services"
-                        )
-                elif isinstance(node.func, ast.Attribute):
-                    chain = ".".join(self._attribute_chain(node.func))
-                    if chain == "provider_surface.diagnostics.provide_runtime_stats_access":
-                        found_stats_access_call = True
-                    elif chain == "provider_surface.diagnostics.provide_runtime_diagnostics_service":
-                        found_diagnostics_provider_call = True
-                    elif chain == "provider_surface.lifecycle.provide_runtime_shutdown_service":
-                        found_shutdown_provider_call = True
-                elif isinstance(node.func, ast.Name) and node.func.id == "SystemRuntimeInfrastructure":
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_state_store_return = "runtime_state_store" in keyword_names
-                    if "runtime_manager" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing runtime_manager=")
-                    if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing runtime_state_store=")
-
-        self.assertTrue(
-            found_runtime_manager_call,
-            "runtime infrastructure composer should instantiate SystemRuntimeManager",
-        )
-        self.assertTrue(
-            saw_lifecycle_services_keyword,
-            "runtime infrastructure composer should pass lifecycle_services into SystemRuntimeManager",
-        )
-        self.assertTrue(
-            found_stats_access_call,
-            "runtime infrastructure composer should resolve runtime_stats_access from the provider surface",
-        )
-        self.assertTrue(
-            found_diagnostics_provider_call,
-            "runtime infrastructure composer should resolve diagnostics_service from the diagnostics provider",
-        )
-        self.assertTrue(
-            found_shutdown_provider_call,
-            "runtime infrastructure composer should resolve shutdown_service from the lifecycle provider",
-        )
-        self.assertTrue(
-            found_state_store_return,
-            "runtime infrastructure bundle should carry runtime_state_store",
-        )
-        self.assertFalse(
-            violations,
-            "Found runtime-infrastructure manager wiring that bypasses lifecycle bundle assembly:\n"
-            + "\n".join(violations),
-        )
-
-    def test_system_answering_uses_question_answer_service_contract(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "system.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        violations: list[str] = []
-        found_answering_service_call = False
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node.func))
-                if chain in {
-                    "self.answering_service.answer_question",
-                    "self.answering_service.answer_question_response",
-                }:
-                    found_answering_service_call = True
-                if chain in {
-                    "self.facade_support.answer_question",
-                    "self.facade_support.answer_question_response",
-                }:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node))
-                if chain == "services.answer_workflow":
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertTrue(
-            found_answering_service_call,
-            "system answering entrypoints should delegate through answering_service",
-        )
-        self.assertFalse(
-            violations,
-            "Found system answering logic that should route through answering_service/question_answer_service contract:\n"
-            + "\n".join(violations),
-        )
-
-    def test_system_runtime_and_legacy_access_use_facade_support(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "system.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        violations: list[str] = []
-        found_operations_service_call = False
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module_name = self._resolve_import_from(path, node)
-                if module_name == "rag_modules.interfaces.cli_console":
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "rag_modules.interfaces.cli_console":
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Call):
-                func_name = (
-                    node.func.id
-                    if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
-                )
-                if func_name in {"resolve_grouped_legacy_attribute", "merge_legacy_dir_names"}:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                elif isinstance(node.func, ast.Attribute):
-                    chain = ".".join(self._attribute_chain(node.func))
-                    if chain == "self.runtime_manager.runtime_view":
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                    if chain.startswith("self.operations_service."):
-                        found_operations_service_call = True
-                    if chain == "self.interactive_service.run_interactive":
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                    if chain == "InteractiveCliConsole":
-                        violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node))
-                if chain.startswith("self.interactive_service") or chain in {
-                    "self.runtime_manager",
-                    "self.runtime_manager.runtime",
-                    "self.runtime_manager.initialize_build_runtime",
-                    "self.runtime_manager.initialize_serving_runtime",
-                    "self.runtime_manager.initialize_system",
-                    "self.runtime_manager.is_initialized",
-                    "self.runtime_manager.is_build_initialized",
-                    "self.runtime_manager.is_serving_initialized",
-                    "self.runtime_manager.build_knowledge_base",
-                    "self.runtime_manager.rebuild_knowledge_base",
-                    "self.runtime_manager.collect_system_stats",
-                    "self.runtime_manager.collect_startup_diagnostics",
-                    "self.runtime_manager.require_ready",
-                    "self.runtime_manager.close",
-                }:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertTrue(
-            found_operations_service_call,
-            "system operational entrypoints should delegate through operations_service",
-        )
-        self.assertFalse(
-            violations,
-            "Found system facade access that should be delegated to operations_service/SystemFacadeSupport:\n"
-            + "\n".join(violations),
-        )
-
-    def test_system_facade_support_uses_runtime_state_store_for_runtime_access(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "system_facade_support.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        violations: list[str] = []
-        found_store_import = False
-        found_store_access = False
-
-        prohibited = {
-            "self.runtime_manager.runtime",
-            "self.runtime_manager.build_runtime",
-            "self.runtime_manager.serving_runtime",
-            "self.runtime_manager.runtime_view",
-            "self.runtime_manager.artifact_manifest",
-            "self.runtime_manager.artifacts_ready",
-            "self.runtime_manager.system_ready",
-            "self.runtime_manager.compose_runtime",
-            "self.runtime_manager.is_serving_initialized",
-            "self.runtime_manager.initialize_serving_runtime",
-            "self.runtime_manager.require_ready",
-        }
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module_name = self._resolve_import_from(path, node)
-                if module_name.endswith("runtime_state_store") and any(
-                    alias.name == "RuntimeStateStore" for alias in node.names
-                ):
-                    found_store_import = True
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "rag_modules.app.composition.runtime_state_store":
-                        found_store_import = True
-            elif isinstance(node, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node))
-                if chain in prohibited:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                if chain.startswith("self.runtime_state_store."):
-                    found_store_access = True
-
-        self.assertTrue(
-            found_store_import,
-            "system facade support should depend on RuntimeStateStore for runtime state access",
-        )
-        self.assertTrue(
-            found_store_access,
-            "system facade support should use runtime_state_store for runtime/build/serving access",
-        )
-        self.assertFalse(
-            violations,
-            "Found facade-support runtime access that should come from RuntimeStateStore:\n"
-            + "\n".join(violations),
-        )
-
-    def test_system_answering_service_owns_answering_orchestration(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "system_answering_service.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        found_backend_access = False
-        found_store_access = False
-        violations: list[str] = []
-
-        prohibited = {
-            "self.facade_support.answer_question",
-            "self.facade_support.answer_question_response",
-        }
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node))
-                if chain.startswith("self.backend."):
-                    found_backend_access = True
-                if chain.startswith("self.runtime_manager."):
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-                if chain.startswith("self.runtime_state_store."):
-                    found_store_access = True
-                if chain in prohibited:
-                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-
-        self.assertTrue(
-            found_backend_access,
-            "system answering service should orchestrate readiness through backend contract",
-        )
-        self.assertTrue(
-            found_store_access,
-            "system answering service should resolve runtime-backed services through runtime_state_store",
-        )
-        self.assertFalse(
-            violations,
-            "Found answering-service logic that should not route back through facade support:\n"
+            "Found system facade runtime access that bypasses public collaborator boundaries:\n"
             + "\n".join(violations),
         )
 
@@ -1609,185 +2120,43 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "CLI-only modules should be removed after API-only retirement.",
         )
 
-    def test_system_composer_delegates_to_sub_composers(self) -> None:
+    def test_system_components_boundary_does_not_expose_runtime_manager_or_cli_services(
+        self,
+    ) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
-        class_node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "AdvancedGraphRAGSystemComposer"
-        )
         lines = source.splitlines()
-        found_bootstrapper_surface_composer = False
-        found_runtime_infrastructure_composer = False
-        found_application_service_composer = False
-        found_components_field = False
         violations: list[str] = []
-        prohibited_calls = {
-            "GraphRAGBootstrapper",
-            "SystemRuntimeManager",
-            "SystemFacadeSupport",
-            "SystemOperationsService",
-            "SystemAnsweringService",
-            "SystemInteractiveService",
-        }
+        prohibited_component_keywords = {"interactive_service", "runtime_manager"}
+        prohibited_calls = {"SystemInteractiveService"}
 
-        for node in ast.walk(class_node):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if not isinstance(node.func, ast.Name):
+                    continue
                 if node.func.id in prohibited_calls:
-                    violations.append(
-                        f"{rel}:{node.lineno}: {node.func.id} should be composed in a dedicated sub-composer"
-                    )
-                elif node.func.id == "SystemBootstrapperSurfaceComposer":
-                    found_bootstrapper_surface_composer = True
-                elif node.func.id == "SystemRuntimeInfrastructureComposer":
-                    found_runtime_infrastructure_composer = True
-                elif node.func.id == "SystemApplicationServiceComposer":
-                    found_application_service_composer = True
+                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
                 elif node.func.id == "AdvancedGraphRAGSystemComponents":
                     keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_components_field = "facade_support" in keyword_names
-                    if "facade_support" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing facade_support=")
-                    if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing components runtime_state_store=")
-                    if "operations_service" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing operations_service=")
-                    if "answering_service" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing answering_service=")
-                    if "runtime_manager" in keyword_names:
+                    for keyword in prohibited_component_keywords.intersection(keyword_names):
                         violations.append(
-                            f"{rel}:{node.lineno}: components should not expose runtime_manager="
+                            f"{rel}:{node.lineno}: components should not expose {keyword}="
                         )
 
-        self.assertTrue(
-            found_bootstrapper_surface_composer,
-            "system composer should delegate bootstrapper-surface resolution to SystemBootstrapperSurfaceComposer",
-        )
-        self.assertTrue(
-            found_runtime_infrastructure_composer,
-            "system composer should delegate runtime assembly to SystemRuntimeInfrastructureComposer",
-        )
-        self.assertTrue(
-            found_application_service_composer,
-            "system composer should delegate app-service assembly to SystemApplicationServiceComposer",
-        )
-        self.assertTrue(
-            found_components_field,
-            "system components should carry facade_support",
-        )
         self.assertFalse(
             violations,
-            "Found system-composer logic that should be delegated to sub-composers:\n"
+            "Found system components exposing runtime internals or retired CLI services:\n"
             + "\n".join(violations),
         )
 
-    def test_application_service_composer_wires_facade_support(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "composition" / "system_composer.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        class_node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "SystemApplicationServiceComposer"
-        )
-        lines = source.splitlines()
-        found_support_call = False
-        found_services_bundle = False
-        found_support_state_store = False
-        found_operations_call = False
-        found_operations_manager = False
-        found_answering_call = False
-        found_answering_state_store = False
-        found_answering_manager = False
-        violations: list[str] = []
-
-        for node in ast.walk(class_node):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                if node.func.id == "SystemFacadeSupport":
-                    found_support_call = True
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_support_state_store = "runtime_state_store" in keyword_names
-                    if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing facade runtime_state_store=")
-                    if "runtime_manager" in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: facade support should not take runtime_manager=")
-                elif node.func.id == "SystemOperationsService":
-                    found_operations_call = True
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_operations_manager = "backend" in keyword_names
-                    if "backend" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing operations backend=")
-                elif node.func.id == "SystemAnsweringService":
-                    found_answering_call = True
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_answering_state_store = "runtime_state_store" in keyword_names
-                    found_answering_manager = "backend" in keyword_names
-                    if "runtime_state_store" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing answering runtime_state_store=")
-                    if "backend" not in keyword_names:
-                        violations.append(f"{rel}:{node.lineno}: missing answering backend=")
-                elif node.func.id == "SystemApplicationServices":
-                    keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
-                    found_services_bundle = "facade_support" in keyword_names
-                    for required in (
-                        "operations_service",
-                        "answering_service",
-                        "facade_support",
-                    ):
-                        if required not in keyword_names:
-                            violations.append(f"{rel}:{node.lineno}: missing services bundle {required}=")
-
-        self.assertTrue(
-            found_support_call,
-            "application service composer should construct SystemFacadeSupport",
-        )
-        self.assertTrue(
-            found_operations_call,
-            "application service composer should construct SystemOperationsService",
-        )
-        self.assertTrue(
-            found_answering_call,
-            "application service composer should construct SystemAnsweringService",
-        )
-        self.assertTrue(
-            found_support_state_store,
-            "application service composer should wire runtime_state_store into SystemFacadeSupport",
-        )
-        self.assertTrue(
-            found_operations_manager,
-            "application service composer should wire backend into SystemOperationsService",
-        )
-        self.assertTrue(
-            found_answering_state_store,
-            "application service composer should wire runtime_state_store into SystemAnsweringService",
-        )
-        self.assertTrue(
-            found_answering_manager,
-            "application service composer should wire backend into SystemAnsweringService",
-        )
-        self.assertTrue(
-            found_services_bundle,
-            "application service bundle should carry facade_support",
-        )
-        self.assertFalse(
-            violations,
-            "Found application-service composer wiring gaps:\n" + "\n".join(violations),
-        )
-
-    def test_runtime_manager_uses_runtime_state_store(self) -> None:
+    def test_runtime_manager_does_not_construct_runtime_view_inline(self) -> None:
         path = RAG_MODULES_DIR / "app" / "composition" / "runtime_manager.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
         lines = source.splitlines()
-        found_store_import = False
-        found_store_access = False
         violations: list[str] = []
 
         prohibited = {
@@ -1795,40 +2164,20 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         }
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module_name = self._resolve_import_from(path, node)
-                if module_name.endswith("runtime_state_store") and any(
-                    alias.name == "RuntimeStateStore" for alias in node.names
-                ):
-                    found_store_import = True
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "rag_modules.app.composition.runtime_state_store":
-                        found_store_import = True
-            elif isinstance(node, ast.Call):
+            if isinstance(node, ast.Call):
                 func_name = (
                     node.func.id
                     if isinstance(node.func, ast.Name)
-                    else node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
                 )
                 if func_name in prohibited:
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
-            elif isinstance(node, ast.Attribute):
-                chain = ".".join(self._attribute_chain(node))
-                if chain.startswith("self.runtime_state_store."):
-                    found_store_access = True
 
-        self.assertTrue(
-            found_store_import,
-            "runtime manager should depend on RuntimeStateStore for runtime ownership",
-        )
-        self.assertTrue(
-            found_store_access,
-            "runtime manager should delegate runtime ownership to runtime_state_store",
-        )
         self.assertFalse(
             violations,
-            "Found runtime-manager runtime construction that should live in RuntimeStateStore:\n"
+            "Found runtime-manager runtime view construction that should stay behind state access:\n"
             + "\n".join(violations),
         )
 
@@ -1870,7 +2219,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         prohibited = {
             "self.build_bootstrapper.build_knowledge_base",
             "self.build_bootstrapper.rebuild_knowledge_base",
-            "self.refresh_service.refresh_from_build",
+            "self.serving_lifecycle_service.refresh_from_build",
         }
         violations: list[str] = []
 
@@ -1927,9 +2276,6 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             RAG_MODULES_DIR / "app" / "composition" / "serving_runtime_lifecycle_service.py": {
                 "self.serving_runtime_factory.prepare",
                 "self.serving_runtime_factory.prepare_with_shared_runtime",
-            },
-            RAG_MODULES_DIR / "app" / "composition" / "runtime_refresh_service.py": {
-                "self.serving_bootstrapper.prepare_with_shared_runtime",
             },
         }
         violations: list[str] = []

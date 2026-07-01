@@ -116,9 +116,7 @@ class RecipeDocumentChunker:
         section_title: str | None = None,
     ) -> TextDocument:
         parent_id = str(
-            document.metadata.get("node_id")
-            or document.metadata.get("parent_id")
-            or "unknown"
+            document.metadata.get("node_id") or document.metadata.get("parent_id") or "unknown"
         )
         metadata = {
             **document.metadata,

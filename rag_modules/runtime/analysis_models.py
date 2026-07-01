@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict
 
-from ..query_understanding import QuerySemanticProfile
-
-
-class SearchStrategy(Enum):
-    HYBRID_TRADITIONAL = "hybrid_traditional"
-    GRAPH_RAG = "graph_rag"
-    COMBINED = "combined"
+from ..contracts import QuerySemanticProfile, SearchStrategy
 
 
 @dataclass
@@ -53,7 +47,7 @@ class QueryAnalysis:
         return self.recommended_strategy.value
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "QueryAnalysis":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryAnalysis":
         payload = dict(data or {})
         return cls(
             query_complexity=payload.get("query_complexity", 0.0),
@@ -66,7 +60,7 @@ class QueryAnalysis:
             ),
             confidence=payload.get("confidence", 0.0),
             reasoning=payload.get("reasoning", ""),
-            semantic_profile=payload.get("semantic_profile") or {},
+            semantic_profile=QuerySemanticProfile.from_dict(payload.get("semantic_profile")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -82,10 +76,14 @@ class QueryAnalysis:
         }
 
 
+AnalysisMapping = Mapping[str, object]
+AnalysisInput = QueryAnalysis | AnalysisMapping | None
+
+
 def analysis_payload(analysis: Any) -> Dict[str, Any]:
     if isinstance(analysis, QueryAnalysis):
         payload = analysis.to_dict()
-    elif isinstance(analysis, dict):
+    elif isinstance(analysis, Mapping):
         payload = dict(analysis)
     elif analysis is None:
         payload = {}
@@ -106,7 +104,7 @@ def analysis_payload(analysis: Any) -> Dict[str, Any]:
         }
 
     strategy = payload.get("recommended_strategy")
-    if hasattr(strategy, "value"):
+    if isinstance(strategy, SearchStrategy):
         payload["recommended_strategy"] = strategy.value
     elif strategy is None:
         payload["recommended_strategy"] = ""
@@ -120,9 +118,15 @@ def ensure_query_analysis(analysis: Any) -> QueryAnalysis:
         return analysis
     if analysis is None:
         return QueryAnalysis()
-    if isinstance(analysis, dict):
+    if isinstance(analysis, Mapping):
         return QueryAnalysis.from_dict(analysis)
     return QueryAnalysis.from_dict(analysis_payload(analysis))
+
+
+def ensure_optional_query_analysis(analysis: AnalysisInput) -> QueryAnalysis | None:
+    if analysis is None:
+        return None
+    return ensure_query_analysis(analysis)
 
 
 def analysis_value(analysis: Any, key: str, default: Any = None) -> Any:

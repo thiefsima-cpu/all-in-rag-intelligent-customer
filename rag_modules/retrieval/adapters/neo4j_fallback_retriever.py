@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+from collections.abc import Iterable, Mapping
+from typing import Any, List, cast
 
-from ..contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
+from ...runtime_contracts import Neo4jDriverPort
+from ...safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +16,7 @@ logger = logging.getLogger(__name__)
 class Neo4jFallbackRetriever:
     """Run direct Neo4j fallback queries when in-memory graph indexes are sparse."""
 
-    def __init__(self, *, driver, database: str) -> None:
+    def __init__(self, *, driver: Neo4jDriverPort | None, database: str) -> None:
         self.driver = driver
         self.database = database
 
@@ -38,7 +41,11 @@ class Neo4jFallbackRetriever:
                 ORDER BY score DESC
                 LIMIT $limit
                 """
-                for record in session.run(cypher_query, {"keywords": keywords, "limit": limit}):
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
+                )
+                for record in records:
                     content_parts = []
                     if record["name"]:
                         content_parts.append(f"菜谱: {record['name']}")
@@ -63,7 +70,13 @@ class Neo4jFallbackRetriever:
                         )
                     )
         except Exception as exc:
-            logger.error("Neo4j entity fallback failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
         return results
 
     def topic_search(self, keywords: List[str], limit: int) -> List[EvidenceDocument]:
@@ -93,7 +106,11 @@ class Neo4jFallbackRetriever:
                 ORDER BY r.difficulty ASC, r.name
                 LIMIT $limit
                 """
-                for record in session.run(cypher_query, {"keywords": keywords, "limit": limit}):
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
+                )
+                for record in records:
                     content_parts = [f"菜谱: {record['name']}"]
                     if record["category"]:
                         content_parts.append(f"分类: {record['category']}")
@@ -126,7 +143,13 @@ class Neo4jFallbackRetriever:
                         )
                     )
         except Exception as exc:
-            logger.error("Neo4j topic fallback failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
         return results
 
     def node_neighbors(self, node_id: str, max_neighbors: int = 3) -> List[str]:
@@ -139,11 +162,17 @@ class Neo4jFallbackRetriever:
                 RETURN neighbor.name AS name
                 LIMIT $limit
                 """
-                return [
-                    str(record["name"])
-                    for record in session.run(query, {"node_id": node_id, "limit": max_neighbors})
-                    if record["name"]
-                ]
+                records = cast(
+                    Iterable[Mapping[str, Any]],
+                    session.run(query, {"node_id": node_id, "limit": max_neighbors}),
+                )
+                return [str(record["name"]) for record in records if record["name"]]
         except Exception as exc:
-            logger.error("Neighbor lookup failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "retrieval_operation_failed",
+                code="RETRIEVAL_FAILED",
+                error=exc,
+            )
             return []

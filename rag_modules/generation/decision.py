@@ -2,41 +2,43 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ..answer_evidence_builder import AnswerEvidencePackage
-from ..runtime import analysis_strategy_name, analysis_value
-from .models import GenerationDecision, GenerationSettings
+from ..query_policy import get_query_policy
+from ..runtime import AnalysisInput, analysis_strategy_name, analysis_value
+from .models import GenerationDecision, GenerationMode, GenerationSettings
 
 
 def decide_generation_mode(
     *,
     package: AnswerEvidencePackage,
     settings: GenerationSettings,
-    analysis: Any = None,
+    analysis: AnalysisInput = None,
 ) -> GenerationDecision:
+    decision_policy = get_query_policy().generation.decision
+    reasons = decision_policy["reasons"]
+    high_pressure_margin = float(decision_policy["high_pressure_margin"])
+
     if not settings.enable_two_stage:
         return GenerationDecision(
-            mode="direct",
-            reason="two_stage_disabled",
+            mode=GenerationMode.DIRECT,
+            reason=str(reasons["two_stage_disabled"]),
             evidence_limit=settings.direct_max_evidence_items,
         )
 
     if not analysis:
         has_graph_evidence = any(
-            item.graph_paths
-            or any(unit.get("is_graph_evidence") for unit in item.evidence_units)
+            item.graph_paths or any(unit.get("is_graph_evidence") for unit in item.evidence_units)
             for item in package.items
         )
         if has_graph_evidence and len(package.items) > 1:
             return GenerationDecision(
-                mode="two_stage",
-                reason="graph_evidence_present_without_route_analysis",
+                mode=GenerationMode.TWO_STAGE,
+                reason=str(reasons["graph_without_analysis"]),
                 evidence_limit=settings.two_stage_max_evidence_items,
             )
         return GenerationDecision(
-            mode="direct",
-            reason="no_route_analysis",
+            mode=GenerationMode.DIRECT,
+            reason=str(reasons["no_route_analysis"]),
             evidence_limit=settings.direct_max_evidence_items,
         )
 
@@ -47,8 +49,8 @@ def decide_generation_mode(
 
     if strategy == "graph_rag":
         return GenerationDecision(
-            mode="two_stage",
-            reason="graph_rag_strategy",
+            mode=GenerationMode.TWO_STAGE,
+            reason=str(reasons["graph_rag"]),
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
@@ -58,23 +60,24 @@ def decide_generation_mode(
         or reasoning_required
     ):
         return GenerationDecision(
-            mode="two_stage",
-            reason="combined_strategy_with_reasoning_pressure",
+            mode=GenerationMode.TWO_STAGE,
+            reason=str(reasons["combined_pressure"]),
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
     if (
-        complexity >= settings.two_stage_complexity_threshold + 0.12
-        or relationship_intensity >= settings.two_stage_relationship_threshold + 0.12
+        complexity >= settings.two_stage_complexity_threshold + high_pressure_margin
+        or relationship_intensity
+        >= settings.two_stage_relationship_threshold + high_pressure_margin
     ):
         return GenerationDecision(
-            mode="two_stage",
-            reason="high_complexity_or_dense_relations",
+            mode=GenerationMode.TWO_STAGE,
+            reason=str(reasons["high_pressure"]),
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
     return GenerationDecision(
-        mode="direct",
-        reason="simple_or_medium_question",
+        mode=GenerationMode.DIRECT,
+        reason=str(reasons["simple"]),
         evidence_limit=settings.direct_max_evidence_items,
     )

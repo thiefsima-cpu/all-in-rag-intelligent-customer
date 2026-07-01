@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from ...configuration import get_default_config
 from ...configuration.models import GraphRAGConfig
@@ -17,10 +17,3 @@ def resolve_config(config: GraphRAGConfig | None) -> GraphRAGConfig:
 def emit_progress(progress: ProgressCallback, message: str) -> None:
     if progress:
         progress(message)
-
-
-def provide_routing_workflow_compat(provider: Any, **kwargs: Any) -> Any:
-    workflow_provider = getattr(provider, "provide_routing_workflow", None)
-    if callable(workflow_provider):
-        return workflow_provider(**kwargs)
-    return provider.provide_query_router(**kwargs)

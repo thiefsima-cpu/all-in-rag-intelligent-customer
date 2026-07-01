@@ -8,18 +8,45 @@ from rag_modules.app.composition.bootstrapper_composer import (
     BuildBootstrapperComponents,
     BuildBootstrapperComposer,
 )
-from rag_modules.app.composition.build_runtime_executor import BuildRuntimeExecutor
 from rag_modules.app.composition.build_runtime_factory import BuildRuntimeFactory
+from rag_modules.runtime.artifacts import ArtifactManifest
 
 
-class _StubAssembler:
-    def __init__(self, runtime):
-        self.runtime = runtime
+class _FakeKnowledgeBaseService:
+    def __init__(self, manifest: ArtifactManifest) -> None:
+        self.artifact_manifest = manifest
+
+
+class _CapturingServicesProvider:
+    def __init__(self, *, knowledge_base_service, runtime_stats_access) -> None:
+        self.knowledge_base_service = knowledge_base_service
+        self.runtime_stats_access = runtime_stats_access
         self.calls: list[dict] = []
+        self.stats_calls: list[dict] = []
 
-    def assemble(self, config=None, **kwargs):
-        self.calls.append({"config": config, **kwargs})
-        return self.runtime
+    def provide_runtime_stats_access(self, **kwargs):
+        self.stats_calls.append(kwargs)
+        return self.runtime_stats_access
+
+    def provide_knowledge_base_service(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.knowledge_base_service
+
+
+class _CapturingBuildPipelineProvider:
+    def __init__(self, *, document_artifact_builder, semantic_graph_schema_sync) -> None:
+        self.document_artifact_builder = document_artifact_builder
+        self.semantic_graph_schema_sync = semantic_graph_schema_sync
+        self.document_builder_calls: list[dict] = []
+        self.schema_sync_calls: list[dict] = []
+
+    def provide_document_artifact_builder(self, **kwargs):
+        self.document_builder_calls.append(kwargs)
+        return self.document_artifact_builder
+
+    def provide_semantic_graph_schema_sync(self, **kwargs):
+        self.schema_sync_calls.append(kwargs)
+        return self.semantic_graph_schema_sync
 
 
 class _StubExecutor:
@@ -39,19 +66,69 @@ class _StubExecutor:
 
 
 class BuildRuntimeFactoryTests(unittest.TestCase):
-    def test_build_only_assembles_runtime(self) -> None:
-        runtime = SimpleNamespace(build_prepared=False)
-        assembler = _StubAssembler(runtime)
+    def test_build_injects_build_lifecycle_ports_and_services(self) -> None:
+        manifest_store = object()
+        document_artifact_cache = object()
+        runtime_artifact_access = object()
+        runtime_stats_access = object()
+        document_artifact_builder = object()
+        semantic_graph_schema_sync = object()
+        knowledge_base_service = _FakeKnowledgeBaseService(
+            ArtifactManifest.missing(manifest_path="manifest.json")
+        )
+        services = _CapturingServicesProvider(
+            knowledge_base_service=knowledge_base_service,
+            runtime_stats_access=runtime_stats_access,
+        )
+        build_pipeline = _CapturingBuildPipelineProvider(
+            document_artifact_builder=document_artifact_builder,
+            semantic_graph_schema_sync=semantic_graph_schema_sync,
+        )
+        graph_manager = SimpleNamespace(name="graph")
+        data_module = SimpleNamespace(name="data")
+        index_module = SimpleNamespace(name="index")
+        infrastructure = SimpleNamespace(
+            provide_neo4j_manager=lambda config, existing=None: existing or graph_manager,
+            provide_data_module=(
+                lambda config, neo4j_manager, existing=None: existing or data_module
+            ),
+            provide_index_module=lambda config, existing=None: existing or index_module,
+            provide_artifact_manifest_store=(
+                lambda config, existing=None: existing or manifest_store
+            ),
+            provide_document_artifact_cache=(
+                lambda config, existing=None, *, manifest_store=None: (
+                    existing or document_artifact_cache
+                )
+            ),
+            provide_runtime_artifact_access=(
+                lambda config, existing=None: existing or runtime_artifact_access
+            ),
+        )
         factory = BuildRuntimeFactory(
-            provider=SimpleNamespace(),
-            assembler=assembler,
+            provider=SimpleNamespace(
+                infrastructure=infrastructure,
+                build_pipeline=build_pipeline,
+                services=services,
+            )
         )
 
-        result = factory.build(config=SimpleNamespace(name="cfg"))
+        runtime = factory.build(config=SimpleNamespace())
 
-        self.assertIs(result, runtime)
-        self.assertEqual(len(assembler.calls), 1)
-        self.assertFalse(runtime.build_prepared)
+        self.assertIs(runtime.knowledge_base_service, knowledge_base_service)
+        self.assertEqual(len(services.calls), 1)
+        self.assertIs(services.calls[0]["manifest_store"], manifest_store)
+        self.assertIs(services.calls[0]["runtime_artifact_access"], runtime_artifact_access)
+        self.assertIs(services.calls[0]["runtime_stats_access"], runtime_stats_access)
+        self.assertIs(services.calls[0]["document_artifact_builder"], document_artifact_builder)
+        self.assertIs(services.calls[0]["semantic_graph_schema_sync"], semantic_graph_schema_sync)
+        self.assertEqual(len(services.stats_calls), 1)
+        self.assertEqual(len(build_pipeline.document_builder_calls), 1)
+        self.assertIs(build_pipeline.document_builder_calls[0]["manifest_store"], manifest_store)
+        self.assertIs(build_pipeline.document_builder_calls[0]["cache"], document_artifact_cache)
+        self.assertEqual(len(build_pipeline.schema_sync_calls), 1)
+        self.assertIs(build_pipeline.schema_sync_calls[0]["neo4j_manager"], graph_manager)
+        self.assertIs(runtime.artifact_manifest, knowledge_base_service.artifact_manifest)
         self.assertFalse(hasattr(factory, "build_knowledge_base"))
         self.assertFalse(hasattr(factory, "rebuild_knowledge_base"))
 

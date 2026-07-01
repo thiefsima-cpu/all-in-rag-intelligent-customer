@@ -4,12 +4,26 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rag_modules.configuration import ConfigProfile, default_profiles_dir, load_profile
+from rag_modules.configuration import (
+    ConfigProfile,
+    ConfigurationError,
+    default_profiles_dir,
+    load_profile,
+)
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
 
 
 class ConfigurationProfilesTests(unittest.TestCase):
+    def assertConfigErrorMentions(
+        self,
+        error: ConfigurationError,
+        *expected_fragments: str,
+    ) -> None:
+        message = str(error)
+        for fragment in expected_fragments:
+            self.assertIn(fragment, message)
+
     def test_profile_path_applies_toml_defaults_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "tiny.toml"
@@ -18,6 +32,9 @@ class ConfigurationProfilesTests(unittest.TestCase):
                     [
                         "[retrieval]",
                         "top_k = 9",
+                        "candidate_source_failure_threshold = 4",
+                        "candidate_source_recovery_seconds = 8.5",
+                        'candidate_source_degradation_strategy = "fail_fast"',
                         "",
                         "[generation]",
                         "generation_direct_max_tokens = 333",
@@ -36,6 +53,9 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertEqual(Path(config.profile_path), profile_path.resolve())
         self.assertTrue(config.profile_hash)
         self.assertEqual(config.retrieval.top_k, 9)
+        self.assertEqual(config.retrieval.candidate_source_failure_threshold, 4)
+        self.assertEqual(config.retrieval.candidate_source_recovery_seconds, 8.5)
+        self.assertEqual(config.retrieval.candidate_source_degradation_strategy, "fail_fast")
         self.assertEqual(config.generation.generation_direct_max_tokens, 333)
 
     def test_environment_overrides_profile_values(self) -> None:
@@ -95,6 +115,15 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertEqual(updated.profile_hash, config.profile_hash)
         self.assertEqual(updated.retrieval.top_k, 8)
 
+    def test_dev_profile_opts_into_public_management_surfaces(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}), profile="dev")
+
+        self.assertTrue(config.api.docs_enabled)
+        self.assertTrue(config.api.openapi_enabled)
+        self.assertTrue(config.api.docs_public)
+        self.assertTrue(config.api.openapi_public)
+        self.assertTrue(config.observability.prometheus_public)
+
     def test_missing_named_profile_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(FileNotFoundError):
@@ -103,6 +132,82 @@ class ConfigurationProfilesTests(unittest.TestCase):
     def test_profile_helpers_are_publicly_exported(self) -> None:
         self.assertEqual(default_profiles_dir().name, "profiles")
         self.assertIs(ConfigProfile, ConfigProfile)
+
+    def test_load_profile_validates_payload_at_read_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text("[retrieval]\ntopkk = 4\n", encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_profile(profile_path=str(profile_path), profiles_dir=tmpdir)
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.topkk",
+            "extra",
+        )
+
+    def test_profile_unknown_nested_field_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text("[retrieval]\ntopkk = 4\n", encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.topkk",
+            "extra",
+        )
+
+    def test_profile_wrong_scalar_type_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text('[retrieval]\ntop_k = "fast"\n', encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "retrieval.top_k",
+            "integer",
+        )
+
+    def test_profile_scalar_for_nested_section_reports_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text('[query_understanding]\nplanner = "fast"\n', encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "query_understanding.planner",
+            "dictionary",
+        )
 
 
 if __name__ == "__main__":

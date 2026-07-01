@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Path, Request
-from fastapi.responses import StreamingResponse
+from typing import Any
 
-from .models import (
+from fastapi import FastAPI, Header, Path, Query
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from .answer_models import (
     AnswerRequestModel,
     AnswerResponseModel,
     AnswerStreamRequestModel,
+    PublicAnswerResponseModel,
+)
+from .build_models import (
     ArtifactRegistryResponseModel,
     BuildJobListResponseModel,
     BuildJobResponseModel,
+)
+from .diagnostics_models import (
     DiagnosticsMode,
     DiagnosticsResponseModel,
     HealthResponseModel,
     OperationResponseModel,
     StatsResponseModel,
 )
+from .request_context import current_request_id
 from .response_builder import (
     build_answer_response,
     build_artifact_registry_response,
@@ -25,17 +33,16 @@ from .response_builder import (
     build_build_job_response,
     build_diagnostics_response,
     build_json_response,
+    build_operation_response,
+    build_public_answer_response,
     build_sse_streaming_response,
     build_stats_response,
 )
 from .services import (
-    ApiBackpressureError,
-    BuildJobConflictError,
-    BuildJobNotFoundError,
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
-    SystemNotReadyError,
 )
+from .versioning import API_PREFIX
 
 _SSE_EXAMPLE = (
     "event: message\n"
@@ -49,119 +56,111 @@ _SSE_EXAMPLE = (
 )
 
 
-def register_system_not_ready_handler(app: FastAPI) -> None:
-    @app.exception_handler(SystemNotReadyError)
-    async def handle_system_not_ready(_: Request, exc: SystemNotReadyError):
-        return build_json_response(
-            status_code=409,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "diagnostics": exc.diagnostics,
-            },
-        )
-
-
-def register_build_job_handlers(app: FastAPI) -> None:
-    @app.exception_handler(BuildJobNotFoundError)
-    async def handle_build_job_not_found(_: Request, exc: BuildJobNotFoundError):
-        return build_json_response(
-            status_code=404,
-            content={
-                "ok": False,
-                "message": f"Build job not found: {exc.job_id}",
-            },
-        )
-
-    @app.exception_handler(BuildJobConflictError)
-    async def handle_build_job_conflict(_: Request, exc: BuildJobConflictError):
-        return build_json_response(
-            status_code=409,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "job": exc.job,
-            },
-        )
-
-
-def register_api_backpressure_handler(app: FastAPI) -> None:
-    @app.exception_handler(ApiBackpressureError)
-    async def handle_api_backpressure(_: Request, exc: ApiBackpressureError):
-        return build_json_response(
-            status_code=429,
-            content={
-                "ok": False,
-                "message": str(exc),
-                "error_type": "api_backpressure",
-            },
-        )
-
-
 def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService) -> None:
-    @app.get("/", response_model=HealthResponseModel)
-    def read_root():
+    @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
+    def read_health() -> dict[str, Any]:
         return api_service.health()
 
-    @app.get("/health", response_model=HealthResponseModel)
-    def read_health():
-        return api_service.health()
-
-    @app.get("/health/live", response_model=HealthResponseModel)
-    def read_liveness():
+    @app.get(f"{API_PREFIX}/health/live", response_model=HealthResponseModel)
+    def read_liveness() -> dict[str, Any]:
         return api_service.health()
 
     @app.get(
-        "/health/ready",
+        f"{API_PREFIX}/health/ready",
         response_model=HealthResponseModel,
         responses={503: {"description": "Serving runtime is not ready."}},
     )
-    def read_readiness():
+    def read_readiness() -> JSONResponse:
         payload = api_service.readiness()
         return build_json_response(
             status_code=200 if payload["status"] == "ok" else 503,
             content=payload,
         )
 
-    @app.get("/stats", response_model=StatsResponseModel)
-    def read_stats():
+    @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
+    def read_stats() -> StatsResponseModel:
         return build_stats_response(api_service.collect_stats())
 
-    @app.get("/diagnostics", response_model=DiagnosticsResponseModel)
-    def read_diagnostics():
+    @app.get(
+        f"{API_PREFIX}/diagnostics",
+        response_model=DiagnosticsResponseModel,
+    )
+    def read_diagnostics() -> DiagnosticsResponseModel:
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.serve.value)
         )
 
-    @app.post("/runtime/serving/initialize", response_model=OperationResponseModel)
-    def initialize_serving_runtime():
-        return api_service.initialize_serving_runtime()
-
-    @app.post("/runtime/serving/refresh", response_model=OperationResponseModel)
-    def refresh_serving_runtime():
-        return api_service.refresh_serving_runtime()
+    @app.post(
+        f"{API_PREFIX}/runtime/serving/initialize",
+        response_model=OperationResponseModel,
+    )
+    def initialize_serving_runtime() -> OperationResponseModel:
+        return build_operation_response(api_service.initialize_serving_runtime())
 
     @app.post(
-        "/answers",
-        response_model=AnswerResponseModel,
-        summary="Get one complete answer payload",
+        f"{API_PREFIX}/runtime/serving/refresh",
+        response_model=OperationResponseModel,
+    )
+    def refresh_serving_runtime() -> OperationResponseModel:
+        return build_operation_response(api_service.refresh_serving_runtime())
+
+    @app.post(
+        f"{API_PREFIX}/answers",
+        response_model=PublicAnswerResponseModel,
+        summary="Get one public answer payload",
         description=(
-            "Returns the full grounded answer as one JSON payload. "
-            "The `stream=true` request flag is kept for compatibility and returns SSE, "
-            "but new clients should use `/answers/stream` instead."
+            "Returns the grounded answer without full trace snapshots. "
+            "Use `/v1/debug/answers` when complete traces are needed."
         ),
         responses={
-            200: {"description": "Full answer payload or compatibility SSE stream."},
+            200: {"description": "Public answer payload or compatibility SSE stream."},
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def answer_question(payload: AnswerRequestModel):
+    def answer_question_v1(
+        payload: AnswerRequestModel,
+    ) -> PublicAnswerResponseModel | StreamingResponse:
         payload_data = payload.model_dump()
         if payload_data.get("stream", False):
+            request_id = current_request_id()
             return build_sse_streaming_response(
                 api_service.stream_answer_question_events(
                     question=payload.question,
                     explain_routing=payload.explain_routing,
+                    request_id=request_id,
+                    include_traces=False,
+                )
+            )
+        return build_public_answer_response(
+            api_service.answer_question(
+                question=payload.question,
+                stream=False,
+                explain_routing=payload.explain_routing,
+            )
+        )
+
+    @app.post(
+        f"{API_PREFIX}/debug/answers",
+        response_model=AnswerResponseModel,
+        summary="Get one debug answer payload with traces",
+        description="Returns the grounded answer with complete trace snapshots.",
+        responses={
+            200: {"description": "Debug answer payload with complete traces."},
+            409: {"description": "Serving runtime is initialized but artifacts are not ready."},
+        },
+    )
+    def debug_answer_question_v1(
+        payload: AnswerRequestModel,
+    ) -> AnswerResponseModel | StreamingResponse:
+        payload_data = payload.model_dump()
+        if payload_data.get("stream", False):
+            request_id = current_request_id()
+            return build_sse_streaming_response(
+                api_service.stream_answer_question_events(
+                    question=payload.question,
+                    explain_routing=payload.explain_routing,
+                    request_id=request_id,
+                    include_traces=True,
                 )
             )
         return build_answer_response(
@@ -173,11 +172,11 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         )
 
     @app.post(
-        "/answers/stream",
-        summary="Stream answer events over SSE",
+        f"{API_PREFIX}/answers/stream",
+        summary="Stream public answer events over SSE",
         description=(
-            "Streams question-answering progress and output as Server-Sent Events. "
-            "Events are emitted as `message`, `chunk`, `result`, and `done`."
+            "Streams question-answering progress and output without full trace snapshots. "
+            "Use `/v1/debug/answers/stream` when complete traces are needed."
         ),
         response_class=StreamingResponse,
         responses={
@@ -192,123 +191,153 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
             409: {"description": "Serving runtime is initialized but artifacts are not ready."},
         },
     )
-    def stream_answer_question(payload: AnswerStreamRequestModel):
+    def stream_answer_question_v1(payload: AnswerStreamRequestModel) -> StreamingResponse:
+        request_id = current_request_id()
         return build_sse_streaming_response(
             api_service.stream_answer_question_events(
                 question=payload.question,
                 explain_routing=payload.explain_routing,
+                request_id=request_id,
+                include_traces=False,
+            )
+        )
+
+    @app.post(
+        f"{API_PREFIX}/debug/answers/stream",
+        summary="Stream debug answer events over SSE with traces",
+        description="Streams question-answering progress and output with complete trace snapshots.",
+        response_class=StreamingResponse,
+        responses={
+            200: {
+                "description": "Debug Server-Sent Events stream.",
+                "content": {
+                    "text/event-stream": {
+                        "example": _SSE_EXAMPLE,
+                    }
+                },
+            },
+            409: {"description": "Serving runtime is initialized but artifacts are not ready."},
+        },
+    )
+    def stream_debug_answer_question_v1(
+        payload: AnswerStreamRequestModel,
+    ) -> StreamingResponse:
+        request_id = current_request_id()
+        return build_sse_streaming_response(
+            api_service.stream_answer_question_events(
+                question=payload.question,
+                explain_routing=payload.explain_routing,
+                request_id=request_id,
+                include_traces=True,
             )
         )
 
 
 def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) -> None:
-    @app.get("/", response_model=HealthResponseModel)
-    def read_root():
+    @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
+    def read_health() -> dict[str, Any]:
         return api_service.health()
 
-    @app.get("/health", response_model=HealthResponseModel)
-    def read_health():
-        return api_service.health()
-
-    @app.get("/health/live", response_model=HealthResponseModel)
-    def read_liveness():
+    @app.get(f"{API_PREFIX}/health/live", response_model=HealthResponseModel)
+    def read_liveness() -> dict[str, Any]:
         return api_service.health()
 
     @app.get(
-        "/health/ready",
+        f"{API_PREFIX}/health/ready",
         response_model=HealthResponseModel,
         responses={503: {"description": "Build runtime is not ready."}},
     )
-    def read_readiness():
+    def read_readiness() -> JSONResponse:
         payload = api_service.readiness()
         return build_json_response(
             status_code=200 if payload["status"] == "ok" else 503,
             content=payload,
         )
 
-    @app.get("/stats", response_model=StatsResponseModel)
-    def read_stats():
+    @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
+    def read_stats() -> StatsResponseModel:
         return build_stats_response(api_service.collect_stats())
 
-    @app.get("/diagnostics", response_model=DiagnosticsResponseModel)
-    def read_diagnostics():
+    @app.get(
+        f"{API_PREFIX}/diagnostics",
+        response_model=DiagnosticsResponseModel,
+    )
+    def read_diagnostics() -> DiagnosticsResponseModel:
         return build_diagnostics_response(
             api_service.collect_startup_diagnostics(DiagnosticsMode.build.value)
         )
 
-    @app.post("/runtime/build/initialize", response_model=OperationResponseModel)
-    def initialize_build_runtime():
-        return api_service.initialize_build_runtime()
+    @app.post(
+        f"{API_PREFIX}/runtime/build/initialize",
+        response_model=OperationResponseModel,
+    )
+    def initialize_build_runtime() -> OperationResponseModel:
+        return build_operation_response(api_service.initialize_build_runtime())
 
-    @app.get("/jobs", response_model=BuildJobListResponseModel)
-    def list_build_jobs():
-        return build_build_job_list_response(api_service.list_build_jobs())
+    @app.get(f"{API_PREFIX}/jobs", response_model=BuildJobListResponseModel)
+    def list_build_jobs(
+        limit: int | None = Query(default=None, ge=1),
+        cursor: str = Query(default=""),
+    ) -> BuildJobListResponseModel:
+        page = api_service.list_build_jobs(limit=limit, cursor=cursor)
+        return build_build_job_list_response(page.jobs, next_cursor=page.next_cursor)
 
-    @app.get("/artifacts", response_model=ArtifactRegistryResponseModel)
-    def read_artifact_registry():
+    @app.get(
+        f"{API_PREFIX}/artifacts",
+        response_model=ArtifactRegistryResponseModel,
+    )
+    def read_artifact_registry() -> ArtifactRegistryResponseModel:
         return build_artifact_registry_response(api_service.artifact_registry_snapshot())
 
-    @app.get("/jobs/{job_id}", response_model=BuildJobResponseModel)
+    @app.get(
+        f"{API_PREFIX}/jobs/{{job_id}}",
+        response_model=BuildJobResponseModel,
+    )
     def read_build_job(
         job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
-    ):
+    ) -> BuildJobResponseModel:
         return build_build_job_response(api_service.get_build_job(job_id))
 
     @app.post(
-        "/jobs/build",
+        f"{API_PREFIX}/jobs/build",
         response_model=BuildJobResponseModel,
         status_code=202,
         summary="Queue a build job",
         description="Queues an asynchronous knowledge-base build job and returns a job identifier.",
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def queue_build_job():
-        return build_build_job_response(api_service.submit_build_job(rebuild=False))
+    def queue_build_job(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ) -> BuildJobResponseModel:
+        return build_build_job_response(
+            api_service.submit_build_job(
+                rebuild=False,
+                request_id=current_request_id(),
+                idempotency_key=idempotency_key,
+            )
+        )
 
     @app.post(
-        "/jobs/rebuild",
+        f"{API_PREFIX}/jobs/rebuild",
         response_model=BuildJobResponseModel,
         status_code=202,
         summary="Queue a rebuild job",
         description="Queues an asynchronous knowledge-base rebuild job and returns a job identifier.",
         responses={409: {"description": "Another build job is already in progress."}},
     )
-    def queue_rebuild_job():
-        return build_build_job_response(api_service.submit_build_job(rebuild=True))
-
-    @app.post(
-        "/knowledge-base/build",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a build job (compatibility alias)",
-        description=(
-            "Compatibility alias for `/jobs/build`. "
-            "Queues an asynchronous knowledge-base build job instead of blocking until completion."
-        ),
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    def build_knowledge_base():
-        return build_build_job_response(api_service.build_knowledge_base(rebuild=False))
-
-    @app.post(
-        "/knowledge-base/rebuild",
-        response_model=BuildJobResponseModel,
-        status_code=202,
-        summary="Queue a rebuild job (compatibility alias)",
-        description=(
-            "Compatibility alias for `/jobs/rebuild`. "
-            "Queues an asynchronous knowledge-base rebuild job instead of blocking until completion."
-        ),
-        responses={409: {"description": "Another build job is already in progress."}},
-    )
-    def rebuild_knowledge_base():
-        return build_build_job_response(api_service.build_knowledge_base(rebuild=True))
+    def queue_rebuild_job(
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ) -> BuildJobResponseModel:
+        return build_build_job_response(
+            api_service.submit_build_job(
+                rebuild=True,
+                request_id=current_request_id(),
+                idempotency_key=idempotency_key,
+            )
+        )
 
 
 __all__ = [
-    "register_api_backpressure_handler",
     "register_build_routes",
-    "register_build_job_handlers",
     "register_serving_routes",
-    "register_system_not_ready_handler",
 ]

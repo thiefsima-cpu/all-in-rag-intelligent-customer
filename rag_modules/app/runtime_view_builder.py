@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .runtime_contracts import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_views import (
     SystemInfrastructureView,
@@ -50,9 +51,7 @@ class SystemRuntimeViewBuilder:
             traditional_retrieval=(
                 serving_runtime.traditional_retrieval if serving_runtime else None
             ),
-            graph_rag_retrieval=(
-                serving_runtime.graph_rag_retrieval if serving_runtime else None
-            ),
+            graph_rag_retrieval=(serving_runtime.graph_rag_retrieval if serving_runtime else None),
             routing_workflow=(serving_runtime.routing_workflow if serving_runtime else None),
         )
 
@@ -65,9 +64,6 @@ class SystemRuntimeViewBuilder:
         return SystemServicesView(
             generation_service=(serving_runtime.generation_service if serving_runtime else None),
             answer_workflow=(serving_runtime.answer_workflow if serving_runtime else None),
-            question_answer_service=(
-                serving_runtime.question_answer_service if serving_runtime else None
-            ),
             knowledge_base_service=(
                 build_runtime.knowledge_base_service if build_runtime else None
             ),
@@ -78,7 +74,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> Neo4jManagerPort | None:
         if serving_runtime:
             return serving_runtime.neo4j_manager
         if build_runtime:
@@ -90,7 +86,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> GraphDataModulePort | None:
         if serving_runtime and serving_runtime.data_module:
             return serving_runtime.data_module
         if build_runtime:
@@ -102,7 +98,7 @@ class SystemRuntimeViewBuilder:
         *,
         build_runtime: BuildRuntime | None,
         serving_runtime: ServingRuntime | None,
-    ):
+    ) -> VectorIndexModulePort | None:
         if serving_runtime and serving_runtime.index_module:
             return serving_runtime.index_module
         if build_runtime:

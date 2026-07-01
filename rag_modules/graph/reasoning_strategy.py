@@ -11,8 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Sequence
 
+from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET
+from ..query_policy import get_query_policy
 from .retrieval_types import KnowledgeSubgraph
-from ..semantic_schema import SEMANTIC_NODE_LABELS_SET
 
 
 def _node_labels(node: Dict[str, Any]) -> List[str]:
@@ -46,21 +47,13 @@ class GraphReasoningOutcome:
 class GraphReasoningStrategy:
     """Produce compact reasoning chains from a knowledge subgraph."""
 
-    causal_relation_types = {
-        "CONTRIBUTES_TO",
-        "INGREDIENT_CONTRIBUTES_TO",
-        "TECHNIQUE_MODIFIES_TEXTURE",
-    }
-    compositional_relation_types = {
-        "HAS_FLAVOR",
-        "USES_TECHNIQUE",
-        "HAS_CUISINE_STYLE",
-        "HAS_INGREDIENT_CATEGORY",
-        "HAS_TIME_PROFILE",
-        "HAS_DIFFICULTY_LEVEL",
-        "HAS_DIET_TAG",
-        "HAS_HEALTH_TAG",
-    }
+    def __init__(self) -> None:
+        reasoning_policy = get_query_policy().graph.reasoning
+        self.causal_relation_types = set(reasoning_policy.causal_relation_types)
+        self.compositional_relation_types = set(reasoning_policy.compositional_relation_types)
+        self.comparison_markers = tuple(
+            marker.lower() for marker in reasoning_policy.comparison_markers
+        )
 
     def reason(self, subgraph: KnowledgeSubgraph, query: str) -> GraphReasoningOutcome:
         patterns = self.identify_reasoning_patterns(subgraph, query)
@@ -84,7 +77,10 @@ class GraphReasoningStrategy:
         patterns: List[str] = []
         if relation_types & self.causal_relation_types:
             patterns.append("causal")
-        if relation_types & self.compositional_relation_types or self._semantic_node_count(subgraph) > 0:
+        if (
+            relation_types & self.compositional_relation_types
+            or self._semantic_node_count(subgraph) > 0
+        ):
             patterns.append("compositional")
         if self._supports_comparison(subgraph, query):
             patterns.append("comparative")
@@ -134,9 +130,7 @@ class GraphReasoningStrategy:
             start_name = node_index.get(str(rel.get("startNodeId") or ""), {})
             end_name = node_index.get(str(rel.get("endNodeId") or ""), {})
             if start_name or end_name:
-                chains.append(
-                    f"{_node_name(start_name)} --{rel_type}--> {_node_name(end_name)}"
-                )
+                chains.append(f"{_node_name(start_name)} --{rel_type}--> {_node_name(end_name)}")
         return chains[:4]
 
     def _compositional_chains(self, subgraph: KnowledgeSubgraph) -> List[str]:
@@ -154,7 +148,9 @@ class GraphReasoningStrategy:
         if flavor_names:
             chains.append(f"{subject} connect to flavor nodes: {', '.join(flavor_names[:4])}.")
         if effect_names:
-            chains.append(f"{subject} connect to semantic effect nodes: {', '.join(effect_names[:4])}.")
+            chains.append(
+                f"{subject} connect to semantic effect nodes: {', '.join(effect_names[:4])}."
+            )
         if time_profiles or difficulty_levels:
             descriptors = ", ".join((time_profiles + difficulty_levels)[:4])
             chains.append(f"{subject} expose preparation constraints through: {descriptors}.")
@@ -180,7 +176,9 @@ class GraphReasoningStrategy:
             shared_features.append("effects " + ", ".join(effect_names[:3]))
 
         if not shared_features:
-            return [f"{recipe_names[0]} and {recipe_names[1]} appear in the same local graph neighborhood."]
+            return [
+                f"{recipe_names[0]} and {recipe_names[1]} appear in the same local graph neighborhood."
+            ]
 
         return [
             f"{recipe_names[0]} and {recipe_names[1]} intersect through {'; '.join(shared_features[:2])}."
@@ -247,7 +245,7 @@ class GraphReasoningStrategy:
         return (
             len(recipe_names) >= 2
             or len(subgraph.central_nodes or []) >= 2
-            or any(term in normalized_query for term in ("compare", "difference", "similar", "姣旇緝", "宸紓", "鐩稿悓", "鍖哄埆"))
+            or any(term in normalized_query for term in self.comparison_markers)
         )
 
     @staticmethod
@@ -262,5 +260,3 @@ class GraphReasoningStrategy:
     def _semantic_hit_count(self, text: str, subgraph: KnowledgeSubgraph) -> int:
         semantic_terms = set(self._names_by_semantic_label(subgraph))
         return sum(1 for term in semantic_terms if term and term in text)
-
-

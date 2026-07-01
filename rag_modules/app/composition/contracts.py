@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from ...artifacts import ArtifactManifest
 from ...configuration.models import GraphRAGConfig
+from ...runtime.artifacts import ArtifactManifest
 from ..diagnostics import StartupDiagnostics
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from .shared import ProgressCallback
+
 
 class BuildRuntimeFactoryProtocol(Protocol):
     """Factory capable of assembling a build runtime."""
@@ -18,9 +19,9 @@ class BuildRuntimeFactoryProtocol(Protocol):
         self,
         config: GraphRAGConfig | None = None,
         *,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime: ...
 
@@ -51,10 +52,10 @@ class ServingRuntimeFactoryProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer=None,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -66,7 +67,7 @@ class ServingRuntimePreparerProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
+        chunks: Any | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -90,10 +91,10 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer=None,
-        neo4j_manager=None,
-        data_module=None,
-        index_module=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
+        data_module: Any | None = None,
+        index_module: Any | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -101,7 +102,7 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
+        chunks: Any | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -116,6 +117,32 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         force: bool = False,
     ) -> ServingRuntime: ...
 
+    def prepare_existing(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None: ...
+
+    def prepare_if_needed(
+        self,
+        runtime: ServingRuntime,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+    ) -> ServingRuntime: ...
+
+    def refresh_from_build(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        build_runtime: BuildRuntime,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None: ...
+
 
 class SystemOperationsProtocol(Protocol):
     """Application-facing runtime lifecycle and diagnostics operations."""
@@ -124,23 +151,23 @@ class SystemOperationsProtocol(Protocol):
         self,
         *,
         progress: ProgressCallback = None,
-        neo4j_manager=None,
+        neo4j_manager: Any | None = None,
     ) -> BuildRuntime: ...
 
     def initialize_serving_runtime(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
     ) -> ServingRuntime: ...
 
     def initialize_system(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
+        query_tracer: Any | None = None,
+        neo4j_manager: Any | None = None,
     ) -> SystemRuntime: ...
 
     def is_initialized(self) -> bool: ...
@@ -175,82 +202,6 @@ class SystemOperationsProtocol(Protocol):
     def require_ready(self) -> ServingRuntime: ...
 
     def close(self) -> None: ...
-
-
-class SystemOperationsBackendProtocol(Protocol):
-    """Runtime lifecycle backend consumed by the public operations service."""
-
-    def initialize_build_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        neo4j_manager=None,
-    ) -> BuildRuntime: ...
-
-    def initialize_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> ServingRuntime: ...
-
-    def initialize_system(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> SystemRuntime: ...
-
-    def is_initialized(self) -> bool: ...
-
-    def is_build_initialized(self) -> bool: ...
-
-    def is_serving_initialized(self) -> bool: ...
-
-    def build_knowledge_base(
-        self,
-        *,
-        progress: ProgressCallback = None,
-    ) -> BuildRuntime: ...
-
-    def rebuild_knowledge_base(
-        self,
-        *,
-        progress: ProgressCallback = None,
-    ) -> BuildRuntime: ...
-
-    def refresh_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        force: bool = True,
-    ) -> ServingRuntime: ...
-
-    def collect_system_stats(self) -> dict[str, Any]: ...
-
-    def collect_startup_diagnostics(self, mode: str) -> StartupDiagnostics: ...
-
-    def require_ready(self) -> ServingRuntime: ...
-
-    def close(self) -> None: ...
-
-
-class SystemAnsweringBackendProtocol(Protocol):
-    """Serving-runtime readiness backend consumed by the answering service."""
-
-    def is_serving_initialized(self) -> bool: ...
-
-    def initialize_serving_runtime(
-        self,
-        *,
-        progress: ProgressCallback = None,
-        query_tracer=None,
-        neo4j_manager=None,
-    ) -> ServingRuntime: ...
-
-    def require_ready(self) -> ServingRuntime: ...
 
 
 class SystemFacadeSupportProtocol(Protocol):
@@ -274,10 +225,6 @@ class SystemFacadeSupportProtocol(Protocol):
     @property
     def services(self) -> Any: ...
 
-    def resolve_legacy_attribute(self, owner: object, name: str) -> Any: ...
-
-    def legacy_dir(self, owner: object) -> list[str]: ...
-
     @property
     def artifact_manifest(self) -> ArtifactManifest: ...
 
@@ -289,9 +236,7 @@ class SystemFacadeSupportProtocol(Protocol):
 
 
 __all__ = [
-    "SystemAnsweringBackendProtocol",
     "SystemFacadeSupportProtocol",
-    "SystemOperationsBackendProtocol",
     "BuildRuntimeExecutorProtocol",
     "BuildRuntimeFactoryProtocol",
     "ServingRuntimeFactoryProtocol",

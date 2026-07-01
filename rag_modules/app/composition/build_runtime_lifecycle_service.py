@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from ..runtime_state import BuildRuntime, ServingRuntime
-from .contracts import BuildRuntimeExecutorProtocol
+from .contracts import BuildRuntimeExecutorProtocol, ServingRuntimeLifecycleServiceProtocol
 from .runtime_readiness_service import RuntimeReadinessService
-from .runtime_refresh_service import ServingRuntimeRefreshService
 from .shared import ProgressCallback
 
 
@@ -16,11 +15,11 @@ class BuildRuntimeLifecycleService:
         self,
         *,
         build_runtime_executor: BuildRuntimeExecutorProtocol,
-        refresh_service: ServingRuntimeRefreshService,
+        serving_lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
         readiness_service: RuntimeReadinessService,
     ) -> None:
         self.build_runtime_executor = build_runtime_executor
-        self.refresh_service = refresh_service
+        self.serving_lifecycle_service = serving_lifecycle_service
         self.readiness_service = readiness_service
 
     def build_knowledge_base(
@@ -35,7 +34,7 @@ class BuildRuntimeLifecycleService:
             build_runtime,
             progress=progress,
         )
-        serving_runtime = self.refresh_service.refresh_from_build(
+        serving_runtime = self.serving_lifecycle_service.refresh_from_build(
             serving_runtime,
             build_runtime=build_runtime,
             progress=progress,
@@ -55,7 +54,7 @@ class BuildRuntimeLifecycleService:
             build_runtime,
             progress=progress,
         )
-        serving_runtime = self.refresh_service.refresh_from_build(
+        serving_runtime = self.serving_lifecycle_service.refresh_from_build(
             serving_runtime,
             build_runtime=build_runtime,
             progress=progress,

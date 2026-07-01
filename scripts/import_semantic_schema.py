@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.build_pipeline.graph_data_preparation import GraphDataPreparationModule
 from rag_modules.build_pipeline.document_artifacts import build_or_load_documents
+from rag_modules.build_pipeline.graph_data_preparation import GraphDataPreparationModule
 from rag_modules.configuration import load_config
 from rag_modules.infra.semantic_graph_writer import SemanticGraphSchemaWriter
 
@@ -24,11 +24,12 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
+    storage = config.storage
     data_module = GraphDataPreparationModule(
-        uri=config.neo4j_uri,
-        user=config.neo4j_user,
-        password=config.neo4j_password,
-        database=config.neo4j_database,
+        uri=storage.neo4j_uri,
+        user=storage.neo4j_user,
+        password=storage.neo4j_password,
+        database=storage.neo4j_database,
     )
     try:
         data_module.load_graph_data()

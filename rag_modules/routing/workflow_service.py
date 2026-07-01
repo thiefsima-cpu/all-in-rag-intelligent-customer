@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from ..query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
+from ..contracts import EvidenceDocument
+from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding.service import QueryUnderstandingService
-from ..retrieval.contracts import EvidenceDocument
+from ..retrieval.post_processor import RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..retrieval_post_processor import RetrievalPostProcessor
 from ..runtime import (
     QueryAnalysis,
     QueryUnderstandingSnapshot,
@@ -19,6 +18,8 @@ from ..runtime import (
     RouteResolution,
     RouteSnapshot,
 )
+from ..runtime.error_models import routing_error_detail
+from ..runtime.json_types import JsonObject
 from .search_orchestrator import RouteExecutionRequest, RouteSearchOrchestrator
 from .statistics import RouteStatisticsTracker
 from .trace_recorder import RouteTraceRecorder
@@ -51,7 +52,8 @@ class RoutingWorkflowService:
             query_understanding_service = QueryUnderstandingService(
                 llm_client=llm_client,
                 config=config,
-                retrieval_profile=self.retrieval_profile,
+                planner_settings=self.retrieval_profile.planner,
+                semantic_settings=self.retrieval_profile.semantics,
             )
         self.query_understanding_service = query_understanding_service
         self.query_planner = self.query_understanding_service.query_planner
@@ -85,7 +87,7 @@ class RoutingWorkflowService:
         query: str,
         top_k: int = 5,
     ) -> tuple[RouteResolution, RouteSnapshot]:
-        logger.info("Routing query: %s", query)
+        logger.info("Query routing started: top_k=%s", top_k)
         route_start = time.perf_counter()
         trace = RouteTraceRecorder(query=query, requested_top_k=top_k)
 
@@ -128,20 +130,26 @@ class RoutingWorkflowService:
             route_trace = trace.finalize(
                 total_start_time=route_start,
                 final_doc_count=len(evidence_documents),
-                error=str(exc),
+                error=routing_error_detail(exc),
             )
+            error_detail = routing_error_detail(exc)
             resolution = self._build_resolution(
                 understanding=understanding,
                 query=query,
                 strategy=execution_request.analysis.strategy_name,
                 evidence_documents=evidence_documents,
                 route_trace=route_trace,
-                metadata={"error": str(exc)},
+                metadata={"error": error_detail.to_dict()},
             )
             return resolution, RouteSnapshot.from_dict(route_trace.to_dict())
 
-    def get_route_statistics(self) -> dict[str, Any]:
+    def get_route_statistics(self) -> JsonObject:
         return self.route_stats.summary()
+
+    def close(self) -> None:
+        close = getattr(self.search_orchestrator, "close", None)
+        if callable(close):
+            close()
 
     def _build_execution_request(
         self,
@@ -182,7 +190,7 @@ class RoutingWorkflowService:
         strategy: str,
         evidence_documents: List[EvidenceDocument],
         route_trace: RouteSnapshot,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: JsonObject | None = None,
     ) -> RouteResolution:
         return RouteResolution(
             understanding=understanding,

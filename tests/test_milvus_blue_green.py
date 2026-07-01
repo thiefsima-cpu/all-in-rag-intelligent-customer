@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from rag_modules.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.build_pipeline.contracts import SemanticGraphSchemaSyncResult
 from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.milvus_index_construction import MilvusIndexConstructionModule
+from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.text_document import TextDocument
 
 
@@ -215,9 +215,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
         self.assertEqual(module.collection_name, "recipes__active")
 
     def test_failed_candidate_build_preserves_ready_manifest(self) -> None:
-        config = build_test_config(
-            {"graph": {"enable_semantic_graph_schema": False}}
-        )
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
         active = ArtifactManifest(
             stage="ready",
             manifest_version=4,
@@ -255,9 +253,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
             runtime_stats_access=_RuntimeStats(),
             document_artifact_builder=_DocumentBuilder(document_result),
             semantic_graph_schema_sync=SimpleNamespace(
-                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(
-                    enabled=False
-                )
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
             ),
         )
 
@@ -273,9 +269,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
         self.assertEqual(access.discarded, ["recipes__green"])
 
     def test_successful_rebuild_publishes_green_manifest_version(self) -> None:
-        config = build_test_config(
-            {"graph": {"enable_semantic_graph_schema": False}}
-        )
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
         active = ArtifactManifest(
             stage="ready",
             manifest_version=4,
@@ -313,9 +307,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
             runtime_stats_access=_RuntimeStats(),
             document_artifact_builder=_DocumentBuilder(document_result),
             semantic_graph_schema_sync=SimpleNamespace(
-                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(
-                    enabled=False
-                )
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
             ),
         )
 

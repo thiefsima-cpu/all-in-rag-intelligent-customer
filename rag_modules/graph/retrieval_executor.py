@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
 
-from neo4j import GraphDatabase
-
+from ..infra.neo4j import create_neo4j_driver
 from ..runtime import GraphRetrievalSnapshot
+from ..runtime.error_models import graph_error_detail
+from ..safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class GraphRetrievalExecutor:
         self.neo4j_manager = neo4j_manager
         self.database_name = database_name
 
-        self.driver = None
+        self.driver: Any | None = None
         self._owns_driver = False
         self.entity_cache: Dict[str, dict] = {}
         self.relation_cache: Dict[str, int] = {}
@@ -54,13 +54,18 @@ class GraphRetrievalExecutor:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = GraphDatabase.driver(
+                self.driver = create_neo4j_driver(
                     self.storage.neo4j_uri,
-                    auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                    self.storage.neo4j_user,
+                    self.storage.neo4j_password,
                 )
                 self._owns_driver = True
 
-            with self.driver.session(database=self.database_name) as session:
+            driver = self.driver
+            if driver is None:
+                raise RuntimeError("Neo4j driver was not initialized.")
+
+            with driver.session(database=self.database_name) as session:
                 session.run("RETURN 1")
 
             self.entity_linker.driver = self.driver
@@ -68,7 +73,13 @@ class GraphRetrievalExecutor:
             self.build_graph_index()
             logger.info("GraphRAG retrieval initialized")
         except Exception as exc:
-            logger.error("Neo4j connection failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             if self._owns_driver and self.driver:
                 self.driver.close()
             self.driver = None
@@ -86,20 +97,25 @@ class GraphRetrievalExecutor:
             self.entity_cache = dict(warmup.entity_cache or {})
             self.relation_cache = dict(warmup.relation_cache or {})
             logger.info(
-                "Graph caches ready: %s entities, %s relation types, stats=%s",
+                "Graph caches ready: %s entities, %s relation types",
                 len(self.entity_cache),
                 len(self.relation_cache),
-                os.path.abspath(self.graph_cache_stats_store.path),
             )
         except Exception as exc:
-            logger.error("Graph cache build failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
 
     def execute(self, request) -> List:
         results, _trace = self.execute_with_trace(request)
         return results
 
     def execute_with_trace(self, request) -> tuple[List, GraphRetrievalSnapshot]:
-        logger.info("Starting GraphRAG retrieval: %s", request.query)
+        logger.info("Starting GraphRAG retrieval: top_k=%s", request.top_k)
         start_time = time.perf_counter()
         trace = self.runtime.start_trace(
             request.query,
@@ -132,12 +148,12 @@ class GraphRetrievalExecutor:
                 trace,
                 "validate_driver",
                 status="error",
-                details={"error": "neo4j_not_connected"},
+                details={"error": graph_error_detail(detail="neo4j_not_connected").to_dict()},
             )
             final_trace = self.runtime.finalize_trace(
                 trace,
                 start_time=start_time,
-                error="neo4j_not_connected",
+                error=graph_error_detail(detail="neo4j_not_connected"),
             )
             return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
 
@@ -176,17 +192,23 @@ class GraphRetrievalExecutor:
             )
             return final_results, GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
         except Exception as exc:
-            logger.error("GraphRAG evidence retrieval failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             self.runtime.record_event(
                 trace,
                 "graph_retrieval_failed",
                 status="error",
-                details={"error": str(exc)},
+                details={"error": graph_error_detail(exc).to_dict()},
             )
             final_trace = self.runtime.finalize_trace(
                 trace,
                 start_time=start_time,
-                error=str(exc),
+                error=graph_error_detail(exc),
             )
             return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
 
@@ -194,5 +216,3 @@ class GraphRetrievalExecutor:
         if self._owns_driver and self.driver:
             self.driver.close()
             logger.info("GraphRAG retrieval closed")
-
-

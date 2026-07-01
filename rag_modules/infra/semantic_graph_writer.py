@@ -11,15 +11,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List
 
-from neo4j import GraphDatabase
-
-from ..neo4j_pool import Neo4jConnectionManager
-from ..semantic_schema import (
+from ..domain.shared.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
     SEMANTIC_SCHEMA_VERSION,
 )
 from ..text_document import TextDocument
+from .neo4j import Neo4jConnectionManager, create_neo4j_driver
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +37,22 @@ def _dedupe_strings(values: Iterable[Any]) -> List[str]:
 class SemanticGraphSchemaWriter:
     """Write semantic schema nodes and relationships to Neo4j."""
 
-    def __init__(self, config, neo4j_manager: Neo4jConnectionManager = None):
+    def __init__(self, config, neo4j_manager: Neo4jConnectionManager | None = None):
         self.config = config
         self.storage = config.storage
         self.graph = config.graph
         self.neo4j_manager = neo4j_manager
-        self.driver = None
+        self.driver: Any | None = None
         self._owns_driver = False
 
     def __enter__(self) -> "SemanticGraphSchemaWriter":
         if self.neo4j_manager is not None:
             self.driver = self.neo4j_manager.driver
         else:
-            self.driver = GraphDatabase.driver(
+            self.driver = create_neo4j_driver(
                 self.storage.neo4j_uri,
-                auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                self.storage.neo4j_user,
+                self.storage.neo4j_password,
             )
             self._owns_driver = True
         return self
@@ -79,9 +78,10 @@ class SemanticGraphSchemaWriter:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = GraphDatabase.driver(
+                self.driver = create_neo4j_driver(
                     self.storage.neo4j_uri,
-                    auth=(self.storage.neo4j_user, self.storage.neo4j_password),
+                    self.storage.neo4j_user,
+                    self.storage.neo4j_password,
                 )
                 self._owns_driver = True
                 opened_here = True
@@ -92,8 +92,12 @@ class SemanticGraphSchemaWriter:
                 self.close()
             return {"recipes": 0, "nodes": 0, "relationships": 0}
 
+        driver = self.driver
+        if driver is None:
+            raise RuntimeError("Neo4j driver is not initialized.")
+
         try:
-            with self.driver.session(database=self.storage.neo4j_database) as session:
+            with driver.session(database=self.storage.neo4j_database) as session:
                 self._ensure_constraints(session)
                 result = session.execute_write(self._write_rows, rows)
             logger.info("Semantic graph schema sync complete: %s", result)
@@ -119,12 +123,14 @@ class SemanticGraphSchemaWriter:
                         effect = str((item or {}).get("effect") or "").strip()
                         if not effect:
                             continue
-                        relations.append({
-                            "rel_type": rel_type,
-                            "label": SEMANTIC_NODE_LABELS[rel_type],
-                            "name": effect,
-                            "causes": _dedupe_strings((item or {}).get("causes") or []),
-                        })
+                        relations.append(
+                            {
+                                "rel_type": rel_type,
+                                "label": SEMANTIC_NODE_LABELS[rel_type],
+                                "name": effect,
+                                "causes": _dedupe_strings((item or {}).get("causes") or []),
+                            }
+                        )
                     continue
                 if rel_type in {"INGREDIENT_CONTRIBUTES_TO", "TECHNIQUE_MODIFIES_TEXTURE"}:
                     for item in semantic_relations.get(rel_type, []) or []:
@@ -132,29 +138,35 @@ class SemanticGraphSchemaWriter:
                         effect = str((item or {}).get("effect") or "").strip()
                         if not source or not effect:
                             continue
-                        relations.append({
-                            "rel_type": rel_type,
-                            "label": SEMANTIC_NODE_LABELS[rel_type],
-                            "name": effect,
-                            "source": source,
-                            "causes": [source],
-                        })
+                        relations.append(
+                            {
+                                "rel_type": rel_type,
+                                "label": SEMANTIC_NODE_LABELS[rel_type],
+                                "name": effect,
+                                "source": source,
+                                "causes": [source],
+                            }
+                        )
                     continue
 
                 for target in _dedupe_strings(semantic_relations.get(rel_type) or []):
-                    relations.append({
-                        "rel_type": rel_type,
-                        "label": SEMANTIC_NODE_LABELS[rel_type],
-                        "name": target,
-                        "causes": [],
-                    })
+                    relations.append(
+                        {
+                            "rel_type": rel_type,
+                            "label": SEMANTIC_NODE_LABELS[rel_type],
+                            "name": target,
+                            "causes": [],
+                        }
+                    )
 
             if relations:
-                rows.append({
-                    "recipe_id": recipe_id,
-                    "recipe_name": recipe_name,
-                    "relations": relations,
-                })
+                rows.append(
+                    {
+                        "recipe_id": recipe_id,
+                        "recipe_name": recipe_name,
+                        "relations": relations,
+                    }
+                )
         return rows
 
     @staticmethod
@@ -195,9 +207,19 @@ class SemanticGraphSchemaWriter:
             ("HAS_DIET_TAG", "DietTag", "semantic:diet:", "HAS_DIET_TAG"),
             ("HAS_HEALTH_TAG", "HealthTag", "semantic:health:", "HAS_HEALTH_TAG"),
             ("HAS_CUISINE_STYLE", "CuisineStyle", "semantic:cuisine:", "HAS_CUISINE_STYLE"),
-            ("HAS_INGREDIENT_CATEGORY", "IngredientCategory", "semantic:ingredient-category:", "HAS_INGREDIENT_CATEGORY"),
+            (
+                "HAS_INGREDIENT_CATEGORY",
+                "IngredientCategory",
+                "semantic:ingredient-category:",
+                "HAS_INGREDIENT_CATEGORY",
+            ),
             ("HAS_TIME_PROFILE", "TimeProfile", "semantic:time-profile:", "HAS_TIME_PROFILE"),
-            ("HAS_DIFFICULTY_LEVEL", "DifficultyLevel", "semantic:difficulty:", "HAS_DIFFICULTY_LEVEL"),
+            (
+                "HAS_DIFFICULTY_LEVEL",
+                "DifficultyLevel",
+                "semantic:difficulty:",
+                "HAS_DIFFICULTY_LEVEL",
+            ),
         ]
         for rel_type, label, node_prefix, edge_type in simple_specs:
             rel_rows = [row for row in flat_rows if row["rel_type"] == rel_type]

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Mapping
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from rag_modules.query_policy import get_query_policy
 from scripts.smoke_answer_pipeline import run_smoke as run_answer_pipeline
 from scripts.smoke_answer_pipeline_real_route import (
     run_smoke as run_answer_pipeline_real_route,
@@ -20,10 +24,40 @@ from scripts.smoke_generation_plans import run_smoke as run_generation_plans
 from scripts.smoke_generation_prompts import run_smoke as run_generation_prompts
 from scripts.smoke_route_queries import run_smoke as run_route_semantics
 
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "release_gate.json"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "eval" / "reports" / "release_gate"
+INCLUDE_QUALITY_EVAL_ENV = "RELEASE_GATE_INCLUDE_QUALITY_EVAL"
+QUALITY_EVAL_STAGE = "quality_eval"
+_TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
+FAILURE_TYPE_DEPENDENCY_UNAVAILABLE = "dependency-unavailable"
+FAILURE_TYPE_METRIC_REGRESSION = "metric-regression"
+FAILURE_TYPE_SUITE_ERROR = "suite-error"
+FAILURE_TYPE_SUITE_REGRESSION = "suite-regression"
+_DEPENDENCY_UNAVAILABLE_MARKERS = (
+    "neo4j",
+    "milvus",
+    "serviceunavailable",
+    "service unavailable",
+    "connection refused",
+    "failed to establish connection",
+    "unable to connect",
+    "cannot connect",
+    "connectionerror",
+    "connection error",
+    "connection reset",
+    "database unavailable",
+    "server unavailable",
+    "timed out",
+    "timeout",
+)
+_FAILURE_TYPE_ORDER = {
+    FAILURE_TYPE_DEPENDENCY_UNAVAILABLE: 0,
+    FAILURE_TYPE_METRIC_REGRESSION: 1,
+    FAILURE_TYPE_SUITE_ERROR: 2,
+    FAILURE_TYPE_SUITE_REGRESSION: 3,
+}
 
 SuiteRunner = Callable[[], dict[str, Any]]
 
@@ -34,6 +68,10 @@ SUITE_RUNNERS: Dict[str, SuiteRunner] = {
     "generation_plans": run_generation_plans,
     "generation_prompts": run_generation_prompts,
 }
+
+
+def _query_policy_metadata() -> dict[str, str]:
+    return get_query_policy().metadata.to_dict()
 
 
 def load_policy(path: str | Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
@@ -47,6 +85,183 @@ def load_policy(path: str | Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
             f"Unsupported release gate schema_version={payload.get('schema_version')!r}."
         )
     return payload
+
+
+def _environment_flag(
+    name: str,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    values = os.environ if environ is None else environ
+    raw = values.get(name)
+    if raw is None:
+        return False
+    normalized = raw.strip().lower()
+    if normalized in _TRUE_ENV_VALUES:
+        return True
+    if normalized in _FALSE_ENV_VALUES:
+        return False
+    raise ValueError(f"Environment variable {name} must be one of 1/true/yes/on or 0/false/no/off.")
+
+
+def activate_optional_stages(
+    policy: dict[str, Any],
+    stage_names: list[str],
+) -> dict[str, Any]:
+    active = copy.deepcopy(policy)
+    if not stage_names:
+        return active
+    optional_stages = active.get("optional_stages")
+    if optional_stages is None:
+        optional_stages = {}
+    if not isinstance(optional_stages, dict):
+        raise ValueError("Release gate optional_stages must be a JSON object.")
+
+    required_suites = list(active.get("required_suites") or [])
+    minimum_cases = dict(active.get("suite_minimum_cases") or {})
+    minimum_pass_rates = dict(active.get("suite_minimum_pass_rate") or {})
+    metric_thresholds = dict(active.get("metric_thresholds") or {})
+
+    for stage_name in stage_names:
+        stage = optional_stages.get(stage_name)
+        if not isinstance(stage, dict):
+            raise ValueError(f"Optional release-gate stage is not configured: {stage_name}")
+        suite_value = stage.get("suite")
+        if not isinstance(suite_value, str) or not suite_value.strip():
+            raise ValueError(f"Optional release-gate stage has no suite: {stage_name}")
+        suite_name = suite_value.strip()
+        if suite_name in required_suites:
+            raise ValueError(f"Optional release-gate suite is already required: {suite_name}")
+
+        runner = stage.get("runner")
+        if not isinstance(runner, dict):
+            raise ValueError(f"Optional release-gate stage has no runner object: {stage_name}")
+        profile = runner.get("profile")
+        top_k = runner.get("top_k")
+        generate = runner.get("generate")
+        if (
+            not isinstance(profile, str)
+            or not profile.strip()
+            or isinstance(top_k, bool)
+            or not isinstance(top_k, int)
+            or top_k <= 0
+            or not isinstance(generate, bool)
+        ):
+            raise ValueError(
+                f"Optional release-gate stage has invalid runner settings: {stage_name}"
+            )
+
+        raw_thresholds = stage.get("metric_thresholds")
+        if raw_thresholds is None:
+            raw_thresholds = {}
+        elif not isinstance(raw_thresholds, dict):
+            raise ValueError(
+                f"Optional release-gate stage has invalid metric thresholds: {stage_name}"
+            )
+        stage_thresholds = dict(raw_thresholds)
+        for metric_path, threshold in stage_thresholds.items():
+            if not isinstance(metric_path, str) or not metric_path.strip():
+                raise ValueError(
+                    f"Optional release-gate stage has invalid metric path: {stage_name}"
+                )
+            if not isinstance(threshold, dict) or not {
+                "minimum",
+                "maximum",
+            }.intersection(threshold):
+                raise ValueError(
+                    f"Optional release-gate stage has invalid metric threshold rule: "
+                    f"{stage_name}.{metric_path}"
+                )
+            for limit_name in ("minimum", "maximum"):
+                if limit_name not in threshold:
+                    continue
+                limit = threshold[limit_name]
+                if isinstance(limit, bool):
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    )
+                try:
+                    numeric_limit = float(limit)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    ) from exc
+                if not math.isfinite(numeric_limit):
+                    raise ValueError(
+                        f"Optional release-gate stage has invalid metric threshold limit: "
+                        f"{stage_name}.{metric_path}.{limit_name}"
+                    )
+        duplicate_metrics = sorted(set(metric_thresholds).intersection(stage_thresholds))
+        if duplicate_metrics:
+            raise ValueError(
+                f"Optional release-gate stage duplicates metric thresholds: {duplicate_metrics}"
+            )
+
+        minimum_case_count = stage.get("suite_minimum_cases", 0)
+        minimum_pass_rate = stage.get("suite_minimum_pass_rate", 1.0)
+        if (
+            isinstance(minimum_case_count, bool)
+            or not isinstance(minimum_case_count, int)
+            or minimum_case_count < 0
+            or isinstance(minimum_pass_rate, bool)
+            or not isinstance(minimum_pass_rate, (int, float))
+            or not math.isfinite(float(minimum_pass_rate))
+            or not 0.0 <= float(minimum_pass_rate) <= 1.0
+        ):
+            raise ValueError(
+                f"Optional release-gate stage has invalid suite thresholds: {stage_name}"
+            )
+
+        required_suites.append(suite_name)
+        minimum_cases[suite_name] = minimum_case_count
+        minimum_pass_rates[suite_name] = float(minimum_pass_rate)
+        metric_thresholds.update(stage_thresholds)
+
+    active["required_suites"] = required_suites
+    active["suite_minimum_cases"] = minimum_cases
+    active["suite_minimum_pass_rate"] = minimum_pass_rates
+    active["metric_thresholds"] = metric_thresholds
+    return active
+
+
+def _validate_metric_threshold_rules(
+    metric_thresholds: Any,
+    *,
+    context: str,
+) -> None:
+    if not isinstance(metric_thresholds, dict):
+        raise ValueError(f"{context} metric_thresholds must be a JSON object.")
+    for metric_path, threshold in metric_thresholds.items():
+        if not isinstance(metric_path, str) or not metric_path.strip():
+            raise ValueError(f"{context} has invalid metric path.")
+        if not isinstance(threshold, dict) or not {"minimum", "maximum"}.intersection(threshold):
+            raise ValueError(f"{context} has invalid metric threshold rule: {metric_path}")
+        for limit_name in ("minimum", "maximum"):
+            if limit_name not in threshold:
+                continue
+            limit = threshold[limit_name]
+            if isinstance(limit, bool):
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                )
+            try:
+                numeric_limit = float(limit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                ) from exc
+            if not math.isfinite(numeric_limit):
+                raise ValueError(
+                    f"{context} has invalid metric threshold limit: {metric_path}.{limit_name}"
+                )
+
+
+def _classify_runner_exception(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if any(marker in text for marker in _DEPENDENCY_UNAVAILABLE_MARKERS):
+        return FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+    return FAILURE_TYPE_SUITE_ERROR
 
 
 def run_suites(
@@ -63,22 +278,98 @@ def run_suites(
                 "case_count": 0,
                 "passed_count": 0,
                 "results": [],
-                "failures": [{"suite_error": f"unknown_suite:{suite_name}"}],
+                "failures": [
+                    {
+                        "suite_error": f"unknown_suite:{suite_name}",
+                        "failure_type": FAILURE_TYPE_SUITE_ERROR,
+                    }
+                ],
                 "suite_error": f"unknown_suite:{suite_name}",
+                "failure_type": FAILURE_TYPE_SUITE_ERROR,
             }
             continue
         try:
             report = runner()
             reports[suite_name] = dict(report or {})
         except Exception as exc:
+            failure_type = _classify_runner_exception(exc)
+            suite_error = f"{type(exc).__name__}: {exc}"
             reports[suite_name] = {
                 "case_count": 0,
                 "passed_count": 0,
                 "results": [],
-                "failures": [{"suite_error": f"{type(exc).__name__}: {exc}"}],
-                "suite_error": f"{type(exc).__name__}: {exc}",
+                "failures": [{"suite_error": suite_error, "failure_type": failure_type}],
+                "suite_error": suite_error,
+                "failure_type": failure_type,
             }
     return reports
+
+
+def _run_quality_eval(stage: dict[str, Any]) -> dict[str, Any]:
+    from scripts.eval_queries import evaluate_offline_quality_queries
+
+    runner = dict(stage.get("runner") or {})
+    report = evaluate_offline_quality_queries(
+        top_k=int(runner.get("top_k") or 3),
+        generate=bool(runner.get("generate", False)),
+        profile=str(runner.get("profile") or "") or None,
+    )
+    metrics = dict(report.get("metrics") or {})
+    results = [dict(item) for item in (report.get("results") or [])]
+    failures = [dict(item) for item in (report.get("failures") or [])]
+    case_count = max(0, int(metrics.get("case_count") or len(results)))
+    passed_count = sum(1 for item in results if item.get("passed"))
+    return {
+        "case_count": case_count,
+        "passed_count": min(case_count, passed_count),
+        "metrics": metrics,
+        "results": results,
+        "failures": failures,
+        "profile": dict(report.get("profile") or {}),
+    }
+
+
+def _required_quality_stage(policy: dict[str, Any]) -> dict[str, Any]:
+    suite_runners = policy.get("suite_runners")
+    runner = None
+    if isinstance(suite_runners, dict):
+        configured = suite_runners.get(QUALITY_EVAL_STAGE)
+        if isinstance(configured, dict):
+            runner = dict(configured)
+
+    if runner is None:
+        optional_stages = policy.get("optional_stages")
+        if isinstance(optional_stages, dict):
+            stage = optional_stages.get(QUALITY_EVAL_STAGE)
+            if isinstance(stage, dict):
+                runner = dict(stage.get("runner") or {})
+
+    if not isinstance(runner, dict):
+        raise ValueError(f"Required release-gate suite has no runner: {QUALITY_EVAL_STAGE}")
+
+    profile = runner.get("profile")
+    top_k = runner.get("top_k")
+    generate = runner.get("generate")
+    if (
+        not isinstance(profile, str)
+        or not profile.strip()
+        or isinstance(top_k, bool)
+        or not isinstance(top_k, int)
+        or top_k <= 0
+        or not isinstance(generate, bool)
+    ):
+        raise ValueError(
+            f"Required release-gate suite has invalid runner settings: {QUALITY_EVAL_STAGE}"
+        )
+
+    return {
+        "suite": QUALITY_EVAL_STAGE,
+        "runner": {
+            "profile": profile.strip(),
+            "top_k": int(top_k),
+            "generate": bool(generate),
+        },
+    }
 
 
 def _suite_metrics(report: dict[str, Any]) -> dict[str, Any]:
@@ -86,12 +377,16 @@ def _suite_metrics(report: dict[str, Any]) -> dict[str, Any]:
     passed_count = max(0, int(report.get("passed_count") or 0))
     passed_count = min(case_count, passed_count)
     pass_rate = passed_count / case_count if case_count else 0.0
+    failure_type = str(report.get("failure_type") or "")
+    if report.get("suite_error") and not failure_type:
+        failure_type = FAILURE_TYPE_SUITE_ERROR
     return {
         "case_count": case_count,
         "passed_count": passed_count,
         "failed_count": case_count - passed_count,
         "pass_rate": pass_rate,
         "suite_error": str(report.get("suite_error") or ""),
+        "failure_type": failure_type,
     }
 
 
@@ -102,6 +397,7 @@ def _check(
     passed: bool,
     expected: Any,
     actual: Any,
+    failure_type: str = "",
 ) -> None:
     checks.append(
         {
@@ -109,8 +405,14 @@ def _check(
             "passed": bool(passed),
             "expected": expected,
             "actual": actual,
+            "failure_type": "" if passed else str(failure_type or ""),
         }
     )
+
+
+def _suite_failure_type(suite_reports: dict[str, dict[str, Any]], suite_name: str) -> str:
+    report = suite_reports.get(suite_name) or {}
+    return str(report.get("failure_type") or "")
 
 
 def _resolve_metric(
@@ -128,27 +430,61 @@ def _resolve_metric(
     return current
 
 
+def _metric_blocking_failure_type(
+    suite_reports: dict[str, dict[str, Any]],
+    path: str,
+) -> str:
+    suite_name = str(path or "").split(".", 1)[0]
+    if not suite_name:
+        return ""
+    return _suite_failure_type(suite_reports, suite_name)
+
+
 def _evaluate_metric_thresholds(
     checks: list[dict[str, Any]],
     *,
     policy: dict[str, Any],
     suite_reports: dict[str, dict[str, Any]],
 ) -> None:
-    for metric_path, threshold in dict(
-        policy.get("metric_thresholds") or {}
-    ).items():
+    for metric_path, threshold in dict(policy.get("metric_thresholds") or {}).items():
         limits = dict(threshold or {})
         actual = _resolve_metric(suite_reports, str(metric_path))
         if actual is None:
+            blocking_failure_type = _metric_blocking_failure_type(
+                suite_reports,
+                str(metric_path),
+            )
             _check(
                 checks,
                 name=f"metric_available:{metric_path}",
                 passed=False,
                 expected="numeric_metric",
-                actual=None,
+                actual=(f"blocked_by:{blocking_failure_type}" if blocking_failure_type else None),
+                failure_type=blocking_failure_type or FAILURE_TYPE_METRIC_REGRESSION,
             )
             continue
-        numeric_actual = float(actual)
+        try:
+            numeric_actual = float(actual)
+        except (TypeError, ValueError):
+            _check(
+                checks,
+                name=f"metric_numeric:{metric_path}",
+                passed=False,
+                expected="numeric_metric",
+                actual=actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
+            )
+            continue
+        if isinstance(actual, bool) or not math.isfinite(numeric_actual):
+            _check(
+                checks,
+                name=f"metric_numeric:{metric_path}",
+                passed=False,
+                expected="finite_numeric_metric",
+                actual=actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
+            )
+            continue
         if "minimum" in limits:
             minimum = float(limits["minimum"])
             _check(
@@ -157,6 +493,7 @@ def _evaluate_metric_thresholds(
                 passed=numeric_actual >= minimum,
                 expected=f">={minimum}",
                 actual=numeric_actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
         if "maximum" in limits:
             maximum = float(limits["maximum"])
@@ -166,7 +503,23 @@ def _evaluate_metric_thresholds(
                 passed=numeric_actual <= maximum,
                 expected=f"<={maximum}",
                 actual=numeric_actual,
+                failure_type=FAILURE_TYPE_METRIC_REGRESSION,
             )
+
+
+def _failure_type_counts(failed_checks: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for check in failed_checks:
+        failure_type = str(check.get("failure_type") or "").strip()
+        if not failure_type:
+            continue
+        counts[failure_type] = counts.get(failure_type, 0) + 1
+    return dict(
+        sorted(
+            counts.items(),
+            key=lambda item: (_FAILURE_TYPE_ORDER.get(item[0], 99), item[0]),
+        )
+    )
 
 
 def evaluate_gate(
@@ -176,9 +529,7 @@ def evaluate_gate(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     required_suites = [
-        str(item)
-        for item in (policy.get("required_suites") or [])
-        if str(item).strip()
+        str(item) for item in (policy.get("required_suites") or []) if str(item).strip()
     ]
     minimum_cases = {
         str(key): max(0, int(value))
@@ -198,12 +549,15 @@ def evaluate_gate(
     for suite_name in required_suites:
         metrics = suite_metrics[suite_name]
         suite_present = suite_name in suite_reports and not metrics["suite_error"]
+        suite_failure_type = str(metrics.get("failure_type") or "")
         _check(
             checks,
             name=f"suite_available:{suite_name}",
             passed=suite_present,
             expected="available_without_error",
-            actual=metrics["suite_error"] or ("available" if suite_name in suite_reports else "missing"),
+            actual=metrics["suite_error"]
+            or ("available" if suite_name in suite_reports else "missing"),
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_ERROR,
         )
 
         required_case_count = minimum_cases.get(suite_name, 0)
@@ -213,6 +567,7 @@ def evaluate_gate(
             passed=metrics["case_count"] >= required_case_count,
             expected=f">={required_case_count}",
             actual=metrics["case_count"],
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_REGRESSION,
         )
 
         required_pass_rate = minimum_pass_rates.get(suite_name, 1.0)
@@ -222,14 +577,21 @@ def evaluate_gate(
             passed=metrics["pass_rate"] >= required_pass_rate,
             expected=f">={required_pass_rate}",
             actual=metrics["pass_rate"],
+            failure_type=suite_failure_type or FAILURE_TYPE_SUITE_REGRESSION,
         )
 
     total_cases = sum(item["case_count"] for item in suite_metrics.values())
     total_passed = sum(item["passed_count"] for item in suite_metrics.values())
     overall_pass_rate = total_passed / total_cases if total_cases else 0.0
     minimum_total_cases = max(0, int(policy.get("minimum_total_cases") or 0))
-    minimum_overall_pass_rate = float(
-        policy.get("minimum_overall_pass_rate", 1.0)
+    minimum_overall_pass_rate = float(policy.get("minimum_overall_pass_rate", 1.0))
+    aggregate_failure_type = (
+        FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+        if any(
+            item.get("failure_type") == FAILURE_TYPE_DEPENDENCY_UNAVAILABLE
+            for item in suite_metrics.values()
+        )
+        else FAILURE_TYPE_SUITE_REGRESSION
     )
     _check(
         checks,
@@ -237,6 +599,7 @@ def evaluate_gate(
         passed=total_cases >= minimum_total_cases,
         expected=f">={minimum_total_cases}",
         actual=total_cases,
+        failure_type=aggregate_failure_type,
     )
     _check(
         checks,
@@ -244,6 +607,7 @@ def evaluate_gate(
         passed=overall_pass_rate >= minimum_overall_pass_rate,
         expected=f">={minimum_overall_pass_rate}",
         actual=overall_pass_rate,
+        failure_type=aggregate_failure_type,
     )
 
     route_report = suite_reports.get("route_semantics") or {}
@@ -258,15 +622,12 @@ def evaluate_gate(
         passed=len(route_categories) >= minimum_route_category_count,
         expected=f">={minimum_route_category_count}",
         actual=len(route_categories),
+        failure_type=FAILURE_TYPE_SUITE_REGRESSION,
     )
     required_route_categories = {
-        str(item)
-        for item in (policy.get("required_route_categories") or [])
-        if str(item).strip()
+        str(item) for item in (policy.get("required_route_categories") or []) if str(item).strip()
     }
-    missing_route_categories = sorted(
-        required_route_categories.difference(route_categories)
-    )
+    missing_route_categories = sorted(required_route_categories.difference(route_categories))
     _check(
         checks,
         name="required_route_categories",
@@ -276,6 +637,7 @@ def evaluate_gate(
             "present": sorted(route_categories),
             "missing": missing_route_categories,
         },
+        failure_type=FAILURE_TYPE_SUITE_REGRESSION,
     )
     _evaluate_metric_thresholds(
         checks,
@@ -284,9 +646,11 @@ def evaluate_gate(
     )
 
     failed_checks = [item for item in checks if not item["passed"]]
+    failure_type_counts = _failure_type_counts(failed_checks)
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "passed": not failed_checks,
+        "query_policy": _query_policy_metadata(),
         "metrics": {
             "suite_count": len(required_suites),
             "case_count": total_cases,
@@ -294,13 +658,14 @@ def evaluate_gate(
             "failed_count": total_cases - total_passed,
             "pass_rate": overall_pass_rate,
             "route_category_count": len(route_categories),
+            "failure_type_counts": failure_type_counts,
         },
+        "failure_types": list(failure_type_counts),
         "suite_metrics": suite_metrics,
         "checks": checks,
         "failed_checks": failed_checks,
         "suite_reports": {
-            suite_name: suite_reports.get(suite_name) or {}
-            for suite_name in required_suites
+            suite_name: suite_reports.get(suite_name) or {} for suite_name in required_suites
         },
     }
 
@@ -320,11 +685,27 @@ def write_report(
 
     metrics = report.get("metrics") or {}
     status = "PASS" if report.get("passed") else "FAIL"
+    optional_stages = [str(item) for item in (report.get("included_optional_stages") or [])]
+    optional_stage_label = ", ".join(optional_stages) if optional_stages else "none"
+    query_policy = dict(report.get("query_policy") or {})
+    quality_eval_required = bool(report.get("quality_eval_required"))
+    failure_types = [str(item) for item in (report.get("failure_types") or []) if str(item)]
+    failure_type_label = ", ".join(failure_types) if failure_types else "none"
+    quality_eval_label = (
+        "required"
+        if quality_eval_required
+        else ("optional" if QUALITY_EVAL_STAGE in optional_stages else "not_run")
+    )
     lines = [
         "# Offline Evaluation Release Gate",
         "",
         f"- status: {status}",
         f"- generated_at: {report.get('generated_at', '')}",
+        f"- policy_version: {query_policy.get('policy_version', '')}",
+        f"- prompt_version: {query_policy.get('prompt_version', '')}",
+        f"- optional_stages: {optional_stage_label}",
+        f"- quality_eval: {quality_eval_label}",
+        f"- failure_types: {failure_type_label}",
         f"- suites: {metrics.get('suite_count', 0)}",
         f"- cases: {metrics.get('passed_count', 0)}/{metrics.get('case_count', 0)}",
         f"- pass_rate: {metrics.get('pass_rate', 0.0):.4f}",
@@ -340,32 +721,87 @@ def write_report(
             f"| {suite_name} | {suite.get('passed_count', 0)} | "
             f"{suite.get('case_count', 0)} | {suite.get('pass_rate', 0.0):.4f} |"
         )
+    quality_report = dict((report.get("suite_reports") or {}).get(QUALITY_EVAL_STAGE) or {})
+    quality_metrics = dict(quality_report.get("metrics") or {})
+    if quality_metrics:
+        lines.extend(
+            [
+                "",
+                "## Quality Metrics",
+                "",
+                f"- citation_accuracy: {_summary_metric_value(quality_metrics.get('citation_accuracy'))}",
+                f"- fallback_rate: {_summary_metric_value(quality_metrics.get('fallback_rate'))}",
+                "- retrieval_degradation_rate: "
+                f"{_summary_metric_value(quality_metrics.get('retrieval_degradation_rate'))}",
+                f"- degraded_sources: {_summary_metric_value(quality_metrics.get('degraded_sources'))}",
+            ]
+        )
     failed_checks = report.get("failed_checks") or []
     if failed_checks:
         lines.extend(["", "## Failed Checks", ""])
         for item in failed_checks:
+            failure_type = str(item.get("failure_type") or "unclassified")
             lines.append(
-                f"- `{item.get('name', '')}` expected "
+                f"- `{item.get('name', '')}` type `{failure_type}` expected "
                 f"`{item.get('expected')}`; actual `{item.get('actual')}`"
             )
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return report_path, summary_path
 
 
+def _summary_metric_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, list):
+        values = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(values) if values else "none"
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True) if value else "none"
+    if value is None:
+        return "none"
+    return str(value)
+
+
 def run_release_gate(
     *,
     policy_path: str | Path = DEFAULT_POLICY_PATH,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    include_quality_eval: bool = False,
 ) -> dict[str, Any]:
+    resolved_policy_path = Path(policy_path).resolve()
     policy = load_policy(policy_path)
-    required_suites = [
-        str(item)
-        for item in (policy.get("required_suites") or [])
-        if str(item).strip()
+    quality_required_in_policy = QUALITY_EVAL_STAGE in [
+        str(item) for item in (policy.get("required_suites") or [])
     ]
-    suite_reports = run_suites(required_suites)
-    report = evaluate_gate(policy, suite_reports)
-    report["policy_path"] = str(Path(policy_path).resolve())
+    included_optional_stages = (
+        [QUALITY_EVAL_STAGE] if include_quality_eval and not quality_required_in_policy else []
+    )
+    try:
+        active_policy = activate_optional_stages(policy, included_optional_stages)
+        _validate_metric_threshold_rules(
+            active_policy.get("metric_thresholds") or {},
+            context="Release gate policy",
+        )
+        active_required_suites = [
+            str(item) for item in (active_policy.get("required_suites") or []) if str(item).strip()
+        ]
+        quality_eval_required = QUALITY_EVAL_STAGE in active_required_suites
+        quality_stage = _required_quality_stage(active_policy) if quality_eval_required else None
+    except ValueError as exc:
+        raise ValueError(f"Invalid release gate policy at {resolved_policy_path}: {exc}") from exc
+
+    required_suites = active_required_suites
+    runners = dict(SUITE_RUNNERS)
+    if quality_stage is not None:
+        suite_name = str(quality_stage["suite"])
+        runners[suite_name] = partial(_run_quality_eval, quality_stage)
+    suite_reports = run_suites(required_suites, runners=runners)
+    report = evaluate_gate(active_policy, suite_reports)
+    report["included_optional_stages"] = included_optional_stages
+    report["quality_eval_required"] = quality_eval_required
+    report["policy_path"] = str(resolved_policy_path)
     report_path, summary_path = write_report(report, output_dir)
     report["report_path"] = str(report_path)
     report["summary_path"] = str(summary_path)
@@ -380,11 +816,25 @@ def main() -> int:
     parser.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--include-quality-eval",
+        action="store_true",
+        help=(
+            "Compatibility flag for legacy policies that still define quality_eval "
+            "as an optional stage. The default policy requires quality_eval."
+        ),
+    )
     args = parser.parse_args()
+
+    try:
+        environment_requested = _environment_flag(INCLUDE_QUALITY_EVAL_ENV)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     report = run_release_gate(
         policy_path=args.policy,
         output_dir=args.output_dir,
+        include_quality_eval=args.include_quality_eval or environment_requested,
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))

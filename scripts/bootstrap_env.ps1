@@ -1,7 +1,7 @@
 param(
     [ValidateSet("dev", "runtime", "agent")]
     [string]$Profile = "dev",
-    [string]$VenvPath = ""
+    [string]$CondaEnvName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,18 +9,18 @@ $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 
 switch ($Profile) {
     "runtime" {
-        if (-not $VenvPath) { $VenvPath = Join-Path $RepositoryRoot ".venv-runtime" }
+        if (-not $CondaEnvName) { $CondaEnvName = "graphrag-c9-runtime" }
         $RequirementsPath = Join-Path $RepositoryRoot "requirements.txt"
     }
     "agent" {
-        if (-not $VenvPath) { $VenvPath = Join-Path $RepositoryRoot ".venv-agent" }
+        if (-not $CondaEnvName) { $CondaEnvName = "graphrag-c9-agent" }
         $RequirementsPath = Join-Path $RepositoryRoot "agent\requirements.txt"
         if (-not (Test-Path -LiteralPath $RequirementsPath)) {
             throw "Expected agent requirements file at $RequirementsPath."
         }
     }
     default {
-        if (-not $VenvPath) { $VenvPath = Join-Path $RepositoryRoot ".venv" }
+        if (-not $CondaEnvName) { $CondaEnvName = "graphrag-c9-dev" }
         $RequirementsPath = Join-Path $RepositoryRoot "requirements-dev.txt"
     }
 }
@@ -38,34 +38,67 @@ function Invoke-Checked {
     }
 }
 
-$BasePython = (Get-Command python -ErrorAction Stop).Source
-$Version = & $BasePython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+function Get-CondaEnvironmentPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CondaCommand,
+        [Parameter(Mandatory = $true)]
+        [string]$EnvironmentName
+    )
+
+    $EnvJson = & $CondaCommand "env" "list" "--json" | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to list conda environments."
+    }
+    $EnvInfo = $EnvJson | ConvertFrom-Json
+    foreach ($EnvPath in $EnvInfo.envs) {
+        if ((Split-Path -Leaf $EnvPath) -ieq $EnvironmentName) {
+            return $EnvPath
+        }
+    }
+    return ""
+}
+
+try {
+    Get-Command conda -ErrorAction Stop | Out-Null
+} catch {
+    throw "Miniconda or Anaconda is required. Install it and make the conda command available."
+}
+
+$CondaCommand = "conda"
+$CondaEnvPath = Get-CondaEnvironmentPath $CondaCommand $CondaEnvName
+if (-not $CondaEnvPath) {
+    Invoke-Checked $CondaCommand "create" "--yes" "--name" $CondaEnvName "python=3.11"
+    $CondaEnvPath = Get-CondaEnvironmentPath $CondaCommand $CondaEnvName
+}
+if (-not $CondaEnvPath) {
+    throw "Conda environment was not created: $CondaEnvName"
+}
+
+$Version = & $CondaCommand "run" "--name" $CondaEnvName "python" "-c" "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to run Python from conda environment $CondaEnvName."
+}
 if ($Version.Trim() -ne "3.11") {
-    throw "Python 3.11 is required; found $Version at $BasePython"
+    throw "Conda environment $CondaEnvName must use Python 3.11; found $Version"
 }
 
-if (-not (Test-Path -LiteralPath $VenvPath)) {
-    Invoke-Checked $BasePython "-m" "venv" $VenvPath
-}
-
-$VenvPython = Join-Path $VenvPath "Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $VenvPython)) {
-    throw "Virtual environment Python was not created at $VenvPython"
-}
-$VenvVersion = & $VenvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-if ($VenvVersion.Trim() -ne "3.11") {
-    throw "Existing virtual environment must use Python 3.11; found $VenvVersion at $VenvPython"
-}
-
-Invoke-Checked $VenvPython "-m" "pip" "install" "--upgrade" `
+Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" "--upgrade" `
     "pip==26.1.1" "setuptools==80.9.0" "wheel==0.47.0"
-Invoke-Checked $VenvPython "-m" "pip" "install" "--requirement" $RequirementsPath
+if ($Profile -ne "agent") {
+    Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" `
+        "uninstall" "--yes" "jieba"
+}
+Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" `
+    "--requirement" $RequirementsPath
 
 $Verifier = Join-Path $RepositoryRoot "scripts\verify_environment.py"
 if ($Profile -eq "agent") {
-    Invoke-Checked $VenvPython $Verifier "--expected-venv" $VenvPath "--skip-runtime-lock"
+    Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" $Verifier `
+        "--expected-conda-env" $CondaEnvName "--skip-runtime-lock"
 } else {
-    Invoke-Checked $VenvPython $Verifier "--expected-venv" $VenvPath
+    Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" $Verifier `
+        "--expected-conda-env" $CondaEnvName
 }
 
-Write-Output "[OK] $Profile environment ready at $VenvPath"
+Write-Output "[OK] $Profile conda environment ready: $CondaEnvName ($CondaEnvPath)"

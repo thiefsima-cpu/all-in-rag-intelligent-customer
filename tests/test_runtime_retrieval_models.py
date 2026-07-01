@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from langchain_core.documents import Document
-
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.runtime import RouteSnapshot, RouteStageSnapshot
 from rag_modules.runtime.retrieval_models import RetrievalOutcome
 from rag_modules.runtime.workflow_models import AnswerContext
 
@@ -25,21 +24,49 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(outcome.doc_count, 1)
         self.assertEqual(outcome.evidence_documents[0].recipe_name, "宫保鸡丁")
-        self.assertEqual(outcome.documents[0].metadata["recipe_name"], "宫保鸡丁")
+        self.assertFalse(hasattr(outcome, "documents"))
 
-    def test_retrieval_outcome_accepts_legacy_documents_input(self) -> None:
-        legacy_doc = Document(
-            page_content="水煮肉片通常带有麻辣鲜香的风味。",
-            metadata={
-                "recipe_name": "水煮肉片",
-                "source": "graph_rag",
-                "score": 0.88,
+    def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
+        route_trace = RouteSnapshot(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
+                            }
+                        ],
+                    },
+                )
             },
+            final_doc_count=1,
         )
-        outcome = RetrievalOutcome(documents_input=[legacy_doc])
+        outcome = RetrievalOutcome(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            evidence_documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu")],
+            route_trace=route_trace,
+        )
 
-        self.assertEqual(len(outcome.evidence_documents), 1)
-        self.assertEqual(outcome.evidence_documents[0].recipe_name, "水煮肉片")
+        self.assertTrue(outcome.degradation_summary["retrieval_degraded"])
+        self.assertEqual(outcome.degradation_summary["degraded_sources"], ["vector"])
+        self.assertTrue(outcome.degradation_summary["circuit_breaker_triggered"])
+        self.assertFalse(outcome.degradation_summary["answer_impacted"])
+        self.assertEqual(
+            outcome.to_dict()["degradation_summary"]["degraded_candidates"][0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
 
     def test_answer_context_round_trips_from_dict_payload(self) -> None:
         context = AnswerContext(
@@ -60,7 +87,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(len(context.evidence_documents), 1)
         self.assertEqual(context.evidence_documents[0].recipe_name, "水煮肉片")
-        self.assertEqual(context.documents[0].metadata["recipe_name"], "水煮肉片")
+        self.assertFalse(hasattr(context, "documents"))
 
 
 if __name__ == "__main__":

@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidencePackage
-from ..runtime import AnswerContext
+from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
+from ..runtime import AnswerContext, PolicySnapshot
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt
 
 
 class GenerationPromptBuilder:
     """Build prompts for planning, direct answering, and final composition."""
 
-    def __init__(self, settings: GenerationSettings, *, evidence_max_chars: int) -> None:
+    def __init__(
+        self,
+        settings: GenerationSettings,
+        *,
+        evidence_max_chars: int,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
         self.settings = settings
         self.evidence_max_chars = evidence_max_chars
+        self.policy_bundle = policy_bundle or get_query_policy()
+        self.generation_policy = self.policy_bundle.generation
+        self.prompts = self.policy_bundle.prompts
+        self.policy_snapshot = PolicySnapshot.from_metadata(self.policy_bundle.metadata)
 
     @staticmethod
     def _package_from_context(answer_context: AnswerContext) -> AnswerEvidencePackage:
@@ -73,7 +86,10 @@ class GenerationPromptBuilder:
             text=self.build_plan_prompt(question, package),
             evidence_citations=package.citation_list,
             evidence_item_count=len(package.items),
-            metadata={"max_plan_items": self.settings.plan_max_evidence_items},
+            metadata={
+                **self._policy_metadata(),
+                "max_plan_items": self.settings.plan_max_evidence_items,
+            },
         )
 
     def render_compose_prompt(
@@ -90,6 +106,7 @@ class GenerationPromptBuilder:
             evidence_item_count=len(package.items),
             plan=plan.to_dict(),
             metadata={
+                **self._policy_metadata(),
                 "include_document_evidence": self.settings.include_document_evidence,
                 "compose_include_content": self.settings.compose_include_content,
             },
@@ -106,8 +123,11 @@ class GenerationPromptBuilder:
             text=self.build_direct_answer_prompt(question, package),
             evidence_citations=package.citation_list,
             evidence_item_count=len(package.items),
-            metadata={"include_content": True},
+            metadata={**self._policy_metadata(), "include_content": True},
         )
+
+    def _policy_metadata(self) -> dict[str, Any]:
+        return self.policy_snapshot.to_dict()
 
     def build_plan_prompt(self, question: str, package: AnswerEvidencePackage) -> str:
         evidence_summary = json.dumps(
@@ -115,36 +135,10 @@ class GenerationPromptBuilder:
             ensure_ascii=False,
             indent=2,
         )
-        return f"""
-你是一个中式烹饪问答系统的“回答规划器”。请先阅读证据摘要，再为最终回答生成一个严格依证的回答计划。
-用户问题：{question}
-
-证据摘要：{evidence_summary}
-
-要求：
-- 只能基于给定证据规划，不要补充证据外事实。
-- 如果问题涉及关系解释、因果链、食材与步骤之间的作用，请优先指出哪些结论要依赖图谱证据。
-- 如果证据不足，要明确写出信息缺口。
-- `citations` 只能引用给定的“菜谱证据 N”。
-- 只返回 JSON，不要输出额外说明。
-
-JSON 结构：
-{{
-  "answer_type": "direct_answer | recommendation | explanation | comparison",
-  "reasoning_mode": "grounded | grounded_with_limited_inference",
-  "outline": ["回答结构1", "回答结构2"],
-  "key_points": [
-    {{
-      "title": "小标题",
-      "claim": "要表达的核心结论",
-      "citations": ["菜谱证据 1"],
-      "use_graph_evidence": true
-    }}
-  ],
-  "cautions": ["需要提醒用户的边界"],
-  "missing_information": ["证据缺口"]
-}}
-"""
+        return self.prompts.answer_plan.format(
+            question=question,
+            evidence_summary=evidence_summary,
+        )
 
     def build_compose_prompt(
         self,
@@ -160,23 +154,11 @@ JSON 结构：
             max_evidence_units=self.settings.max_evidence_units_per_item,
             max_content_chars=self.evidence_max_chars,
         )
-        return f"""
-你是一位专业的中式烹饪检索问答助手。请根据“回答计划”和“检索证据”生成最终答案。
-用户问题：{question}
-
-回答计划：{json.dumps(plan.to_dict(), ensure_ascii=False, indent=2)}
-
-检索证据：
-{evidence_text}
-
-回答要求：
-- 先直接回答用户问题，再展开解释。
-- 只能根据证据作答，不要编造证据中不存在的事实。
-- 如果结论依赖图谱关系，请明确说明这是“图谱关系支持的有限推断”。
-- 每个关键结论后尽量标注依据，例如“依据：菜谱证据 1”或“依据：菜谱证据 1 的图谱关系”。
-- 如果证据不足，明确指出不足，不要强行补齐。
-- 用自然、清晰、专业的中文作答。
-"""
+        return self.prompts.answer_compose.format(
+            question=question,
+            plan_json=json.dumps(plan.to_dict(), ensure_ascii=False, indent=2),
+            evidence_text=evidence_text,
+        )
 
     def build_direct_answer_prompt(self, question: str, package: AnswerEvidencePackage) -> str:
         evidence_text = package.to_context_text(
@@ -186,38 +168,22 @@ JSON 结构：
             max_evidence_units=self.settings.max_evidence_units_per_item,
             max_content_chars=self.evidence_max_chars,
         )
-        return f"""
-你是一位专业的中式烹饪检索问答助手。请只根据下面的检索证据回答问题。
-检索证据：
-{evidence_text}
-
-用户问题：{question}
-
-回答要求：
-- 先给出直接答案，再补充必要解释。
-- 结论必须能在证据中找到依据。
-- 尽量在关键结论后标注“依据：菜谱证据 N”。
-- 如果涉及关系解释，可以引用图谱关系，但不要超出证据做过度推断。
-- 如果证据不足，请明确说明。
-- 用简洁、自然的中文回答。
-"""
+        return self.prompts.answer_direct.format(question=question, evidence_text=evidence_text)
 
     @staticmethod
     def package_has_structured_claims(package: AnswerEvidencePackage) -> bool:
         return any(item.evidence_units or item.graph_paths for item in package.items)
 
-    @staticmethod
-    def infer_answer_type(question: str) -> str:
+    def infer_answer_type(self, question: str) -> str:
         question = (question or "").strip()
-        if any(token in question for token in ("推荐", "适合", "可以做什么", "有哪些")):
-            return "recommendation"
-        if any(token in question for token in ("区别", "比较", "差异", "对比")):
-            return "comparison"
-        if any(token in question for token in ("为什么", "关系", "影响", "原因", "如何形成")):
-            return "explanation"
-        return "direct_answer"
+        for answer_type, config in self.generation_policy.answer_types.items():
+            markers = tuple(str(marker) for marker in config.get("markers", ()))
+            if markers and any(marker in question for marker in markers):
+                return answer_type
+        return str(self.generation_policy.decision["default_answer_type"])
 
-    @staticmethod
-    def question_needs_relation_explanation(question: str) -> bool:
+    def question_needs_relation_explanation(self, question: str) -> bool:
         question = (question or "").strip()
-        return any(token in question for token in ("为什么", "关系", "影响", "如何形成", "之间"))
+        return any(
+            marker in question for marker in self.generation_policy.relation_explanation_markers
+        )

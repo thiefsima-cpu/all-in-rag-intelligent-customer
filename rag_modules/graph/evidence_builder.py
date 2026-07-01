@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 
-from ..retrieval.contracts import EvidenceDocument
-from ..semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
+from ..contracts import EvidenceDocument
+from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 
 
 class GraphPathLike(Protocol):
@@ -47,7 +47,9 @@ def recipe_graph_evidence(
         "recipe_ids": recipe_ids,
         "recipe_names": recipe_names,
         "matched_entities": list(
-            dict.fromkeys((matched_ingredients or []) + (matched_steps or []) + (semantic_nodes or []))
+            dict.fromkeys(
+                (matched_ingredients or []) + (matched_steps or []) + (semantic_nodes or [])
+            )
         ),
         "matched_ingredients": matched_ingredients,
         "matched_steps": matched_steps,
@@ -67,7 +69,9 @@ class GraphEvidenceBuilder:
 
     semantic_node_labels = SEMANTIC_NODE_LABELS_SET
 
-    def paths_to_evidence(self, paths: List[GraphPathLike], query: str) -> List[EvidenceDocument]:
+    def paths_to_evidence(
+        self, paths: Sequence[GraphPathLike], query: str
+    ) -> List[EvidenceDocument]:
         evidence_docs: List[EvidenceDocument] = []
         for path in paths:
             path_desc = self.build_path_description(path)
@@ -94,10 +98,24 @@ class GraphEvidenceBuilder:
                 recipe_names[0]
                 if recipe_names
                 else (
-                    str(path.nodes[0].get("name") or "图路径结果")
-                    if path.nodes
-                    else "图路径结果"
+                    str(path.nodes[0].get("name") or "图路径结果") if path.nodes else "图路径结果"
                 )
+            )
+            graph_evidence = {
+                "nodes": path.nodes,
+                "relationships": path.relationships,
+                "description": path_desc,
+                "matched_ingredients": ingredient_names,
+                "matched_steps": step_names,
+                "semantic_nodes": semantic_names,
+            }
+            recipe_evidence = recipe_graph_evidence(
+                recipe_ids=recipe_node_ids,
+                recipe_names=recipe_names,
+                matched_ingredients=ingredient_names,
+                matched_steps=step_names,
+                semantic_nodes=semantic_names,
+                relationships=path.relationships,
             )
             metadata = {
                 "search_type": "graph_path",
@@ -113,22 +131,8 @@ class GraphEvidenceBuilder:
                 "recipe_names": recipe_names,
                 "matched_ingredients": ingredient_names,
                 "matched_steps": step_names,
-                "graph_evidence": {
-                    "nodes": path.nodes,
-                    "relationships": path.relationships,
-                    "description": path_desc,
-                    "matched_ingredients": ingredient_names,
-                    "matched_steps": step_names,
-                    "semantic_nodes": semantic_names,
-                },
-                "recipe_graph_evidence": recipe_graph_evidence(
-                    recipe_ids=recipe_node_ids,
-                    recipe_names=recipe_names,
-                    matched_ingredients=ingredient_names,
-                    matched_steps=step_names,
-                    semantic_nodes=semantic_names,
-                    relationships=path.relationships,
-                ),
+                "graph_evidence": graph_evidence,
+                "recipe_graph_evidence": recipe_evidence,
                 "recipe_name": recipe_name,
             }
             evidence_docs.append(
@@ -143,9 +147,11 @@ class GraphEvidenceBuilder:
                     retrieval_level="graph_path",
                     recipe_id=recipe_node_ids[0] if recipe_node_ids else "",
                     source="graph_rag",
-                    matched_terms=list(dict.fromkeys(ingredient_names + step_names + semantic_names)),
-                    graph_evidence=dict(metadata["graph_evidence"]),
-                    recipe_graph_evidence=dict(metadata["recipe_graph_evidence"]),
+                    matched_terms=list(
+                        dict.fromkeys(ingredient_names + step_names + semantic_names)
+                    ),
+                    graph_evidence=graph_evidence,
+                    recipe_graph_evidence=recipe_evidence,
                     metadata=metadata,
                 )
             )
@@ -160,7 +166,9 @@ class GraphEvidenceBuilder:
         subgraph_desc = self.build_subgraph_description(subgraph)
         nodes = subgraph.central_nodes + subgraph.connected_nodes
         recipe_nodes = [
-            node for node in nodes if "Recipe" in node_labels(node) or node.get("originalLabels") == "Recipe"
+            node
+            for node in nodes
+            if "Recipe" in node_labels(node) or node.get("originalLabels") == "Recipe"
         ]
         recipe_node_ids = [str(node.get("nodeId")) for node in recipe_nodes if node.get("nodeId")]
         recipe_names = [str(node.get("name")) for node in recipe_nodes if node.get("name")]
@@ -177,7 +185,8 @@ class GraphEvidenceBuilder:
         semantic_names = [
             str(node.get("name"))
             for node in nodes
-            if any(label in self.semantic_node_labels for label in node_labels(node)) and node.get("name")
+            if any(label in self.semantic_node_labels for label in node_labels(node))
+            and node.get("name")
         ]
         graph_evidence = self.summarize_subgraph_evidence(subgraph)
         recipe_evidence = recipe_graph_evidence(
@@ -189,8 +198,14 @@ class GraphEvidenceBuilder:
             relationships=subgraph.relationships,
             reasoning_chains=reasoning_chains,
         )
-        recipe_name = recipe_names[0] if recipe_names else (
-            subgraph.central_nodes[0].get("name", "鐭ヨ瘑瀛愬浘") if subgraph.central_nodes else "鐭ヨ瘑瀛愬浘"
+        recipe_name = (
+            recipe_names[0]
+            if recipe_names
+            else (
+                subgraph.central_nodes[0].get("name", "知识子图")
+                if subgraph.central_nodes
+                else "知识子图"
+            )
         )
         metadata = {
             "search_type": "knowledge_subgraph",
@@ -226,7 +241,9 @@ class GraphEvidenceBuilder:
             )
         ]
 
-    def paths_to_documents(self, paths: List[GraphPathLike], query: str) -> List[EvidenceDocument]:
+    def paths_to_documents(
+        self, paths: Sequence[GraphPathLike], query: str
+    ) -> List[EvidenceDocument]:
         return self.paths_to_evidence(paths, query)
 
     def subgraph_to_documents(
@@ -319,5 +336,3 @@ class GraphEvidenceBuilder:
             if len(lines) >= limit:
                 break
         return lines
-
-

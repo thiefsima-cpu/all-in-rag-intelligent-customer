@@ -5,10 +5,11 @@ from __future__ import annotations
 import time
 
 from ...runtime import AnswerContext
-from ..client import GenerationClientAdapter
+from ..clients import GenerationClientAdapter
+from .contracts import _GenerationExecutionHost
 
 
-class _DirectCompletionMixin:
+class _DirectCompletionMixin(_GenerationExecutionHost):
     def _run_direct_completion(
         self,
         answer_context: AnswerContext,
@@ -16,9 +17,7 @@ class _DirectCompletionMixin:
         deadline: float,
     ) -> tuple[str, float, int]:
         direct_start = time.perf_counter()
-        prompt = self.prompt_builder.render_direct_answer_prompt_from_context(
-            answer_context
-        ).text
+        prompt = self.prompt_builder.render_direct_answer_prompt_from_context(answer_context).text
         response = self.client_adapter.create_completion(
             prompt=prompt,
             temperature=self.settings.temperature,

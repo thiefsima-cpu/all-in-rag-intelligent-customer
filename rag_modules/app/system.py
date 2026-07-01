@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..configuration.models import GraphRAGConfig
-
-from ..artifacts import ArtifactManifest
+from ..runtime.artifacts import ArtifactManifest
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
     QuestionAnswerer,
@@ -37,9 +36,12 @@ class AdvancedGraphRAGSystem:
         assembler: ApplicationAssembler | None = None,
         container: ApplicationContainer | None = None,
     ):
-        container = container or (assembler or ApplicationAssembler(
-            system_composer=system_composer,
-        )).assemble(
+        container = container or (
+            assembler
+            or ApplicationAssembler(
+                system_composer=system_composer,
+            )
+        ).assemble(
             config=config,
             provider=provider,
             bootstrapper=bootstrapper,
@@ -194,18 +196,6 @@ class AdvancedGraphRAGSystem:
     @property
     def services(self) -> Any:
         return self.facade_support.services
-
-    def __getattr__(self, name: str) -> Any:
-        resolver = getattr(self.facade_support, "resolve_legacy_attribute", None)
-        if resolver is None:
-            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-        return resolver(self, name)
-
-    def __dir__(self) -> list[str]:
-        legacy_dir = getattr(self.facade_support, "legacy_dir", None)
-        if legacy_dir is None:
-            return object.__dir__(self)
-        return legacy_dir(self)
 
     @property
     def artifact_manifest(self) -> ArtifactManifest:

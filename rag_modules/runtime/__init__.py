@@ -1,28 +1,33 @@
 """Structured runtime contracts split by responsibility."""
 
-from .artifact_ports import (
-    ArtifactManifestStorePort,
-    DocumentArtifactCachePort,
-    RuntimeArtifactAccessPort,
-)
-from .artifact_adapters import DefaultRuntimeArtifactAccess
-from .stats_ports import RuntimeStatsAccessPort
-from .stats_adapters import DefaultRuntimeStatsAccess
 from .analysis_models import (
+    AnalysisInput,
+    AnalysisMapping,
     QueryAnalysis,
     SearchStrategy,
     analysis_payload,
     analysis_strategy_name,
     analysis_value,
+    ensure_optional_query_analysis,
     ensure_query_analysis,
 )
-from .generation_models import GenerationSnapshot
+from .artifact_adapters import DefaultRuntimeArtifactAccess
+from .artifact_ports import (
+    ArtifactManifestStorePort,
+    DocumentArtifactCachePort,
+    RuntimeArtifactAccessPort,
+)
+from .error_models import RuntimeErrorDetail
+from .generation_models import GenerationMode, GenerationSnapshot
 from .graph_models import (
     GraphRetrievalSnapshot,
     GraphTraceEventSnapshot,
 )
+from .policy_models import PolicySnapshot
 from .retrieval_models import RetrievalOutcome
 from .route_models import RouteDiagnostics, RouteSnapshot, RouteStageSnapshot
+from .stats_adapters import DefaultRuntimeStatsAccess
+from .stats_ports import RuntimeStatsAccessPort
 from .trace_models import (
     AnswerTraceSnapshot,
     ModelSuiteSnapshot,
@@ -35,14 +40,18 @@ from .workflow_models import AnswerContext, QueryUnderstandingSnapshot, RouteRes
 __all__ = [
     "AnswerContext",
     "AnswerTraceSnapshot",
+    "AnalysisInput",
+    "AnalysisMapping",
     "ArtifactManifestStorePort",
     "DocumentArtifactCachePort",
     "DefaultRuntimeArtifactAccess",
     "DefaultRuntimeStatsAccess",
     "GenerationSnapshot",
+    "GenerationMode",
     "GraphRetrievalSnapshot",
     "GraphTraceEventSnapshot",
     "ModelSuiteSnapshot",
+    "PolicySnapshot",
     "QueryAnalysis",
     "QueryDiagnostics",
     "QueryTraceEvent",
@@ -54,10 +63,12 @@ __all__ = [
     "RouteSnapshot",
     "RouteStageSnapshot",
     "RuntimeArtifactAccessPort",
+    "RuntimeErrorDetail",
     "RuntimeStatsAccessPort",
     "SearchStrategy",
     "analysis_payload",
     "analysis_strategy_name",
     "analysis_value",
+    "ensure_optional_query_analysis",
     "ensure_query_analysis",
 ]

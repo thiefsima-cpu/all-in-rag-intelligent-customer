@@ -4,11 +4,18 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.query_constraints import QueryConstraints
-from rag_modules.retrieval.candidate_generator import CandidateSet, CandidateSourceResult
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.retrieval.candidate_generator import (
+    CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+    CandidateSet,
+    CandidateSourceDegradation,
+    CandidateSourceDegradationStrategy,
+    CandidateSourceResult,
+)
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
+from rag_modules.runtime.error_models import retrieval_error_detail
 
 
 class _FakeFusionRanker:
@@ -29,9 +36,16 @@ class _FakeCandidatesProfile:
         return top_k + (2 if constrained else 1)
 
 
+class _FakeCandidateSourceProfile:
+    failure_threshold = 1
+    recovery_timeout_seconds = 30.0
+    degradation_strategy = "continue"
+
+
 class _FakeRetrievalProfile:
-    def __init__(self) -> None:
+    def __init__(self, candidate_sources=None) -> None:
         self.candidates = _FakeCandidatesProfile()
+        self.candidate_sources = candidate_sources or _FakeCandidateSourceProfile()
 
 
 class _FakeRuntime:
@@ -44,11 +58,28 @@ class _FakeRuntime:
 
 
 class _StubCandidateGenerator:
-    def __init__(self) -> None:
+    def __init__(self, *, degrade_vector: bool = False) -> None:
         self.requests = []
+        self.degrade_vector = degrade_vector
 
     def generate(self, request):
         self.requests.append(request)
+        vector_spec = CandidateSourceSpec(
+            name="vector",
+            rank_name="vector",
+            search_method="vector",
+            search_type="vector_enhanced",
+            rank_order=2,
+        )
+        degraded = []
+        if self.degrade_vector:
+            degraded.append(
+                CandidateSourceDegradation(
+                    spec=vector_spec,
+                    reason="circuit_open",
+                    error=retrieval_error_detail("circuit_open"),
+                )
+            )
         return CandidateSet(
             source_results=[
                 CandidateSourceResult(
@@ -62,16 +93,11 @@ class _StubCandidateGenerator:
                     documents=[EvidenceDocument(content="c", recipe_name="C")],
                 ),
                 CandidateSourceResult(
-                    spec=CandidateSourceSpec(
-                        name="vector",
-                        rank_name="vector",
-                        search_method="vector",
-                        search_type="vector_enhanced",
-                        rank_order=2,
-                    ),
+                    spec=vector_spec,
                     documents=[EvidenceDocument(content="v", recipe_name="V")],
                 ),
-            ]
+            ],
+            degraded=degraded,
         )
 
 
@@ -104,19 +130,44 @@ class HybridSearchServiceTests(unittest.TestCase):
             candidate_generator=generator,
         )
 
-        results = service.hybrid_evidence_search(
+        outcome = service.hybrid_evidence_search(
             "recommend tofu dishes",
             top_k=2,
             constraints=QueryConstraints(max_cook_minutes=30),
         )
 
-        self.assertEqual([doc.recipe_name for doc in results], ["C", "V"])
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
         self.assertEqual(generator.requests[0].candidate_k, 4)
         self.assertEqual(runtime.attach_calls[0]["top_n"], 2)
         self.assertEqual(
             [name for name, _ in fusion_ranker.calls[0]["ranked_lists"]],
             ["constraints", "vector"],
         )
+        self.assertFalse(outcome.retrieval_degraded)
+
+    def test_hybrid_evidence_search_returns_degradation_observability(self) -> None:
+        config = build_test_config({"retrieval": {"enable_parent_doc_retrieval": False}})
+        service = HybridSearchService(
+            config=config,
+            retrieval_profile=_FakeRetrievalProfile(),
+            runtime=_FakeRuntime(),
+            fusion_ranker=_FakeFusionRanker(),
+            constraint_retriever=SimpleNamespace(),
+            candidate_generator=_StubCandidateGenerator(degrade_vector=True),
+        )
+
+        outcome = service.hybrid_evidence_search("recommend tofu dishes", top_k=2)
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
+        self.assertTrue(outcome.retrieval_degraded)
+        self.assertEqual(outcome.degraded_sources, ["vector"])
+        self.assertTrue(outcome.circuit_breaker_triggered)
+        self.assertFalse(outcome.answer_impacted)
+        self.assertEqual(
+            outcome.degraded_candidates[0]["error"]["code"],
+            CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
+        )
+        self.assertEqual(outcome.to_stage_details()["candidate_counts"]["vector"], 1)
 
     def test_candidate_source_factory_is_used_when_generator_not_injected(self) -> None:
         config = build_test_config()
@@ -134,6 +185,29 @@ class HybridSearchServiceTests(unittest.TestCase):
         self.assertEqual(len(service.candidate_generator.sources), 0)
         self.assertIs(source_factory.calls[0]["runtime"], runtime)
         self.assertEqual(source_factory.calls[0]["constraint_retriever"].name, "constraint")
+
+    def test_default_candidate_generator_uses_profile_source_resilience(self) -> None:
+        config = build_test_config()
+        policy = SimpleNamespace(
+            failure_threshold=4,
+            recovery_timeout_seconds=12.5,
+            degradation_strategy="fail_fast",
+        )
+        service = HybridSearchService(
+            config=config,
+            retrieval_profile=_FakeRetrievalProfile(candidate_sources=policy),
+            runtime=_FakeRuntime(),
+            fusion_ranker=_FakeFusionRanker(),
+            constraint_retriever=SimpleNamespace(name="constraint"),
+            candidate_source_factory=_StubCandidateSourceFactory(),
+        )
+
+        self.assertEqual(service.candidate_generator.source_failure_threshold, 4)
+        self.assertEqual(service.candidate_generator.source_recovery_timeout_seconds, 12.5)
+        self.assertIs(
+            service.candidate_generator.source_degradation_strategy,
+            CandidateSourceDegradationStrategy.FAIL_FAST,
+        )
 
 
 if __name__ == "__main__":

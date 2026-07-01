@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-
-from ...artifacts import ArtifactManifest
+from ...runtime.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
@@ -31,7 +30,7 @@ class SystemRuntimeManager:
         self.shutdown_service = shutdown_service
         self.initialization_service = lifecycle_services.initialization_service
         self.readiness_service = lifecycle_services.readiness_service
-        self.refresh_service = lifecycle_services.refresh_service
+        self.serving_lifecycle_service = lifecycle_services.serving_lifecycle_service
         self.build_lifecycle_service = lifecycle_services.build_lifecycle_service
         self.runtime_state_store = runtime_state_store or RuntimeStateStore()
 
@@ -41,12 +40,13 @@ class SystemRuntimeManager:
         progress: ProgressCallback = None,
         neo4j_manager=None,
     ) -> BuildRuntime:
-        self.build_runtime = self.initialization_service.initialize_build_runtime(
+        runtime = self.initialization_service.initialize_build_runtime(
             self.build_runtime,
             progress=progress,
             neo4j_manager=neo4j_manager,
         )
-        return self.build_runtime
+        self.build_runtime = runtime
+        return runtime
 
     def initialize_serving_runtime(
         self,
@@ -55,14 +55,15 @@ class SystemRuntimeManager:
         query_tracer=None,
         neo4j_manager=None,
     ) -> ServingRuntime:
-        self.serving_runtime = self.initialization_service.initialize_serving_runtime(
+        runtime = self.initialization_service.initialize_serving_runtime(
             self.serving_runtime,
             build_runtime=self.build_runtime,
             progress=progress,
             query_tracer=query_tracer,
             neo4j_manager=neo4j_manager,
         )
-        return self.serving_runtime
+        self.serving_runtime = runtime
+        return runtime
 
     def initialize_system(
         self,
@@ -93,7 +94,7 @@ class SystemRuntimeManager:
             build_runtime=build_runtime,
             serving_runtime=serving_runtime,
         )
-        return self.build_runtime
+        return build_runtime
 
     def rebuild_knowledge_base(self, *, progress: ProgressCallback = None) -> BuildRuntime:
         build_runtime, serving_runtime = self.build_lifecycle_service.rebuild_knowledge_base(
@@ -105,7 +106,7 @@ class SystemRuntimeManager:
             build_runtime=build_runtime,
             serving_runtime=serving_runtime,
         )
-        return self.build_runtime
+        return build_runtime
 
     def collect_system_stats(self) -> dict:
         runtime = self.runtime_view()
@@ -138,7 +139,7 @@ class SystemRuntimeManager:
         progress: ProgressCallback = None,
         force: bool = False,
     ) -> ServingRuntime | None:
-        self.serving_runtime = self.refresh_service.prepare_existing(
+        self.serving_runtime = self.serving_lifecycle_service.prepare_existing(
             self.serving_runtime,
             shared_runtime=self.build_runtime,
             progress=progress,
@@ -153,13 +154,16 @@ class SystemRuntimeManager:
         force: bool = True,
     ) -> ServingRuntime:
         runtime = self.readiness_service.require_serving_runtime(self.serving_runtime)
-        self.serving_runtime = self.refresh_service.prepare_existing(
+        refreshed_runtime = self.serving_lifecycle_service.prepare_existing(
             runtime,
             shared_runtime=None,
             progress=progress,
             force=force,
         )
-        return self.serving_runtime
+        if refreshed_runtime is None:
+            raise ValueError("Serving runtime refresh unexpectedly returned no runtime.")
+        self.serving_runtime = refreshed_runtime
+        return refreshed_runtime
 
     def runtime_view(self) -> SystemRuntime:
         return self.runtime_state_store.runtime_view()

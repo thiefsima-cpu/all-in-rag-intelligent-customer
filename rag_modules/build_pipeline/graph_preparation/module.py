@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from neo4j import Driver, GraphDatabase
-
+from ...infra.neo4j import create_neo4j_driver
+from ...runtime_contracts import Neo4jDriverPort
 from ...text_document import TextDocument
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
@@ -28,7 +28,7 @@ class GraphDataPreparationModule:
         password: str = "",
         database: str = "neo4j",
         *,
-        driver: Optional[Driver] = None,
+        driver: Optional[Neo4jDriverPort] = None,
         state: GraphPreparationState | None = None,
         loader: Neo4jGraphDataLoader | None = None,
         document_builder: RecipeDocumentBuilder | None = None,
@@ -46,11 +46,11 @@ class GraphDataPreparationModule:
         if driver is not None:
             self.driver = driver
         else:
-            self.driver = GraphDatabase.driver(uri, auth=(user, password))
+            self.driver = create_neo4j_driver(uri, user, password)
             self._owns_driver = True
             with self.driver.session(database=self.database) as session:
                 session.run("RETURN 1 AS test").single()
-            logger.info("Connected to Neo4j database: %s", uri)
+            logger.info("Neo4j connection established")
 
     @property
     def recipes(self) -> List[GraphNode]:

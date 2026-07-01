@@ -14,23 +14,27 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.routing import IntelligentQueryRouter
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.query_constraints import QueryConstraints
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
-from rag_modules.retrieval.runtime_profile import (
+from rag_modules.contracts import (
+    EvidenceDocument,
+    QueryPlan,
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
+    RetrievalRequest,
+)
+from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.query_understanding import QueryPlanner
+from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
+from rag_modules.retrieval.runtime_profile import (
     RetrievalCandidateSizingSettings,
     RetrievalPostProcessSettings,
     RetrievalRuntimeProfile,
 )
-from rag_modules.runtime import GraphRetrievalSnapshot
+from rag_modules.routing import RoutingWorkflowService
+from rag_modules.runtime import GraphRetrievalSnapshot, QueryUnderstandingSnapshot
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule,
     build_tracer,
 )
-
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1]
@@ -38,21 +42,6 @@ DEFAULT_CORPUS_PATH = (
     / "fixtures"
     / "answer_pipeline_real_route_corpus.json"
 )
-
-
-class _DummyCompletions:
-    def create(self, **_: object) -> None:
-        raise AssertionError("Offline smoke mode should not call the LLM query planner.")
-
-
-class _DummyChat:
-    def __init__(self) -> None:
-        self.completions = _DummyCompletions()
-
-
-class _DummyLLM:
-    def __init__(self) -> None:
-        self.chat = _DummyChat()
 
 
 @dataclass
@@ -99,7 +88,9 @@ class RealRouteAnswerPipelineCase:
             ],
             expected_graph_query_type=str(payload.get("expected_graph_query_type") or "").strip(),
             expected_graph_doc_count=int(payload.get("expected_graph_doc_count") or 0),
-            expected_graph_snapshot_doc_count=int(payload.get("expected_graph_snapshot_doc_count") or 0),
+            expected_graph_snapshot_doc_count=int(
+                payload.get("expected_graph_snapshot_doc_count") or 0
+            ),
             min_complexity=float(payload.get("min_complexity") or 0.0),
             min_relationship_intensity=float(payload.get("min_relationship_intensity") or 0.0),
             top_k=max(1, int(payload.get("top_k") or 2)),
@@ -154,9 +145,7 @@ def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RealRouteAnswerPi
     if not isinstance(payload, list):
         raise ValueError(f"Answer pipeline corpus at {corpus_path} must be a JSON list.")
     return [
-        RealRouteAnswerPipelineCase.from_dict(item)
-        for item in payload
-        if isinstance(item, dict)
+        RealRouteAnswerPipelineCase.from_dict(item) for item in payload if isinstance(item, dict)
     ]
 
 
@@ -171,11 +160,15 @@ class _StaticHybridRetrieval:
         constraints: QueryConstraints | None = None,
         candidate_k: int | None = None,
         query_plan: QueryPlan | None = None,
-    ) -> List[EvidenceDocument]:
+    ) -> HybridRetrievalOutcome:
         del top_k, constraints, candidate_k, query_plan
         request = self._normalize_request(request_or_query)
         limit = request.effective_candidate_k
-        return list(self.case.hybrid_documents[:limit])
+        documents = list(self.case.hybrid_documents[:limit])
+        return HybridRetrievalOutcome(
+            documents=documents,
+            candidate_counts={"static_hybrid": len(documents)},
+        )
 
     @staticmethod
     def enrich_to_parent_evidence_documents(
@@ -271,7 +264,7 @@ class _StaticGraphRetrieval:
             strategy="graph_rag",
             requested_top_k=request.top_k,
             retrieval_request=request,
-            query_type=plan.graph_query_type if plan else "",
+            query_type=plan.graph_query_type_value if plan else "",
             source_entities=list(plan.source_entities if plan else []),
             target_entities=list(plan.target_entities if plan else []),
             relation_types=list(plan.relation_types if plan else []),
@@ -307,6 +300,18 @@ class _StaticGraphRetrieval:
         return snapshot
 
 
+class _OfflineQueryUnderstandingService:
+    def __init__(self, retrieval_profile: RetrievalRuntimeProfile) -> None:
+        self.query_planner = QueryPlanner(
+            None,
+            settings=retrieval_profile.planner,
+            semantic_settings=retrieval_profile.semantics,
+        )
+
+    def understand(self, query: str) -> QueryUnderstandingSnapshot:
+        return QueryUnderstandingSnapshot.from_plan(self.query_planner.rule_based_plan(query))
+
+
 def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
     return RetrievalRuntimeProfile(
         planner=QueryPlannerRuntimeSettings(fast_rule_planning=True),
@@ -333,19 +338,18 @@ def evaluate_contracts(
     event,
     plan: QueryPlan | None,
 ) -> dict[str, dict]:
-    checks = {
-        key: {"passed": True, "failures": []}
-        for key in CONTRACT_METRIC_NAMES
-    }
+    checks = {key: {"passed": True, "failures": []} for key in CONTRACT_METRIC_NAMES}
 
     def fail(category: str, reason: str) -> None:
         checks[category]["passed"] = False
         checks[category]["failures"].append(reason)
 
-    route_trace = response.route_trace
-    graph_trace = response.graph_trace
+    response_payload = response.to_dict()
+    route_trace = response_payload["traces"]["route_trace"]
+    graph_trace = response_payload["traces"]["graph_trace"]
     route_request = result.route_trace.retrieval_request
     graph_expected = _graph_expected(case)
+    plan_graph_query_type = plan.graph_query_type_value if plan else ""
 
     plan_stage = dict((route_trace.get("stages") or {}).get("plan") or {})
     planner_mode = str(plan_stage.get("planner_mode") or "")
@@ -360,16 +364,18 @@ def evaluate_contracts(
             fail("plan", f"plan_strategy_mismatch={plan.strategy}")
         if (
             case.expected_graph_query_type
-            and plan.graph_query_type != case.expected_graph_query_type
+            and plan_graph_query_type != case.expected_graph_query_type
         ):
             fail(
                 "plan",
-                f"plan_graph_query_type_mismatch={plan.graph_query_type}",
+                f"plan_graph_query_type_mismatch={plan_graph_query_type}",
             )
         if plan.validation_errors:
             fail("plan", f"plan_validation_errors={plan.validation_errors}")
-        if planner_mode not in {"fast_rule", "fallback_rule"}:
+        if planner_mode not in {"fast_rule", "rule_based"}:
             fail("offline_planner", f"planner_mode_not_offline={planner_mode}")
+        if plan.fallback_reason == "query_planning_failed":
+            fail("offline_planner", "planner_used_exception_fallback")
 
     if route_request is None:
         fail("request", "missing_route_retrieval_request")
@@ -391,7 +397,7 @@ def evaluate_contracts(
         if route_request.query_plan is None:
             fail("request", "route_request_missing_query_plan")
 
-    trace_event = response.trace_event
+    trace_event = response_payload["traces"]["trace_event"]
     event_plan = dict(event.plan or {})
     route_request_payload = dict(route_trace.get("retrieval_request") or {})
     route_plan_payload = dict(route_request_payload.get("query_plan") or {})
@@ -407,7 +413,7 @@ def evaluate_contracts(
         fail("trace", "sink_trace_event_doc_count_mismatch")
     if not route_plan_payload:
         fail("trace", "route_trace_missing_query_plan_payload")
-    if plan and event_plan.get("graph_query_type") != plan.graph_query_type:
+    if plan and event_plan.get("graph_query_type") != plan_graph_query_type:
         fail("trace", "sink_trace_event_plan_graph_query_type_mismatch")
 
     graph_doc_count = int(graph_trace.get("doc_count") or 0)
@@ -459,32 +465,35 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     hybrid_retrieval = _StaticHybridRetrieval(case)
     graph_retrieval = _StaticGraphRetrieval(case)
     config = build_test_config({"retrieval": {"top_k": case.top_k}})
-    router = IntelligentQueryRouter(
+    routing_workflow = RoutingWorkflowService(
         traditional_retrieval=hybrid_retrieval,
         graph_rag_retrieval=graph_retrieval,
-        llm_client=_DummyLLM(),
+        llm_client=None,
         config=config,
         retrieval_profile=retrieval_profile,
+        query_understanding_service=_OfflineQueryUnderstandingService(retrieval_profile),
     )
     generation_module = OfflineGenerationModule([case.answer_text])
     tracer, sink = build_tracer()
     service = AnswerWorkflow(
         config=config,
-        query_router=router,
+        query_router=routing_workflow,
         generation_module=generation_module,
         query_tracer=tracer,
     )
     result = service.answer_question(case.question)
     response = result.to_response()
+    response_payload = response.to_dict()
     event = sink.events[-1]
     plan = (
         result.route_trace.retrieval_request.query_plan
         if result.route_trace.retrieval_request
         else None
     )
-    route_trace = response.route_trace
+    route_trace = response_payload["traces"]["route_trace"]
     route_diagnostics = route_trace.get("diagnostics") or {}
-    graph_trace = response.graph_trace
+    graph_trace = response_payload["traces"]["graph_trace"]
+    generation_trace = response_payload["traces"]["generation_trace"]
 
     failures: List[str] = []
     if result.analysis is None:
@@ -509,11 +518,13 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
         failures.append(f"route_snapshot_strategy_mismatch={route_trace.get('strategy', '')}")
     stage_names = list((route_trace.get("stages") or {}).keys())
     if stage_names != case.expected_stage_names:
-        failures.append(f"expected_stage_names={case.expected_stage_names} actual_stage_names={stage_names}")
-    if response.generation_trace.get("mode") != case.expected_generation_mode:
+        failures.append(
+            f"expected_stage_names={case.expected_stage_names} actual_stage_names={stage_names}"
+        )
+    if generation_trace.get("mode") != case.expected_generation_mode:
         failures.append(
             "expected_generation_mode="
-            f"{case.expected_generation_mode} actual_generation_mode={response.generation_trace.get('mode', '')}"
+            f"{case.expected_generation_mode} actual_generation_mode={generation_trace.get('mode', '')}"
         )
     if route_diagnostics.get("graph_doc_count") != case.expected_graph_doc_count:
         failures.append(
@@ -526,16 +537,17 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
             f"actual_graph_snapshot_doc_count={graph_trace.get('doc_count')}"
         )
     if case.expected_graph_query_type:
-        actual_graph_query_type = plan.graph_query_type if plan else ""
+        actual_graph_query_type = plan.graph_query_type_value if plan else ""
         if actual_graph_query_type != case.expected_graph_query_type:
             failures.append(
                 f"expected_graph_query_type={case.expected_graph_query_type} "
                 f"actual_graph_query_type={actual_graph_query_type}"
             )
-        if graph_trace.get("query_type") and graph_trace.get("query_type") != case.expected_graph_query_type:
-            failures.append(
-                f"graph_snapshot_query_type_mismatch={graph_trace.get('query_type')}"
-            )
+        if (
+            graph_trace.get("query_type")
+            and graph_trace.get("query_type") != case.expected_graph_query_type
+        ):
+            failures.append(f"graph_snapshot_query_type_mismatch={graph_trace.get('query_type')}")
     for reason in case.required_failure_reasons:
         if reason not in (route_diagnostics.get("failure_reasons") or []):
             failures.append(f"missing_failure_reason={reason}")
@@ -557,7 +569,7 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
             failures.append(
                 f"expected_graph_event_names={case.expected_graph_event_names} actual_graph_event_names={graph_event_names}"
             )
-    if plan and event.plan.get("graph_query_type") != plan.graph_query_type:
+    if plan and event.plan.get("graph_query_type") != plan.graph_query_type_value:
         failures.append("trace_event_plan_query_type_mismatch")
 
     contract_checks = evaluate_contracts(
@@ -577,10 +589,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
         "passed": not failures,
         "failures": failures,
         "strategy": response.strategy,
-        "generation_mode": response.generation_trace.get("mode", ""),
+        "generation_mode": generation_trace.get("mode", ""),
         "contract_checks": contract_checks,
         "answer_preview": response.answer[:120],
-        "answer_response": response.to_dict(),
+        "answer_response": response_payload,
     }
 
 

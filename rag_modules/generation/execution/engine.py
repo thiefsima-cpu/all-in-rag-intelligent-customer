@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import AnswerContext, GenerationSnapshot, RetrievalOutcome
-from ..client import GenerationClientAdapter
+from ...runtime import (
+    AnalysisInput,
+    AnswerContext,
+    GenerationSnapshot,
+    RetrievalOutcome,
+    ensure_optional_query_analysis,
+)
+from ...runtime.json_types import coerce_json_object
+from ...safe_logging import log_failure
+from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
-from ..models import AnswerPlan, GenerationSettings
+from ..models import AnswerPlan, GenerationMode, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder
 from .direct import _DirectCompletionMixin
@@ -52,7 +59,7 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
     ) -> str:
         answer, _trace = self.generate_with_trace(
             answer_context=answer_context,
@@ -68,7 +75,7 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
     ) -> tuple[str, GenerationSnapshot]:
         self._consume_token_usage()
         answer_context, package = self._resolve_answer_context(
@@ -93,7 +100,7 @@ class GenerationExecutionEngine(
         trace = self._new_trace(decision, package, selected_package)
 
         try:
-            if decision.mode == "two_stage":
+            if decision.mode is GenerationMode.TWO_STAGE:
                 answer, trace = self._generate_two_stage_with_fallback(
                     answer_context=selected_context,
                     package=selected_package,
@@ -113,7 +120,13 @@ class GenerationExecutionEngine(
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return answer, self._finalize_trace(trace)
         except Exception as exc:
-            logger.warning("Direct answer generation failed: %s", exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
             trace.request_retries += self._consume_retry_count()
             answer, trace = self._build_fallback_answer(
                 package=selected_package,
@@ -134,7 +147,7 @@ class GenerationExecutionEngine(
         answer_context = AnswerContext(
             question=question,
             retrieval=RetrievalOutcome(query=question),
-            evidence_package=package.to_dict(),
+            evidence_package=coerce_json_object(package.to_dict()),
         )
         return self.compose_from_context(
             answer_context,
@@ -157,11 +170,7 @@ class GenerationExecutionEngine(
             prompt=prompt,
             temperature=self.settings.temperature,
             max_tokens=self.settings.composer_max_tokens,
-            timeout=(
-                self.settings.timeout_seconds
-                if timeout_seconds is None
-                else timeout_seconds
-            ),
+            timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
         )
         return self._response_text(response)
 
@@ -171,12 +180,12 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None,
         question: str,
         package: AnswerEvidencePackage | None,
-        analysis: Any,
+        analysis: AnalysisInput,
     ) -> tuple[AnswerContext, AnswerEvidencePackage]:
         context = answer_context or AnswerContext(
             question=question,
             retrieval=RetrievalOutcome(query=question),
-            analysis=analysis,
+            analysis=ensure_optional_query_analysis(analysis),
         )
         if package is not None:
             context = context.with_evidence_package(package)

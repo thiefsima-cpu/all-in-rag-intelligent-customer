@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from ...artifacts import ArtifactManifest
+from ...runtime.artifacts import ArtifactManifest
 from ...text_document import TextDocument
 
 

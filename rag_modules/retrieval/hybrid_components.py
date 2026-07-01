@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Optional, Protocol
 
+from ..configuration.models import GraphRAGConfig
 from ..fusion import FusionRanker
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    VectorIndexModulePort,
+)
 from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever, tokenize_chinese
 from .candidate_sources import DefaultHybridCandidateSourceFactory
 from .hybrid_driver_service import HybridDriverService
@@ -19,7 +25,7 @@ from .hybrid_runtime import HybridRetrievalRuntime
 from .hybrid_search_service import HybridSearchService
 from .keyword_service import QueryKeywordExtractor
 from .runtime_adapter_factory import DefaultHybridRuntimeAdapterFactory, HybridRuntimeAdapterFactory
-from .runtime_settings import RetrievalRuntimeProfile
+from .runtime_profile import RetrievalRuntimeProfile
 
 
 @dataclass
@@ -46,11 +52,11 @@ class HybridRetrievalComponentFactory(Protocol):
     def build(
         self,
         *,
-        config: Any,
-        milvus_module: Any,
-        data_module: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
+        config: GraphRAGConfig,
+        milvus_module: VectorIndexModulePort,
+        data_module: GraphDataModulePort,
+        llm_client: object,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database: str,
         rrf_k: int,
@@ -64,11 +70,11 @@ class DefaultHybridRetrievalComponentFactory:
     def build(
         self,
         *,
-        config: Any,
-        milvus_module: Any,
-        data_module: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
+        config: GraphRAGConfig,
+        milvus_module: VectorIndexModulePort,
+        data_module: GraphDataModulePort,
+        llm_client: object,
+        neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database: str,
         rrf_k: int,

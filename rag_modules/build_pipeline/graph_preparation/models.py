@@ -38,5 +38,5 @@ class GraphRelation:
         self.properties = dict(self.properties or {})
 
 
-GraphNode.__module__ = "rag_modules.graph_data_preparation"
-GraphRelation.__module__ = "rag_modules.graph_data_preparation"
+GraphNode.__module__ = "rag_modules.graph.data_preparation"
+GraphRelation.__module__ = "rag_modules.graph.data_preparation"

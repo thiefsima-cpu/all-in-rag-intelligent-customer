@@ -13,12 +13,11 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.query_understanding import QueryPlanner
-from rag_modules.retrieval.runtime_profile import (
+from rag_modules.contracts import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
-
+from rag_modules.query_understanding import QueryPlanner
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "route_smoke_corpus.json"
@@ -117,9 +116,7 @@ def _subset_failures(
             if key not in actual:
                 failures.append(f"{child_path}:missing")
                 continue
-            failures.extend(
-                _subset_failures(value, actual[key], path=child_path)
-            )
+            failures.extend(_subset_failures(value, actual[key], path=child_path))
         return failures
     if isinstance(expected, list):
         actual_items = list(actual or []) if isinstance(actual, (list, tuple, set)) else []
@@ -135,22 +132,18 @@ def _subset_failures(
 def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
     plan = planner.rule_based_plan(case.query)
     failures: List[str] = []
+    graph_query_type = plan.graph_query_type_value
     if plan.strategy != case.expected_strategy:
         failures.append(
             f"expected_strategy={case.expected_strategy} actual_strategy={plan.strategy}"
         )
-    if (
-        case.expected_graph_query_type
-        and plan.graph_query_type != case.expected_graph_query_type
-    ):
+    if case.expected_graph_query_type and graph_query_type != case.expected_graph_query_type:
         failures.append(
             "expected_graph_query_type="
-            f"{case.expected_graph_query_type} actual_graph_query_type={plan.graph_query_type}"
+            f"{case.expected_graph_query_type} actual_graph_query_type={graph_query_type}"
         )
     if case.expected_intent and plan.intent != case.expected_intent:
-        failures.append(
-            f"expected_intent={case.expected_intent} actual_intent={plan.intent}"
-        )
+        failures.append(f"expected_intent={case.expected_intent} actual_intent={plan.intent}")
     if (
         case.expected_reasoning_required is not None
         and plan.reasoning_required != case.expected_reasoning_required
@@ -161,8 +154,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         )
     if (
         case.expected_needs_recipe_recommendation is not None
-        and plan.needs_recipe_recommendation
-        != case.expected_needs_recipe_recommendation
+        and plan.needs_recipe_recommendation != case.expected_needs_recipe_recommendation
     ):
         failures.append(
             "expected_needs_recipe_recommendation="
@@ -177,9 +169,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
     if missing_relation_types:
         failures.append(f"missing_relation_types={missing_relation_types}")
     if plan.complexity < case.min_complexity:
-        failures.append(
-            f"min_complexity={case.min_complexity} actual_complexity={plan.complexity}"
-        )
+        failures.append(f"min_complexity={case.min_complexity} actual_complexity={plan.complexity}")
     if plan.relationship_intensity < case.min_relationship_intensity:
         failures.append(
             "min_relationship_intensity="
@@ -203,7 +193,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         "expected_strategy": case.expected_strategy,
         "strategy": plan.strategy,
         "expected_graph_query_type": case.expected_graph_query_type,
-        "graph_query_type": plan.graph_query_type,
+        "graph_query_type": graph_query_type,
         "intent": plan.intent,
         "reasoning_required": plan.reasoning_required,
         "needs_recipe_recommendation": plan.needs_recipe_recommendation,
@@ -227,11 +217,7 @@ def run_smoke(corpus_path: str | Path = DEFAULT_CORPUS_PATH) -> dict:
     return {
         "case_count": len(results),
         "passed_count": len(results) - len(failures),
-        "pass_rate": (
-            (len(results) - len(failures)) / len(results)
-            if results
-            else 0.0
-        ),
+        "pass_rate": ((len(results) - len(failures)) / len(results) if results else 0.0),
         "category_count": len(category_counts),
         "category_counts": dict(sorted(category_counts.items())),
         "strategy_counts": dict(sorted(strategy_counts.items())),
@@ -276,4 +262,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

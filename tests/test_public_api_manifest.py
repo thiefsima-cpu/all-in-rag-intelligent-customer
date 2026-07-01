@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from rag_modules.public_surface_manifest import (
     EXTERNAL_PUBLIC_SURFACE,
     INTERNAL_ONLY_SURFACE,
     LEGACY_PUBLIC_SURFACE,
+    LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
+    LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     PUBLIC_API_SURFACE,
     ROOT_PUBLIC_SURFACE,
     SERVICE_API_SURFACE,
@@ -21,7 +24,6 @@ from rag_modules.public_surface_manifest import (
     root_facade_module_names,
     surface_by_kind,
 )
-
 
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES_DIR = ROOT / "rag_modules"
@@ -59,8 +61,6 @@ class PublicApiManifestTests(unittest.TestCase):
             "public_api": PUBLIC_API_SURFACE,
             "service_api": SERVICE_API_SURFACE,
             "internal_only": INTERNAL_ONLY_SURFACE,
-            "root_facade": ROOT_PUBLIC_SURFACE,
-            "repo_root_facade": EXTERNAL_PUBLIC_SURFACE,
         }
         grouped = surface_by_kind()
 
@@ -69,29 +69,81 @@ class PublicApiManifestTests(unittest.TestCase):
             self.assertEqual({kind}, {entry.kind for entry in entries})
             self.assertEqual(modules_for(entries), modules_for(grouped[kind]))
 
-    def test_legacy_surface_entries_name_canonical_targets(self) -> None:
-        for entry in LEGACY_PUBLIC_SURFACE:
-            self.assertNotEqual(entry.module_name, entry.canonical_module)
-            self.assertNotEqual("canonical", entry.retirement_phase)
+    def test_contract_kernel_is_declared_service_surface(self) -> None:
+        surface = canonical_surface_by_module()
+
+        self.assertIn("rag_modules.contracts", surface)
+        self.assertEqual("service_api", surface["rag_modules.contracts"].kind)
+        self.assertEqual("rag_modules.contracts", surface["rag_modules.contracts"].canonical_module)
+        self.assertIn("contract kernel", surface["rag_modules.contracts"].notes)
+
+    def test_legacy_surface_is_empty_after_final_retirement(self) -> None:
+        self.assertEqual((), LEGACY_PUBLIC_SURFACE)
+        self.assertEqual((), ROOT_PUBLIC_SURFACE)
+        self.assertEqual((), EXTERNAL_PUBLIC_SURFACE)
+        self.assertEqual({}, legacy_surface_by_module())
+        self.assertEqual(frozenset(), root_facade_module_names())
+        self.assertEqual(frozenset(), repo_root_facade_module_names())
+        self.assertEqual("0.2.0", LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION)
+        self.assertEqual(
+            ("internal_dependency_guard", "thin_wrapper_guard"),
+            LEGACY_PUBLIC_SURFACE_SCAN_RULES,
+        )
+
+    def test_query_policy_package_data_ships_versioned_bundle_only(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as file:
+            pyproject = tomllib.load(file)
+
+        package_data = pyproject["tool"]["setuptools"]["package-data"]
+        query_policy_data = tuple(package_data["rag_modules.query_policy"])
 
         self.assertEqual(
-            legacy_surface_by_module()["intelligent_query_router"].canonical_module,
-            "rag_modules.routing.intelligent_query_router",
+            (
+                "resources/*/manifest.json",
+                "resources/*/policy.json",
+                "resources/*/prompts/*.txt",
+            ),
+            query_policy_data,
         )
-        self.assertEqual(
-            root_facade_module_names(),
-            frozenset(f"rag_modules.{entry.module_name}" for entry in ROOT_PUBLIC_SURFACE),
-        )
-        self.assertEqual(repo_root_facade_module_names(), modules_for(EXTERNAL_PUBLIC_SURFACE))
+        self.assertNotIn("defaults.json", query_policy_data)
+        self.assertNotIn("planner_prompt.txt", query_policy_data)
+
+    def test_retired_facade_class_names_are_not_package_exports(self) -> None:
+        import rag_modules
+        import rag_modules.app.services as app_services
+        import rag_modules.generation as generation
+        import rag_modules.retrieval as retrieval
+
+        retired_exports = {
+            rag_modules: {
+                "GenerationIntegrationModule",
+                "HybridRetrievalModule",
+                "QuestionAnswerService",
+            },
+            app_services: {"QuestionAnswerService"},
+            generation: {"GenerationIntegrationModule"},
+            retrieval: {
+                "HybridLegacyResultTranslator",
+                "HybridRetrievalModule",
+                "RetrievalResult",
+            },
+        }
+
+        for module, names in retired_exports.items():
+            for name in names:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertNotIn(name, getattr(module, "__all__", ()))
+                    self.assertFalse(hasattr(module, name))
+
+        self.assertIn("HybridRetrievalService", retrieval.__all__)
+        self.assertTrue(hasattr(retrieval, "HybridRetrievalService"))
 
     def test_internal_only_packages_declare_internal_contract(self) -> None:
         import rag_modules.app.composition as composition
-        import rag_modules.app.provider_components as provider_components
 
-        for module in (composition, provider_components):
-            self.assertTrue(getattr(module, "INTERNAL_ONLY", False))
-            self.assertIn("internal", (module.__doc__ or "").lower())
-            self.assertIn("instead", getattr(module, "INTERNAL_ONLY_REASON", "").lower())
+        self.assertTrue(getattr(composition, "INTERNAL_ONLY", False))
+        self.assertIn("internal", (composition.__doc__ or "").lower())
+        self.assertIn("instead", getattr(composition, "INTERNAL_ONLY_REASON", "").lower())
 
     def test_non_app_code_does_not_import_internal_assembly_packages(self) -> None:
         violations: list[str] = []

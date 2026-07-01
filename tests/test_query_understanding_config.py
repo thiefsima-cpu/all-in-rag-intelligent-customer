@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
-from rag_modules.configuration import load_config
 
 
 class QueryUnderstandingConfigTests(unittest.TestCase):
@@ -12,6 +12,7 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
 
         domain_payload = config.to_domain_dict()["query_understanding"]
 
+        self.assertIn("policy", domain_payload)
         self.assertIn("planner", domain_payload)
         self.assertIn("semantics", domain_payload)
         self.assertNotIn("query_plan_cache_size", domain_payload)
@@ -20,25 +21,27 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
             config.query_understanding.planner.cache_size,
         )
 
-    def test_legacy_flat_access_and_flat_serialization_still_work(self) -> None:
+    def test_flat_access_and_flat_serialization_are_retired(self) -> None:
         config = load_config()
 
-        self.assertEqual(
-            config.query_understanding.planner.cache_size,
-            config.query_understanding.query_plan_cache_size,
-        )
-        self.assertEqual(
-            config.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
-            config.query_understanding.query_semantic_combined_strategy_complexity_threshold,
-        )
+        with self.assertRaises(AttributeError):
+            getattr(config, "query_plan_cache_size")
+        with self.assertRaises(AttributeError):
+            getattr(config.query_understanding, "query_plan_cache_size")
+        with self.assertRaises(AttributeError):
+            getattr(
+                config.query_understanding,
+                "query_semantic_combined_strategy_complexity_threshold",
+            )
 
-        flat_payload = config.to_dict()
-        self.assertIn("query_plan_cache_size", flat_payload)
-        self.assertIn("query_semantic_combined_strategy_complexity_threshold", flat_payload)
-        self.assertNotIn("planner", flat_payload)
-        self.assertNotIn("semantics", flat_payload)
+        payload = config.to_dict()
+        self.assertIn("query_understanding", payload)
+        self.assertIn("planner", payload["query_understanding"])
+        self.assertIn("semantics", payload["query_understanding"])
+        self.assertNotIn("query_plan_cache_size", payload)
+        self.assertNotIn("query_semantic_combined_strategy_complexity_threshold", payload)
 
-    def test_nested_and_legacy_overrides_both_target_new_structure(self) -> None:
+    def test_only_nested_overrides_target_query_understanding_structure(self) -> None:
         config = load_config()
 
         nested_override = config.with_overrides(
@@ -51,23 +54,37 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
                 }
             }
         )
-        legacy_override = config.with_overrides(
-            {
-                "query_plan_cache_size": 32,
-                "query_semantic_combined_strategy_complexity_threshold": 0.81,
-            }
-        )
-
         self.assertEqual(nested_override.query_understanding.planner.cache_size, 64)
         self.assertEqual(
-            nested_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
+            (
+                nested_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold
+            ),
             0.77,
         )
-        self.assertEqual(legacy_override.query_understanding.planner.cache_size, 32)
-        self.assertEqual(
-            legacy_override.query_understanding.semantics.routing.combined_strategy_complexity_threshold,
-            0.81,
+
+        with self.assertRaises(ConfigurationError) as flat_context:
+            config.with_overrides({"query_plan_cache_size": 32})
+        flat_message = str(flat_context.exception)
+        self.assertIn("overrides", flat_message)
+        self.assertIn("GraphRAGConfig.with_overrides", flat_message)
+        self.assertIn("query_plan_cache_size", flat_message)
+        self.assertIn("extra", flat_message)
+
+        with self.assertRaises(ConfigurationError) as nested_context:
+            config.with_overrides(
+                {
+                    "query_understanding": {
+                        "query_semantic_combined_strategy_complexity_threshold": 0.81,
+                    }
+                }
+            )
+        nested_message = str(nested_context.exception)
+        self.assertIn("overrides", nested_message)
+        self.assertIn(
+            "query_understanding.query_semantic_combined_strategy_complexity_threshold",
+            nested_message,
         )
+        self.assertIn("extra", nested_message)
 
     def test_milvus_dimension_must_match_embedding_dimension(self) -> None:
         config = load_config()
@@ -79,13 +96,13 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
                 }
             )
 
-    def test_query_understanding_env_aliases_target_nested_structure(self) -> None:
+    def test_query_understanding_env_values_target_nested_structure(self) -> None:
         config = load_config(
             source=EnvConfigSource(
                 environ={
                     "QUERY_PLAN_CACHE_SIZE": "21",
                     "QUERY_SEMANTIC_COMBINED_STRATEGY_COMPLEXITY_THRESHOLD": "0.73",
-                    "QUERY_PLAN_SOURCE_ENTITY_LIMIT": "5",
+                    "QUERY_SEMANTIC_SOURCE_ENTITY_LIMIT": "5",
                 }
             )
         )
@@ -99,6 +116,31 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
             config.query_understanding.semantics.extraction.source_entity_limit,
             5,
         )
+
+    def test_query_understanding_policy_selector_is_nested(self) -> None:
+        config = load_config()
+
+        payload = config.to_domain_dict()["query_understanding"]
+
+        self.assertIn("policy", payload)
+        self.assertEqual("c9-default-v1", payload["policy"]["bundle"])
+        self.assertEqual("c9-default-v1", config.query_understanding.policy.bundle)
+        self.assertEqual("", config.query_understanding.policy.bundle_path)
+
+    def test_query_understanding_policy_selector_accepts_env_override(self) -> None:
+        config = load_config(
+            source=EnvConfigSource(environ={"QUERY_POLICY_BUNDLE": "c9-default-v1"})
+        )
+
+        self.assertEqual("c9-default-v1", config.query_understanding.policy.bundle)
+
+    def test_query_understanding_policy_selector_rejects_flat_override(self) -> None:
+        config = load_config()
+
+        with self.assertRaises(ConfigurationError) as context:
+            config.with_overrides({"query_policy_bundle": "c9-default-v1"})
+
+        self.assertIn("query_policy_bundle", str(context.exception))
 
 
 if __name__ == "__main__":

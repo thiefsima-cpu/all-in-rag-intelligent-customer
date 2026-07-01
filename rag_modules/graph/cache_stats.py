@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from ..artifacts import ArtifactManifestStore
+from ..runtime.artifacts import ArtifactManifestStore
 
 GRAPH_CACHE_STATS_SCHEMA_VERSION = "graph-cache-stats-v1"
 
@@ -52,9 +52,7 @@ class GraphCacheStats:
             entity_count=int(payload.get("entity_count") or 0),
             relation_type_count=int(payload.get("relation_type_count") or 0),
             entities=[
-                dict(item)
-                for item in (payload.get("entities") or [])
-                if isinstance(item, dict)
+                dict(item) for item in (payload.get("entities") or []) if isinstance(item, dict)
             ],
             relation_frequencies={
                 str(key): int(value)
@@ -98,5 +96,3 @@ class GraphCacheStatsStore:
         with open(self.path, "w", encoding="utf-8") as file:
             json.dump(stats.to_dict(), file, ensure_ascii=False, indent=2)
         return stats
-
-

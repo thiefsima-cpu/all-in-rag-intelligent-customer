@@ -15,6 +15,10 @@ class SystemNotReadyError(RuntimeError):
         self.diagnostics = diagnostics
 
 
+class AnswerFailedError(RuntimeError):
+    """Raised when an answer result reaches a terminal failed state."""
+
+
 class BuildJobNotFoundError(KeyError):
     """Raised when a build job identifier is unknown to the current API service."""
 
@@ -31,6 +35,14 @@ class BuildJobConflictError(RuntimeError):
         self.job = dict(job)
 
 
+class InvalidApiRequestError(ValueError):
+    """Raised when an API request has invalid non-body parameters."""
+
+    def __init__(self, message: str, *, details: dict):
+        super().__init__(message)
+        self.details = dict(details)
+
+
 class ApiBackpressureError(RuntimeError):
     """Raised when answer admission control rejects a request."""
 
@@ -40,7 +52,9 @@ class ApiBackpressureError(RuntimeError):
 
 __all__ = [
     "ApiBackpressureError",
+    "AnswerFailedError",
     "BuildJobConflictError",
     "BuildJobNotFoundError",
+    "InvalidApiRequestError",
     "SystemNotReadyError",
 ]

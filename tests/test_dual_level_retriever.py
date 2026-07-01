@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.retrieval.dual_level_evidence_service import DualLevelEvidenceService
 from rag_modules.retrieval.dual_level_retriever import DualLevelRetriever
 
@@ -96,16 +96,18 @@ class DualLevelRetrieverTests(unittest.TestCase):
                     value_content="RecipeB first line\nmore",
                 )
             },
-            get_entities_by_key=lambda keyword: [
-                SimpleNamespace(
-                    entity_name="RecipeCategory",
-                    entity_type="Recipe",
-                    value_content="category-hit",
-                    metadata={"node_id": "n4"},
-                )
-            ]
-            if keyword == "light"
-            else [],
+            get_entities_by_key=lambda keyword: (
+                [
+                    SimpleNamespace(
+                        entity_name="RecipeCategory",
+                        entity_type="Recipe",
+                        value_content="category-hit",
+                        metadata={"node_id": "n4"},
+                    )
+                ]
+                if keyword == "light"
+                else []
+            ),
         )
         self.retriever = DualLevelRetriever(
             driver=None,

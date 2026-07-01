@@ -19,7 +19,12 @@ class PressureApiServiceTests(unittest.TestCase):
 
         payload = result.to_dict()
         self.assertEqual(payload["requests"], 12)
+        self.assertGreater(payload["completed_requests"], 0)
         self.assertGreater(payload["rejected_requests"], 0)
+        self.assertEqual(
+            payload["completed_requests"] + payload["rejected_requests"],
+            payload["requests"],
+        )
         self.assertIn("trace_stats", payload)
         self.assertIn("dropped_events", payload["trace_stats"])
         self.assertIn("written_events", payload["trace_stats"])

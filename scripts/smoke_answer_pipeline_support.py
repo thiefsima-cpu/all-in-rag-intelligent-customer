@@ -13,9 +13,9 @@ from rag_modules.generation import (
     GenerationPromptBuilder,
     GenerationSettings,
 )
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import QueryTraceSink
 from rag_modules.runtime import AnswerContext, GenerationSnapshot
-from rag_modules.tracing import QueryTracer
-from rag_modules.tracing_sinks import QueryTraceSink
 
 
 class CaptureSink(QueryTraceSink):
@@ -37,9 +37,7 @@ class OfflineCompletions:
         if not self.responses:
             raise AssertionError(f"Unexpected completion request for prompt: {prompt[:80]}")
         text = self.responses.pop(0)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
     def stream_prompt(self, **_: object):
         raise AssertionError("Offline answer pipeline smoke does not use streaming.")

@@ -7,8 +7,9 @@ from __future__ import annotations
 import logging
 from typing import Callable, List, Optional
 
-from ...query_constraints import RecipeConstraintMatcher
-from ..contracts import EvidenceDocument, RetrievalRequest, from_langchain_documents
+from ...contracts import EvidenceDocument, RetrievalRequest
+from ...contracts.retrieval import evidence_document_from_page_like
+from ..evidence import RecipeConstraintMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,9 @@ class ConstraintRetriever:
             min_score=0.0,
             limit=request.effective_candidate_k,
         )
-        evidence_docs = []
-        for evidence in from_langchain_documents(docs):
+        evidence_docs: List[EvidenceDocument] = []
+        for doc in docs:
+            evidence: EvidenceDocument = evidence_document_from_page_like(doc)
             metadata = dict(evidence.metadata or {})
             metadata["search_method"] = "constraints"
             metadata["search_type"] = "constraint_recipe"

@@ -7,13 +7,16 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..query_constraints import QueryConstraints
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
+from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..domain.shared.query_constraints import QueryConstraints
+from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
+from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..retrieval_post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..runtime import QueryAnalysis, SearchStrategy
-from .execution_strategies import (
+from ..runtime.json_types import JsonObject
+from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
+from ..safe_logging import log_failure
+from .strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
     HybridRouteStrategy,
@@ -45,8 +48,8 @@ class RouteSearchOrchestrator:
     def __init__(
         self,
         *,
-        traditional_retrieval,
-        graph_rag_retrieval,
+        traditional_retrieval: HybridRetrievalPort,
+        graph_rag_retrieval: GraphRAGRetrievalPort,
         retrieval_profile: RetrievalRuntimeProfile,
         post_processor: RetrievalPostProcessor,
         strategies: Optional[List[RouteRetrievalStrategy]] = None,
@@ -65,12 +68,25 @@ class RouteSearchOrchestrator:
             GraphRouteStrategy(),
             CombinedRouteStrategy(),
         ]
-        self.strategy_registry = {
-            strategy.strategy: strategy
-            for strategy in strategy_list
-        }
+        self.strategy_registry = {strategy.strategy: strategy for strategy in strategy_list}
 
-    def execute(self, request: RouteExecutionRequest, *, trace: RouteTraceRecorder) -> List[EvidenceDocument]:
+    def close(self) -> None:
+        closed_strategy_ids: set[int] = set()
+        for strategy in self.strategy_registry.values():
+            strategy_id = id(strategy)
+            if strategy_id in closed_strategy_ids:
+                continue
+            closed_strategy_ids.add(strategy_id)
+            close = getattr(strategy, "close", None)
+            if callable(close):
+                close()
+
+    def execute(
+        self,
+        request: RouteExecutionRequest,
+        *,
+        trace: RouteTraceRecorder,
+    ) -> List[EvidenceDocument]:
         strategy = self.strategy_registry.get(request.analysis.recommended_strategy)
         if strategy is None:
             logger.warning(
@@ -93,7 +109,7 @@ class RouteSearchOrchestrator:
         evidence_documents: List[EvidenceDocument],
         *,
         trace: RouteTraceRecorder,
-        query_plan_payload: Optional[dict] = None,
+        query_plan_payload: JsonObject | None = None,
     ) -> List[EvidenceDocument]:
         post_start = time.perf_counter()
         processed_documents = self.post_processor.post_process(
@@ -118,8 +134,14 @@ class RouteSearchOrchestrator:
         trace: RouteTraceRecorder,
         error: Exception,
     ) -> List[EvidenceDocument]:
-        logger.error("Query routing failed, falling back to hybrid search: %s", error)
-        outcome = self._build_exception_fallback_outcome(request)
+        log_failure(
+            logger,
+            logging.ERROR,
+            "query_routing_failed",
+            code="QUERY_PROCESSING_FAILED",
+            error=error,
+        )
+        outcome = self._build_exception_fallback_outcome(request, trace=trace)
         trace.record_execution_outcome(outcome)
         return outcome.documents
 
@@ -158,22 +180,62 @@ class RouteSearchOrchestrator:
     def _build_exception_fallback_outcome(
         self,
         request: RouteExecutionRequest,
+        *,
+        trace: RouteTraceRecorder,
     ) -> RouteExecutionOutcome:
         start = time.perf_counter()
-        evidence_documents = self.traditional_retrieval.hybrid_evidence_search(
-            request.retrieval_request
+        fallback_request = self._build_exception_fallback_request(
+            request.retrieval_request,
+            trace=trace,
         )
+        hybrid_outcome = self.traditional_retrieval.hybrid_evidence_search(fallback_request)
+        documents = list(hybrid_outcome.documents)
         return RouteExecutionOutcome(
-            documents=list(evidence_documents),
+            documents=documents,
             fallbacks=["router_exception_to_hybrid"],
             stages=[
                 RouteExecutionStageResult(
                     name="hybrid_exception_fallback",
-                    documents=list(evidence_documents),
+                    documents=documents,
                     latency_ms=round((time.perf_counter() - start) * 1000, 2),
+                    details=hybrid_outcome.to_stage_details(),
                 )
             ],
         )
+
+    @staticmethod
+    def _build_exception_fallback_request(
+        retrieval_request: RetrievalRequest,
+        *,
+        trace: RouteTraceRecorder,
+    ) -> RetrievalRequest:
+        degraded_sources = _unique_source_names(trace.snapshot.diagnostics.degraded_sources)
+        if not degraded_sources:
+            return retrieval_request
+
+        metadata = dict(retrieval_request.metadata or {})
+        skipped_sources = _unique_source_names(
+            metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
+        )
+        merged_sources = _unique_source_names([*skipped_sources, *degraded_sources])
+        metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY] = merged_sources
+        return retrieval_request.copy_with(metadata=metadata)
+
+
+def _unique_source_names(values: object) -> List[str]:
+    if isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, (list, tuple, set)):
+        raw_values = list(values)
+    else:
+        raw_values = []
+
+    names: List[str] = []
+    for value in raw_values:
+        name = str(value or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 __all__ = ["RouteExecutionRequest", "RouteSearchOrchestrator"]

@@ -12,14 +12,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-from neo4j import Driver
-
 from .configuration.models import GraphSettings
 from .query_understanding import (
     DEFAULT_ENTITY_LINKER_PREFERRED_LABELS,
     default_entity_linker_query_type_priorities,
     default_entity_linker_relation_priorities,
 )
+from .runtime_contracts import Neo4jDriverPort
+from .safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class EntityLinker:
 
     def __init__(
         self,
-        driver: Optional[Driver],
+        driver: Optional[Neo4jDriverPort],
         database: str = "neo4j",
         graph_settings: Optional[GraphSettings] = None,
     ):
@@ -139,16 +139,24 @@ class EntityLinker:
         LIMIT $limit
         """
         try:
-            with self.driver.session(database=self.database) as session:
+            driver = self.driver
+            if driver is None:
+                return []
+            with driver.session(database=self.database) as session:
                 records = session.run(query, text=text, limit=self.limit_per_entity)
                 candidates = [self._from_record(text, record) for record in records]
         except Exception as exc:
-            logger.warning("Entity linking failed for %s: %s", text, exc)
+            log_failure(
+                logger,
+                logging.WARNING,
+                "entity_linking_failed",
+                code="ENTITY_LINKING_FAILED",
+                error=exc,
+            )
             return []
 
         filtered = [
-            candidate for candidate in candidates
-            if candidate.confidence >= self.min_confidence
+            candidate for candidate in candidates if candidate.confidence >= self.min_confidence
         ]
         return self._prune_candidates(filtered, context=context)
 
@@ -186,7 +194,9 @@ class EntityLinker:
 
         deduped: List[LinkedEntity] = []
         seen = set()
-        for candidate in sorted(candidates, key=lambda item: self._sort_key(item, context), reverse=True):
+        for candidate in sorted(
+            candidates, key=lambda item: self._sort_key(item, context), reverse=True
+        ):
             key = candidate.node_id or f"{candidate.name}::{','.join(candidate.labels)}"
             if key in seen:
                 continue
@@ -194,7 +204,8 @@ class EntityLinker:
             deduped.append(candidate)
 
         exact = [
-            candidate for candidate in deduped
+            candidate
+            for candidate in deduped
             if candidate.match_reason in {"node_id", "exact_name"}
         ]
         preferred = exact or deduped
@@ -213,7 +224,13 @@ class EntityLinker:
         return pruned
 
     def _sort_key(self, candidate: LinkedEntity, context: Optional[EntityLinkContext]):
-        exact_rank = 2 if candidate.match_reason == "node_id" else 1 if candidate.match_reason == "exact_name" else 0
+        exact_rank = (
+            2
+            if candidate.match_reason == "node_id"
+            else 1
+            if candidate.match_reason == "exact_name"
+            else 0
+        )
         label_rank = self._label_priority_rank(candidate.labels, context)
         recipe_bonus = 1 if "Recipe" in candidate.labels else 0
         return (exact_rank, label_rank, recipe_bonus, candidate.confidence)
@@ -228,7 +245,11 @@ class EntityLinker:
         scores: Dict[str, int] = {}
         if context:
             for relation_type in context.relation_types or []:
-                self._apply_priority_list(scores, self.relation_label_priorities.get(str(relation_type), []), base_weight=3)
+                self._apply_priority_list(
+                    scores,
+                    self.relation_label_priorities.get(str(relation_type), []),
+                    base_weight=3,
+                )
             if context.query_type:
                 self._apply_priority_list(
                     scores,

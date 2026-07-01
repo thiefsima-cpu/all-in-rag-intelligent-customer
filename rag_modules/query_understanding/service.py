@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
+from ..runtime_contracts import LLMClientPort
 from .planner_service import QueryPlanner
 
 QueryUnderstandingResult = QueryUnderstandingSnapshot
@@ -12,14 +13,24 @@ QueryUnderstandingResult = QueryUnderstandingSnapshot
 class QueryUnderstandingService:
     """Own the query-planning and query-analysis policy for retrieval routing."""
 
-    def __init__(self, *, llm_client, config, retrieval_profile: RetrievalRuntimeProfile | None = None):
+    def __init__(
+        self,
+        *,
+        llm_client: LLMClientPort | None,
+        config,
+        planner_settings: QueryPlannerRuntimeSettings | None = None,
+        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+    ) -> None:
         self.config = config
         self.llm_client = llm_client
-        self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)
+        self.planner_settings = planner_settings or QueryPlannerRuntimeSettings.from_config(config)
+        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings.from_config(
+            config
+        )
         self.query_planner = QueryPlanner(
             llm_client,
-            settings=self.retrieval_profile.planner,
-            semantic_settings=self.retrieval_profile.semantics,
+            settings=self.planner_settings,
+            semantic_settings=self.semantic_settings,
         )
 
     def understand(self, query: str) -> QueryUnderstandingResult:
@@ -47,13 +58,13 @@ class QueryUnderstandingService:
             f"Complexity: {analysis.query_complexity:.2f}\n"
             f"Relationship intensity: {analysis.relationship_intensity:.2f}\n"
             f"Reasoning required: {'yes' if analysis.reasoning_required else 'no'}\n"
-            f"Graph query type: {plan.graph_query_type}\n"
+            f"Graph query type: {plan.graph_query_type_value}\n"
             f"Source entities: {source_entities}\n"
             f"Target entities: {target_entities}\n"
             f"Relation hits: {relation_hits}\n"
             f"Constraint hits: {constraint_hits}\n"
             f"Structural hits: {structural_hits}\n"
-            f"Planner mode: {plan.planner_mode}\n"
+            f"Planner mode: {plan.planner_mode_value}\n"
             f"Reason: {analysis.reasoning or 'n/a'}"
         )
 

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any, Dict, List, Sequence, Tuple
 
 from .registry import (
     AMBIGUOUS_RECOMMENDATION_MARKERS,
-    CONSTRAINT_MARKERS,
     CUISINE_STYLE_TERMS,
     DIFFICULTY_TERMS,
     ENTITY_PHRASE_MARKERS,
@@ -16,7 +16,6 @@ from .registry import (
     FILTERING_MARKERS,
     FLAVOR_TERMS,
     GRAPH_GENERIC_TERMS,
-    GRAPH_QUERY_TYPES,
     GRAPH_RELATION_TYPES,
     GRAPH_SOURCE_PREFIXES,
     GRAPH_SOURCE_SUFFIXES,
@@ -55,12 +54,12 @@ def matched_terms(text: str, terms: Sequence[str]) -> List[str]:
 
 
 def regex_group_matches(text: str, group_name: str) -> bool:
-    return any(re.search(pattern, text) for pattern in POLICY.regex_group(group_name))
+    return any(re.search(pattern, text) for pattern in POLICY.lexicon.regex_group(group_name))
 
 
 def apply_cleanup_patterns(text: str, group_name: str) -> str:
     value = text
-    for pattern in POLICY.regex_group(group_name):
+    for pattern in POLICY.lexicon.regex_group(group_name):
         value = re.sub(pattern, "", value)
     return value
 
@@ -78,11 +77,15 @@ def has_recommendation_intent(query: str) -> bool:
 def has_filtering_intent(query: str) -> bool:
     if contains_any(query, FILTERING_MARKERS):
         return True
-    if any(re.search(pattern, query) for pattern in POLICY.regex_group("time_minutes_patterns")):
+    if any(
+        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_minutes_patterns")
+    ):
         return True
-    if any(re.search(pattern, query) for pattern in POLICY.regex_group("time_hours_patterns")):
+    if any(
+        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_hours_patterns")
+    ):
         return True
-    return contains_any(query, POLICY.regex_group("time_half_hour_patterns"))
+    return contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns"))
 
 
 def clean_entity_phrase(text: str) -> str:
@@ -123,7 +126,7 @@ def looks_like_entity(text: str) -> bool:
 
 def pairwise_entity_matches(query: str) -> List[Tuple[str, str]]:
     matches: List[Tuple[str, str]] = []
-    for pattern in POLICY.regex_group("pairwise_entity_patterns"):
+    for pattern in POLICY.lexicon.regex_group("pairwise_entity_patterns"):
         for left, right in re.findall(pattern, query):
             left_text = clean_entity_phrase(left)
             right_text = clean_entity_phrase(right)
@@ -136,7 +139,14 @@ def extract_query_tokens(query: str) -> List[str]:
     normalized = normalize_query_text(query)
     segmented_text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", normalized)
     try:
-        import jieba
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="pkg_resources is deprecated as an API.*",
+                category=UserWarning,
+                module=r"jieba\._compat",
+            )
+            import jieba
 
         raw_tokens = [part.strip() for part in jieba.lcut(segmented_text) if part.strip()]
     except Exception:
@@ -225,7 +235,7 @@ def normalize_graph_sources(values: Sequence[str]) -> List[str]:
             continue
         for prefix in GRAPH_SOURCE_PREFIXES:
             if text.startswith(prefix) and len(text) > len(prefix):
-                text = text[len(prefix):]
+                text = text[len(prefix) :]
         for suffix in GRAPH_SOURCE_SUFFIXES:
             if text.endswith(suffix) and len(text) > len(suffix):
                 text = text[: -len(suffix)]
@@ -245,7 +255,7 @@ def infer_graph_query_type(query: str) -> str:
         return "path_finding"
     if contains_any(normalized, SUBGRAPH_MARKERS):
         return "subgraph"
-    if contains_any(normalized, POLICY.term_group("clustering_markers")):
+    if contains_any(normalized, POLICY.lexicon.term_group("clustering_markers")):
         return "clustering"
     if contains_any(normalized, RELATION_MARKERS) or contains_any(
         normalized, STRUCTURAL_REASONING_MARKERS
@@ -264,15 +274,15 @@ def infer_relation_types(query: str) -> List[str]:
 
 
 def extract_minutes(query: str) -> int | None:
-    for pattern in POLICY.regex_group("time_minutes_patterns"):
+    for pattern in POLICY.lexicon.regex_group("time_minutes_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1))))
-    for pattern in POLICY.regex_group("time_hours_patterns"):
+    for pattern in POLICY.lexicon.regex_group("time_hours_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1)) * 60))
-    if contains_any(query, POLICY.regex_group("time_half_hour_patterns")):
+    if contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns")):
         return 30
     return None
 
@@ -293,7 +303,7 @@ def extract_difficulty(query: str) -> str:
 
 def extract_excluded_terms(query: str) -> List[str]:
     excluded: List[str] = []
-    for pattern in POLICY.regex_group("excluded_term_patterns"):
+    for pattern in POLICY.lexicon.regex_group("excluded_term_patterns"):
         for match in re.findall(pattern, query):
             value = clean_entity_phrase(match)
             if looks_like_entity(value):
@@ -312,12 +322,13 @@ def infer_query_constraints(query: str) -> Dict[str, Any]:
     excluded_terms = extract_excluded_terms(normalized)
     style = extract_style(normalized) if selection_intent else ""
     difficulty = extract_difficulty(normalized) if selection_intent else ""
-    category_hits = (
-        matched_terms(normalized, INGREDIENT_CATEGORY_TERMS) if selection_intent else []
-    )
+    category_hits = matched_terms(normalized, INGREDIENT_CATEGORY_TERMS) if selection_intent else []
     health_hits = matched_terms(normalized, HEALTH_TERMS) if selection_intent else []
 
-    if query_type in {"path_finding", "multi_hop", "subgraph", "clustering"} and not selection_intent:
+    if (
+        query_type in {"path_finding", "multi_hop", "subgraph", "clustering"}
+        and not selection_intent
+    ):
         category_hits = []
         health_hits = []
         style = ""

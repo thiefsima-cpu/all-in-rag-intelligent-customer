@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from typing import List, Sequence, Tuple
 
-from ..retrieval.runtime_profile import QuerySemanticRuntimeSettings
+from ..contracts import QuerySemanticProfile, QuerySemanticRuntimeSettings
+from ..query_policy import get_query_policy
 from .features import (
     extract_entity_candidates,
     extract_query_tokens,
     fallback_entity_phrases,
+    has_recommendation_intent,
     infer_graph_query_type,
     infer_query_constraints,
     infer_relation_types,
-    has_recommendation_intent,
     matched_terms,
     normalize_graph_sources,
     pairwise_entity_matches,
@@ -26,7 +27,6 @@ from .registry import (
     RELATION_MARKERS,
     STRUCTURAL_REASONING_MARKERS,
     TEXTURE_EFFECT_TERMS,
-    QuerySemanticProfile,
     dedupe_preserve_order,
     marker_hits,
     normalize_query_text,
@@ -41,27 +41,22 @@ def infer_graph_max_depth(
     settings: QuerySemanticRuntimeSettings | None = None,
 ) -> int:
     settings = settings or QuerySemanticRuntimeSettings()
-    if query_type == "entity_relation":
-        return settings.entity_relation_max_depth
-    if query_type == "path_finding":
-        return (
-            settings.path_finding_high_intensity_max_depth
-            if relationship_intensity >= settings.path_finding_high_intensity_threshold
-            else settings.path_finding_max_depth
-        )
-    if query_type == "subgraph":
-        return (
-            settings.subgraph_high_intensity_max_depth
-            if relationship_intensity >= settings.subgraph_high_intensity_threshold
-            else settings.subgraph_max_depth
-        )
-    if query_type == "clustering":
-        return settings.clustering_max_depth
-    return (
-        settings.default_high_intensity_max_depth
-        if relationship_intensity >= settings.default_high_intensity_threshold
-        else settings.default_max_depth
-    )
+    graph_policy = get_query_policy().graph
+    depth_map = graph_policy.max_depth
+    base_key = str(query_type or "default")
+    if base_key not in depth_map:
+        base_key = "default"
+    high_intensity_thresholds = {
+        "path_finding": settings.path_finding_high_intensity_threshold,
+        "subgraph": settings.subgraph_high_intensity_threshold,
+        "default": settings.default_high_intensity_threshold,
+    }
+    high_intensity_key = f"{base_key}_high_intensity"
+    if high_intensity_key in depth_map and relationship_intensity >= high_intensity_thresholds.get(
+        base_key, 1.0
+    ):
+        return int(depth_map[high_intensity_key])
+    return int(depth_map.get(base_key, depth_map["default"]))
 
 
 def infer_graph_max_nodes(
@@ -69,16 +64,13 @@ def infer_graph_max_nodes(
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
 ) -> int:
-    settings = settings or QuerySemanticRuntimeSettings()
-    if query_type == "entity_relation":
-        return settings.entity_relation_max_nodes
-    if query_type == "path_finding":
-        return settings.path_finding_max_nodes
-    if query_type == "subgraph":
-        return settings.subgraph_max_nodes
-    if query_type == "clustering":
-        return settings.clustering_max_nodes
-    return settings.default_max_nodes
+    _ = settings or QuerySemanticRuntimeSettings()
+    graph_policy = get_query_policy().graph
+    max_nodes_map = graph_policy.max_nodes
+    policy_key = str(query_type or "default")
+    if policy_key not in max_nodes_map:
+        policy_key = "default"
+    return int(max_nodes_map.get(policy_key, max_nodes_map["default"]))
 
 
 def split_graph_entities(
@@ -105,7 +97,9 @@ def split_graph_entities(
         target_entities = normalize_graph_sources(matched_terms(normalized, TEXTURE_EFFECT_TERMS))
 
     if not source_entities and normalized:
-        source_entities = [normalized[: settings.graph_query_fallback_name_chars].strip() or normalized]
+        source_entities = [
+            normalized[: settings.graph_query_fallback_name_chars].strip() or normalized
+        ]
 
     return dedupe_preserve_order(source_entities), dedupe_preserve_order(target_entities)
 
@@ -221,4 +215,3 @@ __all__ = [
     "infer_query_semantic_profile",
     "split_graph_entities",
 ]
-

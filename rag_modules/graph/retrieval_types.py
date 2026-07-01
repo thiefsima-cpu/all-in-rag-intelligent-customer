@@ -5,16 +5,11 @@ Core value objects for graph retrieval.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List
 
+from ..contracts import GraphQueryType
 
-class QueryType(Enum):
-    ENTITY_RELATION = "entity_relation"
-    MULTI_HOP = "multi_hop"
-    SUBGRAPH = "subgraph"
-    PATH_FINDING = "path_finding"
-    CLUSTERING = "clustering"
+QueryType = GraphQueryType
 
 
 @dataclass
@@ -44,6 +39,3 @@ class KnowledgeSubgraph:
     relationships: List[Dict[str, Any]] = field(default_factory=list)
     graph_metrics: Dict[str, float] = field(default_factory=dict)
     reasoning_chains: List[List[str] | str] = field(default_factory=list)
-
-
-

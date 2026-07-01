@@ -22,11 +22,23 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.configuration import GraphRAGConfig, load_config
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.evaluation import grounding_metrics, percentile, retrieval_metrics
-from rag_modules.retrieval.contracts import EvidenceDocument
+from rag_modules.query_policy import get_query_policy
 from rag_modules.retrieval_observability import summarize_documents
 
-DEFAULT_CORPUS_PATH = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
+DEFAULT_CORPUS_PATH = (
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
+)
+_GRAPH_QUALITY_CATEGORIES = frozenset(
+    {
+        "complex_relation",
+        "semantic_flavor",
+        "subgraph",
+        "multi_hop_relation",
+        "path_finding",
+    }
+)
 
 
 @dataclass
@@ -56,9 +68,7 @@ class EvalCase:
             ],
             expected_recipe_relevance={
                 str(name).strip(): float(grade)
-                for name, grade in dict(
-                    payload.get("expected_recipe_relevance") or {}
-                ).items()
+                for name, grade in dict(payload.get("expected_recipe_relevance") or {}).items()
                 if str(name).strip()
             },
         )
@@ -111,11 +121,7 @@ def _doc_recipe_names(docs: List[EvidenceDocument | dict[str, Any]]) -> List[str
 def _ranked_doc_recipe_names(
     docs: List[EvidenceDocument | dict[str, Any]],
 ) -> List[str]:
-    return [
-        name
-        for name in (_document_recipe_name(doc) for doc in docs)
-        if name
-    ]
+    return [name for name in (_document_recipe_name(doc) for doc in docs) if name]
 
 
 def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List[dict]:
@@ -138,8 +144,12 @@ def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List
                         or ""
                     ),
                     "score": doc.get("score", metadata.get("score", 0.0)),
-                    "evidence_type": str(doc.get("evidence_type") or metadata.get("evidence_type") or ""),
-                    "matched_terms": list(doc.get("matched_terms") or metadata.get("matched_terms") or []),
+                    "evidence_type": str(
+                        doc.get("evidence_type") or metadata.get("evidence_type") or ""
+                    ),
+                    "matched_terms": list(
+                        doc.get("matched_terms") or metadata.get("matched_terms") or []
+                    ),
                     "has_graph_evidence": bool(graph_evidence),
                     "graph_relationships": len(graph_evidence.get("relationships") or []),
                     "constraint_evidence": dict(
@@ -174,10 +184,7 @@ def _answer_has_graph_reasoning_marker(answer: str) -> bool:
 def _complex_answer_failed(category: str, answer: str, *, checked: bool) -> bool:
     if not checked or category not in {"complex_relation", "semantic_flavor"}:
         return False
-    return not (
-        _answer_has_citation_marker(answer)
-        and _answer_has_graph_reasoning_marker(answer)
-    )
+    return not (_answer_has_citation_marker(answer) and _answer_has_graph_reasoning_marker(answer))
 
 
 def _response_query_plan(response) -> dict[str, Any]:
@@ -189,6 +196,110 @@ def _response_query_plan(response) -> dict[str, Any]:
         return {}
     query_plan = understanding.get("query_plan") or {}
     return dict(query_plan) if isinstance(query_plan, dict) else {}
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _string_items(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _add_unique(target: list[str], value: Any) -> None:
+    text = str(value or "").strip()
+    if text and text not in target:
+        target.append(text)
+
+
+def _extend_unique(target: list[str], values: list[str]) -> None:
+    for value in values:
+        _add_unique(target, value)
+
+
+def _extend_unique_dicts(target: list[dict[str, Any]], values: list[dict[str, Any]]) -> None:
+    for value in values:
+        if value and value not in target:
+            target.append(dict(value))
+
+
+def _answer_resilience_signals(
+    response_payload: dict[str, Any],
+    route_resolution_payload: dict[str, Any],
+) -> dict[str, Any]:
+    summary = _mapping(response_payload.get("summary"))
+    traces = _mapping(response_payload.get("traces"))
+    generation_trace = _mapping(traces.get("generation_trace"))
+    route_trace = _mapping(traces.get("route_trace"))
+    grounding = _mapping(response_payload.get("grounding"))
+    retrieval_outcome = _mapping(grounding.get("retrieval_outcome"))
+    degradation_summary = _mapping(retrieval_outcome.get("degradation_summary"))
+
+    if not route_trace:
+        route_trace = _mapping(retrieval_outcome.get("route_trace"))
+    if not route_trace and route_resolution_payload:
+        route_retrieval = _mapping(route_resolution_payload.get("retrieval"))
+        route_trace = _mapping(route_retrieval.get("route_trace"))
+        if not degradation_summary:
+            degradation_summary = _mapping(route_retrieval.get("degradation_summary"))
+
+    response_diagnostics = _mapping(
+        _mapping(response_payload.get("diagnostics")).get("diagnostics")
+    )
+    route_diagnostics = _mapping(route_trace.get("diagnostics"))
+
+    fallback_reasons: list[str] = []
+    generation_fallback = bool(summary.get("fallback_used")) or bool(
+        generation_trace.get("fallback_used")
+    )
+    if generation_fallback:
+        _add_unique(
+            fallback_reasons,
+            generation_trace.get("fallback_reason")
+            or generation_trace.get("failure_code")
+            or summary.get("failure_code")
+            or "generation_fallback",
+        )
+    route_fallbacks = _string_items(route_trace.get("fallbacks"))
+    _extend_unique(fallback_reasons, route_fallbacks)
+    if route_diagnostics.get("used_fallback") and not route_fallbacks:
+        _add_unique(fallback_reasons, "route_fallback")
+
+    degraded_sources: list[str] = []
+    degraded_candidates: list[dict[str, Any]] = []
+    for payload in (degradation_summary, route_diagnostics, response_diagnostics):
+        _extend_unique(degraded_sources, _string_items(payload.get("degraded_sources")))
+        candidates = _dict_items(payload.get("degraded_candidates"))
+        _extend_unique_dicts(degraded_candidates, candidates)
+        _extend_unique(
+            degraded_sources,
+            [
+                str(candidate.get("source") or "").strip()
+                for candidate in candidates
+                if str(candidate.get("source") or "").strip()
+            ],
+        )
+
+    retrieval_degraded = any(
+        bool(payload.get("retrieval_degraded"))
+        for payload in (degradation_summary, route_diagnostics, response_diagnostics)
+    ) or bool(degraded_sources or degraded_candidates)
+
+    return {
+        "fallback_used": bool(generation_fallback or fallback_reasons),
+        "fallback_reasons": fallback_reasons,
+        "retrieval_degraded": bool(retrieval_degraded),
+        "degraded_sources": degraded_sources,
+        "degraded_candidates": degraded_candidates,
+    }
 
 
 def evaluate_case(
@@ -232,26 +343,15 @@ def evaluate_case(
 
     answer_missing_terms = []
     if generate:
-        answer_missing_terms = [
-            term for term in case.expected_answer_terms if term not in answer
-        ]
+        answer_missing_terms = [term for term in case.expected_answer_terms if term not in answer]
 
     recipe_names = _doc_recipe_names(docs)
     ranked_recipe_names = _ranked_doc_recipe_names(docs)
     expected_recipe_names = list(case.expected_recipe_names) or [
-        name
-        for name, grade in case.expected_recipe_relevance.items()
-        if float(grade or 0.0) > 0
+        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
     ]
-    missing_names = [
-        expected
-        for expected in expected_recipe_names
-        if expected not in recipe_names
-    ]
-    strategy_failed = (
-        case.expected_strategy is not None
-        and strategy != case.expected_strategy
-    )
+    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
+    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
     answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
     complex_answer_failed = _complex_answer_failed(
         case.category,
@@ -261,9 +361,7 @@ def evaluate_case(
 
     failures: list[str] = []
     if strategy_failed:
-        failures.append(
-            f"expected_strategy={case.expected_strategy} actual_strategy={strategy}"
-        )
+        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
     if missing_names:
         failures.append(f"missing_recipe_names={missing_names}")
     if answer_failed:
@@ -273,10 +371,7 @@ def evaluate_case(
     if not docs:
         failures.append("no_evidence")
 
-    relevance = (
-        case.expected_recipe_relevance
-        or {name: 1.0 for name in case.expected_recipe_names}
-    )
+    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
     ranking = retrieval_metrics(
         ranked_recipe_names,
         relevance,
@@ -297,13 +392,8 @@ def evaluate_case(
     )
     response_payload = contracts["answer_response"]
     summary = dict(response_payload.get("summary") or {})
-    generation_trace = dict(
-        (response_payload.get("traces") or {}).get("generation_trace") or {}
-    )
-    prompt_tokens = int(
-        summary.get("prompt_tokens", generation_trace.get("prompt_tokens", 0))
-        or 0
-    )
+    generation_trace = dict((response_payload.get("traces") or {}).get("generation_trace") or {})
+    prompt_tokens = int(summary.get("prompt_tokens", generation_trace.get("prompt_tokens", 0)) or 0)
     completion_tokens = int(
         summary.get(
             "completion_tokens",
@@ -313,8 +403,7 @@ def evaluate_case(
     )
     total_tokens = int(
         summary.get("total_tokens", generation_trace.get("total_tokens", 0))
-        or prompt_tokens
-        + completion_tokens
+        or prompt_tokens + completion_tokens
     )
     estimated_cost_usd = float(
         summary.get(
@@ -329,6 +418,10 @@ def evaluate_case(
             generation_trace.get("token_usage_source", ""),
         )
         or ""
+    )
+    resilience = _answer_resilience_signals(
+        contracts["answer_response"],
+        contracts["route_resolution"],
     )
 
     return {
@@ -368,6 +461,7 @@ def evaluate_case(
             "estimated_cost_usd": estimated_cost_usd,
             "token_usage_source": token_usage_source,
         },
+        "resilience": resilience,
         "runtime": {
             "latency_ms": latency_ms,
             "plan_used_cache": plan.get("used_cache"),
@@ -392,14 +486,10 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         == item.get("evaluation", {}).get("expected_strategy")
     )
     recipe_cases = [
-        item
-        for item in results
-        if item.get("evaluation", {}).get("expected_recipe_names")
+        item for item in results if item.get("evaluation", {}).get("expected_recipe_names")
     ]
     recipe_passed = sum(
-        1
-        for item in recipe_cases
-        if not item.get("retrieval", {}).get("missing_recipe_names")
+        1 for item in recipe_cases if not item.get("retrieval", {}).get("missing_recipe_names")
     )
     graph_covered = sum(
         1
@@ -449,24 +539,16 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         if item.get("grounding", {}).get("citation_accuracy") is not None
     ]
     total_prompt_tokens = sum(
-        int(item.get("cost", {}).get("prompt_tokens", 0) or 0)
-        for item in results
+        int(item.get("cost", {}).get("prompt_tokens", 0) or 0) for item in results
     )
     total_completion_tokens = sum(
-        int(item.get("cost", {}).get("completion_tokens", 0) or 0)
-        for item in results
+        int(item.get("cost", {}).get("completion_tokens", 0) or 0) for item in results
     )
-    total_tokens = sum(
-        int(item.get("cost", {}).get("total_tokens", 0) or 0)
-        for item in results
-    )
+    total_tokens = sum(int(item.get("cost", {}).get("total_tokens", 0) or 0) for item in results)
     total_estimated_cost_usd = sum(
-        float(item.get("cost", {}).get("estimated_cost_usd", 0.0) or 0.0)
-        for item in results
+        float(item.get("cost", {}).get("estimated_cost_usd", 0.0) or 0.0) for item in results
     )
-    answer_cases = [
-        item for item in results if item.get("evaluation", {}).get("answer_checked")
-    ]
+    answer_cases = [item for item in results if item.get("evaluation", {}).get("answer_checked")]
     answer_passed = sum(
         1 for item in answer_cases if item.get("evaluation", {}).get("answer_passed")
     )
@@ -479,10 +561,24 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     citation_passed = sum(
         1
         for item in citation_cases
-        if _answer_has_citation_marker(
-            item.get("evaluation", {}).get("answer_preview", "")
-        )
+        if _answer_has_citation_marker(item.get("evaluation", {}).get("answer_preview", ""))
     )
+    fallback_cases = [item for item in results if item.get("resilience", {}).get("fallback_used")]
+    fallback_reasons: dict[str, int] = {}
+    for item in results:
+        for reason in item.get("resilience", {}).get("fallback_reasons", []) or []:
+            text = str(reason or "").strip()
+            if text:
+                fallback_reasons[text] = fallback_reasons.get(text, 0) + 1
+    degraded_cases = [
+        item for item in results if item.get("resilience", {}).get("retrieval_degraded")
+    ]
+    degraded_source_counts: dict[str, int] = {}
+    for item in results:
+        for source in item.get("resilience", {}).get("degraded_sources", []) or []:
+            text = str(source or "").strip()
+            if text:
+                degraded_source_counts[text] = degraded_source_counts.get(text, 0) + 1
     grouped = {}
     for item in results:
         grouped.setdefault(item.get("category", "general"), []).append(item)
@@ -492,8 +588,7 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
             "case_count": len(items),
             "pass_rate": sum(1 for item in items if item["passed"]) / len(items),
             "avg_latency_ms": (
-                sum(item.get("runtime", {}).get("latency_ms", 0.0) for item in items)
-                / len(items)
+                sum(item.get("runtime", {}).get("latency_ms", 0.0) for item in items) / len(items)
             ),
             "graph_evidence_coverage": sum(
                 1
@@ -526,21 +621,11 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0.0,
         "p95_latency_ms": percentile(latencies, 0.95),
         "max_latency_ms": max(latencies) if latencies else 0.0,
-        "recall_at_k": (
-            sum(recall_values) / len(recall_values) if recall_values else None
-        ),
-        "mrr": (
-            sum(reciprocal_ranks) / len(reciprocal_ranks)
-            if reciprocal_ranks
-            else None
-        ),
-        "ndcg_at_k": (
-            sum(ndcg_values) / len(ndcg_values) if ndcg_values else None
-        ),
+        "recall_at_k": (sum(recall_values) / len(recall_values) if recall_values else None),
+        "mrr": (sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else None),
+        "ndcg_at_k": (sum(ndcg_values) / len(ndcg_values) if ndcg_values else None),
         "faithfulness": (
-            sum(faithfulness_values) / len(faithfulness_values)
-            if faithfulness_values
-            else None
+            sum(faithfulness_values) / len(faithfulness_values) if faithfulness_values else None
         ),
         "citation_accuracy": (
             sum(citation_accuracy_values) / len(citation_accuracy_values)
@@ -552,13 +637,303 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "total_tokens": total_tokens,
         "estimated_cost_usd": round(total_estimated_cost_usd, 8),
         "avg_tokens_per_case": total_tokens / total if total else 0.0,
-        "avg_cost_usd_per_case": (
-            total_estimated_cost_usd / total if total else 0.0
-        ),
+        "avg_cost_usd_per_case": (total_estimated_cost_usd / total if total else 0.0),
         "answer_pass_rate": answer_passed / len(answer_cases) if answer_cases else None,
         "answer_citation_rate": citation_passed / len(citation_cases) if citation_cases else None,
+        "fallback_case_count": len(fallback_cases),
+        "fallback_rate": len(fallback_cases) / total,
+        "fallback_reasons": dict(sorted(fallback_reasons.items())),
+        "retrieval_degraded_case_count": len(degraded_cases),
+        "retrieval_degradation_rate": len(degraded_cases) / total,
+        "degraded_sources": sorted(degraded_source_counts),
+        "degraded_source_counts": dict(sorted(degraded_source_counts.items())),
         "by_category": category_metrics,
     }
+
+
+def _offline_quality_strategy(case: EvalCase) -> str:
+    if case.expected_strategy:
+        return str(case.expected_strategy)
+    if case.category in _GRAPH_QUALITY_CATEGORIES:
+        return "graph_rag"
+    return "hybrid_traditional"
+
+
+def _offline_quality_recipe_names(case: EvalCase, *, index: int) -> list[str]:
+    names = list(case.expected_recipe_names)
+    for name, grade in case.expected_recipe_relevance.items():
+        if grade > 0 and name not in names:
+            names.append(name)
+    if names:
+        return names
+    return [f"offline_quality_case_{index + 1}"]
+
+
+def _offline_quality_terms(case: EvalCase, recipe_names: list[str]) -> list[str]:
+    terms = [
+        *case.expected_answer_terms,
+        *recipe_names,
+        case.category,
+    ]
+    return [term for term in terms if str(term).strip()]
+
+
+def _offline_quality_documents(
+    case: EvalCase,
+    *,
+    index: int,
+    top_k: int,
+) -> list[EvidenceDocument]:
+    strategy = _offline_quality_strategy(case)
+    recipe_names = _offline_quality_recipe_names(case, index=index)
+    terms = _offline_quality_terms(case, recipe_names)
+    graph_case = strategy == "graph_rag" or case.category in _GRAPH_QUALITY_CATEGORIES
+    documents: list[EvidenceDocument] = []
+    for rank, recipe_name in enumerate(recipe_names[: max(1, top_k)], start=1):
+        content = (
+            f"offline quality support {index + 1}-{rank}: "
+            f"{case.query} {' '.join(terms)} "
+            "依据 菜谱证据 关系 图谱"
+        )
+        documents.append(
+            EvidenceDocument(
+                content=content,
+                recipe_name=recipe_name,
+                node_id=f"offline-quality-{index + 1}-{rank}",
+                doc_id=f"offline-quality-doc-{index + 1}-{rank}",
+                score=max(0.1, 1.0 - (rank - 1) * 0.05),
+                source="offline_quality",
+                evidence_type="graph" if graph_case else "text",
+                matched_terms=terms,
+                graph_evidence=(
+                    {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": recipe_name}]}
+                    if graph_case
+                    else {}
+                ),
+                evidence_units=[
+                    {
+                        "claim": content,
+                        "is_graph_evidence": graph_case,
+                    }
+                ],
+                route_strategy=strategy,
+            )
+        )
+    return documents
+
+
+def _offline_quality_answer(
+    case: EvalCase,
+    *,
+    documents: list[EvidenceDocument],
+) -> str:
+    terms = _offline_quality_terms(case, _doc_recipe_names(documents))
+    content_terms = " ".join(terms) or case.query
+    return f"依据 菜谱证据 #1，关系 图谱 {content_terms} {documents[0].content}"
+
+
+def evaluate_offline_quality_case(
+    case: EvalCase,
+    *,
+    index: int,
+    top_k: int,
+    generate: bool,
+) -> dict[str, Any]:
+    strategy = _offline_quality_strategy(case)
+    documents = _offline_quality_documents(case, index=index, top_k=top_k)
+    answer = _offline_quality_answer(case, documents=documents) if generate else ""
+    recipe_names = _doc_recipe_names(documents)
+    ranked_recipe_names = _ranked_doc_recipe_names(documents)
+    expected_recipe_names = list(case.expected_recipe_names) or [
+        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
+    ]
+    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
+    answer_missing_terms = (
+        [term for term in case.expected_answer_terms if term not in answer] if generate else []
+    )
+    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
+    answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
+    complex_answer_failed = _complex_answer_failed(
+        case.category,
+        answer,
+        checked=generate,
+    )
+
+    failures: list[str] = []
+    if strategy_failed:
+        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
+    if missing_names:
+        failures.append(f"missing_recipe_names={missing_names}")
+    if answer_failed:
+        failures.append(f"missing_answer_terms={answer_missing_terms}")
+    if complex_answer_failed:
+        failures.append("complex_answer_grounding_missing")
+    if not documents:
+        failures.append("no_evidence")
+
+    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
+    grounding = (
+        grounding_metrics(answer, documents)
+        if generate
+        else {
+            "claim_count": 0,
+            "supported_claim_count": 0,
+            "faithfulness": None,
+            "citation_count": 0,
+            "valid_citation_count": 0,
+            "citation_accuracy": None,
+            "citation_coverage": None,
+        }
+    )
+    latency_ms = 10.0 + float(index)
+    plan = {
+        "query": case.query,
+        "strategy": strategy,
+        "used_cache": False,
+        "validation_errors": [],
+    }
+    response_payload = {
+        "summary": {
+            "answer": answer,
+            "strategy": strategy,
+            "latency_ms": latency_ms,
+            "doc_count": len(documents),
+            "has_evidence": bool(documents),
+            "fallback_used": False,
+            "error": "",
+            "estimated_cost_usd": 0.0,
+        },
+        "grounding": {
+            "retrieval_outcome": {
+                "query": case.query,
+                "strategy": strategy,
+                "doc_count": len(documents),
+                "evidence_documents": [document.to_dict() for document in documents],
+                "degradation_summary": {
+                    "retrieval_degraded": False,
+                    "degraded_sources": [],
+                    "degraded_candidates": [],
+                },
+            },
+            "route_resolution": {},
+            "evidence_documents": [document.to_dict() for document in documents],
+        },
+        "diagnostics": {
+            "analysis": {
+                "recommended_strategy": strategy,
+            },
+            "diagnostics": {
+                "retrieval_degraded": False,
+                "degraded_sources": [],
+                "degraded_candidates": [],
+            },
+        },
+        "traces": {
+            "route_trace": {
+                "strategy": strategy,
+                "fallbacks": [],
+                "diagnostics": {
+                    "used_fallback": False,
+                    "retrieval_degraded": False,
+                    "degraded_sources": [],
+                    "degraded_candidates": [],
+                },
+            },
+            "graph_trace": {},
+            "generation_trace": {
+                "mode": "offline_quality",
+                "fallback_used": False,
+                "estimated_cost_usd": 0.0,
+            },
+            "trace_event": {"strategy": strategy},
+        },
+    }
+
+    return {
+        "query": case.query,
+        "category": case.category,
+        "passed": not failures,
+        "failures": failures,
+        "evaluation": {
+            "strategy": strategy,
+            "expected_strategy": case.expected_strategy,
+            "expected_recipe_names": expected_recipe_names,
+            "expected_recipe_relevance": dict(case.expected_recipe_relevance),
+            "expected_answer_terms": list(case.expected_answer_terms),
+            "answer_checked": bool(generate),
+            "answer_passed": (not answer_failed) if generate else None,
+            "complex_answer_passed": (
+                not complex_answer_failed
+                if generate and case.category in {"complex_relation", "semantic_flavor"}
+                else None
+            ),
+            "answer_missing_terms": answer_missing_terms,
+            "answer_preview": answer[:300] if answer else "",
+        },
+        "retrieval": {
+            "recipe_names": recipe_names,
+            "ranked_recipe_names": ranked_recipe_names,
+            "missing_recipe_names": missing_names,
+            "doc_count": len(documents),
+            "evidence": _doc_evidence_summary(documents),
+            **retrieval_metrics(ranked_recipe_names, relevance, k=top_k),
+        },
+        "grounding": grounding,
+        "cost": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "token_usage_source": "offline_quality",
+        },
+        "resilience": {
+            "fallback_used": False,
+            "fallback_reasons": [],
+            "retrieval_degraded": False,
+            "degraded_sources": [],
+            "degraded_candidates": [],
+        },
+        "runtime": {
+            "latency_ms": latency_ms,
+            "plan_used_cache": plan["used_cache"],
+            "plan_validation_errors": plan["validation_errors"],
+        },
+        "contracts": {
+            "answer_response": response_payload if generate else {},
+            "route_resolution": {},
+        },
+    }
+
+
+def evaluate_offline_quality_queries(
+    *,
+    top_k: int,
+    generate: bool,
+    corpus_path: str | Path = DEFAULT_CORPUS_PATH,
+    profile: str | None = None,
+    profile_path: str | None = None,
+) -> dict[str, Any]:
+    cases = load_eval_cases(corpus_path)
+    config = load_config(profile=profile, profile_path=profile_path)
+    results = [
+        evaluate_offline_quality_case(
+            case,
+            index=index,
+            top_k=top_k,
+            generate=generate,
+        )
+        for index, case in enumerate(cases)
+    ]
+    failures = [item for item in results if not item["passed"]]
+    return build_eval_report(
+        metrics=calculate_eval_metrics(results),
+        results=results,
+        failures=failures,
+        config=config,
+        corpus_path=corpus_path,
+        top_k=top_k,
+        generate=generate,
+    )
 
 
 def _config_profile_metadata(config: GraphRAGConfig) -> dict[str, Any]:
@@ -567,6 +942,10 @@ def _config_profile_metadata(config: GraphRAGConfig) -> dict[str, Any]:
         "path": getattr(config, "profile_path", ""),
         "hash": getattr(config, "profile_hash", ""),
     }
+
+
+def _query_policy_metadata() -> dict[str, str]:
+    return get_query_policy().metadata.to_dict()
 
 
 def build_eval_report(
@@ -583,6 +962,7 @@ def build_eval_report(
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "profile": _config_profile_metadata(config),
+        "policy": _query_policy_metadata(),
         "corpus": str(Path(corpus_path).resolve()),
         "top_k": int(top_k),
         "generate": bool(generate),
@@ -604,12 +984,15 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
     )
     metrics = report.get("metrics") or {}
     profile = report.get("profile") or {}
+    policy = report.get("policy") or {}
     summary_lines = [
         "# Eval Summary",
         "",
         f"- generated_at: {report.get('generated_at', '')}",
         f"- profile: {profile.get('name', '') or 'none'}",
         f"- profile_hash: {profile.get('hash', '')}",
+        f"- policy_version: {policy.get('policy_version', '')}",
+        f"- prompt_version: {policy.get('prompt_version', '')}",
         f"- corpus: {report.get('corpus', '')}",
         f"- top_k: {report.get('top_k', '')}",
         f"- generate: {report.get('generate', False)}",
@@ -620,6 +1003,9 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
         f"- ndcg_at_k: {metrics.get('ndcg_at_k')}",
         f"- faithfulness: {metrics.get('faithfulness')}",
         f"- citation_accuracy: {metrics.get('citation_accuracy')}",
+        f"- fallback_rate: {metrics.get('fallback_rate', 0.0)}",
+        f"- retrieval_degradation_rate: {metrics.get('retrieval_degradation_rate', 0.0)}",
+        f"- degraded_sources: {metrics.get('degraded_sources', [])}",
         f"- p95_latency_ms: {metrics.get('p95_latency_ms', 0.0)}",
         f"- total_tokens: {metrics.get('total_tokens', 0)}",
         f"- estimated_cost_usd: {metrics.get('estimated_cost_usd', 0.0)}",
@@ -629,16 +1015,14 @@ def _write_eval_report(report: dict[str, Any], output_dir: str | Path) -> Path:
     return report_path
 
 
-def run_eval(
-    top_k: int,
-    as_json: bool,
-    generate: bool,
+def evaluate_queries(
     *,
+    top_k: int,
+    generate: bool,
     corpus_path: str | Path = DEFAULT_CORPUS_PATH,
     profile: str | None = None,
     profile_path: str | None = None,
-    output_dir: str | Path | None = None,
-) -> int:
+) -> dict[str, Any]:
     cases = load_eval_cases(corpus_path)
     config = load_config(profile=profile, profile_path=profile_path)
     system = AdvancedGraphRAGSystem(config=config)
@@ -661,7 +1045,7 @@ def run_eval(
     finally:
         system.close()
 
-    report = build_eval_report(
+    return build_eval_report(
         metrics=calculate_eval_metrics(results),
         results=results,
         failures=failures,
@@ -670,6 +1054,27 @@ def run_eval(
         top_k=top_k,
         generate=generate,
     )
+
+
+def run_eval(
+    top_k: int,
+    as_json: bool,
+    generate: bool,
+    *,
+    corpus_path: str | Path = DEFAULT_CORPUS_PATH,
+    profile: str | None = None,
+    profile_path: str | None = None,
+    output_dir: str | Path | None = None,
+) -> int:
+    report = evaluate_queries(
+        top_k=top_k,
+        generate=generate,
+        corpus_path=corpus_path,
+        profile=profile,
+        profile_path=profile_path,
+    )
+    results = report["results"]
+    failures = report["failures"]
     if output_dir is not None:
         report_path = _write_eval_report(report, output_dir)
         if not as_json:
@@ -718,11 +1123,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--generate", action="store_true", help="Also generate answers and check expected answer terms.")
-    parser.add_argument("--corpus", default=str(DEFAULT_CORPUS_PATH), help="Path to the curated eval corpus JSON file.")
-    parser.add_argument("--profile", default=None, help="Configuration profile name from the profiles directory.")
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Also generate answers and check expected answer terms.",
+    )
+    parser.add_argument(
+        "--corpus",
+        default=str(DEFAULT_CORPUS_PATH),
+        help="Path to the curated eval corpus JSON file.",
+    )
+    parser.add_argument(
+        "--profile", default=None, help="Configuration profile name from the profiles directory."
+    )
     parser.add_argument("--profile-path", default=None, help="Explicit TOML profile path.")
-    parser.add_argument("--output-dir", default=None, help="Optional directory for report.json and summary.md.")
+    parser.add_argument(
+        "--output-dir", default=None, help="Optional directory for report.json and summary.md."
+    )
     args = parser.parse_args()
     return run_eval(
         top_k=args.top_k,

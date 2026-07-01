@@ -13,12 +13,9 @@ from typing import Dict
 _EXPORTS: Dict[str, str] = {
     "AdvancedGraphRAGSystem": ".app.system",
     "GraphDataPreparationModule": ".build_pipeline.graph_data_preparation",
-    "GenerationIntegrationModule": ".generation.integration",
     "GenerationWorkflowService": ".generation.service",
-    "HybridRetrievalModule": ".retrieval",
     "KnowledgeBaseService": ".app.services.knowledge_base_service",
     "MilvusIndexConstructionModule": ".infra.milvus_index_construction",
-    "QuestionAnswerService": ".app.services.question_answer_service",
 }
 
 __all__ = list(_EXPORTS)

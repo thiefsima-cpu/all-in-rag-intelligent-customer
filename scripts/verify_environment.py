@@ -1,4 +1,4 @@
-"""Verify that GraphRAG runs from its repository-local virtual environment."""
+"""Verify that GraphRAG runs from its expected isolated conda environment."""
 
 from __future__ import annotations
 
@@ -7,14 +7,16 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Iterable
 
-DEVELOPMENT_ONLY_PACKAGES = frozenset(
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ENVIRONMENT_ONLY_PACKAGES = frozenset(
     {
         "build",
+        "pip",
         "pip-tools",
-        "pytest",
         "pygments",
         "pyproject-hooks",
         "wheel",
@@ -41,7 +43,10 @@ def _requirement_names(lines: Iterable[str]) -> set[str]:
 
 def find_runtime_lock_violations(lock_path: Path) -> list[str]:
     names = _requirement_names(lock_path.read_text(encoding="utf-8").splitlines())
-    return sorted(names.intersection(DEVELOPMENT_ONLY_PACKAGES))
+    pyproject_path = REPOSITORY_ROOT / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dev_dependencies = _requirement_names(pyproject["project"]["optional-dependencies"]["dev"])
+    return sorted(names.intersection(ENVIRONMENT_ONLY_PACKAGES | dev_dependencies))
 
 
 def validate_environment(
@@ -49,24 +54,35 @@ def validate_environment(
     prefix: str,
     base_prefix: str,
     executable: str,
-    expected_venv: Path,
+    expected_conda_env: str,
+    conda_default_env: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    if _normalized_path(prefix) == _normalized_path(base_prefix):
-        errors.append("Python is not running inside a virtual environment.")
-    expected = _normalized_path(expected_venv)
-    if _normalized_path(prefix) != expected:
+    active_conda_env = conda_default_env or Path(prefix).name
+    expected_conda_env_active = (
+        active_conda_env.lower() == expected_conda_env.lower()
+        and Path(prefix).name.lower() == expected_conda_env.lower()
+    )
+    if _normalized_path(prefix) == _normalized_path(base_prefix) and not expected_conda_env_active:
         errors.append(
-            f"Active virtual environment is {prefix!r}; expected repository environment {str(expected_venv)!r}."
+            "Python is not running inside an isolated virtual environment "
+            "or expected conda environment."
         )
+    if active_conda_env.lower() != expected_conda_env.lower():
+        errors.append(
+            f"Active conda environment is {active_conda_env!r}; expected {expected_conda_env!r}."
+        )
+    environment_root = _normalized_path(prefix)
     executable_path = _normalized_path(executable)
     try:
-        executable_is_local = os.path.commonpath([executable_path, expected]) == expected
+        executable_is_local = (
+            os.path.commonpath([executable_path, environment_root]) == environment_root
+        )
     except ValueError:
         executable_is_local = False
     if not executable_is_local:
         errors.append(
-            f"Python executable {executable!r} is outside the repository virtual environment."
+            f"Python executable {executable!r} is outside the active virtual environment."
         )
     return errors
 
@@ -83,9 +99,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     repository_root = Path(__file__).resolve().parents[1]
     parser.add_argument(
-        "--expected-venv",
-        type=Path,
-        default=repository_root / ".venv",
+        "--expected-conda-env",
+        default="graphrag-c9-dev",
     )
     parser.add_argument(
         "--runtime-lock",
@@ -100,14 +115,14 @@ def main() -> int:
         prefix=sys.prefix,
         base_prefix=sys.base_prefix,
         executable=sys.executable,
-        expected_venv=args.expected_venv,
+        expected_conda_env=args.expected_conda_env,
+        conda_default_env=os.environ.get("CONDA_DEFAULT_ENV"),
     )
     if not args.skip_runtime_lock:
         violations = find_runtime_lock_violations(args.runtime_lock)
         if violations:
             errors.append(
-                "Runtime lock contains development-only packages: "
-                + ", ".join(violations)
+                "Runtime lock contains development-only packages: " + ", ".join(violations)
             )
     if errors:
         for error in errors:
@@ -115,7 +130,7 @@ def main() -> int:
         return 1
     if not args.skip_pip_check and _run_pip_check() != 0:
         return 1
-    print(f"[OK] Isolated environment verified: {sys.executable}")
+    print(f"[OK] Isolated conda environment verified: {sys.executable}")
     return 0
 
 

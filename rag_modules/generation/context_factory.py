@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
-from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
-from ..runtime import AnswerContext, RetrievalOutcome
+from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+from ..runtime import (
+    AnalysisInput,
+    AnswerContext,
+    RetrievalOutcome,
+    ensure_optional_query_analysis,
+)
 from .models import AnswerPlan
 
 
@@ -61,7 +66,7 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
         package: AnswerEvidencePackage | None = None,
     ) -> AnswerEvidencePackage:
         if package is not None:
@@ -72,8 +77,8 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        documents: List[object | EvidenceDocument] | None = None,
-        analysis: Any = None,
+        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
+        analysis: AnalysisInput = None,
     ) -> AnswerContext:
         return self.build_answer_context_from_evidence(
             question=question,
@@ -86,7 +91,7 @@ class GenerationContextFactory:
         *,
         question: str,
         evidence_documents: List[EvidenceDocument] | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
     ) -> AnswerContext:
         return AnswerContext(
             question=question,
@@ -94,5 +99,5 @@ class GenerationContextFactory:
                 query=question,
                 evidence_documents=list(evidence_documents or []),
             ),
-            analysis=analysis,
+            analysis=ensure_optional_query_analysis(analysis),
         )

@@ -7,10 +7,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
+from ..contracts import EvidenceDocument, RetrievalRequest
+from ..safe_logging import log_failure
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan
 from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,16 @@ class GraphEvidenceOrchestrator:
         return self.graph_plan_builder.build(graph_query, evidence_goals=evidence_goals)
 
     def execute_graph_plan(self, retrieval_plan: GraphRetrievalPlan) -> List[GraphPath]:
+        query_type = retrieval_plan.query_type
+        source_count = len(retrieval_plan.source_entities or [])
+        target_count = len(retrieval_plan.target_entities or [])
+        linked_count = len(retrieval_plan.linked_sources or [])
         logger.info(
-            "Executing graph retrieval plan: type=%s source=%s target=%s linked_sources=%s",
-            retrieval_plan.query_type,
-            retrieval_plan.source_entities,
-            retrieval_plan.target_entities,
-            [entity.resolved_value for entity in retrieval_plan.linked_sources],
+            "Executing graph retrieval plan: type=%s source_count=%s target_count=%s linked_count=%s",
+            query_type,
+            source_count,
+            target_count,
+            linked_count,
         )
         if retrieval_plan.query_type == QueryType.PATH_FINDING.value:
             records = self.graph_executor.shortest_paths(retrieval_plan)
@@ -73,10 +78,12 @@ class GraphEvidenceOrchestrator:
 
     def extract_knowledge_subgraph(self, graph_query: Any) -> KnowledgeSubgraph:
         retrieval_plan = (
-            graph_query if isinstance(graph_query, GraphRetrievalPlan)
+            graph_query
+            if isinstance(graph_query, GraphRetrievalPlan)
             else self.build_retrieval_plan(graph_query, evidence_goals=[])
         )
-        logger.info("Extracting knowledge subgraph for %s", retrieval_plan.source_entities)
+        source_count = len(retrieval_plan.source_entities)
+        logger.info("Extracting knowledge subgraph: source_count=%s", source_count)
 
         if not self.graph_executor.driver:
             logger.error("Neo4j is not connected")
@@ -85,14 +92,18 @@ class GraphEvidenceOrchestrator:
         try:
             records = self.graph_executor.subgraphs(retrieval_plan)
             subgraphs = [
-                self.postprocessor.build_knowledge_subgraph(record)
-                for record in records
-                if record
+                self.postprocessor.build_knowledge_subgraph(record) for record in records if record
             ]
             if subgraphs:
                 return self.postprocessor.merge_subgraphs(subgraphs)
         except Exception as exc:
-            logger.error("Subgraph extraction failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
 
         return self.empty_subgraph()
 
@@ -113,7 +124,13 @@ class GraphEvidenceOrchestrator:
             )
             return outcome
         except Exception as exc:
-            logger.error("Graph structure reasoning failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return GraphReasoningOutcome()
 
     def retrieve(
@@ -211,7 +228,11 @@ class GraphEvidenceOrchestrator:
         trace,
         record_event: Callable[..., None],
     ) -> List[EvidenceDocument]:
-        if graph_query.query_type in {QueryType.MULTI_HOP, QueryType.PATH_FINDING, QueryType.ENTITY_RELATION}:
+        if graph_query.query_type in {
+            QueryType.MULTI_HOP,
+            QueryType.PATH_FINDING,
+            QueryType.ENTITY_RELATION,
+        }:
             path_start = time.perf_counter()
             paths = self.execute_graph_plan(retrieval_plan)
             trace.path_count = len(paths)
@@ -255,5 +276,3 @@ class GraphEvidenceOrchestrator:
                 request.query,
             )
         return []
-
-

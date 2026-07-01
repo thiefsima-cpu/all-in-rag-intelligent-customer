@@ -8,11 +8,18 @@ import unittest
 from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.runtime import GenerationSnapshot, QueryTraceEvent
-from rag_modules.runtime import GraphRetrievalSnapshot, RouteSnapshot, RouteStageSnapshot
-from rag_modules.tracing import QueryTracer
-from rag_modules.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
+from rag_modules.runtime import (
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    PolicySnapshot,
+    QueryTraceEvent,
+    RouteSnapshot,
+    RouteStageSnapshot,
+)
+from rag_modules.runtime.error_models import answer_error_detail, routing_error_detail
 
 
 class _CapturingSink:
@@ -42,6 +49,17 @@ class _BlockingSink:
 
     def close(self) -> None:
         self.closed = True
+
+
+def _policy_payload() -> dict:
+    return {
+        "schema_version": "policy-bundle-v1",
+        "policy_version": "c9-default-policy-v1",
+        "prompt_version": "c9-default-prompts-v1",
+        "policy_hash": "sha256:policy",
+        "prompt_hash": "sha256:prompt",
+        "bundle_name": "c9-default-v1",
+    }
 
 
 class QueryTracerTests(unittest.TestCase):
@@ -92,7 +110,7 @@ class QueryTracerTests(unittest.TestCase):
             documents=[EvidenceDocument(content="private evidence")],
             latency_ms=3.0,
             answer="private answer",
-            error=f"Authorization: Bearer {secret}",
+            error=answer_error_detail(RuntimeError(secret)),
             route_trace=RouteSnapshot(
                 query=question,
                 stages={
@@ -107,12 +125,11 @@ class QueryTracerTests(unittest.TestCase):
                         }
                     )
                 },
-                error=f"request failed with token={secret}",
+                error=routing_error_detail(RuntimeError(secret)),
             ),
             graph_trace=GraphRetrievalSnapshot(
                 query=question,
                 retrieval_plan={"question": question, "authorization": secret},
-                error=f"provider rejected {secret}",
             ),
         )
 
@@ -122,6 +139,7 @@ class QueryTracerTests(unittest.TestCase):
         self.assertNotIn("database-password", serialized)
         self.assertNotIn("private answer", serialized)
         self.assertNotIn("private evidence", serialized)
+        self.assertIn("ANSWER_FAILED", serialized)
         self.assertIn("sha256:", serialized)
 
     def test_query_tracer_honors_disabled_flag(self) -> None:
@@ -171,7 +189,6 @@ class QueryTracerTests(unittest.TestCase):
         self.assertTrue(delegate.closed)
         self.assertEqual([event.query for event in delegate.events], ["问题 A", "问题 B"])
 
-
     def test_async_sink_drops_when_queue_is_full_without_blocking_writer(self) -> None:
         delegate = _BlockingSink()
         sink = AsyncQueryTraceSink(delegate, max_queue_size=1)
@@ -219,6 +236,38 @@ class QueryTracerTests(unittest.TestCase):
         self.assertFalse(GenerationSnapshot().is_recorded())
         self.assertTrue(GenerationSnapshot(mode="direct").is_recorded())
         self.assertTrue(GenerationSnapshot(request_retries=1).is_recorded())
+        self.assertTrue(
+            GenerationSnapshot(policy=PolicySnapshot.from_dict(_policy_payload())).is_recorded()
+        )
+
+    def test_trace_snapshots_serialize_policy_metadata(self) -> None:
+        policy = PolicySnapshot.from_dict(_policy_payload())
+
+        self.assertEqual(RouteSnapshot(policy=policy).to_dict()["policy"], _policy_payload())
+        self.assertEqual(
+            GraphRetrievalSnapshot(policy=policy).to_dict()["policy"],
+            _policy_payload(),
+        )
+        self.assertEqual(
+            GenerationSnapshot(policy=policy).to_dict()["policy"],
+            _policy_payload(),
+        )
+        self.assertEqual(QueryTraceEvent(policy=policy).to_dict()["policy"], _policy_payload())
+
+    def test_route_trace_policy_is_preserved_in_query_trace(self) -> None:
+        tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
+        policy = PolicySnapshot.from_dict(_policy_payload())
+
+        event = tracer.record(
+            query="policy route",
+            analysis=None,
+            documents=[EvidenceDocument(content="evidence")],
+            latency_ms=1.0,
+            route_trace=RouteSnapshot(query="policy route", policy=policy),
+            generation_trace=GenerationSnapshot(status="success", mode="direct", policy=policy),
+        )
+
+        self.assertEqual(policy.policy_version, event.policy.policy_version)
 
     def test_generation_fallback_is_classified_as_degraded(self) -> None:
         tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
@@ -243,6 +292,54 @@ class QueryTracerTests(unittest.TestCase):
             "generation_provider_empty_choices",
             event.diagnostics.failure_reasons,
         )
+
+    def test_retrieval_source_degradation_is_exposed_in_query_diagnostics(self) -> None:
+        tracer = QueryTracer(self._build_config(), sink=_CapturingSink())
+        route_trace = RouteSnapshot(
+            query="degraded retrieval query",
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
+                            }
+                        ],
+                    },
+                )
+            },
+            final_doc_count=1,
+        )
+
+        event = tracer.record(
+            query="degraded retrieval query",
+            analysis=None,
+            documents=[EvidenceDocument(content="evidence")],
+            latency_ms=20.0,
+            route_trace=route_trace,
+            generation_trace=GenerationSnapshot(status="success", mode="direct"),
+        )
+
+        self.assertEqual(event.diagnostics.retrieval_bucket, "retrieval_degraded")
+        self.assertTrue(event.diagnostics.retrieval_degraded)
+        self.assertEqual(event.diagnostics.degraded_sources, ["vector"])
+        self.assertTrue(event.diagnostics.circuit_breaker_triggered)
+        self.assertFalse(event.diagnostics.answer_impacted)
+        self.assertEqual(
+            event.diagnostics.degraded_candidates[0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
+        self.assertIn("retrieval_degraded", event.diagnostics.failure_reasons)
 
 
 if __name__ == "__main__":

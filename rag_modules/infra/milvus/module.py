@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...runtime_contracts import EmbeddingClientPort
 from .blue_green import _MilvusBlueGreenOperations
 from .client import _MilvusClientOperations
 from .schema import _MilvusSchemaOperations
@@ -18,24 +19,27 @@ class MilvusIndexConstructionModule(
 ):
     """Milvus index construction module for vector writes, reads, and publish flow."""
 
-    def __init__(self, 
-                 host: str = "localhost", 
-                 port: int = 19530,
-                 collection_name: str = "cooking_knowledge",
-                 dimension: int = 512,
-                 model_name: str = "qwen3-vl-embedding",
-                 api_key: str = "",
-                 embedding_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
-                 embedding_batch_size: int = 10,
-                 embedding_timeout_seconds: int = 60,
-                 http_pool_connections: int = 10,
-                 http_pool_maxsize: int = 20,
-                 circuit_breaker_failure_threshold: int = 5,
-                 circuit_breaker_recovery_seconds: float = 30.0,
-                 vector_search_ef: int = 128,
-                 vector_search_max_k: int = 50,
-                 blue_green_enabled: bool = True,
-                 collection_alias_suffix: str = "__active"):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 19530,
+        collection_name: str = "cooking_knowledge",
+        dimension: int = 512,
+        model_name: str = "qwen3-vl-embedding",
+        api_key: str = "",
+        embedding_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+        embedding_batch_size: int = 10,
+        embedding_timeout_seconds: int = 60,
+        http_pool_connections: int = 10,
+        http_pool_maxsize: int = 20,
+        circuit_breaker_failure_threshold: int = 5,
+        circuit_breaker_recovery_seconds: float = 30.0,
+        vector_search_ef: int = 128,
+        vector_search_max_k: int = 50,
+        blue_green_enabled: bool = True,
+        collection_alias_suffix: str = "__active",
+        embedding_client: EmbeddingClientPort | None = None,
+    ):
         """
         初始化Milvus索引构建模块
 
@@ -67,10 +71,9 @@ class MilvusIndexConstructionModule(
         self.circuit_breaker_recovery_seconds = circuit_breaker_recovery_seconds
         self.vector_search_ef = vector_search_ef
         self.vector_search_max_k = vector_search_max_k
-        
-        self.client = None
-        self.embeddings = None
+        self.embedding_client = embedding_client
+
         self.collection_created = False
-        
+
         self._setup_client()
         self._setup_embeddings()

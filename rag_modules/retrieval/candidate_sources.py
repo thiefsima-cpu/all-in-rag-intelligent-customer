@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, List, Protocol, Sequence
+from typing import List, Protocol, Sequence
 
+from ..contracts import EvidenceDocument, RetrievalRequest
+from ..runtime_contracts import HybridCandidateRuntimePort
 from .adapters import ConstraintRetriever
-from .contracts import EvidenceDocument, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ class CandidateSourceSpec:
 class RetrievalCandidateSource(Protocol):
     """Stable contract for one hybrid retrieval candidate source."""
 
-    spec: CandidateSourceSpec
+    @property
+    def spec(self) -> CandidateSourceSpec: ...
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]: ...
 
@@ -52,7 +54,7 @@ class ConstraintCandidateSource:
 class DualLevelCandidateSource:
     """Dual-level retrieval source backed by runtime adapters."""
 
-    runtime: Any
+    runtime: HybridCandidateRuntimePort
     spec: CandidateSourceSpec = CandidateSourceSpec(
         name="dual",
         rank_name="dual_level",
@@ -69,7 +71,7 @@ class DualLevelCandidateSource:
 class VectorCandidateSource:
     """Vector retrieval source backed by runtime adapters."""
 
-    runtime: Any
+    runtime: HybridCandidateRuntimePort
     spec: CandidateSourceSpec = CandidateSourceSpec(
         name="vector",
         rank_name="vector",
@@ -79,21 +81,17 @@ class VectorCandidateSource:
     )
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        try:
-            return self.runtime.vector_candidates(
-                request.query,
-                top_k=request.effective_candidate_k,
-            )
-        except Exception as exc:
-            logger.error("Vector retrieval failed: %s", exc)
-            return []
+        return self.runtime.vector_candidates(
+            request.query,
+            top_k=request.effective_candidate_k,
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class Bm25CandidateSource:
     """BM25 retrieval source backed by runtime adapters."""
 
-    runtime: Any
+    runtime: HybridCandidateRuntimePort
     spec: CandidateSourceSpec = CandidateSourceSpec(
         name="bm25",
         rank_name="bm25",
@@ -115,7 +113,7 @@ class HybridCandidateSourceFactory(Protocol):
     def build(
         self,
         *,
-        runtime: Any,
+        runtime: HybridCandidateRuntimePort,
         constraint_retriever: ConstraintRetriever,
     ) -> Sequence[RetrievalCandidateSource]: ...
 
@@ -126,7 +124,7 @@ class DefaultHybridCandidateSourceFactory:
     @staticmethod
     def build(
         *,
-        runtime: Any,
+        runtime: HybridCandidateRuntimePort,
         constraint_retriever: ConstraintRetriever,
     ) -> Sequence[RetrievalCandidateSource]:
         return (

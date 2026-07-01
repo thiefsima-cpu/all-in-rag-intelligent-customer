@@ -6,9 +6,9 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List
 
-from neo4j import Driver
-
-from ...semantic_schema import infer_recipe_semantics
+from ...domain.shared.semantic_schema import infer_recipe_semantics
+from ...runtime_contracts import Neo4jDriverPort
+from ...safe_logging import log_failure
 from ...text_document import TextDocument
 from .models import GraphNode
 
@@ -49,7 +49,7 @@ class RecipeDocumentBuilder:
     def build(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipes: Iterable[GraphNode],
     ) -> List[TextDocument]:
@@ -82,18 +82,19 @@ class RecipeDocumentBuilder:
                     )
                 )
             except Exception as exc:
-                logger.warning(
-                    "Failed to build recipe document %s (ID: %s): %s",
-                    recipe.name,
-                    recipe_id,
-                    exc,
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "build_failed",
+                    code="BUILD_FAILED",
+                    error=exc,
                 )
         return documents
 
     def _load_ingredients_by_recipe(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipe_ids: List[str],
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -106,7 +107,7 @@ class RecipeDocumentBuilder:
     def _load_steps_by_recipe(
         self,
         *,
-        driver: Driver,
+        driver: Neo4jDriverPort,
         database: str,
         recipe_ids: List[str],
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -262,13 +263,17 @@ class RecipeDocumentBuilder:
         if semantics["cuisine_style_tags"]:
             semantic_lines.append(f"菜系风格标签: {', '.join(semantics['cuisine_style_tags'])}")
         if semantics["ingredient_category_tags"]:
-            semantic_lines.append(f"食材类别标签: {', '.join(semantics['ingredient_category_tags'])}")
+            semantic_lines.append(
+                f"食材类别标签: {', '.join(semantics['ingredient_category_tags'])}"
+            )
         if semantics["time_profile_tags"]:
             semantic_lines.append(f"时间轮廓标签: {', '.join(semantics['time_profile_tags'])}")
         if semantics["difficulty_level_tags"]:
             semantic_lines.append(f"难度标签: {', '.join(semantics['difficulty_level_tags'])}")
         contribution_items = semantics["semantic_relations"].get("CONTRIBUTES_TO") or []
         if contribution_items:
-            relation_text = [f"{'/'.join(item['causes'])} -> {item['effect']}" for item in contribution_items]
+            relation_text = [
+                f"{'/'.join(item['causes'])} -> {item['effect']}" for item in contribution_items
+            ]
             semantic_lines.append(f"语义贡献: {'; '.join(relation_text)}")
         return semantic_lines

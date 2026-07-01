@@ -78,5 +78,54 @@ class ServingRuntimeLifecycleService:
             force=force,
         )
 
+    def prepare_existing(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None:
+        if runtime is None:
+            return None
+        return self.prepare_with_shared_runtime(
+            runtime,
+            shared_runtime=shared_runtime,
+            progress=progress,
+            force=force,
+        )
+
+    def prepare_if_needed(
+        self,
+        runtime: ServingRuntime,
+        *,
+        shared_runtime: BuildRuntime | None = None,
+        progress: ProgressCallback = None,
+    ) -> ServingRuntime:
+        if runtime.system_ready:
+            return runtime
+        return self.prepare_with_shared_runtime(
+            runtime,
+            shared_runtime=shared_runtime,
+            progress=progress,
+        )
+
+    def refresh_from_build(
+        self,
+        runtime: ServingRuntime | None,
+        *,
+        build_runtime: BuildRuntime,
+        progress: ProgressCallback = None,
+        force: bool = False,
+    ) -> ServingRuntime | None:
+        if runtime is None or not runtime.is_initialized():
+            return runtime
+        return self.prepare_with_shared_runtime(
+            runtime,
+            shared_runtime=build_runtime,
+            progress=progress,
+            force=force,
+        )
+
 
 __all__ = ["ServingRuntimeLifecycleService"]

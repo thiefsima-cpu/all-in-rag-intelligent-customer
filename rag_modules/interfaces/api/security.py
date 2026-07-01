@@ -4,48 +4,100 @@ from __future__ import annotations
 
 import hmac
 import json
-from typing import Any, Dict
+from typing import Any, cast
 
-from ...configuration.models import ApiSettings
+from fastapi import FastAPI
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-_PUBLIC_PATHS = frozenset(
+from ...configuration.models import ApiSettings, ObservabilitySettings
+from .error_models import ERROR_STATUS_CODES, ErrorCode, build_error_payload
+from .request_context import current_request_id
+from .versioning import API_PREFIX
+
+_BASE_PUBLIC_PATHS = frozenset(
     {
-        "/",
-        "/health",
-        "/health/live",
-        "/health/ready",
-        "/metrics",
-        "/docs",
-        "/docs/oauth2-redirect",
-        "/redoc",
-        "/openapi.json",
+        f"{API_PREFIX}/health",
+        f"{API_PREFIX}/health/live",
+        f"{API_PREFIX}/health/ready",
     }
 )
+_DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
+
+def public_paths_for_settings(
+    *,
+    api_settings: ApiSettings,
+    observability_settings: ObservabilitySettings | None = None,
+) -> frozenset[str]:
+    """Return registered paths that are intentionally anonymous."""
+
+    paths = set(_BASE_PUBLIC_PATHS)
+    if api_settings.docs_enabled and api_settings.docs_public:
+        paths.update(_DOCS_PATHS)
+    if api_settings.openapi_enabled and api_settings.openapi_public:
+        paths.add("/openapi.json")
+    if getattr(observability_settings, "enable_prometheus", False) and getattr(
+        observability_settings,
+        "prometheus_public",
+        False,
+    ):
+        paths.add("/metrics")
+    return frozenset(paths)
+
+
+def unauthenticated_passthrough_paths_for_settings(
+    *,
+    api_settings: ApiSettings,
+    observability_settings: ObservabilitySettings | None = None,
+) -> frozenset[str]:
+    """Return anonymous paths, including disabled management routes that should 404."""
+
+    paths = set(
+        public_paths_for_settings(
+            api_settings=api_settings,
+            observability_settings=observability_settings,
+        )
+    )
+    if not api_settings.docs_enabled:
+        paths.update(_DOCS_PATHS)
+    if not api_settings.openapi_enabled:
+        paths.add("/openapi.json")
+    if not getattr(observability_settings, "enable_prometheus", False):
+        paths.add("/metrics")
+    return frozenset(paths)
 
 
 class ApiSecurityMiddleware:
     """Fail-closed API token authentication plus bounded request buffering."""
 
-    def __init__(self, app, *, settings: ApiSettings) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        settings: ApiSettings,
+        observability_settings: ObservabilitySettings | None = None,
+    ) -> None:
         self.app = app
         self.settings = settings
+        self.unauthenticated_paths = unauthenticated_passthrough_paths_for_settings(
+            api_settings=settings,
+            observability_settings=observability_settings,
+        )
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
 
         path = str(scope.get("path") or "")
-        if path not in _PUBLIC_PATHS:
+        if path not in self.unauthenticated_paths:
             auth_error = self._authentication_error(scope)
             if auth_error is not None:
-                status_code, message = auth_error
-                await self._send_json(
+                await self._send_error(
                     send,
-                    status_code=status_code,
-                    payload={"ok": False, "message": message},
-                    authenticate=status_code == 401,
+                    code=auth_error,
+                    authenticate=auth_error is ErrorCode.UNAUTHORIZED,
                 )
                 return
 
@@ -57,44 +109,47 @@ class ApiSecurityMiddleware:
 
         await self.app(scope, receive, send)
 
-    def _authentication_error(self, scope) -> tuple[int, str] | None:
+    def _authentication_error(self, scope: Scope) -> ErrorCode | None:
         if not self.settings.auth_enabled:
             return None
         expected = str(self.settings.access_token or "")
-        if not expected:
-            return 503, "API authentication is enabled but no access token is configured."
-        if len(expected) < 16:
-            return 503, "API access token must contain at least 16 characters."
+        if not expected or len(expected) < 16:
+            return ErrorCode.SERVICE_MISCONFIGURED
 
         headers = self._headers(scope)
         authorization = headers.get("authorization", "")
-        bearer = ""
-        if authorization.lower().startswith("bearer "):
-            bearer = authorization[7:].strip()
-        api_key = headers.get("x-api-key", "").strip()
-        provided = bearer or api_key
+        bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        provided = bearer or headers.get("x-api-key", "").strip()
         if not provided or not hmac.compare_digest(provided, expected):
-            return 401, "Invalid or missing API credentials."
+            return ErrorCode.UNAUTHORIZED
         return None
 
-    async def _buffer_request_body(self, scope, receive, send):
+    async def _buffer_request_body(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> Receive | None:
         max_bytes = int(self.settings.max_request_body_bytes)
         headers = self._headers(scope)
         content_length = headers.get("content-length")
         if content_length:
             try:
                 if int(content_length) > max_bytes:
-                    await self._request_too_large(send, max_bytes)
+                    await self._send_error(
+                        send,
+                        code=ErrorCode.REQUEST_TOO_LARGE,
+                        details={"max_bytes": max_bytes},
+                    )
                     return None
             except ValueError:
-                await self._send_json(
+                await self._send_error(
                     send,
-                    status_code=400,
-                    payload={"ok": False, "message": "Invalid Content-Length header."},
+                    code=ErrorCode.INVALID_REQUEST,
                 )
                 return None
 
-        messages = []
+        messages: list[Message] = []
         total = 0
         while True:
             message = await receive()
@@ -105,12 +160,16 @@ class ApiSecurityMiddleware:
                 continue
             total += len(message.get("body") or b"")
             if total > max_bytes:
-                await self._request_too_large(send, max_bytes)
+                await self._send_error(
+                    send,
+                    code=ErrorCode.REQUEST_TOO_LARGE,
+                    details={"max_bytes": max_bytes},
+                )
                 return None
             if not message.get("more_body", False):
                 break
 
-        async def replay():
+        async def replay() -> Message:
             if messages:
                 return messages.pop(0)
             return await receive()
@@ -118,30 +177,25 @@ class ApiSecurityMiddleware:
         return replay
 
     @staticmethod
-    def _headers(scope) -> Dict[str, str]:
+    def _headers(scope: Scope) -> dict[str, str]:
         return {
             key.decode("latin-1").lower(): value.decode("latin-1")
             for key, value in scope.get("headers") or []
         }
 
-    async def _request_too_large(self, send, max_bytes: int) -> None:
-        await self._send_json(
-            send,
-            status_code=413,
-            payload={
-                "ok": False,
-                "message": f"Request body exceeds the {max_bytes}-byte limit.",
-            },
-        )
-
     @staticmethod
-    async def _send_json(
-        send,
+    async def _send_error(
+        send: Send,
         *,
-        status_code: int,
-        payload: Dict[str, Any],
+        code: ErrorCode,
+        details: dict[str, Any] | None = None,
         authenticate: bool = False,
     ) -> None:
+        payload = build_error_payload(
+            code,
+            request_id=current_request_id(),
+            details=details,
+        )
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = [
             (b"content-type", b"application/json; charset=utf-8"),
@@ -152,19 +206,28 @@ class ApiSecurityMiddleware:
         await send(
             {
                 "type": "http.response.start",
-                "status": status_code,
+                "status": ERROR_STATUS_CODES[code],
                 "headers": headers,
             }
         )
         await send({"type": "http.response.body", "body": body})
 
 
-def configure_openapi_security(app) -> None:
+def configure_openapi_security(
+    app: FastAPI,
+    *,
+    api_settings: ApiSettings,
+    observability_settings: ObservabilitySettings | None = None,
+) -> None:
     original_openapi = app.openapi
+    public_paths = public_paths_for_settings(
+        api_settings=api_settings,
+        observability_settings=observability_settings,
+    )
 
-    def secured_openapi():
+    def secured_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:
-            return app.openapi_schema
+            return cast(dict[str, Any], app.openapi_schema)
         schema = original_openapi()
         schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
         schemes["BearerAuth"] = {
@@ -177,14 +240,18 @@ def configure_openapi_security(app) -> None:
             "name": "X-API-Key",
         }
         schema["security"] = [{"BearerAuth": []}, {"ApiKeyAuth": []}]
-        for path in _PUBLIC_PATHS:
+        for path in public_paths:
             for operation in (schema.get("paths", {}).get(path) or {}).values():
                 if isinstance(operation, dict):
                     operation["security"] = []
         app.openapi_schema = schema
         return schema
 
-    app.openapi = secured_openapi
+    setattr(app, "openapi", secured_openapi)
 
 
-__all__ = ["ApiSecurityMiddleware", "configure_openapi_security"]
+__all__ = [
+    "ApiSecurityMiddleware",
+    "configure_openapi_security",
+    "public_paths_for_settings",
+]

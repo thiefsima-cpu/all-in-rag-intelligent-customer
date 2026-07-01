@@ -13,21 +13,17 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.generation import (
     GenerationPlanner,
     GenerationPromptBuilder,
     GenerationSettings,
     decide_generation_mode,
 )
-from rag_modules.retrieval.contracts import EvidenceDocument
 from rag_modules.runtime import AnswerContext, QueryAnalysis, RetrievalOutcome
 
-
 DEFAULT_CORPUS_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "tests"
-    / "fixtures"
-    / "generation_plan_corpus.json"
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "generation_plan_corpus.json"
 )
 
 
@@ -64,9 +60,7 @@ class GenerationPlanSmokeCase:
             analysis=QueryAnalysis.from_dict(payload.get("analysis") or {}),
             expected_mode=str(payload.get("expected_mode") or "").strip(),
             expected_answer_type=str(payload.get("expected_answer_type") or "").strip(),
-            expected_reasoning_mode=str(
-                payload.get("expected_reasoning_mode") or ""
-            ).strip(),
+            expected_reasoning_mode=str(payload.get("expected_reasoning_mode") or "").strip(),
             expected_package_items=max(0, int(payload.get("expected_package_items") or 0)),
             expected_min_key_points=max(
                 0,
@@ -91,7 +85,9 @@ def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[GenerationPlanSmo
     return [GenerationPlanSmokeCase.from_dict(item) for item in payload if isinstance(item, dict)]
 
 
-def build_generation_stack() -> tuple[GenerationSettings, AnswerEvidenceBuilder, GenerationPromptBuilder, GenerationPlanner]:
+def build_generation_stack() -> tuple[
+    GenerationSettings, AnswerEvidenceBuilder, GenerationPromptBuilder, GenerationPlanner
+]:
     settings = GenerationSettings(planner_mode="rule")
     evidence_builder = AnswerEvidenceBuilder(max_content_chars=700)
     prompt_builder = GenerationPromptBuilder(settings=settings, evidence_max_chars=700)
@@ -133,9 +129,7 @@ def evaluate_case(
     )
     compose_prompt = rendered_prompt.text
 
-    graph_key_points = [
-        point for point in plan.key_points if bool(point.get("use_graph_evidence"))
-    ]
+    graph_key_points = [point for point in plan.key_points if bool(point.get("use_graph_evidence"))]
     citations = sorted(
         {
             citation
@@ -146,8 +140,9 @@ def evaluate_case(
     )
 
     failures: List[str] = []
-    if decision.mode != case.expected_mode:
-        failures.append(f"expected_mode={case.expected_mode} actual_mode={decision.mode}")
+    decision_mode = decision.mode_value
+    if decision_mode != case.expected_mode:
+        failures.append(f"expected_mode={case.expected_mode} actual_mode={decision_mode}")
     if plan.answer_type != case.expected_answer_type:
         failures.append(
             f"expected_answer_type={case.expected_answer_type} actual_answer_type={plan.answer_type}"
@@ -188,7 +183,7 @@ def evaluate_case(
         "passed": not failures,
         "failures": failures,
         "decision": {
-            "mode": decision.mode,
+            "mode": decision_mode,
             "reason": decision.reason,
             "evidence_limit": decision.evidence_limit,
         },

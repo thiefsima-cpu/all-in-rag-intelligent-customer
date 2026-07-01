@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..configuration.models import GraphSettings
-from ..retrieval.contracts import EvidenceDocument
-from ..semantic_schema import SEMANTIC_RELATION_TYPES
+from ..contracts import EvidenceDocument
+from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
 
 
 class GraphDocumentRanker:
@@ -63,7 +63,9 @@ class GraphDocumentRanker:
 
     def _score(self, doc: EvidenceDocument, query: str) -> float:
         metadata = doc.metadata or {}
-        score = float(metadata.get("relevance_score") or metadata.get("final_score") or doc.score or 0.0)
+        score = float(
+            metadata.get("relevance_score") or metadata.get("final_score") or doc.score or 0.0
+        )
         score *= self.base_weight
         relationships = self._relationships(doc)
         semantic_rel_count = sum(
@@ -72,16 +74,14 @@ class GraphDocumentRanker:
             if isinstance(rel, dict) and (rel.get("type") or "") in SEMANTIC_RELATION_TYPES
         )
         if not semantic_rel_count:
-            semantic_rel_count = int((doc.graph_evidence or {}).get("semantic_relationship_count") or 0)
+            semantic_rel_count = int(
+                (doc.graph_evidence or {}).get("semantic_relationship_count") or 0
+            )
 
         score += semantic_rel_count * self.semantic_relation_weight
         score += len(relationships) * self.relationship_weight
         score += len(doc.evidence_units or []) * self.evidence_unit_weight
-        if (
-            metadata.get("recipe_node_ids")
-            or metadata.get("recipe_names")
-            or doc.recipe_name
-        ):
+        if metadata.get("recipe_node_ids") or metadata.get("recipe_names") or doc.recipe_name:
             score += self.recipe_presence_weight
         score += self._query_overlap(doc, query) * self.query_overlap_weight
         return score
@@ -91,10 +91,18 @@ class GraphDocumentRanker:
         relationships: List[dict] = []
         graph_evidence = doc.graph_evidence or {}
         if isinstance(graph_evidence, dict):
-            relationships.extend([rel for rel in graph_evidence.get("relationships") or [] if isinstance(rel, dict)])
+            relationships.extend(
+                [rel for rel in graph_evidence.get("relationships") or [] if isinstance(rel, dict)]
+            )
         recipe_evidence = doc.recipe_graph_evidence or {}
         if isinstance(recipe_evidence, dict):
-            relationships.extend([rel for rel in recipe_evidence.get("semantic_relations") or [] if isinstance(rel, dict)])
+            relationships.extend(
+                [
+                    rel
+                    for rel in recipe_evidence.get("semantic_relations") or []
+                    if isinstance(rel, dict)
+                ]
+            )
         return relationships
 
     @staticmethod
@@ -102,7 +110,9 @@ class GraphDocumentRanker:
         if not query:
             return 0
         metadata = doc.metadata or {}
-        metadata_text = " ".join(str(value) for value in metadata.values() if isinstance(value, str))
+        metadata_text = " ".join(
+            str(value) for value in metadata.values() if isinstance(value, str)
+        )
         text = f"{doc.content or ''} {metadata_text}"
         return sum(1 for char in set(query) if char.strip() and char in text)
 
@@ -116,5 +126,3 @@ class GraphDocumentRanker:
         if recipe_names:
             return "recipe_name::" + str(recipe_names[0])
         return doc.document_key()
-
-

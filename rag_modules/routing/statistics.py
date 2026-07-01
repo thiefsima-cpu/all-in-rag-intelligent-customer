@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
 
 from ..runtime import SearchStrategy
+from ..runtime.json_types import JsonObject
 
 
 @dataclass
@@ -26,7 +26,7 @@ class RouteStatisticsTracker:
         elif strategy == SearchStrategy.COMBINED:
             self.combined_count += 1
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "traditional_count": self.traditional_count,
             "graph_rag_count": self.graph_rag_count,
@@ -34,7 +34,7 @@ class RouteStatisticsTracker:
             "total_queries": self.total_queries,
         }
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> JsonObject:
         payload = self.to_dict()
         total = self.total_queries
         if total == 0:

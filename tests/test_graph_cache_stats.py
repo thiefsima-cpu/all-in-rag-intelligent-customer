@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from rag_modules.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.graph.cache import GraphCacheStats, GraphCacheStatsStore
+from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
 
 
 class GraphCacheStatsTests(unittest.TestCase):

@@ -7,12 +7,14 @@ from ...runtime import (
     GraphRetrievalSnapshot,
     QueryTraceEvent,
     RouteSnapshot,
+    RuntimeErrorDetail,
 )
 from ...runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from ...runtime_contracts import QueryTracerPort
 from .answer_models import AnswerPipelineState, AnswerTraceBundle
 
 
@@ -22,9 +24,9 @@ class AnswerTraceAssembler:
     def __init__(
         self,
         *,
-        query_tracer,
-        query_router=None,
-        generation_service=None,
+        query_tracer: QueryTracerPort | None,
+        query_router: object | None = None,
+        generation_service: object | None = None,
     ) -> None:
         del query_router, generation_service
         self.query_tracer = query_tracer
@@ -35,7 +37,7 @@ class AnswerTraceAssembler:
         state: AnswerPipelineState,
         latency_ms: float,
         answer: str | None = None,
-        error: str | None = None,
+        error: RuntimeErrorDetail | None = None,
     ) -> AnswerTraceBundle:
         route_trace = self._state_route_snapshot(state)
         graph_trace = self._state_graph_snapshot(state)

@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
-from ..artifacts import ArtifactManifest
 from ..configuration.models import GraphRAGConfig
-from .legacy_surface import (
-    GROUPED_LEGACY_ATTRIBUTE_MAP,
-    merge_legacy_dir_names,
-    resolve_grouped_legacy_attribute,
-)
+from ..runtime.artifacts import ArtifactManifest
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view_builder import SystemRuntimeViewBuilder
 from .runtime_views import (
@@ -107,16 +102,6 @@ class SystemRuntime:
                 serving_runtime=self.serving_runtime,
             )
         return self._services_view
-
-    def __getattr__(self, name: str) -> Any:
-        return resolve_grouped_legacy_attribute(
-            self,
-            GROUPED_LEGACY_ATTRIBUTE_MAP,
-            name,
-        )
-
-    def __dir__(self) -> list[str]:
-        return merge_legacy_dir_names(object.__dir__(self), GROUPED_LEGACY_ATTRIBUTE_MAP)
 
 
 __all__ = [

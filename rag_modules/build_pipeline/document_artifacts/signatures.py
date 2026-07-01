@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...artifacts import (
+from ...runtime.artifacts import (
     compute_document_signature,
     compute_embedding_signature,
     compute_graph_signature,

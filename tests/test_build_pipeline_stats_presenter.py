@@ -29,7 +29,9 @@ class KnowledgeBaseStatsPresenterTests(unittest.TestCase):
         stats_access = _FakeRuntimeStatsAccess()
         presenter = KnowledgeBaseStatsPresenter(
             runtime_stats_access=stats_access,
-            data_module=type("DataModule", (), {"stats": {"total_recipes": 2, "total_chunks": 4}})(),
+            data_module=type(
+                "DataModule", (), {"stats": {"total_recipes": 2, "total_chunks": 4}}
+            )(),
             index_module=type("IndexModule", (), {"stats": {"row_count": 4}})(),
             query_router=type("QueryRouter", (), {"stats": {"total_queries": 3}})(),
         )

@@ -5,12 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from langchain_core.documents import Document
+from rank_bm25 import BM25Okapi
 
-from ..query_constraints import RecipeConstraintMatcher
-from .adapters import GraphKVRetriever, VectorRetriever
-from .contracts import EvidenceDocument
+from ..configuration.models import GraphRAGConfig
+from ..contracts import EvidenceDocument, RetrievalRequest
+from ..graph_index import GraphIndexingModule
+from ..parent_doc_enricher import ParentDocumentEnricher
+from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
+from ..text_document import TextDocument
+from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
+from .evidence import RecipeConstraintMatcher
 from .hybrid_driver_service import HybridDriverService
 from .hybrid_index_service import HybridIndexArtifacts, HybridIndexService
 from .hybrid_parent_document_service import HybridParentDocumentService
@@ -30,16 +35,16 @@ class HybridRetrievalRuntime:
     def __init__(
         self,
         *,
-        config,
-        milvus_module,
-        neo4j_manager,
+        config: GraphRAGConfig,
+        milvus_module: VectorIndexModulePort,
+        neo4j_manager: Neo4jManagerPort | None,
         database: str,
-        graph_indexing,
+        graph_indexing: GraphIndexingModule,
         graph_kv_retriever: GraphKVRetriever,
         keyword_extractor: QueryKeywordExtractor,
         index_service: HybridIndexService,
-        bm25_retriever,
-        parent_enricher,
+        bm25_retriever: BM25Retriever,
+        parent_enricher: ParentDocumentEnricher,
         adapter_factory: Optional[HybridRuntimeAdapterFactory] = None,
         driver_service: Optional[HybridDriverService] = None,
         parent_document_service: Optional[HybridParentDocumentService] = None,
@@ -66,15 +71,15 @@ class HybridRetrievalRuntime:
         self.state = HybridRetrievalState()
 
     @property
-    def driver(self):
+    def driver(self) -> Neo4jDriverPort | None:
         return self.state.driver
 
     @property
-    def bm25(self):
+    def bm25(self) -> BM25Okapi | None:
         return self.state.bm25
 
     @property
-    def bm25_corpus_docs(self) -> List[Document]:
+    def bm25_corpus_docs(self) -> List[TextDocument]:
         return list(self.state.bm25_corpus_docs or [])
 
     @property
@@ -82,7 +87,7 @@ class HybridRetrievalRuntime:
         return bool(self.state.graph_indexed)
 
     @property
-    def parent_doc_map(self) -> Dict[str, Document]:
+    def parent_doc_map(self) -> Dict[str, TextDocument]:
         return dict(self.state.parent_doc_map or {})
 
     @property
@@ -90,14 +95,14 @@ class HybridRetrievalRuntime:
         return self.state.recipe_matcher
 
     @property
-    def vector_retriever(self):
+    def vector_retriever(self) -> VectorRetriever | None:
         return self.state.vector_retriever
 
     @property
-    def dual_level_service(self):
+    def dual_level_service(self) -> DualLevelRetriever | None:
         return self.state.dual_level_service
 
-    def initialize(self, chunks: List[Document]) -> None:
+    def initialize(self, chunks: List[TextDocument]) -> None:
         logger.info("Initializing hybrid retrieval module...")
         self.driver_service.ensure_driver(self.state)
         self.state.vector_retriever = self._new_vector_retriever()
@@ -137,7 +142,7 @@ class HybridRetrievalRuntime:
         if self.index_service.restore_bm25_retriever(payload):
             self._sync_bm25_state()
 
-    def sync_legacy_bm25_fields(self) -> None:
+    def sync_bm25_state(self) -> None:
         self._sync_bm25_state()
 
     def _sync_bm25_state(self) -> None:
@@ -148,14 +153,14 @@ class HybridRetrievalRuntime:
         self.index_service._build_graph_index(self.driver)
         self.state.graph_indexed = bool(self.index_service.graph_indexed)
 
-    def build_parent_doc_map(self) -> Dict[str, Document]:
+    def build_parent_doc_map(self) -> Dict[str, TextDocument]:
         return self.parent_documents.build_parent_doc_map(self.state)
 
     def attach_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.parent_documents.attach_documents(
             self.state,
             docs,
@@ -164,9 +169,9 @@ class HybridRetrievalRuntime:
 
     def enrich_to_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.parent_documents.enrich_documents(
             self.state,
             docs,
@@ -217,7 +222,7 @@ class HybridRetrievalRuntime:
             top_k=top_k,
         )
 
-    def dual_level_candidates(self, request) -> List[EvidenceDocument]:
+    def dual_level_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self.ensure_dual_level_service().search(request)
 
     def vector_candidates(

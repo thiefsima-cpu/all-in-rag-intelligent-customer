@@ -16,13 +16,19 @@ class RetrievalPostProcessSettings:
     rerank_timeout_seconds: int = int(_POSTPROCESS_DEFAULTS.get("rerank_timeout_seconds", 20))
     preserve_graph_evidence: bool = bool(_POSTPROCESS_DEFAULTS.get("preserve_graph_evidence", True))
     graph_preservation_strategies: tuple[str, ...] = field(
-        default_factory=lambda: tuple(_POSTPROCESS_DEFAULTS.get("graph_preservation_strategies", ("graph_rag", "combined")))
+        default_factory=lambda: tuple(
+            _POSTPROCESS_DEFAULTS.get("graph_preservation_strategies", ("graph_rag", "combined"))
+        )
     )
 
     def __post_init__(self) -> None:
         self.enable_rerank = bool(self.enable_rerank)
-        self.rerank_model = str(self.rerank_model or _POSTPROCESS_DEFAULTS.get("rerank_model", "qwen3-vl-rerank"))
-        self.rerank_base_url = str(self.rerank_base_url or _POSTPROCESS_DEFAULTS.get("rerank_base_url", ""))
+        self.rerank_model = str(
+            self.rerank_model or _POSTPROCESS_DEFAULTS.get("rerank_model", "qwen3-vl-rerank")
+        )
+        self.rerank_base_url = str(
+            self.rerank_base_url or _POSTPROCESS_DEFAULTS.get("rerank_base_url", "")
+        )
         self.rerank_timeout_seconds = _as_int(
             self.rerank_timeout_seconds,
             int(_POSTPROCESS_DEFAULTS.get("rerank_timeout_seconds", 20)),
@@ -33,7 +39,9 @@ class RetrievalPostProcessSettings:
             str(item).strip()
             for item in (self.graph_preservation_strategies or ())
             if str(item).strip()
-        ) or tuple(_POSTPROCESS_DEFAULTS.get("graph_preservation_strategies", ("graph_rag", "combined")))
+        ) or tuple(
+            _POSTPROCESS_DEFAULTS.get("graph_preservation_strategies", ("graph_rag", "combined"))
+        )
 
     @classmethod
     def from_config(cls, config) -> "RetrievalPostProcessSettings":

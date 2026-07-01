@@ -21,7 +21,6 @@ from .graph_intent import (
     infer_query_semantic_profile,
     split_graph_entities,
 )
-from .planner_models import QueryPlan
 from .planner_service import QueryPlanner
 from .registry import (
     CLUSTERING_MARKERS,
@@ -43,8 +42,6 @@ from .registry import (
     INGREDIENT_CATEGORY_TERMS,
     PATH_MARKERS,
     QUERY_STOPWORDS,
-    QuerySemanticProfile,
-    QuerySemanticScoreBreakdown,
     RECOMMENDATION_MARKERS,
     RELATION_INDEX_KEYWORDS,
     RELATION_MARKERS,
@@ -90,10 +87,7 @@ __all__ = [
     "INGREDIENT_CATEGORY_TERMS",
     "PATH_MARKERS",
     "QUERY_STOPWORDS",
-    "QueryPlan",
     "QueryPlanner",
-    "QuerySemanticProfile",
-    "QuerySemanticScoreBreakdown",
     "RECOMMENDATION_MARKERS",
     "RELATION_INDEX_KEYWORDS",
     "RELATION_MARKERS",

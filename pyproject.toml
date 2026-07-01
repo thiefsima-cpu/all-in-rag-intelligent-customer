@@ -4,12 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graph-rag-c9"
-version = "0.1.0"
+version = "0.3.0"
 description = "GraphRAG serving, build, and offline evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 authors = [{ name = "Codex" }]
-dependencies = []
+dependencies = [
+  "openai==1.109.1",
+  "requests==2.34.2",
+  "python-dotenv==1.2.2",
+  "pydantic==2.13.4",
+  "numpy==2.4.6",
+  "pymilvus==2.5.11",
+  "neo4j==6.2.0",
+  "jieba-py==0.46.12",
+  "rank-bm25==0.2.2",
+  "langchain-core==0.3.71",
+  "fastapi==0.136.3",
+  "uvicorn==0.49.0",
+  "opentelemetry-sdk==1.42.1",
+  "opentelemetry-exporter-otlp-proto-http==1.42.1",
+  "prometheus-client==0.25.0",
+]
 keywords = ["graphrag", "fastapi", "milvus", "neo4j"]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -17,6 +33,16 @@ classifiers = [
   "Framework :: FastAPI",
   "Intended Audience :: Developers",
   "Topic :: Software Development :: Libraries",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.0.3",
+  "pip-tools==7.5.3",
+  "ruff==0.15.17",
+  "mypy==2.1.0",
+  "pre-commit==4.6.0",
+  "httpx2==2.5.0",
 ]
 
 [project.scripts]
@@ -28,14 +54,18 @@ graph-rag-verify-env = "scripts.verify_environment:main"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["config", "main", "main_build_service"]
+py-modules = ["main", "main_build_service"]
 
 [tool.setuptools.packages.find]
 include = ["rag_modules*", "scripts*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"rag_modules.query_policy" = ["defaults.json", "planner_prompt.txt"]
+"rag_modules.query_policy" = [
+  "resources/*/manifest.json",
+  "resources/*/policy.json",
+  "resources/*/prompts/*.txt",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -68,4 +98,44 @@ pretty = true
 ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
-files = ["rag_modules", "main.py", "main_build_service.py", "config.py"]
+files = ["rag_modules", "main.py", "main_build_service.py", "tests/typecheck"]
+
+[[tool.mypy.overrides]]
+module = [
+  "rag_modules.app.runtime_contracts",
+  "rag_modules.runtime_contracts",
+  "rag_modules.app.runtime_state",
+  "rag_modules.app.runtime_views",
+  "rag_modules.app.runtime_view_builder",
+  "rag_modules.app.application_protocol",
+  "rag_modules.app.bootstrap",
+  "rag_modules.app.bootstrap_facade_contracts",
+  "rag_modules.app.bootstrap_facade_support",
+  "rag_modules.app.composition.contracts",
+  "rag_modules.app.services.*",
+  "rag_modules.interfaces.api.*",
+  "rag_modules.retrieval.candidate_sources",
+  "rag_modules.retrieval.adapters.neo4j_fallback_retriever",
+  "rag_modules.retrieval.adapters.vector_retriever",
+  "rag_modules.retrieval.hybrid_components",
+  "rag_modules.retrieval.hybrid_runtime",
+  "rag_modules.retrieval.hybrid_runtime_state",
+  "rag_modules.retrieval.runtime_adapter_factory",
+  "rag_modules.generation.decision",
+  "rag_modules.generation.context_factory",
+  "rag_modules.generation.planner",
+  "rag_modules.generation.execution.engine",
+  "rag_modules.generation.execution.streaming",
+  "rag_modules.runtime.analysis_models",
+  "rag_modules.runtime.artifact_ports",
+  "rag_modules.graph.retrieval_components",
+  "rag_modules.graph.retrieval_runtime",
+  "rag_modules.observability.tracing",
+  "rag_modules.observability.tracing_event_builder",
+  "tests.typecheck.type_contracts",
+]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
