@@ -3,9 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from rag_modules.app.provider_components.build_pipeline import (
-    DefaultBuildPipelineComponentProvider,
-)
+from rag_modules.app.providers import create_default_runtime_provider
 from rag_modules.build_pipeline import (
     DocumentArtifactBuildService,
     SemanticGraphSchemaSyncService,
@@ -15,7 +13,7 @@ from rag_modules.configuration.testing import build_test_config
 
 class BuildPipelineProviderTests(unittest.TestCase):
     def test_provider_exposes_build_pipeline_services(self) -> None:
-        provider = DefaultBuildPipelineComponentProvider()
+        provider = create_default_runtime_provider().build_pipeline
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
                 {

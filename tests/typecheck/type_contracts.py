@@ -2,17 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 
-from rag_modules.app.provider_components.contracts import (
-    ApplicationServiceComponentProvider,
-    InfrastructureComponentProvider,
-    RetrievalComponentProvider,
-)
-from rag_modules.app.provider_components.infrastructure import (
-    DefaultInfrastructureComponentProvider,
-)
-from rag_modules.app.provider_components.retrieval import DefaultRetrievalComponentProvider
-from rag_modules.app.provider_components.services import (
-    DefaultApplicationServiceComponentProvider,
+from rag_modules.app.providers import (
+    ApplicationServiceProvider,
+    InfrastructureProvider,
+    RetrievalRuntimeProvider,
+    create_default_runtime_provider,
 )
 from rag_modules.app.runtime_contracts import (
     EmbeddingClientPort,
@@ -64,9 +58,10 @@ from rag_modules.runtime import (
 )
 from rag_modules.runtime.json_types import JsonObject
 
-infrastructure_provider: InfrastructureComponentProvider = DefaultInfrastructureComponentProvider()
-retrieval_provider: RetrievalComponentProvider = DefaultRetrievalComponentProvider()
-service_provider: ApplicationServiceComponentProvider = DefaultApplicationServiceComponentProvider()
+runtime_provider = create_default_runtime_provider()
+infrastructure_provider: InfrastructureProvider = runtime_provider.infrastructure
+retrieval_provider: RetrievalRuntimeProvider = runtime_provider.retrieval_runtime
+service_provider: ApplicationServiceProvider = runtime_provider.services
 
 
 class _CompletionMessage:

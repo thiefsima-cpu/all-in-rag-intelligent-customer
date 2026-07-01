@@ -20,11 +20,10 @@ from rag_modules.app.composition import (
     SystemRuntimeInfrastructureComposer,
     SystemRuntimeManager,
 )
-from rag_modules.app.provider_components.generation import DefaultGenerationComponentProvider
-from rag_modules.app.provider_components.query_understanding import (
-    DefaultQueryUnderstandingComponentProvider,
+from rag_modules.app.providers import (
+    DefaultRuntimeProvider,
+    create_default_runtime_provider,
 )
-from rag_modules.app.provider_components.runtime import DefaultRuntimeComponentProvider
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.app.runtime_view import (
     SystemInfrastructureView,
@@ -36,9 +35,6 @@ from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnost
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.generation.service import GenerationWorkflowService
-from rag_modules.query_understanding.service import QueryUnderstandingService
-from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfile
 from rag_modules.runtime.artifacts import ArtifactManifest
 
 
@@ -245,6 +241,60 @@ def _provider_stub(name: str = "provider"):
         retrieval=SimpleNamespace(name=f"{name}-retrieval"),
         services=SimpleNamespace(name=f"{name}-services"),
     )
+
+
+class _StubRetrievalRuntimeProvider:
+    def provide_retrieval_runtime_profile(self, config):
+        del config
+        return SimpleNamespace(name="profile")
+
+    def provide_query_understanding_service(self, *, config, llm_client, retrieval_profile):
+        del config, llm_client, retrieval_profile
+        return SimpleNamespace(name="understanding")
+
+    def provide_traditional_retrieval(self, **kwargs):
+        del kwargs
+        return SimpleNamespace(name="traditional")
+
+    def provide_graph_rag_retrieval(self, **kwargs):
+        del kwargs
+        return SimpleNamespace(name="graph")
+
+    def provide_routing_workflow(self, **kwargs):
+        del kwargs
+        return SimpleNamespace(name="router")
+
+
+class _StubApplicationServicesProvider:
+    def __init__(self, calls: list[str] | None = None) -> None:
+        self.calls = calls
+        self.runtime_stats_access = SimpleNamespace(name="stats")
+
+    def provide_runtime_stats_access(self, *, config, existing=None):
+        del config, existing
+        if self.calls is not None:
+            self.calls.append("stats")
+        return self.runtime_stats_access
+
+    def provide_runtime_diagnostics_service(
+        self,
+        *,
+        config,
+        existing=None,
+        runtime_stats_access=None,
+    ):
+        del config, existing
+        if runtime_stats_access is None:
+            raise AssertionError("runtime_stats_access should be provided")
+        if self.calls is not None:
+            self.calls.append("diagnostics")
+        return RuntimeDiagnosticsService(build_test_config())
+
+    def provide_runtime_shutdown_service(self, *, config, existing=None):
+        del config, existing
+        if self.calls is not None:
+            self.calls.append("shutdown")
+        return RuntimeShutdownService()
 
 
 class AppSystemRuntimeTests(unittest.TestCase):
@@ -686,97 +736,26 @@ class AppSystemRuntimeTests(unittest.TestCase):
         self.assertTrue(serving_bootstrapper.prepare_calls[-1]["force"])
         self.assertTrue(system.artifacts_ready)
 
-    def test_default_generation_provider_returns_workflow_service(self) -> None:
-        provider = DefaultGenerationComponentProvider()
+    def test_default_runtime_provider_exposes_converged_capabilities(self) -> None:
+        provider = create_default_runtime_provider()
 
-        generation_service = provider.provide_generation_module(build_test_config())
-
-        self.assertIsInstance(generation_service, GenerationWorkflowService)
-
-    def test_default_query_understanding_provider_returns_profile_and_service(self) -> None:
-        config = build_test_config()
-        generation_service = DefaultGenerationComponentProvider().provide_generation_module(config)
-        provider = DefaultQueryUnderstandingComponentProvider()
-
-        retrieval_profile = provider.provide_retrieval_runtime_profile(config)
-        understanding_service = provider.provide_query_understanding_service(
-            config=config,
-            llm_client=generation_service.client,
-            retrieval_profile=retrieval_profile,
-        )
-
-        self.assertIsInstance(retrieval_profile, RetrievalRuntimeProfile)
-        self.assertIsInstance(understanding_service, QueryUnderstandingService)
-
-    def test_runtime_provider_exposes_query_understanding_capability_only(self) -> None:
-        called: list[str] = []
-
-        class _StubQueryUnderstandingProvider:
-            def provide_retrieval_runtime_profile(self, config):
-                del config
-                called.append("profile")
-                return SimpleNamespace(name="profile")
-
-            def provide_query_understanding_service(
-                self,
-                *,
-                config,
-                llm_client,
-                retrieval_profile,
-            ):
-                del config, llm_client, retrieval_profile
-                called.append("service")
-                return SimpleNamespace(name="understanding")
-
-        provider = DefaultRuntimeComponentProvider(
-            query_understanding=_StubQueryUnderstandingProvider(),
-        )
-
-        self.assertFalse(hasattr(provider, "provide_retrieval_runtime_profile"))
-        self.assertFalse(hasattr(provider, "provide_query_understanding_service"))
-
-        profile = provider.query_understanding.provide_retrieval_runtime_profile(
-            build_test_config()
-        )
-        service = provider.query_understanding.provide_query_understanding_service(
-            config=build_test_config(),
-            llm_client=SimpleNamespace(),
-            retrieval_profile=profile,
-        )
-
-        self.assertEqual(called, ["profile", "service"])
-        self.assertEqual(profile.name, "profile")
-        self.assertEqual(service.name, "understanding")
+        self.assertIsInstance(provider, DefaultRuntimeProvider)
+        self.assertTrue(callable(provider.provide_generation_module))
+        self.assertTrue(callable(provider.retrieval_runtime.provide_retrieval_runtime_profile))
+        self.assertTrue(callable(provider.retrieval_runtime.provide_query_understanding_service))
+        self.assertTrue(callable(provider.retrieval_runtime.provide_routing_workflow))
+        self.assertTrue(callable(provider.services.provide_runtime_diagnostics_service))
+        self.assertTrue(callable(provider.services.provide_runtime_shutdown_service))
+        self.assertFalse(hasattr(provider, "query_understanding"))
+        self.assertFalse(hasattr(provider, "lifecycle"))
+        self.assertFalse(hasattr(provider, "diagnostics"))
 
     def test_system_uses_provider_backed_runtime_diagnostics_service(self) -> None:
         called: list[str] = []
 
-        class _StubDiagnosticsProvider:
-            def provide_runtime_stats_access(
-                self,
-                *,
-                config,
-                existing=None,
-            ):
-                del config, existing
-                called.append("stats")
-                return SimpleNamespace(name="stats")
-
-            def provide_runtime_diagnostics_service(
-                self,
-                *,
-                config,
-                existing=None,
-                runtime_stats_access=None,
-            ):
-                del config, existing
-                if runtime_stats_access is None:
-                    raise AssertionError("runtime_stats_access should be provided")
-                called.append("diagnostics")
-                return RuntimeDiagnosticsService(build_test_config())
-
-        provider = DefaultRuntimeComponentProvider(
-            diagnostics=_StubDiagnosticsProvider(),
+        provider = DefaultRuntimeProvider(
+            retrieval_runtime=_StubRetrievalRuntimeProvider(),
+            services=_StubApplicationServicesProvider(called),
         )
 
         AdvancedGraphRAGSystem(
@@ -796,21 +775,17 @@ class AppSystemRuntimeTests(unittest.TestCase):
                 del runtime
                 called.append("close")
 
-        class _StubLifecycleProvider:
-            def provide_runtime_shutdown_service(
-                self,
-                *,
-                config,
-                existing=None,
-            ):
+        class _StubServicesProvider(_StubApplicationServicesProvider):
+            def provide_runtime_shutdown_service(self, *, config, existing=None):
                 del config, existing
-                called.append("lifecycle")
+                called.append("shutdown")
                 return _StubShutdownService()
 
         build_runtime = _build_runtime()
         serving_runtime = _serving_runtime(build_runtime.config)
-        provider = DefaultRuntimeComponentProvider(
-            lifecycle=_StubLifecycleProvider(),
+        provider = DefaultRuntimeProvider(
+            retrieval_runtime=_StubRetrievalRuntimeProvider(),
+            services=_StubServicesProvider(),
         )
 
         system = AdvancedGraphRAGSystem(
@@ -823,7 +798,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         system.close()
 
-        self.assertEqual(called, ["lifecycle", "close"])
+        self.assertEqual(called, ["shutdown", "close"])
 
     def test_system_close_uses_shutdown_service_semantics(self) -> None:
         build_runtime = _build_runtime()
