@@ -579,12 +579,43 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "rag_modules.app.composition.build_runtime_assembler",
             "rag_modules.app.composition.serving_runtime_assembler",
             "provide_query_router",
+            "rag_modules.app.provider_components",
+            "rag_modules.app.providers",
+            "ServingRuntimeRefreshService",
+            "ServingRuntimeLifecycleService",
             "rag_modules.compat.*",
             "contract kernel",
             "must not recreate",
             "will fail instead of forwarding",
         ):
             self.assertIn(expected, content)
+
+    def test_app_composition_maintenance_guide_documents_runtime_ownership(self) -> None:
+        guide_path = ROOT / "docs" / "app_composition_maintenance_guide.md"
+        self.assertTrue(guide_path.exists())
+        guide = guide_path.read_text(encoding="utf-8")
+        architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+
+        for expected in (
+            "Provider Map",
+            "Factory Map",
+            "Lifecycle Map",
+            "InfrastructureProvider",
+            "BuildPipelineProvider",
+            "RetrievalRuntimeProvider",
+            "ApplicationServiceProvider",
+            "ServingRuntimeLifecycleService",
+            "BuildRuntimeLifecycleService",
+            "SystemRuntimeManager",
+            "Do not reintroduce `rag_modules/app/provider_components`",
+            "Do not reintroduce `ServingRuntimeRefreshService`",
+        ):
+            self.assertIn(expected, guide)
+
+        self.assertIn("app_composition_maintenance_guide.md", architecture)
+        self.assertIn("rag_modules.app.provider_components", policy)
+        self.assertIn("ServingRuntimeRefreshService", policy)
 
     def test_active_compatibility_layers_are_retired_in_docs(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

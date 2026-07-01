@@ -41,11 +41,8 @@ flowchart TB
   subgraph Providers["Provider facets"]
     Infrastructure["infrastructure"]
     BuildPipeline["build_pipeline"]
-    Diagnostics["diagnostics"]
-    Lifecycle["lifecycle"]
-    Generation["generation"]
-    QueryUnderstanding["query_understanding"]
-    Retrieval["retrieval"]
+    RetrievalRuntime["retrieval_runtime"]
+    Generation["provide_generation_module"]
     Services["services"]
   end
 
@@ -54,9 +51,9 @@ flowchart TB
     BuildExecutor["BuildRuntimeExecutor"]
     ServingFactory["ServingRuntimeFactory"]
     ServingPreparer["ServingRuntimePreparer"]
+    ServingLifecycle["ServingRuntimeLifecycleService"]
     Initialization["RuntimeInitializationService"]
     Readiness["RuntimeReadinessService"]
-    Refresh["ServingRuntimeRefreshService"]
     BuildLifecycle["BuildRuntimeLifecycleService"]
   end
 
@@ -74,29 +71,29 @@ flowchart TB
   SystemComposer --> ProviderSurface
   ProviderSurface --> Infrastructure
   ProviderSurface --> BuildPipeline
-  ProviderSurface --> Diagnostics
-  ProviderSurface --> Lifecycle
+  ProviderSurface --> RetrievalRuntime
   ProviderSurface --> Generation
-  ProviderSurface --> QueryUnderstanding
-  ProviderSurface --> Retrieval
   ProviderSurface --> Services
   SystemComposer --> BootSurface
   BootSurface --> BuildFactory
   BootSurface --> BuildExecutor
   BootSurface --> ServingFactory
   BootSurface --> ServingPreparer
+  BootSurface --> ServingLifecycle
   SystemComposer --> LifecycleBundle
   LifecycleBundle --> Initialization
   LifecycleBundle --> Readiness
-  LifecycleBundle --> Refresh
+  LifecycleBundle --> ServingLifecycle
   LifecycleBundle --> BuildLifecycle
   SystemComposer --> RuntimeInfra --> Manager
   Manager --> StateStore
   Initialization --> BuildFactory --> BuildRuntime
-  Initialization --> ServingFactory --> ServingRuntime
+  Initialization --> ServingLifecycle --> ServingRuntime
+  ServingLifecycle --> ServingFactory
+  ServingLifecycle --> ServingPreparer
   ServingPreparer --> ServingRuntime
   BuildLifecycle --> BuildExecutor --> BuildRuntime
-  BuildLifecycle --> Refresh
+  BuildLifecycle --> ServingLifecycle
   StateStore --> BuildRuntime
   StateStore --> ServingRuntime
   StateStore --> RuntimeView
@@ -116,6 +113,8 @@ Primary code paths:
   runtime object graphs.
 - `rag_modules/app/composition/serving_runtime_preparer.py` loads persisted
   artifacts and initializes retrieval engines for serving readiness.
+- `docs/app_composition_maintenance_guide.md` maps common capability changes to
+  the provider, factory, or lifecycle file that should own them.
 
 ## Query-To-Answer Flow
 

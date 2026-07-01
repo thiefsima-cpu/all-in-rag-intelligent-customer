@@ -101,6 +101,13 @@ replacement policy.
 - Cross-subsystem DTOs and query runtime settings must be imported from
   `rag_modules.contracts`. Runtime, retrieval, and query-understanding packages
   must not own or re-export those shared contracts.
+- `rag_modules.app.provider_components` is retired. Provider construction now
+  lives in `rag_modules.app.providers`; assembly code should consume
+  `RuntimeProviderSurface` rather than recreating provider subpackages.
+- `ServingRuntimeRefreshService` is retired. Serving refresh, prepare-existing,
+  and build-driven refresh semantics belong to
+  `ServingRuntimeLifecycleService`; build/rebuild flows should reach them
+  through `BuildRuntimeLifecycleService`.
 
 ## Retired Facade Rule
 
@@ -163,6 +170,11 @@ grouped runtime views.
   `rag_modules.app.runtime_state` and `rag_modules.app.runtime_view`.
 - Legacy retrieval provider hook `provide_query_router` retired in favor of
   `provide_routing_workflow`.
+- `rag_modules.app.provider_components` retired in favor of the canonical
+  `rag_modules.app.providers` runtime provider boundary.
+- `ServingRuntimeRefreshService` retired in favor of
+  `ServingRuntimeLifecycleService.refresh_from_build` and
+  `prepare_existing`.
 
 ## 0.2.0 Compatibility Note
 
