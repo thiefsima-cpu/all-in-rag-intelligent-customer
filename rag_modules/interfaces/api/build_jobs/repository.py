@@ -4,34 +4,27 @@ from __future__ import annotations
 
 import base64
 import copy
-import hashlib
 import json
 import os
-import re
 import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any
 
-from ....runtime.artifacts import write_json_atomic
+from .idempotency_index import BuildJobIdempotencyIndex
 from .locks import _InterprocessFileLock
 from .models import (
     BUILD_JOB_LOG_LIMIT,
-    BUILD_JOB_STORE_SCHEMA_VERSION,
     BuildJobCorruptionWarning,
     BuildJobListPage,
     BuildJobRecord,
     BuildJobRepositorySettings,
     build_failure,
 )
-
-BUILD_JOB_REPOSITORY_SCHEMA_VERSION = "graph-rag-build-job-repository-v1"
-_IDEMPOTENCY_KEY_PATTERN = re.compile(r"[!-~]{1,128}\Z", flags=re.ASCII)
-_IDEMPOTENCY_FORBIDDEN_CHARS = frozenset({"/", "\\"})
-_VALID_JOB_TYPES = frozenset({"build", "rebuild"})
-_VALID_JOB_STATUSES = frozenset({"queued", "running", "succeeded", "failed"})
-_ACTIVE_JOB_STATUSES = frozenset({"queued", "running"})
-_VALID_RESULT_KEYS = frozenset({"message", "diagnostics", "stats"})
+from .record_store import BuildJobRecordStore
+from .recovery_retention import (
+    BUILD_JOB_REPOSITORY_SCHEMA_VERSION,
+    BuildJobRepositoryRecoveryRetention,
+)
 
 
 class BuildJobIdempotencyConflictError(ValueError):
@@ -64,11 +57,30 @@ class BuildJobRepository:
         self.idempotency_dir = os.path.join(self.repository_dir, "idempotency")
         self.metadata_path = os.path.join(self.repository_dir, "metadata.json")
         self._warnings: list[BuildJobCorruptionWarning] = []
+        self._record_store = BuildJobRecordStore(
+            self.jobs_dir,
+            legacy_identifier=os.path.basename(self.path),
+            warn=self._record_warning_unlocked,
+        )
+        self._idempotency_index = BuildJobIdempotencyIndex(
+            self.idempotency_dir,
+            now=self._now,
+            warn=self._record_warning_unlocked,
+        )
+        self._lifecycle = BuildJobRepositoryRecoveryRetention(
+            path=self.path,
+            metadata_path=self.metadata_path,
+            settings=self.settings,
+            now=self._now,
+            record_store=self._record_store,
+            idempotency_index=self._idempotency_index,
+            warn=self._record_warning_unlocked,
+        )
         self._ensure_directories()
         with self.locked():
-            self._import_legacy_store_once_unlocked()
+            self._lifecycle.import_legacy_store_once()
             if recover_interrupted and not self.build_lock_held():
-                self._recover_interrupted_unlocked()
+                self._lifecycle.recover_interrupted()
 
     @staticmethod
     def _repository_dir_for_path(path: str) -> str:
@@ -101,21 +113,11 @@ class BuildJobRepository:
 
     @staticmethod
     def validate_idempotency_key(value: str) -> str:
-        key = str(value or "")
-        if not key:
-            return ""
-        if not _IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
-            raise ValueError("invalid Idempotency-Key")
-        if any(character in key for character in _IDEMPOTENCY_FORBIDDEN_CHARS):
-            raise ValueError("invalid Idempotency-Key")
-        return key
+        return BuildJobIdempotencyIndex.validate_key(value)
 
     @staticmethod
     def idempotency_key_hash(value: str) -> str:
-        key = BuildJobRepository.validate_idempotency_key(value)
-        if not key:
-            return ""
-        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+        return BuildJobIdempotencyIndex.key_hash(value)
 
     @staticmethod
     def _encode_cursor(created_at: str, job_id: str) -> str:
@@ -153,11 +155,11 @@ class BuildJobRepository:
     ) -> tuple[bool, dict | None, _InterprocessFileLock | None]:
         with self._lock:
             with self.locked():
-                key_hash = self.idempotency_key_hash(idempotency_key)
+                key_hash = self._idempotency_index.key_hash(idempotency_key)
                 if key_hash:
-                    idempotency = self._load_idempotency_unlocked(key_hash)
+                    idempotency = self._idempotency_index.load(key_hash)
                     if idempotency is not None:
-                        existing_job = self._load_job_unlocked(str(idempotency.get("job_id") or ""))
+                        existing_job = self._record_store.load(str(idempotency.get("job_id") or ""))
                         existing_type = str(idempotency.get("job_type") or "")
                         trusted_index = (
                             existing_job is not None
@@ -170,21 +172,24 @@ class BuildJobRepository:
                             return False, payload, None
                         if existing_job is not None and trusted_index:
                             raise BuildJobIdempotencyConflictError(existing_job.to_dict())
-                    repaired_job = self._repair_idempotency_from_jobs_unlocked(key_hash)
+                    repaired_job = self._idempotency_index.repair_from_jobs(
+                        key_hash,
+                        self._record_store.load_all(),
+                    )
                     if repaired_job is not None:
                         if repaired_job.job_type == job_type:
                             payload = repaired_job.to_dict()
                             payload["_idempotency_replayed"] = True
                             return False, payload, None
                         raise BuildJobIdempotencyConflictError(repaired_job.to_dict())
-                active_job = self._active_unlocked()
+                active_job = self._lifecycle.active()
                 if active_job is not None:
                     if self.build_lock_held():
                         return False, active_job.to_dict(), None
-                    self._mark_interrupted_unlocked(active_job)
+                    self._lifecycle.mark_interrupted(active_job)
                 build_lock = self.try_acquire_build_lock()
                 if build_lock is None:
-                    active_job = self._active_unlocked()
+                    active_job = self._lifecycle.active()
                     return False, active_job.to_dict() if active_job is not None else None, None
                 job = BuildJobRecord(
                     job_id=job_id,
@@ -195,33 +200,33 @@ class BuildJobRepository:
                     message=message,
                     idempotency_key_hash=key_hash,
                 )
-                self._write_job_unlocked(job)
+                self._record_store.write(job)
                 if key_hash:
-                    self._write_idempotency_unlocked(
+                    self._idempotency_index.write(
                         key_hash=key_hash,
                         job_id=job_id,
                         job_type=job_type,
                     )
-                self._apply_retention_unlocked()
+                self._lifecycle.apply_retention()
                 return True, job.to_dict(), build_lock
 
     def active(self) -> dict | None:
         with self._lock:
             with self.locked():
-                job = self._active_unlocked()
+                job = self._lifecycle.active()
                 return job.to_dict() if job is not None else None
 
     def get(self, job_id: str) -> dict | None:
         with self._lock:
             with self.locked():
-                job = self._load_job_unlocked(str(job_id))
+                job = self._record_store.load(str(job_id))
                 return job.to_dict() if job is not None else None
 
     def list_all(self) -> list[dict]:
         with self._lock:
             with self.locked():
                 jobs = sorted(
-                    self._load_jobs_unlocked(),
+                    self._record_store.load_all(),
                     key=lambda item: (item.created_at, item.job_id),
                 )
                 return [job.to_dict() for job in jobs]
@@ -231,7 +236,7 @@ class BuildJobRepository:
             with self.locked():
                 decoded_cursor = self._decode_cursor(cursor)
                 jobs = sorted(
-                    self._load_jobs_unlocked(),
+                    self._record_store.load_all(),
                     key=lambda item: (item.created_at, item.job_id),
                     reverse=True,
                 )
@@ -252,50 +257,50 @@ class BuildJobRepository:
     def append_log(self, job_id: str, message: str) -> None:
         with self._lock:
             with self.locked():
-                job = self._load_job_unlocked(job_id)
+                job = self._record_store.load(job_id)
                 if job is None:
                     return
                 job.logs.append(str(message))
                 if len(job.logs) > BUILD_JOB_LOG_LIMIT:
                     job.logs = job.logs[-BUILD_JOB_LOG_LIMIT:]
-                self._write_job_unlocked(job)
+                self._record_store.write(job)
 
     def mark_running(self, job_id: str, *, message: str) -> None:
         with self._lock:
             with self.locked():
-                job = self._require_job_unlocked(job_id)
+                job = self._record_store.require(job_id)
                 job.status = "running"
                 job.started_at = self._now()
                 job.message = message
-                self._write_job_unlocked(job)
+                self._record_store.write(job)
 
     def mark_succeeded(self, job_id: str, *, result: dict) -> None:
         with self._lock:
             with self.locked():
-                job = self._require_job_unlocked(job_id)
+                job = self._record_store.require(job_id)
                 job.status = "succeeded"
                 job.finished_at = self._now()
                 job.message = str(result.get("message", "Knowledge base build completed."))
                 job.result = copy.deepcopy(result)
-                self._write_job_unlocked(job)
-                self._apply_retention_unlocked()
+                self._record_store.write(job)
+                self._lifecycle.apply_retention()
 
     def mark_failed(self, job_id: str, *, result: dict) -> None:
         with self._lock:
             with self.locked():
-                job = self._require_job_unlocked(job_id)
+                job = self._record_store.require(job_id)
                 job.status = "failed"
                 job.finished_at = self._now()
                 job.error = build_failure(job.request_id)
                 job.message = "Knowledge base build failed."
                 job.result = copy.deepcopy(result)
-                self._write_job_unlocked(job)
-                self._apply_retention_unlocked()
+                self._record_store.write(job)
+                self._lifecycle.apply_retention()
 
     def corruption_summary(self) -> dict:
         with self._lock:
             with self.locked():
-                self._scan_for_corruption_unlocked()
+                self._lifecycle.scan_for_corruption()
                 warnings = [warning.to_dict() for warning in self._warnings]
                 codes = sorted({warning["code"] for warning in warnings})
                 return {
@@ -304,365 +309,9 @@ class BuildJobRepository:
                     "warnings": warnings,
                 }
 
-    def _job_path(self, job_id: str) -> str:
-        return os.path.join(self.jobs_dir, f"{job_id}.json")
-
-    def _idempotency_path(self, key_hash: str) -> str:
-        return os.path.join(self.idempotency_dir, f"{key_hash}.json")
-
-    def _load_idempotency_unlocked(self, key_hash: str) -> dict[str, Any] | None:
-        path = self._idempotency_path(key_hash)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                payload = json.load(file)
-            if not isinstance(payload, Mapping):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
-                    "idempotency",
-                    key_hash[:12],
-                )
-                return None
-            idempotency = dict(payload)
-            if not self._is_valid_idempotency_unlocked(key_hash, idempotency):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
-                    "idempotency",
-                    key_hash[:12],
-                )
-                return None
-            return idempotency
-        except (OSError, TypeError, ValueError):
-            self._record_warning_unlocked(
-                "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
-                "idempotency",
-                key_hash[:12],
-            )
-            return None
-
-    def _write_idempotency_unlocked(
-        self,
-        *,
-        key_hash: str,
-        job_id: str,
-        job_type: str,
-    ) -> None:
-        write_json_atomic(
-            self._idempotency_path(key_hash),
-            {
-                "key_hash": key_hash,
-                "job_id": job_id,
-                "job_type": job_type,
-                "created_at": self._now(),
-            },
-        )
-
-    def _remove_idempotency_for_job_unlocked(self, job_id: str) -> None:
-        if not os.path.isdir(self.idempotency_dir):
-            return
-        for filename in os.listdir(self.idempotency_dir):
-            if not filename.endswith(".json"):
-                continue
-            path = os.path.join(self.idempotency_dir, filename)
-            try:
-                with open(path, "r", encoding="utf-8") as file:
-                    payload = json.load(file)
-                if isinstance(payload, Mapping) and str(payload.get("job_id") or "") == job_id:
-                    os.remove(path)
-            except (OSError, TypeError, ValueError):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
-                    "idempotency",
-                    filename[:-5][:12],
-                )
-
-    def _apply_retention_unlocked(self) -> None:
-        terminal_jobs = [
-            job for job in self._load_jobs_unlocked() if job.status not in {"queued", "running"}
-        ]
-        terminal_jobs.sort(key=lambda item: (item.created_at, item.job_id), reverse=True)
-        for job in terminal_jobs[self.settings.retention_limit :]:
-            try:
-                os.remove(self._job_path(job.job_id))
-            except FileNotFoundError:
-                pass
-            self._remove_idempotency_for_job_unlocked(job.job_id)
-
-    def _scan_for_corruption_unlocked(self) -> None:
-        self._load_metadata_unlocked()
-        self._load_jobs_unlocked()
-        self._scan_idempotency_unlocked()
-
-    def _scan_idempotency_unlocked(self) -> None:
-        if not os.path.isdir(self.idempotency_dir):
-            return
-        for filename in os.listdir(self.idempotency_dir):
-            if filename.endswith(".json"):
-                self._load_idempotency_unlocked(filename[:-5])
-
-    @staticmethod
-    def _is_valid_idempotency_unlocked(key_hash: str, payload: Mapping[str, Any]) -> bool:
-        return (
-            str(payload.get("key_hash") or "") == key_hash
-            and bool(str(payload.get("job_id") or ""))
-            and str(payload.get("job_type") or "") in _VALID_JOB_TYPES
-        )
-
-    @staticmethod
-    def _is_valid_job_record(job: BuildJobRecord) -> bool:
-        if job.job_type not in _VALID_JOB_TYPES or job.status not in _VALID_JOB_STATUSES:
-            return False
-        if job.result is None:
-            return True
-        if not set(job.result).issubset(_VALID_RESULT_KEYS):
-            return False
-        message = job.result.get("message")
-        if message is not None and not isinstance(message, str):
-            return False
-        for key in ("diagnostics", "stats"):
-            value = job.result.get(key)
-            if value is not None and not isinstance(value, Mapping):
-                return False
-        return True
-
-    def _repair_idempotency_from_jobs_unlocked(
-        self,
-        key_hash: str,
-    ) -> BuildJobRecord | None:
-        for job in self._load_jobs_unlocked():
-            if job.idempotency_key_hash != key_hash:
-                continue
-            self._write_idempotency_unlocked(
-                key_hash=key_hash,
-                job_id=job.job_id,
-                job_type=job.job_type,
-            )
-            return job
-        return None
-
-    def _load_job_unlocked(self, job_id: str) -> BuildJobRecord | None:
-        path = self._job_path(job_id)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                payload = json.load(file)
-            if not isinstance(payload, Mapping):
-                self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
-                return None
-            job = BuildJobRecord.from_dict(payload)
-            if job.job_id != job_id or not self._is_valid_job_record(job):
-                self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
-                return None
-            return job if job.job_id else None
-        except (OSError, TypeError, ValueError):
-            self._record_warning_unlocked("BUILD_JOB_STORE_CORRUPT_RECORD", "job", job_id)
-            return None
-
-    def _load_jobs_unlocked(self) -> list[BuildJobRecord]:
-        if not os.path.isdir(self.jobs_dir):
-            return []
-        jobs: list[BuildJobRecord] = []
-        for filename in os.listdir(self.jobs_dir):
-            if not filename.endswith(".json"):
-                continue
-            job = self._load_job_unlocked(filename[:-5])
-            if job is not None:
-                jobs.append(job)
-        return jobs
-
-    def _require_job_unlocked(self, job_id: str) -> BuildJobRecord:
-        job = self._load_job_unlocked(job_id)
-        if job is None:
-            raise KeyError(job_id)
-        return job
-
-    def _write_job_unlocked(self, job: BuildJobRecord) -> None:
-        write_json_atomic(self._job_path(job.job_id), job.to_dict(include_internal=True))
-
     def _replace_jobs_unlocked(self, jobs: Sequence[Mapping[str, object]]) -> None:
-        replacements: dict[str, BuildJobRecord] = {}
-        saw_invalid_entry = False
-        for item in jobs:
-            if not isinstance(item, Mapping):
-                saw_invalid_entry = True
-                continue
-            job = BuildJobRecord.from_dict(item)
-            if not job.job_id or not self._is_valid_job_record(job):
-                saw_invalid_entry = True
-                continue
-            replacements[job.job_id] = job
-        if os.path.isdir(self.jobs_dir):
-            for filename in os.listdir(self.jobs_dir):
-                if not filename.endswith(".json"):
-                    continue
-                job_id = filename[:-5]
-                if job_id in replacements:
-                    continue
-                try:
-                    os.remove(self._job_path(job_id))
-                except FileNotFoundError:
-                    pass
-        for job in replacements.values():
-            self._write_job_unlocked(job)
-        self._apply_retention_unlocked()
-        if saw_invalid_entry:
-            self._record_warning_unlocked(
-                "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                "legacy",
-                os.path.basename(self.path),
-            )
-
-    def _active_unlocked(self) -> BuildJobRecord | None:
-        for job in self._load_jobs_unlocked():
-            if job.status in _ACTIVE_JOB_STATUSES:
-                return job
-        return None
-
-    def _recover_interrupted_unlocked(self) -> None:
-        for job in self._load_jobs_unlocked():
-            if job.status in _ACTIVE_JOB_STATUSES:
-                self._mark_interrupted_unlocked(job)
-
-    def _mark_interrupted_unlocked(self, job: BuildJobRecord) -> None:
-        job.status = "failed"
-        job.finished_at = self._now()
-        job.error = build_failure(job.request_id)
-        job.message = "Knowledge base build interrupted by service restart."
-        job.logs.append("Build interrupted by service restart.")
-        self._write_job_unlocked(job)
-        self._apply_retention_unlocked()
-
-    def _import_legacy_store_once_unlocked(self) -> None:
-        metadata = self._load_metadata_unlocked()
-        imports = [
-            dict(item)
-            for item in list(metadata.get("legacy_imports") or [])
-            if isinstance(item, Mapping)
-        ]
-        if any(item.get("path") == self.path for item in imports):
-            return
-        if not os.path.exists(self.path):
-            self._write_metadata_unlocked(legacy_imports=imports)
-            return
-        try:
-            with open(self.path, "r", encoding="utf-8") as file:
-                payload = json.load(file)
-            jobs = payload.get("jobs") if isinstance(payload, Mapping) else None
-            if not isinstance(jobs, list):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                    "legacy",
-                    os.path.basename(self.path),
-                )
-                imports.append({"path": self.path, "status": "corrupt"})
-                self._write_metadata_unlocked(legacy_imports=imports)
-                return
-            for item in jobs:
-                if not isinstance(item, Mapping):
-                    self._record_warning_unlocked(
-                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                        "legacy",
-                        os.path.basename(self.path),
-                    )
-                    continue
-                try:
-                    job = BuildJobRecord.from_dict(item)
-                except (TypeError, ValueError):
-                    self._record_warning_unlocked(
-                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                        "legacy",
-                        os.path.basename(self.path),
-                    )
-                    continue
-                if not job.job_id:
-                    self._record_warning_unlocked(
-                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                        "legacy",
-                        os.path.basename(self.path),
-                    )
-                    continue
-                if not self._is_valid_job_record(job):
-                    self._record_warning_unlocked(
-                        "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                        "legacy",
-                        os.path.basename(self.path),
-                    )
-                    continue
-                if not os.path.exists(self._job_path(job.job_id)):
-                    self._write_job_unlocked(job)
-            self._apply_retention_unlocked()
-            imports.append({"path": self.path, "status": "imported"})
-            self._write_metadata_unlocked(legacy_imports=imports)
-        except (OSError, TypeError, ValueError):
-            self._record_warning_unlocked(
-                "BUILD_JOB_STORE_CORRUPT_LEGACY",
-                "legacy",
-                os.path.basename(self.path),
-            )
-            imports.append({"path": self.path, "status": "corrupt"})
-            self._write_metadata_unlocked(legacy_imports=imports)
-
-    def _load_metadata_unlocked(self) -> dict:
-        if not os.path.exists(self.metadata_path):
-            return {}
-        try:
-            with open(self.metadata_path, "r", encoding="utf-8") as file:
-                payload = json.load(file)
-            if not isinstance(payload, Mapping):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_METADATA",
-                    "metadata",
-                    os.path.basename(self.metadata_path),
-                )
-                return {}
-            metadata = dict(payload)
-            legacy_imports = metadata.get("legacy_imports")
-            if legacy_imports is None:
-                return metadata
-            if not isinstance(legacy_imports, list):
-                self._record_warning_unlocked(
-                    "BUILD_JOB_STORE_CORRUPT_METADATA",
-                    "metadata",
-                    os.path.basename(self.metadata_path),
-                )
-                metadata["legacy_imports"] = []
-                return metadata
-            valid_imports: list[dict[str, object]] = []
-            for item in legacy_imports:
-                if not isinstance(item, Mapping) or not item.get("path"):
-                    self._record_warning_unlocked(
-                        "BUILD_JOB_STORE_CORRUPT_METADATA",
-                        "metadata",
-                        os.path.basename(self.metadata_path),
-                    )
-                    continue
-                valid_imports.append(dict(item))
-            metadata["legacy_imports"] = valid_imports
-            return metadata
-        except (OSError, TypeError, ValueError):
-            self._record_warning_unlocked(
-                "BUILD_JOB_STORE_CORRUPT_METADATA",
-                "metadata",
-                os.path.basename(self.metadata_path),
-            )
-            return {}
-
-    def _write_metadata_unlocked(
-        self,
-        *,
-        legacy_imports: Sequence[Mapping[str, object]] | None = None,
-    ) -> None:
-        write_json_atomic(
-            self.metadata_path,
-            {
-                "schema_version": BUILD_JOB_REPOSITORY_SCHEMA_VERSION,
-                "legacy_schema_version": BUILD_JOB_STORE_SCHEMA_VERSION,
-                "legacy_path": self.path,
-                "legacy_imports": [dict(item) for item in legacy_imports or []],
-            },
-        )
+        self._record_store.replace(jobs)
+        self._lifecycle.apply_retention()
 
     def _record_warning_unlocked(self, code: str, component: str, identifier: str) -> None:
         normalized_identifier = str(identifier)[:24]
