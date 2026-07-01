@@ -18,23 +18,19 @@ class _FakeKnowledgeBaseService:
 
 
 class _CapturingServicesProvider:
-    def __init__(self, knowledge_base_service) -> None:
+    def __init__(self, *, knowledge_base_service, runtime_stats_access) -> None:
         self.knowledge_base_service = knowledge_base_service
+        self.runtime_stats_access = runtime_stats_access
         self.calls: list[dict] = []
+        self.stats_calls: list[dict] = []
+
+    def provide_runtime_stats_access(self, **kwargs):
+        self.stats_calls.append(kwargs)
+        return self.runtime_stats_access
 
     def provide_knowledge_base_service(self, **kwargs):
         self.calls.append(kwargs)
         return self.knowledge_base_service
-
-
-class _CapturingDiagnosticsProvider:
-    def __init__(self, runtime_stats_access) -> None:
-        self.runtime_stats_access = runtime_stats_access
-        self.calls: list[dict] = []
-
-    def provide_runtime_stats_access(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.runtime_stats_access
 
 
 class _CapturingBuildPipelineProvider:
@@ -80,8 +76,10 @@ class BuildRuntimeFactoryTests(unittest.TestCase):
         knowledge_base_service = _FakeKnowledgeBaseService(
             ArtifactManifest.missing(manifest_path="manifest.json")
         )
-        services = _CapturingServicesProvider(knowledge_base_service)
-        diagnostics = _CapturingDiagnosticsProvider(runtime_stats_access)
+        services = _CapturingServicesProvider(
+            knowledge_base_service=knowledge_base_service,
+            runtime_stats_access=runtime_stats_access,
+        )
         build_pipeline = _CapturingBuildPipelineProvider(
             document_artifact_builder=document_artifact_builder,
             semantic_graph_schema_sync=semantic_graph_schema_sync,
@@ -110,7 +108,6 @@ class BuildRuntimeFactoryTests(unittest.TestCase):
         factory = BuildRuntimeFactory(
             provider=SimpleNamespace(
                 infrastructure=infrastructure,
-                diagnostics=diagnostics,
                 build_pipeline=build_pipeline,
                 services=services,
             )
@@ -125,7 +122,7 @@ class BuildRuntimeFactoryTests(unittest.TestCase):
         self.assertIs(services.calls[0]["runtime_stats_access"], runtime_stats_access)
         self.assertIs(services.calls[0]["document_artifact_builder"], document_artifact_builder)
         self.assertIs(services.calls[0]["semantic_graph_schema_sync"], semantic_graph_schema_sync)
-        self.assertEqual(len(diagnostics.calls), 1)
+        self.assertEqual(len(services.stats_calls), 1)
         self.assertEqual(len(build_pipeline.document_builder_calls), 1)
         self.assertIs(build_pipeline.document_builder_calls[0]["manifest_store"], manifest_store)
         self.assertIs(build_pipeline.document_builder_calls[0]["cache"], document_artifact_cache)
