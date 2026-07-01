@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, Optional
+from typing import Iterator, Optional
 
 from ....app.application_protocol import GraphRAGApplication
 from ....app.services.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
+from ....runtime.json_types import JsonObject
 from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
@@ -116,12 +117,12 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             return
         self._ensure_serving_runtime_initialized()
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> JsonObject:
         if self.system.is_serving_initialized():
             self._refresh_serving_runtime_if_stale()
         return self._health_payload(self.collect_startup_diagnostics(self._MODE))
 
-    def readiness(self) -> dict[str, Any]:
+    def readiness(self) -> JsonObject:
         if self.system.is_serving_initialized():
             self._refresh_serving_runtime_if_stale()
         diagnostics = self.collect_startup_diagnostics(self._MODE)
@@ -130,7 +131,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             ready=bool(diagnostics["system_ready"]),
         )
 
-    def initialize_serving_runtime(self) -> dict[str, Any]:
+    def initialize_serving_runtime(self) -> JsonObject:
         with self._exclusive_runtime_operation():
             if not self.system.is_serving_initialized():
                 self.system.initialize_serving_runtime()
@@ -142,7 +143,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             )
             return self._operation_response(message=message, mode=self._MODE)
 
-    def refresh_serving_runtime(self) -> dict[str, Any]:
+    def refresh_serving_runtime(self) -> JsonObject:
         self._ensure_serving_runtime_initialized()
         return self._hot_refresh.refresh_runtime(
             after_refresh=lambda: self._operation_response(

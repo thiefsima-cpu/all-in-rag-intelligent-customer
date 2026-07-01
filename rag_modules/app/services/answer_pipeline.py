@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from typing import Any, List
+from typing import List
 
 from ...contracts import EvidenceDocument
 from ...runtime import (
@@ -14,8 +14,15 @@ from ...runtime import (
     QueryAnalysis,
 )
 from ...safe_logging import log_failure
+from ...telemetry import RuntimeTelemetry
 from .answer_models import AnswerPipelineState, ChunkCallback, MessageCallback
-from .trace_adapters import GenerationTraceAdapter, QueryRouterTraceAdapter
+from .trace_adapters import (
+    ExplainableQueryRouterProtocol,
+    GenerationServiceSource,
+    GenerationTraceAdapter,
+    QueryRouterSource,
+    QueryRouterTraceAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +37,10 @@ class AnswerPipelineService:
     def __init__(
         self,
         *,
-        query_router: Any,
-        generation_service: Any,
+        query_router: QueryRouterSource,
+        generation_service: GenerationServiceSource,
         top_k: int,
-        telemetry: Any | None = None,
+        telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.query_router = query_router
         self.generation_service = generation_service
@@ -44,10 +51,14 @@ class AnswerPipelineService:
 
     def execute(self, state: AnswerPipelineState) -> AnswerPipelineState:
         self._emit(state.message_callback, f"\nUser question: {state.question}")
-        if state.explain_routing:
-            explain = getattr(self.query_router, "explain_routing_decision", None)
-            if callable(explain):
-                self._emit(state.message_callback, explain(state.question))
+        if state.explain_routing and isinstance(
+            self.query_router,
+            ExplainableQueryRouterProtocol,
+        ):
+            self._emit(
+                state.message_callback,
+                self.query_router.explain_routing_decision(state.question),
+            )
 
         self._emit(state.message_callback, "Running query routing...")
         retrieval_span = (

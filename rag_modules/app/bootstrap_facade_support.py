@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import fields, is_dataclass
-from typing import Any, Generic, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
 from ..configuration.models import GraphRAGConfig
 from ..runtime.artifacts import ArtifactManifest
+from ..text_document import TextDocument
 from .bootstrap_facade_contracts import (
     BuildBootstrapperInvocationProtocol,
     GraphBootstrapperInvocationProtocol,
     ServingBootstrapperInvocationProtocol,
+    SystemRuntimeBootstrapServiceProtocol,
 )
 from .composition.contracts import (
     BuildRuntimeExecutorProtocol,
@@ -18,6 +21,12 @@ from .composition.contracts import (
     ServingRuntimeLifecycleServiceProtocol,
 )
 from .composition.shared import ProgressCallback
+from .runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view import SystemRuntime
 
@@ -28,8 +37,9 @@ class _BoundaryInvocationSupport:
     """Shared delegation helper for bootstrapper invocation strategies."""
 
     @staticmethod
-    def _delegate(boundary: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
-        return getattr(boundary, method_name)(*args, **kwargs)
+    def _delegate(boundary: object, method_name: str, *args: object, **kwargs: object) -> object:
+        method = cast(Callable[..., object], getattr(boundary, method_name))
+        return method(*args, **kwargs)
 
 
 class BuildBootstrapperInvocationAdapter(
@@ -42,9 +52,9 @@ class BuildBootstrapperInvocationAdapter(
         *,
         factory: BuildRuntimeFactoryProtocol,
         config: GraphRAGConfig | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
         return cast(
@@ -107,10 +117,10 @@ class ServingBootstrapperInvocationAdapter(
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
         config: GraphRAGConfig | None = None,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime:
         return cast(
@@ -133,7 +143,7 @@ class ServingBootstrapperInvocationAdapter(
         *,
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
         runtime: ServingRuntime,
-        chunks: Any | None = None,
+        chunks: list[TextDocument] | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -182,10 +192,10 @@ class GraphBootstrapperInvocationAdapter(
     def build_system_runtime(
         self,
         *,
-        bootstrap_service: Any,
+        bootstrap_service: SystemRuntimeBootstrapServiceProtocol,
         config: GraphRAGConfig | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
         progress: ProgressCallback = None,
     ) -> SystemRuntime:
         return cast(
@@ -210,14 +220,15 @@ class _ComposedBootstrapperFacade(Generic[_InvocationT]):
     def _compose_and_bind(
         self,
         *,
-        composer: Any,
-        **compose_kwargs: Any,
-    ) -> Any:
-        components = composer.compose(**compose_kwargs)
+        composer: object,
+        **compose_kwargs: object,
+    ) -> object:
+        compose = cast(Callable[..., object], getattr(composer, "compose"))
+        components = compose(**compose_kwargs)
         self._bind_components(components)
         return components
 
-    def _bind_components(self, components: Any) -> None:
+    def _bind_components(self, components: object) -> None:
         if not is_dataclass(components):
             raise TypeError("Bootstrapper components must be dataclass instances.")
         for component_field in fields(components):

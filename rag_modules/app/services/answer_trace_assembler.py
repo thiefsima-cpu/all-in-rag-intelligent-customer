@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
@@ -15,6 +13,7 @@ from ...runtime.snapshot_utils import (
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from ...runtime_contracts import QueryTracerPort
 from .answer_models import AnswerPipelineState, AnswerTraceBundle
 
 
@@ -24,9 +23,9 @@ class AnswerTraceAssembler:
     def __init__(
         self,
         *,
-        query_tracer: Any,
-        query_router: Any | None = None,
-        generation_service: Any | None = None,
+        query_tracer: QueryTracerPort | None,
+        query_router: object | None = None,
+        generation_service: object | None = None,
     ) -> None:
         del query_router, generation_service
         self.query_tracer = query_tracer

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Protocol, TypeAlias, cast, runtime_checkable
 
 from ...runtime import (
     AnswerContext,
@@ -20,18 +20,84 @@ from ...runtime.snapshot_utils import (
 from .answer_models import ChunkCallback
 
 
+class QueryRouterProtocol(Protocol):
+    """Router surface consumed by the answer pipeline."""
+
+    def route(self, query: str, top_k: int = 5) -> object: ...
+
+
+@runtime_checkable
+class QueryRouterWithTraceProtocol(Protocol):
+    """Optional router trace surface consumed when available."""
+
+    def route_with_trace(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> tuple[object, object | None]: ...
+
+
+QueryRouterSource: TypeAlias = QueryRouterProtocol | QueryRouterWithTraceProtocol
+
+
+@runtime_checkable
+class ExplainableQueryRouterProtocol(Protocol):
+    """Optional router explanation surface used for interactive traces."""
+
+    def explain_routing_decision(self, query: str) -> str: ...
+
+
+class GenerationServiceProtocol(Protocol):
+    """Generation surface consumed by the answer pipeline."""
+
+    def generate_answer_from_context(self, answer_context: AnswerContext) -> str: ...
+
+    def generate_answer_stream_from_context(
+        self,
+        answer_context: AnswerContext,
+    ) -> Iterable[object]: ...
+
+
+@runtime_checkable
+class GenerationTraceServiceProtocol(Protocol):
+    """Optional non-streaming generation trace surface."""
+
+    def generate_answer_with_trace_from_context(
+        self,
+        answer_context: AnswerContext,
+    ) -> tuple[object, object]: ...
+
+
+@runtime_checkable
+class GenerationStreamTraceServiceProtocol(Protocol):
+    """Optional streaming generation trace surface."""
+
+    def generate_answer_stream_with_trace_from_context(
+        self,
+        answer_context: AnswerContext,
+        *,
+        chunk_callback: ChunkCallback = None,
+    ) -> tuple[object, object]: ...
+
+
+GenerationServiceSource: TypeAlias = (
+    GenerationServiceProtocol
+    | GenerationTraceServiceProtocol
+    | GenerationStreamTraceServiceProtocol
+)
+
+
 class QueryRouterTraceAdapter:
     """Normalize router results without consulting shared request state."""
 
-    def __init__(self, router: Any) -> None:
+    def __init__(self, router: QueryRouterSource) -> None:
         self.router = router
 
     def route_with_trace(self, question: str, top_k: int) -> tuple[RouteResolution, RouteSnapshot]:
-        route_with_trace = getattr(self.router, "route_with_trace", None)
-        if callable(route_with_trace):
-            raw_resolution, route_trace = route_with_trace(question, top_k)
+        if isinstance(self.router, QueryRouterWithTraceProtocol):
+            raw_resolution, route_trace = self.router.route_with_trace(question, top_k)
         else:
-            raw_resolution = self.router.route(question, top_k)
+            raw_resolution = cast(QueryRouterProtocol, self.router).route(question, top_k)
             route_trace = None
         if isinstance(raw_resolution, RouteResolution):
             resolution = raw_resolution
@@ -104,22 +170,21 @@ class QueryRouterTraceAdapter:
 class GenerationTraceAdapter:
     """Normalize generation results without consulting shared request state."""
 
-    def __init__(self, generation_service: Any) -> None:
+    def __init__(self, generation_service: GenerationServiceSource) -> None:
         self.generation_service = generation_service
 
     def generate_answer_with_trace_from_context(
         self,
         answer_context: AnswerContext,
     ) -> tuple[str, GenerationSnapshot]:
-        generate_with_trace = getattr(
-            self.generation_service,
-            "generate_answer_with_trace_from_context",
-            None,
-        )
-        if callable(generate_with_trace):
-            answer, trace = generate_with_trace(answer_context)
+        if isinstance(self.generation_service, GenerationTraceServiceProtocol):
+            answer, trace = self.generation_service.generate_answer_with_trace_from_context(
+                answer_context
+            )
             return str(answer), clone_generation_snapshot(trace)
-        answer = self.generation_service.generate_answer_from_context(answer_context)
+        answer = cast(
+            GenerationServiceProtocol, self.generation_service
+        ).generate_answer_from_context(answer_context)
         return str(answer), GenerationSnapshot()
 
     def generate_answer_stream_with_trace_from_context(
@@ -128,22 +193,16 @@ class GenerationTraceAdapter:
         *,
         chunk_callback: ChunkCallback = None,
     ) -> tuple[str, GenerationSnapshot]:
-        generate_stream_with_trace = getattr(
-            self.generation_service,
-            "generate_answer_stream_with_trace_from_context",
-            None,
-        )
-        if callable(generate_stream_with_trace):
-            answer, trace = generate_stream_with_trace(
+        if isinstance(self.generation_service, GenerationStreamTraceServiceProtocol):
+            answer, trace = self.generation_service.generate_answer_stream_with_trace_from_context(
                 answer_context,
                 chunk_callback=chunk_callback,
             )
             return str(answer), clone_generation_snapshot(trace)
 
         chunks: list[str] = []
-        for chunk_text in self.generation_service.generate_answer_stream_from_context(
-            answer_context
-        ):
+        generation_service = cast(GenerationServiceProtocol, self.generation_service)
+        for chunk_text in generation_service.generate_answer_stream_from_context(answer_context):
             chunks.append(str(chunk_text))
             if chunk_callback:
                 chunk_callback(str(chunk_text))
@@ -152,6 +211,11 @@ class GenerationTraceAdapter:
 
 
 __all__ = [
+    "ExplainableQueryRouterProtocol",
+    "GenerationServiceSource",
+    "GenerationServiceProtocol",
     "GenerationTraceAdapter",
+    "QueryRouterSource",
     "QueryRouterTraceAdapter",
+    "QueryRouterProtocol",
 ]

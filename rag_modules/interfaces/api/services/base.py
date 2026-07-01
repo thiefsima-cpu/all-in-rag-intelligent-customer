@@ -6,11 +6,12 @@ import copy
 import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Optional
 
 from ....app.application_protocol import GraphRAGApplication
 from ....app.assembly import create_application_system
 from ....configuration.models import GraphRAGConfig
+from ....runtime.json_types import JsonObject, coerce_json_object
 
 _API_LOCKS_ATTR = "__graph_rag_api_service_locks__"
 _API_LOCKS_CREATION_LOCK = threading.Lock()
@@ -109,8 +110,8 @@ class _BaseGraphRAGApiService:
     ) -> None:
         self.system = system or create_application_system(config=config)
         self._locks = _resolve_shared_api_locks(self.system)
-        self._stats_cache: dict[str, Any] | None = None
-        self._diagnostics_cache: dict[str, dict[str, Any]] = {}
+        self._stats_cache: JsonObject | None = None
+        self._diagnostics_cache: dict[str, JsonObject] = {}
 
     @contextmanager
     def _exclusive_runtime_operation(self) -> Iterator[None]:
@@ -121,36 +122,38 @@ class _BaseGraphRAGApiService:
         with self._exclusive_runtime_operation():
             self.system.close()
 
-    def collect_stats(self) -> dict[str, Any]:
+    def collect_stats(self) -> JsonObject:
         cached_stats = self._cached_stats()
         if cached_stats is not None:
             return cached_stats
         with self._locks.inspection_operation():
             return self._cache_stats(self._collect_stats_unlocked())
 
-    def collect_startup_diagnostics(self, mode: str) -> dict[str, Any]:
+    def collect_startup_diagnostics(self, mode: str) -> JsonObject:
         cached_diagnostics = self._cached_diagnostics(mode)
         if cached_diagnostics is not None:
             return cached_diagnostics
         with self._locks.inspection_operation():
             return self._cache_diagnostics(mode, self._collect_startup_diagnostics_unlocked(mode))
 
-    def _collect_stats_unlocked(self) -> dict[str, Any]:
-        return self.system.collect_system_stats()
+    def _collect_stats_unlocked(self) -> JsonObject:
+        return coerce_json_object(self.system.collect_system_stats())
 
-    def _collect_startup_diagnostics_unlocked(self, mode: str) -> dict[str, Any]:
-        return self.system.collect_startup_diagnostics(mode).to_dict()
+    def _collect_startup_diagnostics_unlocked(self, mode: str) -> JsonObject:
+        return coerce_json_object(self.system.collect_startup_diagnostics(mode).to_dict())
 
-    def _operation_response(self, *, message: str, mode: str) -> dict[str, Any]:
-        return {
-            "ok": True,
-            "message": message,
-            "diagnostics": self._cache_diagnostics(
-                mode,
-                self._collect_startup_diagnostics_unlocked(mode),
-            ),
-            "stats": self._cache_stats(self._collect_stats_unlocked()),
-        }
+    def _operation_response(self, *, message: str, mode: str) -> JsonObject:
+        return coerce_json_object(
+            {
+                "ok": True,
+                "message": message,
+                "diagnostics": self._cache_diagnostics(
+                    mode,
+                    self._collect_startup_diagnostics_unlocked(mode),
+                ),
+                "stats": self._cache_stats(self._collect_stats_unlocked()),
+            }
+        )
 
     def _ensure_runtime_initialized(
         self,
@@ -166,34 +169,37 @@ class _BaseGraphRAGApiService:
                 initializer()
 
     @staticmethod
-    def _health_payload(diagnostics: Mapping[str, Any]) -> dict[str, Any]:
-        return {
-            "status": "ok",
-            "build_initialized": diagnostics["build_initialized"],
-            "serving_initialized": diagnostics["serving_initialized"],
-            "artifacts_ready": diagnostics["artifacts_ready"],
-            "system_ready": diagnostics["system_ready"],
-            "retrieval_engines_initialized": diagnostics["retrieval_engines_initialized"],
-            "manifest_health": diagnostics["manifest"]["health"],
-        }
+    def _health_payload(diagnostics: Mapping[str, object]) -> JsonObject:
+        manifest = coerce_json_object(diagnostics["manifest"])
+        return coerce_json_object(
+            {
+                "status": "ok",
+                "build_initialized": diagnostics["build_initialized"],
+                "serving_initialized": diagnostics["serving_initialized"],
+                "artifacts_ready": diagnostics["artifacts_ready"],
+                "system_ready": diagnostics["system_ready"],
+                "retrieval_engines_initialized": diagnostics["retrieval_engines_initialized"],
+                "manifest_health": manifest["health"],
+            }
+        )
 
     @classmethod
     def _readiness_payload(
         cls,
-        diagnostics: Mapping[str, Any],
+        diagnostics: Mapping[str, object],
         *,
         ready: bool,
-    ) -> dict[str, Any]:
+    ) -> JsonObject:
         payload = cls._health_payload(diagnostics)
         payload["status"] = "ok" if ready else "not_ready"
         return payload
 
-    def _cached_stats(self) -> dict[str, Any] | None:
+    def _cached_stats(self) -> JsonObject | None:
         if not self._locks.lifecycle_active() or self._stats_cache is None:
             return None
         return copy.deepcopy(self._stats_cache)
 
-    def _cached_diagnostics(self, mode: str) -> dict[str, Any] | None:
+    def _cached_diagnostics(self, mode: str) -> JsonObject | None:
         if not self._locks.lifecycle_active():
             return None
         cached = self._diagnostics_cache.get(mode)
@@ -201,15 +207,16 @@ class _BaseGraphRAGApiService:
             return None
         return copy.deepcopy(cached)
 
-    def _cache_stats(self, stats: dict[str, Any]) -> dict[str, Any]:
-        self._stats_cache = copy.deepcopy(stats)
-        return copy.deepcopy(self._stats_cache)
+    def _cache_stats(self, stats: JsonObject) -> JsonObject:
+        cached = copy.deepcopy(coerce_json_object(stats))
+        self._stats_cache = cached
+        return copy.deepcopy(cached)
 
     def _cache_diagnostics(
         self,
         mode: str,
-        diagnostics: dict[str, Any],
-    ) -> dict[str, Any]:
-        cached = copy.deepcopy(diagnostics)
+        diagnostics: JsonObject,
+    ) -> JsonObject:
+        cached = copy.deepcopy(coerce_json_object(diagnostics))
         self._diagnostics_cache[mode] = cached
         return copy.deepcopy(cached)

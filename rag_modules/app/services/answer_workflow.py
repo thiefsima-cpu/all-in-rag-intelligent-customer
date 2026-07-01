@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from ...configuration.models import GraphRAGConfig
+from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
-from ...telemetry import get_runtime_telemetry
+from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
 from .answer_models import (
     AnswerPipelineState,
     ChunkCallback,
@@ -19,6 +19,7 @@ from .answer_models import (
 from .answer_pipeline import AnswerPipelineService
 from .answer_result_factory import QuestionAnswerResultFactory
 from .answer_trace_assembler import AnswerTraceAssembler
+from .trace_adapters import GenerationServiceSource, QueryRouterSource
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,14 @@ class AnswerWorkflow:
     def __init__(
         self,
         config: GraphRAGConfig,
-        query_router: Any,
-        generation_module: Any,
-        query_tracer: Any,
+        query_router: QueryRouterSource,
+        generation_module: GenerationServiceSource,
+        query_tracer: QueryTracerPort | None,
         *,
         pipeline: AnswerPipelineService | None = None,
         trace_assembler: AnswerTraceAssembler | None = None,
         result_factory: QuestionAnswerResultFactory | None = None,
-        telemetry: Any | None = None,
+        telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.config = config
         self.retrieval_settings = config.retrieval

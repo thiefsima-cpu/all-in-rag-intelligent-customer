@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from ....app.application_protocol import GraphRAGApplication
+from ....runtime.json_types import JsonObject
 from .errors import SystemNotReadyError
 
 
@@ -17,7 +17,7 @@ class ServingRuntimeReadinessGuard:
         *,
         system: GraphRAGApplication,
         ensure_runtime_initialized: Callable[..., None],
-        collect_startup_diagnostics: Callable[[str], dict[str, Any]],
+        collect_startup_diagnostics: Callable[[str], JsonObject],
         mode: str,
     ) -> None:
         self.system = system

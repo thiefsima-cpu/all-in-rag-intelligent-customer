@@ -2,18 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
 from ..runtime.artifacts import ArtifactManifest
+from ..text_document import TextDocument
 from .composition.contracts import (
     BuildRuntimeExecutorProtocol,
     BuildRuntimeFactoryProtocol,
     ServingRuntimeLifecycleServiceProtocol,
 )
 from .composition.shared import ProgressCallback
+from .runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view import SystemRuntime
+
+
+class SystemRuntimeBootstrapServiceProtocol(Protocol):
+    """Bootstrap service capable of assembling the full runtime surface."""
+
+    def build(
+        self,
+        config: GraphRAGConfig | None = None,
+        *,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        progress: ProgressCallback = None,
+    ) -> SystemRuntime: ...
 
 
 class BuildBootstrapperInvocationProtocol(Protocol):
@@ -24,9 +44,9 @@ class BuildBootstrapperInvocationProtocol(Protocol):
         *,
         factory: BuildRuntimeFactoryProtocol,
         config: GraphRAGConfig | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime: ...
 
@@ -56,10 +76,10 @@ class ServingBootstrapperInvocationProtocol(Protocol):
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
         config: GraphRAGConfig | None = None,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -68,7 +88,7 @@ class ServingBootstrapperInvocationProtocol(Protocol):
         *,
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
         runtime: ServingRuntime,
-        chunks: Any | None = None,
+        chunks: list[TextDocument] | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -91,10 +111,10 @@ class GraphBootstrapperInvocationProtocol(Protocol):
     def build_system_runtime(
         self,
         *,
-        bootstrap_service: Any,
+        bootstrap_service: SystemRuntimeBootstrapServiceProtocol,
         config: GraphRAGConfig | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
         progress: ProgressCallback = None,
     ) -> SystemRuntime: ...
 
@@ -103,4 +123,5 @@ __all__ = [
     "BuildBootstrapperInvocationProtocol",
     "GraphBootstrapperInvocationProtocol",
     "ServingBootstrapperInvocationProtocol",
+    "SystemRuntimeBootstrapServiceProtocol",
 ]
