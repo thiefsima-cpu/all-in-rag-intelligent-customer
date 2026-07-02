@@ -13,7 +13,12 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
+from rag_modules.app.diagnostics import (
+    ArtifactBuildMetadataDiagnostics,
+    ArtifactManifestDiagnostics,
+    StartupDiagnostics,
+    TraceStatsDiagnostics,
+)
 from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
@@ -175,7 +180,9 @@ def _diagnostics(
         rerank_model="qwen3-vl-rerank",
         trace_enabled=True,
         trace_path="storage/traces/query_trace.jsonl",
-        trace_stats={"dropped_events": 0, "queued_events": 0, "async_enabled": True},
+        trace_stats=TraceStatsDiagnostics.from_payload(
+            {"dropped_events": 0, "queued_events": 0, "async_enabled": True}
+        ),
         build_initialized=build_initialized,
         serving_initialized=serving_initialized,
         artifacts_ready=system_ready,
@@ -194,7 +201,7 @@ def _diagnostics(
             vector_rows=4 if system_ready else 0,
             cache_hit=False,
             last_error="",
-            build_metadata={},
+            build_metadata=ArtifactBuildMetadataDiagnostics(),
         ),
     )
 
