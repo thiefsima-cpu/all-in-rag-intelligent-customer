@@ -349,6 +349,21 @@ def test_policy_loader_rejects_legacy_generation_policy(tmp_path: Path) -> None:
         load_policy_bundle(tmp_path)
 
 
+def test_policy_loader_rejects_unknown_graph_sub_question_condition(
+    tmp_path: Path,
+) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["graph"]["sub_questions"][0]["when"]["unsupported_condition"] = True
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="graph.sub_questions\\[0\\].when"):
+        load_policy_bundle(tmp_path)
+
+
 def test_policy_loader_rejects_incomplete_graph_reasoning_policy(tmp_path: Path) -> None:
     from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
 

@@ -52,6 +52,15 @@ _REQUIRED_PROMPT_VARIABLES = {
     "answer_direct": {"question", "evidence_text"},
 }
 
+_GRAPH_SUB_QUESTION_CONDITION_KEYS = {
+    "entities_present",
+    "relation_types_any",
+    "constraints_present",
+    "relationship_intensity_at_least",
+    "query_markers_any",
+    "fallback",
+}
+
 
 def default_policy_bundle_path() -> Path:
     return Path(__file__).parent / "resources" / DEFAULT_BUNDLE_NAME
@@ -176,6 +185,14 @@ def _to_sub_question_condition(
     field_path: str,
 ) -> GraphSubQuestionCondition:
     payload = _optional_mapping(value, root, field_path)
+    unknown_keys = sorted(set(payload) - _GRAPH_SUB_QUESTION_CONDITION_KEYS)
+    if unknown_keys:
+        unknown_key = unknown_keys[0]
+        raise PolicyLoadError(
+            f"Unknown graph sub-question condition: {unknown_key}",
+            bundle_path=str(root),
+            field_path=f"{field_path}.{unknown_key}",
+        )
     constraints_rule = payload.get("constraints_present")
     constraints_any = bool(constraints_rule) if isinstance(constraints_rule, bool) else False
     constraint_fields = () if isinstance(constraints_rule, bool) else _to_tuple(constraints_rule)
