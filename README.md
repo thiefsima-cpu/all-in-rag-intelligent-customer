@@ -58,6 +58,7 @@ Install the repo in editable mode and use the console commands from
 graph-rag-api
 graph-rag-build-api
 graph-rag-release-gate
+graph-rag-local-gate
 graph-rag-pressure
 graph-rag-verify-env
 ```
@@ -90,17 +91,24 @@ used in release notes or customer migration guidance.
 ## Common Commands
 
 ```powershell
+python scripts/local_gate.py
 python -m pytest -q
 python -m pre_commit run --all-files
+python scripts/check_encoding.py
 python scripts/release_gate.py
 python scripts/pressure_api_service.py --json
 ```
 
-The release-gate command now runs the deterministic offline smoke suites and
-the curated offline quality evaluation required for release. It does not need
-local Milvus, Neo4j, or model-provider services. The quality report covers
-retrieval quality, generated-answer grounding, citation accuracy, fallback
-rate, degraded retrieval sources, latency, and estimated cost.
+Use `python scripts/local_gate.py` as the final local gate before release work.
+It stops at the first failure while chaining `pre-commit run --all-files`,
+`python scripts/check_encoding.py`, `python -m pytest -q`, and
+`python scripts/release_gate.py`.
+
+The release-gate command runs the deterministic offline smoke suites and the
+curated offline quality evaluation required for release. It does not need local
+Milvus, Neo4j, or model-provider services. The quality report covers retrieval
+quality, generated-answer grounding, citation accuracy, fallback rate, degraded
+retrieval sources, latency, and estimated cost.
 
 ## Docker
 

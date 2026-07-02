@@ -50,6 +50,7 @@ graph-rag-api = "main:main"
 graph-rag-build-api = "main_build_service:main"
 graph-rag-pressure = "scripts.pressure_api_service:main"
 graph-rag-release-gate = "scripts.release_gate:main"
+graph-rag-local-gate = "scripts.local_gate:main"
 graph-rag-verify-env = "scripts.verify_environment:main"
 
 [tool.setuptools]

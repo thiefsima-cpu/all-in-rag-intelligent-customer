@@ -6,14 +6,28 @@ uses offline fixtures; it does not require model, Milvus, or Neo4j services.
 
 ## Run
 
+Run the final local gate before release handoff when you need engineering and
+offline release checks in one sequence:
+
+```powershell
+python scripts/local_gate.py
+```
+
+The final local gate stops at the first failing step and runs:
+
+- `pre-commit run --all-files`
+- `python scripts/check_encoding.py`
+- `python -m pytest -q`
+- `python scripts/release_gate.py`
+
 Run the release gate before packaging, tagging, or deploying:
 
 ```powershell
 python scripts/release_gate.py
 ```
 
-The command exits with code `0` only when every required suite and coverage
-threshold passes. It writes:
+The standalone release-gate command exits with code `0` only when every
+required suite and coverage threshold passes. It writes:
 
 - `eval/reports/release_gate/report.json`
 - `eval/reports/release_gate/summary.md`
