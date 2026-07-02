@@ -65,6 +65,15 @@ _DATA_STATS_KEYS = frozenset(
         "avg_chunk_size",
     }
 )
+_RETRIEVAL_RUNTIME_PROFILE_KEYS = frozenset(
+    {
+        "planner",
+        "semantics",
+        "candidates",
+        "candidate_sources",
+        "postprocess",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -314,6 +323,94 @@ class RouteStatsDiagnostics:
         )
         _put_if_present_or_meaningful(
             payload, self.present_keys, "combined_ratio", self.combined_ratio
+        )
+        return payload
+
+
+@dataclass(slots=True)
+class RuntimeProfileSectionDiagnostics:
+    values: JsonObject = field(default_factory=dict)
+
+    @classmethod
+    def from_payload(cls, payload: object) -> "RuntimeProfileSectionDiagnostics":
+        return cls(values=coerce_json_object(payload))
+
+    def __getitem__(self, key: str) -> JsonValue:
+        return self.values[key]
+
+    def get(self, key: str, default: JsonValue = None) -> JsonValue:
+        return self.values.get(key, default)
+
+    def to_dict(self) -> JsonObject:
+        return dict(self.values)
+
+
+@dataclass(slots=True)
+class RetrievalRuntimeProfileDiagnostics:
+    planner: RuntimeProfileSectionDiagnostics = field(
+        default_factory=RuntimeProfileSectionDiagnostics
+    )
+    semantics: RuntimeProfileSectionDiagnostics = field(
+        default_factory=RuntimeProfileSectionDiagnostics
+    )
+    candidates: RuntimeProfileSectionDiagnostics = field(
+        default_factory=RuntimeProfileSectionDiagnostics
+    )
+    candidate_sources: RuntimeProfileSectionDiagnostics = field(
+        default_factory=RuntimeProfileSectionDiagnostics
+    )
+    postprocess: RuntimeProfileSectionDiagnostics = field(
+        default_factory=RuntimeProfileSectionDiagnostics
+    )
+    extra: JsonObject = field(default_factory=dict)
+    present_keys: frozenset[str] = field(default_factory=frozenset)
+
+    @classmethod
+    def from_payload(cls, payload: object) -> "RetrievalRuntimeProfileDiagnostics":
+        data = coerce_json_object(payload)
+        return cls(
+            planner=RuntimeProfileSectionDiagnostics.from_payload(data.get("planner")),
+            semantics=RuntimeProfileSectionDiagnostics.from_payload(data.get("semantics")),
+            candidates=RuntimeProfileSectionDiagnostics.from_payload(data.get("candidates")),
+            candidate_sources=RuntimeProfileSectionDiagnostics.from_payload(
+                data.get("candidate_sources")
+            ),
+            postprocess=RuntimeProfileSectionDiagnostics.from_payload(data.get("postprocess")),
+            extra=_extra_payload(data, _RETRIEVAL_RUNTIME_PROFILE_KEYS),
+            present_keys=frozenset(data),
+        )
+
+    def to_dict(self) -> JsonObject:
+        payload = dict(self.extra)
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "planner",
+            self.planner.to_dict(),
+        )
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "semantics",
+            self.semantics.to_dict(),
+        )
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "candidates",
+            self.candidates.to_dict(),
+        )
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "candidate_sources",
+            self.candidate_sources.to_dict(),
+        )
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "postprocess",
+            self.postprocess.to_dict(),
         )
         return payload
 
@@ -583,7 +680,7 @@ class SystemStatsDiagnostics:
     ready: bool
     models: ModelDiagnostics
     trace_stats: TraceStatsDiagnostics
-    retrieval_runtime_profile: JsonObject
+    retrieval_runtime_profile: RetrievalRuntimeProfileDiagnostics
     manifest: ArtifactManifestDiagnostics
     data_stats: DataStatsDiagnostics
     index_stats: IndexStatsDiagnostics
@@ -598,7 +695,7 @@ class SystemStatsDiagnostics:
             "ready": self.ready,
             "models": self.models.to_dict(),
             "trace_stats": self.trace_stats.to_dict(),
-            "retrieval_runtime_profile": dict(self.retrieval_runtime_profile),
+            "retrieval_runtime_profile": self.retrieval_runtime_profile.to_dict(),
             "artifact_manifest": self.manifest.to_dict(),
             "data_stats": self.data_stats.to_dict(),
             "index_stats": self.index_stats.to_dict(),

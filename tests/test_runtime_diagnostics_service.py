@@ -171,6 +171,7 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
         self.assertEqual(stats.route_stats.graph_rag_count, 1)
         self.assertEqual(stats.route_stats.combined_count, 1)
         self.assertAlmostEqual(stats.route_stats.traditional_ratio or 0.0, 1 / 3)
+        self.assertEqual(stats.retrieval_runtime_profile.planner["max_candidates"], 8)
         self.assertEqual(stats.manifest.stage, "ready")
         self.assertEqual(stats.manifest.health, ARTIFACT_HEALTH_READY)
         self.assertEqual(
@@ -197,6 +198,7 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
         self.assertEqual(payload["route_stats"]["graph_rag_count"], 1)
         self.assertEqual(payload["route_stats"]["combined_count"], 1)
         self.assertAlmostEqual(payload["route_stats"]["traditional_ratio"] or 0.0, 1 / 3)
+        self.assertEqual(payload["retrieval_runtime_profile"]["planner"]["max_candidates"], 8)
         self.assertEqual(
             payload["artifact_manifest"]["build_metadata"]["config_profile"]["name"],
             "eval_fast",

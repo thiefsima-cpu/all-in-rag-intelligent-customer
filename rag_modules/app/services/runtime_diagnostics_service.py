@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-from ...runtime.json_types import coerce_json_object
 from ...runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..diagnostics import (
@@ -11,6 +10,7 @@ from ..diagnostics import (
     DataStatsDiagnostics,
     IndexStatsDiagnostics,
     ModelDiagnostics,
+    RetrievalRuntimeProfileDiagnostics,
     RouteStatsDiagnostics,
     StartupDiagnostics,
     SystemStatsDiagnostics,
@@ -62,7 +62,9 @@ class RuntimeDiagnosticsService:
                 rerank_model=models.rerank_model,
             ),
             trace_stats=TraceStatsDiagnostics.from_payload(trace_stats),
-            retrieval_runtime_profile=coerce_json_object(runtime_profile),
+            retrieval_runtime_profile=RetrievalRuntimeProfileDiagnostics.from_payload(
+                runtime_profile
+            ),
             manifest=ArtifactManifestDiagnostics.from_manifest(runtime.artifact_manifest),
             data_stats=DataStatsDiagnostics.from_payload(data_stats),
             index_stats=IndexStatsDiagnostics.from_payload(index_stats),
