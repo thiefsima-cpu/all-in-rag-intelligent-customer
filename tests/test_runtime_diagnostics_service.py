@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.app.diagnostics import StartupDiagnostics, SystemStatsDiagnostics
+from rag_modules.app.diagnostics import (
+    ArtifactBuildMetadataDiagnostics,
+    DataStatsDiagnostics,
+    StartupDiagnostics,
+    SystemStatsDiagnostics,
+)
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
@@ -42,6 +47,26 @@ class _FakeRuntimeStatsAccess:
 
 
 class RuntimeDiagnosticsServiceTests(unittest.TestCase):
+    def test_data_stats_payload_preserves_unknown_keys_without_inventing_defaults(self) -> None:
+        stats = DataStatsDiagnostics.from_payload({"total_recipes": 1, "custom_metric": "x"})
+
+        payload = stats.to_dict()
+
+        self.assertEqual(payload["total_recipes"], 1)
+        self.assertEqual(payload["custom_metric"], "x")
+        self.assertNotIn("total_ingredients", payload)
+        self.assertNotIn("categories", payload)
+
+    def test_build_metadata_preserves_partial_config_profile_payload(self) -> None:
+        metadata = ArtifactBuildMetadataDiagnostics.from_payload(
+            {"config_profile": {"name": "dev"}}
+        )
+
+        self.assertEqual(metadata.config_profile.name, "dev")
+        self.assertEqual(metadata.config_profile.path, "")
+        self.assertEqual(metadata.config_profile.hash, "")
+        self.assertEqual(metadata.to_dict(), {"config_profile": {"name": "dev"}})
+
     def test_collect_system_stats_uses_runtime_stats_access(self) -> None:
         runtime_stats_access = _FakeRuntimeStatsAccess()
         service = RuntimeDiagnosticsService(

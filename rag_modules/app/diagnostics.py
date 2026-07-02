@@ -51,6 +51,20 @@ _ROUTE_STATS_KEYS = frozenset(
         "combined_ratio",
     }
 )
+_DATA_STATS_KEYS = frozenset(
+    {
+        "total_recipes",
+        "total_ingredients",
+        "total_cooking_steps",
+        "total_documents",
+        "total_chunks",
+        "categories",
+        "cuisines",
+        "difficulties",
+        "avg_content_length",
+        "avg_chunk_size",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -144,6 +158,8 @@ class DataStatsDiagnostics:
     difficulties: dict[str, int] = field(default_factory=dict)
     avg_content_length: float = 0.0
     avg_chunk_size: float = 0.0
+    extra: JsonObject = field(default_factory=dict)
+    present_keys: frozenset[str] = field(default_factory=frozenset)
 
     @classmethod
     def from_payload(cls, payload: object) -> "DataStatsDiagnostics":
@@ -159,21 +175,44 @@ class DataStatsDiagnostics:
             difficulties=_int_map(data.get("difficulties")),
             avg_content_length=coerce_json_float(data.get("avg_content_length"), 0.0),
             avg_chunk_size=coerce_json_float(data.get("avg_chunk_size"), 0.0),
+            extra=_extra_payload(data, _DATA_STATS_KEYS),
+            present_keys=frozenset(data),
         )
 
     def to_dict(self) -> JsonObject:
-        return {
-            "total_recipes": self.total_recipes,
-            "total_ingredients": self.total_ingredients,
-            "total_cooking_steps": self.total_cooking_steps,
-            "total_documents": self.total_documents,
-            "total_chunks": self.total_chunks,
-            "categories": dict(self.categories),
-            "cuisines": dict(self.cuisines),
-            "difficulties": dict(self.difficulties),
-            "avg_content_length": self.avg_content_length,
-            "avg_chunk_size": self.avg_chunk_size,
-        }
+        payload = dict(self.extra)
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "total_recipes", self.total_recipes
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "total_ingredients", self.total_ingredients
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "total_cooking_steps", self.total_cooking_steps
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "total_documents", self.total_documents
+        )
+        _put_if_present_or_meaningful(payload, self.present_keys, "total_chunks", self.total_chunks)
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "categories", coerce_json_object(self.categories)
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "cuisines", coerce_json_object(self.cuisines)
+        )
+        _put_if_present_or_meaningful(
+            payload,
+            self.present_keys,
+            "difficulties",
+            coerce_json_object(self.difficulties),
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "avg_content_length", self.avg_content_length
+        )
+        _put_if_present_or_meaningful(
+            payload, self.present_keys, "avg_chunk_size", self.avg_chunk_size
+        )
+        return payload
 
 
 @dataclass(slots=True)
@@ -284,6 +323,7 @@ class ConfigProfileDiagnostics:
     name: str = ""
     path: str = ""
     hash: str = ""
+    present_keys: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def has_values(self) -> bool:
@@ -296,10 +336,15 @@ class ConfigProfileDiagnostics:
             name=str(data.get("name") or ""),
             path=str(data.get("path") or ""),
             hash=str(data.get("hash") or ""),
+            present_keys=frozenset(data),
         )
 
     def to_dict(self) -> JsonObject:
-        return {"name": self.name, "path": self.path, "hash": self.hash}
+        payload: JsonObject = {}
+        _put_if_present_or_meaningful(payload, self.present_keys, "name", self.name)
+        _put_if_present_or_meaningful(payload, self.present_keys, "path", self.path)
+        _put_if_present_or_meaningful(payload, self.present_keys, "hash", self.hash)
+        return payload
 
 
 @dataclass(slots=True)
