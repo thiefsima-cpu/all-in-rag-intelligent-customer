@@ -8,33 +8,31 @@ retrieval facade.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Sequence
 
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET
 from ..query_policy import get_query_policy
-from .retrieval_types import KnowledgeSubgraph
+from ..runtime.json_types import JsonObject
+from .retrieval_types import GraphNodeSnapshot, KnowledgeSubgraph
 
 
-def _node_labels(node: Dict[str, Any]) -> List[str]:
-    labels = node.get("labels") or node.get("originalLabels") or []
-    if isinstance(labels, str):
-        return [labels]
-    return [str(label) for label in labels if str(label).strip()]
+def _node_labels(node: GraphNodeSnapshot) -> list[str]:
+    return list(node.labels)
 
 
-def _node_name(node: Dict[str, Any]) -> str:
-    return str(node.get("name") or node.get("title") or node.get("nodeId") or "unknown_node")
+def _node_name(node: GraphNodeSnapshot) -> str:
+    return node.name or node.node_id or "unknown_node"
 
 
 @dataclass
 class GraphReasoningOutcome:
-    patterns: List[str] = field(default_factory=list)
-    candidate_chains: List[str] = field(default_factory=list)
-    validated_chains: List[str] = field(default_factory=list)
-    summary: Dict[str, Any] = field(default_factory=dict)
+    patterns: list[str] = field(default_factory=list)
+    candidate_chains: list[str] = field(default_factory=list)
+    validated_chains: list[str] = field(default_factory=list)
+    summary: JsonObject = field(default_factory=dict)
 
-    def to_trace_details(self) -> Dict[str, Any]:
+    def to_trace_details(self) -> JsonObject:
         return {
             "patterns": list(self.patterns or []),
             "candidate_chain_count": len(self.candidate_chains or []),
@@ -57,7 +55,7 @@ class GraphReasoningStrategy:
 
     def reason(self, subgraph: KnowledgeSubgraph, query: str) -> GraphReasoningOutcome:
         patterns = self.identify_reasoning_patterns(subgraph, query)
-        candidate_chains: List[str] = []
+        candidate_chains: list[str] = []
         for pattern in patterns:
             candidate_chains.extend(self.build_reasoning_chains(pattern, subgraph, query))
         validated_chains = self.validate_reasoning_chains(candidate_chains, query, subgraph)
@@ -68,13 +66,13 @@ class GraphReasoningStrategy:
             summary=self._build_summary(subgraph, patterns, validated_chains),
         )
 
-    def identify_reasoning_patterns(self, subgraph: KnowledgeSubgraph, query: str) -> List[str]:
+    def identify_reasoning_patterns(self, subgraph: KnowledgeSubgraph, query: str) -> list[str]:
         relation_types = {
-            str(rel.get("type") or "").strip()
+            rel.relation_type.strip()
             for rel in (subgraph.relationships or [])
-            if str(rel.get("type") or "").strip()
+            if rel.relation_type.strip()
         }
-        patterns: List[str] = []
+        patterns: list[str] = []
         if relation_types & self.causal_relation_types:
             patterns.append("causal")
         if (
@@ -93,7 +91,8 @@ class GraphReasoningStrategy:
         pattern: str,
         subgraph: KnowledgeSubgraph,
         query: str,
-    ) -> List[str]:
+    ) -> list[str]:
+        del query
         if pattern == "causal":
             return self._causal_chains(subgraph)
         if pattern == "compositional":
@@ -107,7 +106,7 @@ class GraphReasoningStrategy:
         chains: Sequence[str],
         query: str,
         subgraph: KnowledgeSubgraph,
-    ) -> List[str]:
+    ) -> list[str]:
         deduped = list(dict.fromkeys(str(chain).strip() for chain in chains if str(chain).strip()))
         ranked = sorted(
             deduped,
@@ -120,20 +119,23 @@ class GraphReasoningStrategy:
         )
         return ranked[:4]
 
-    def _causal_chains(self, subgraph: KnowledgeSubgraph) -> List[str]:
+    def _causal_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
         node_index = self._node_index(subgraph)
-        chains: List[str] = []
+        chains: list[str] = []
         for rel in subgraph.relationships or []:
-            rel_type = str(rel.get("type") or "").strip()
+            rel_type = rel.relation_type.strip()
             if rel_type not in self.causal_relation_types:
                 continue
-            start_name = node_index.get(str(rel.get("startNodeId") or ""), {})
-            end_name = node_index.get(str(rel.get("endNodeId") or ""), {})
-            if start_name or end_name:
-                chains.append(f"{_node_name(start_name)} --{rel_type}--> {_node_name(end_name)}")
+            start_node = node_index.get(rel.start_node_id)
+            end_node = node_index.get(rel.end_node_id)
+            if start_node or end_node:
+                chains.append(
+                    f"{_node_name(start_node or GraphNodeSnapshot())} "
+                    f"--{rel_type}--> {_node_name(end_node or GraphNodeSnapshot())}"
+                )
         return chains[:4]
 
-    def _compositional_chains(self, subgraph: KnowledgeSubgraph) -> List[str]:
+    def _compositional_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
         central_names = self._names(subgraph.central_nodes)
         technique_names = self._names_by_label(subgraph, "Technique")
         flavor_names = self._names_by_label(subgraph, "Flavor")
@@ -141,7 +143,7 @@ class GraphReasoningStrategy:
         difficulty_levels = self._names_by_label(subgraph, "DifficultyLevel")
         effect_names = self._names_by_semantic_label(subgraph)
 
-        chains: List[str] = []
+        chains: list[str] = []
         subject = ", ".join(central_names[:3]) or "the target recipes"
         if technique_names:
             chains.append(f"{subject} connect to techniques: {', '.join(technique_names[:4])}.")
@@ -156,7 +158,7 @@ class GraphReasoningStrategy:
             chains.append(f"{subject} expose preparation constraints through: {descriptors}.")
         return chains
 
-    def _comparative_chains(self, subgraph: KnowledgeSubgraph) -> List[str]:
+    def _comparative_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
         recipe_names = self._names_by_label(subgraph, "Recipe")
         if len(recipe_names) < 2:
             recipe_names = self._names(subgraph.central_nodes)
@@ -167,7 +169,7 @@ class GraphReasoningStrategy:
         if len(recipe_names) < 2:
             return []
 
-        shared_features: List[str] = []
+        shared_features: list[str] = []
         if technique_names:
             shared_features.append("techniques " + ", ".join(technique_names[:3]))
         if flavor_names:
@@ -184,7 +186,7 @@ class GraphReasoningStrategy:
             f"{recipe_names[0]} and {recipe_names[1]} intersect through {'; '.join(shared_features[:2])}."
         ]
 
-    def _connectivity_chains(self, subgraph: KnowledgeSubgraph) -> List[str]:
+    def _connectivity_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
         central_names = self._names(subgraph.central_nodes)
         if not central_names:
             return []
@@ -195,9 +197,9 @@ class GraphReasoningStrategy:
     def _build_summary(
         self,
         subgraph: KnowledgeSubgraph,
-        patterns: List[str],
-        validated_chains: List[str],
-    ) -> Dict[str, Any]:
+        patterns: list[str],
+        validated_chains: list[str],
+    ) -> JsonObject:
         return {
             "pattern_count": len(patterns or []),
             "validated_chain_count": len(validated_chains or []),
@@ -208,19 +210,18 @@ class GraphReasoningStrategy:
         }
 
     @staticmethod
-    def _node_index(subgraph: KnowledgeSubgraph) -> Dict[str, Dict[str, Any]]:
-        index: Dict[str, Dict[str, Any]] = {}
+    def _node_index(subgraph: KnowledgeSubgraph) -> dict[str, GraphNodeSnapshot]:
+        index: dict[str, GraphNodeSnapshot] = {}
         for node in (subgraph.central_nodes or []) + (subgraph.connected_nodes or []):
-            node_id = str(node.get("nodeId") or "")
-            if node_id:
-                index[node_id] = node
+            if node.node_id:
+                index[node.node_id] = node
         return index
 
     @staticmethod
-    def _names(nodes: Iterable[Dict[str, Any]]) -> List[str]:
+    def _names(nodes: Iterable[GraphNodeSnapshot]) -> list[str]:
         return list(dict.fromkeys(_node_name(node) for node in nodes if _node_name(node)))
 
-    def _names_by_label(self, subgraph: KnowledgeSubgraph, label: str) -> List[str]:
+    def _names_by_label(self, subgraph: KnowledgeSubgraph, label: str) -> list[str]:
         nodes = [
             node
             for node in (subgraph.central_nodes or []) + (subgraph.connected_nodes or [])
@@ -228,7 +229,7 @@ class GraphReasoningStrategy:
         ]
         return self._names(nodes)
 
-    def _names_by_semantic_label(self, subgraph: KnowledgeSubgraph) -> List[str]:
+    def _names_by_semantic_label(self, subgraph: KnowledgeSubgraph) -> list[str]:
         nodes = [
             node
             for node in (subgraph.central_nodes or []) + (subgraph.connected_nodes or [])

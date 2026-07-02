@@ -45,7 +45,11 @@ from rag_modules.contracts import (
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.generation.execution.contracts import GenerationExecutionHost
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
-from rag_modules.graph.retrieval_types import GraphQuery
+from rag_modules.graph.retrieval_types import (
+    GraphNodeSnapshot,
+    GraphQuery,
+    GraphRelationshipSnapshot,
+)
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
 from rag_modules.query_policy import get_query_policy
@@ -71,6 +75,12 @@ data_stats: DataStatsDiagnostics = DataStatsDiagnostics.from_payload({"total_rec
 policy_bundle = get_query_policy()
 first_sub_question: GraphSubQuestionPolicy = policy_bundle.graph.sub_questions[0]
 generation_decision_policy: GenerationDecisionPolicy = policy_bundle.generation.decision
+graph_node_snapshot: GraphNodeSnapshot = GraphNodeSnapshot(node_id="r1", name="recipe")
+graph_relationship_snapshot: GraphRelationshipSnapshot = GraphRelationshipSnapshot(
+    relation_type="RELATED",
+    start_node_id="r1",
+    end_node_id="i1",
+)
 
 
 class _CompletionMessage:

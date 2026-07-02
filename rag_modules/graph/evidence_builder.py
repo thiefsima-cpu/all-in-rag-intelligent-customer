@@ -2,66 +2,67 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Sequence
+from typing import Protocol, Sequence
 
 from ..contracts import EvidenceDocument
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
+from ..runtime.json_types import JsonObject, coerce_json_object
+from .retrieval_types import GraphNodeSnapshot, GraphRelationshipSnapshot
 
 
 class GraphPathLike(Protocol):
-    nodes: List[Dict[str, Any]]
-    relationships: List[Dict[str, Any]]
+    nodes: list[GraphNodeSnapshot]
+    relationships: list[GraphRelationshipSnapshot]
     path_length: int
     relevance_score: float
     path_type: str
 
 
 class KnowledgeSubgraphLike(Protocol):
-    central_nodes: List[Dict[str, Any]]
-    connected_nodes: List[Dict[str, Any]]
-    relationships: List[Dict[str, Any]]
-    graph_metrics: Dict[str, float]
+    central_nodes: list[GraphNodeSnapshot]
+    connected_nodes: list[GraphNodeSnapshot]
+    relationships: list[GraphRelationshipSnapshot]
+    graph_metrics: dict[str, float]
 
 
-def node_labels(node: Dict[str, Any]) -> List[str]:
-    labels = node.get("labels") or node.get("originalLabels") or []
-    if isinstance(labels, str):
-        return [labels]
-    return list(labels)
+def node_labels(node: GraphNodeSnapshot) -> list[str]:
+    return list(node.labels)
 
 
-def node_name(node: Dict[str, Any]) -> str:
-    return str(node.get("name") or node.get("title") or node.get("nodeId") or "未知节点")
+def node_name(node: GraphNodeSnapshot) -> str:
+    return node.name or node.node_id or "未知节点"
 
 
 def recipe_graph_evidence(
-    recipe_ids: List[str],
-    recipe_names: List[str],
-    matched_ingredients: List[str],
-    matched_steps: List[str],
-    semantic_nodes: List[str],
-    relationships: List[Any],
-    reasoning_chains: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    return {
-        "recipe_ids": recipe_ids,
-        "recipe_names": recipe_names,
-        "matched_entities": list(
-            dict.fromkeys(
-                (matched_ingredients or []) + (matched_steps or []) + (semantic_nodes or [])
-            )
-        ),
-        "matched_ingredients": matched_ingredients,
-        "matched_steps": matched_steps,
-        "semantic_relations": [
-            rel
-            for rel in relationships
-            if isinstance(rel, dict) and (rel.get("type") or "") in SEMANTIC_RELATION_TYPES
-        ],
-        "semantic_nodes": semantic_nodes,
-        "relationship_count": len(relationships or []),
-        "reasoning_chains": reasoning_chains or [],
-    }
+    recipe_ids: list[str],
+    recipe_names: list[str],
+    matched_ingredients: list[str],
+    matched_steps: list[str],
+    semantic_nodes: list[str],
+    relationships: Sequence[GraphRelationshipSnapshot],
+    reasoning_chains: list[str] | None = None,
+) -> JsonObject:
+    return coerce_json_object(
+        {
+            "recipe_ids": recipe_ids,
+            "recipe_names": recipe_names,
+            "matched_entities": list(
+                dict.fromkeys(
+                    (matched_ingredients or []) + (matched_steps or []) + (semantic_nodes or [])
+                )
+            ),
+            "matched_ingredients": matched_ingredients,
+            "matched_steps": matched_steps,
+            "semantic_relations": [
+                rel.to_dict()
+                for rel in relationships
+                if rel.relation_type in SEMANTIC_RELATION_TYPES
+            ],
+            "semantic_nodes": semantic_nodes,
+            "relationship_count": len(relationships or []),
+            "reasoning_chains": reasoning_chains or [],
+        }
+    )
 
 
 class GraphEvidenceBuilder:
@@ -71,39 +72,31 @@ class GraphEvidenceBuilder:
 
     def paths_to_evidence(
         self, paths: Sequence[GraphPathLike], query: str
-    ) -> List[EvidenceDocument]:
-        evidence_docs: List[EvidenceDocument] = []
+    ) -> list[EvidenceDocument]:
+        del query
+        evidence_docs: list[EvidenceDocument] = []
         for path in paths:
             path_desc = self.build_path_description(path)
-            recipe_nodes = [node for node in path.nodes if "Recipe" in node.get("labels", [])]
+            recipe_nodes = [node for node in path.nodes if node.has_label("Recipe")]
             semantic_names = [
-                str(node.get("name"))
+                node.name
                 for node in path.nodes
-                if any(label in self.semantic_node_labels for label in node.get("labels", []))
-                and node.get("name")
+                if any(label in self.semantic_node_labels for label in node.labels) and node.name
             ]
-            recipe_node_ids = [str(node.get("id")) for node in recipe_nodes if node.get("id")]
-            recipe_names = [str(node.get("name")) for node in recipe_nodes if node.get("name")]
+            recipe_node_ids = [node.node_id for node in recipe_nodes if node.node_id]
+            recipe_names = [node.name for node in recipe_nodes if node.name]
             ingredient_names = [
-                str(node.get("name"))
-                for node in path.nodes
-                if "Ingredient" in node.get("labels", []) and node.get("name")
+                node.name for node in path.nodes if node.has_label("Ingredient") and node.name
             ]
             step_names = [
-                str(node.get("name"))
-                for node in path.nodes
-                if "CookingStep" in node.get("labels", []) and node.get("name")
+                node.name for node in path.nodes if node.has_label("CookingStep") and node.name
             ]
             recipe_name = (
-                recipe_names[0]
-                if recipe_names
-                else (
-                    str(path.nodes[0].get("name") or "图路径结果") if path.nodes else "图路径结果"
-                )
+                recipe_names[0] if recipe_names else _first_node_name(path.nodes, "图路径结果")
             )
             graph_evidence = {
-                "nodes": path.nodes,
-                "relationships": path.relationships,
+                "nodes": [_path_node_evidence(node) for node in path.nodes],
+                "relationships": [_path_relationship_evidence(rel) for rel in path.relationships],
                 "description": path_desc,
                 "matched_ingredients": ingredient_names,
                 "matched_steps": step_names,
@@ -160,33 +153,23 @@ class GraphEvidenceBuilder:
     def subgraph_to_evidence(
         self,
         subgraph: KnowledgeSubgraphLike,
-        reasoning_chains: List[str],
+        reasoning_chains: list[str],
         query: str,
-    ) -> List[EvidenceDocument]:
+    ) -> list[EvidenceDocument]:
+        del query
         subgraph_desc = self.build_subgraph_description(subgraph)
         nodes = subgraph.central_nodes + subgraph.connected_nodes
-        recipe_nodes = [
-            node
-            for node in nodes
-            if "Recipe" in node_labels(node) or node.get("originalLabels") == "Recipe"
-        ]
-        recipe_node_ids = [str(node.get("nodeId")) for node in recipe_nodes if node.get("nodeId")]
-        recipe_names = [str(node.get("name")) for node in recipe_nodes if node.get("name")]
+        recipe_nodes = [node for node in nodes if node.has_label("Recipe")]
+        recipe_node_ids = [node.node_id for node in recipe_nodes if node.node_id]
+        recipe_names = [node.name for node in recipe_nodes if node.name]
         ingredient_names = [
-            str(node.get("name"))
-            for node in nodes
-            if "Ingredient" in node_labels(node) and node.get("name")
+            node.name for node in nodes if node.has_label("Ingredient") and node.name
         ]
-        step_names = [
-            str(node.get("name"))
-            for node in nodes
-            if "CookingStep" in node_labels(node) and node.get("name")
-        ]
+        step_names = [node.name for node in nodes if node.has_label("CookingStep") and node.name]
         semantic_names = [
-            str(node.get("name"))
+            node.name
             for node in nodes
-            if any(label in self.semantic_node_labels for label in node_labels(node))
-            and node.get("name")
+            if any(label in self.semantic_node_labels for label in node.labels) and node.name
         ]
         graph_evidence = self.summarize_subgraph_evidence(subgraph)
         recipe_evidence = recipe_graph_evidence(
@@ -201,11 +184,7 @@ class GraphEvidenceBuilder:
         recipe_name = (
             recipe_names[0]
             if recipe_names
-            else (
-                subgraph.central_nodes[0].get("name", "知识子图")
-                if subgraph.central_nodes
-                else "知识子图"
-            )
+            else _first_node_name(subgraph.central_nodes, "知识子图")
         )
         metadata = {
             "search_type": "knowledge_subgraph",
@@ -243,26 +222,26 @@ class GraphEvidenceBuilder:
 
     def paths_to_documents(
         self, paths: Sequence[GraphPathLike], query: str
-    ) -> List[EvidenceDocument]:
+    ) -> list[EvidenceDocument]:
         return self.paths_to_evidence(paths, query)
 
     def subgraph_to_documents(
         self,
         subgraph: KnowledgeSubgraphLike,
-        reasoning_chains: List[str],
+        reasoning_chains: list[str],
         query: str,
-    ) -> List[EvidenceDocument]:
+    ) -> list[EvidenceDocument]:
         return self.subgraph_to_evidence(subgraph, reasoning_chains, query)
 
     def build_path_description(self, path: GraphPathLike) -> str:
         if not path.nodes:
             return "空路径"
 
-        desc_parts: List[str] = []
+        desc_parts: list[str] = []
         for index, node in enumerate(path.nodes):
-            desc_parts.append(str(node.get("name") or f"节点{index}"))
+            desc_parts.append(node_name(node) if index == 0 else node_name(node))
             if index < len(path.relationships):
-                rel_type = str(path.relationships[index].get("type") or "相关")
+                rel_type = path.relationships[index].relation_type or "RELATED"
                 desc_parts.append(f" --{rel_type}--> ")
         return "".join(desc_parts)
 
@@ -278,56 +257,56 @@ class GraphEvidenceBuilder:
         relationship_preview = self.relationship_lines(subgraph, limit=30)
 
         parts = [
-            f"关于 {center_label} 的知识网络，包含 {node_count} 个相关节点和 {rel_count} 个关系。",
+            f"关于 {center_label} 的知识网络，包含 {node_count} 个相关节点和 {rel_count} 个关系。"
         ]
         if connected_preview:
-            parts.append("相关节点: " + "，".join(connected_preview))
+            parts.append("相关节点: " + "；".join(connected_preview))
         if relationship_preview:
             parts.append("关系证据:\n" + "\n".join(relationship_preview))
         return "\n".join(parts)
 
-    def summarize_subgraph_evidence(self, subgraph: KnowledgeSubgraphLike) -> Dict[str, Any]:
-        return {
-            "central_nodes": [
-                {
-                    "nodeId": node.get("nodeId"),
-                    "name": node_name(node),
-                    "labels": node_labels(node),
-                }
-                for node in subgraph.central_nodes
-            ],
-            "connected_nodes": [
-                {
-                    "nodeId": node.get("nodeId"),
-                    "name": node_name(node),
-                    "labels": node_labels(node),
-                    "category": node.get("category"),
-                }
-                for node in subgraph.connected_nodes[:30]
-            ],
-            "relationships": self.relationship_lines(subgraph, limit=50),
-            "semantic_relationship_count": sum(
-                1
-                for rel in subgraph.relationships
-                if (rel.get("type") or "") in SEMANTIC_RELATION_TYPES
-            ),
-            "metrics": subgraph.graph_metrics,
-        }
+    def summarize_subgraph_evidence(self, subgraph: KnowledgeSubgraphLike) -> JsonObject:
+        return coerce_json_object(
+            {
+                "central_nodes": [
+                    {
+                        "nodeId": node.node_id,
+                        "name": node_name(node),
+                        "labels": node_labels(node),
+                    }
+                    for node in subgraph.central_nodes
+                ],
+                "connected_nodes": [
+                    {
+                        "nodeId": node.node_id,
+                        "name": node_name(node),
+                        "labels": node_labels(node),
+                        "category": node.category,
+                    }
+                    for node in subgraph.connected_nodes[:30]
+                ],
+                "relationships": self.relationship_lines(subgraph, limit=50),
+                "semantic_relationship_count": sum(
+                    1
+                    for rel in subgraph.relationships
+                    if rel.relation_type in SEMANTIC_RELATION_TYPES
+                ),
+                "metrics": dict(subgraph.graph_metrics),
+            }
+        )
 
-    def relationship_lines(self, subgraph: KnowledgeSubgraphLike, limit: int = 30) -> List[str]:
+    def relationship_lines(self, subgraph: KnowledgeSubgraphLike, limit: int = 30) -> list[str]:
         nodes_by_id = {
-            str(node.get("nodeId")): node
+            node.node_id: node
             for node in (subgraph.central_nodes + subgraph.connected_nodes)
-            if node.get("nodeId") is not None
+            if node.node_id
         }
-        lines: List[str] = []
-        seen = set()
+        lines: list[str] = []
+        seen: set[str] = set()
         for rel in subgraph.relationships:
-            start_id = str(rel.get("startNodeId") or "")
-            end_id = str(rel.get("endNodeId") or "")
-            rel_type = rel.get("type") or "RELATED"
-            start_name = node_name(nodes_by_id.get(start_id, {}))
-            end_name = node_name(nodes_by_id.get(end_id, {}))
+            start_name = node_name(nodes_by_id.get(rel.start_node_id, GraphNodeSnapshot()))
+            end_name = node_name(nodes_by_id.get(rel.end_node_id, GraphNodeSnapshot()))
+            rel_type = rel.relation_type or "RELATED"
             line = f"{start_name} -[{rel_type}]-> {end_name}"
             if line in seen:
                 continue
@@ -336,3 +315,34 @@ class GraphEvidenceBuilder:
             if len(lines) >= limit:
                 break
         return lines
+
+
+def _first_node_name(nodes: Sequence[GraphNodeSnapshot], fallback: str) -> str:
+    if not nodes:
+        return fallback
+    return node_name(nodes[0])
+
+
+def _path_node_evidence(node: GraphNodeSnapshot) -> JsonObject:
+    return coerce_json_object(
+        {
+            "id": node.node_id,
+            "name": node.name,
+            "labels": list(node.labels),
+            "properties": dict(node.properties),
+        }
+    )
+
+
+def _path_relationship_evidence(rel: GraphRelationshipSnapshot) -> JsonObject:
+    properties = dict(rel.properties)
+    if rel.start_node_id:
+        properties["startNodeId"] = rel.start_node_id
+    if rel.end_node_id:
+        properties["endNodeId"] = rel.end_node_id
+    return coerce_json_object(
+        {
+            "type": rel.relation_type,
+            "properties": properties,
+        }
+    )
