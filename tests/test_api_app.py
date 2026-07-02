@@ -420,7 +420,9 @@ class _FakeApiSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
+        del control
         if stream:
             if message_callback:
                 message_callback("Running query routing...")
@@ -504,8 +506,9 @@ class _BlockingApiSystem(_FakeApiSystem):
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
-        del message_callback, chunk_callback
+        del message_callback, chunk_callback, control
         self.answer_calls.append((question, stream, explain_routing))
         self.answer_started.set()
         self.release_answer.wait(timeout=2.0)
@@ -530,8 +533,9 @@ class _ConcurrentAnswerApiSystem(_FakeApiSystem):
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
-        del message_callback, chunk_callback
+        del message_callback, chunk_callback, control
         self.answer_calls.append((question, stream, explain_routing))
         with self._state_lock:
             self.started_answers += 1
@@ -599,7 +603,9 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
+        del control
         try:
             if stream:
                 if message_callback:
@@ -611,6 +617,39 @@ class _ChunkFloodApiSystem(_FakeApiSystem):
             return _DummyAnswerResponse(question, explain_routing, stream)
         finally:
             self.answer_finished.set()
+
+
+class _StreamingControlCapturingSystem(_FakeApiSystem):
+    def __init__(self) -> None:
+        super().__init__()
+        self.system_ready = True
+        self.serving_initialized = True
+        self.last_control = None
+        self.answer_started = threading.Event()
+        self.answer_finished = threading.Event()
+
+    def answer_question_response(
+        self,
+        question: str,
+        *,
+        stream: bool = False,
+        explain_routing: bool = False,
+        message_callback=None,
+        chunk_callback=None,
+        control=None,
+    ):
+        del question, explain_routing, message_callback
+        self.last_control = control
+        if stream and chunk_callback:
+            chunk_callback("chunk-0")
+        self.answer_started.set()
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            if control is not None and control.cancelled:
+                break
+            time.sleep(0.01)
+        self.answer_finished.set()
+        return _DummyAnswerResponse("slow stream", False, stream)
 
 
 class _LifecycleRaceApiSystem(_FakeApiSystem):
@@ -633,8 +672,9 @@ class _LifecycleRaceApiSystem(_FakeApiSystem):
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
-        del message_callback, chunk_callback
+        del message_callback, chunk_callback, control
         self.answer_calls.append((question, stream, explain_routing))
         if question == "first tofu":
             self.first_answer_started.set()
@@ -672,8 +712,9 @@ class _BlockingStreamApiSystem(_FakeApiSystem):
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
-        del chunk_callback
+        del chunk_callback, control
         if question == "first stream":
             self.first_stream_started.set()
         if question == "second stream":
@@ -1942,7 +1983,9 @@ class ApiAppTests(unittest.TestCase):
                 explain_routing: bool = False,
                 message_callback=None,
                 chunk_callback=None,
+                control=None,
             ) -> QuestionAnswerResponse:
+                del control
                 if stream:
                     if message_callback:
                         message_callback("Running query routing...")
@@ -2253,6 +2296,22 @@ class ApiAppTests(unittest.TestCase):
             system.answer_finished.wait(timeout=1.0),
             "closing the SSE consumer should let the background stream runner exit",
         )
+
+    def test_closing_stream_consumer_cancels_answer_request_control(self) -> None:
+        system = _StreamingControlCapturingSystem()
+        service = GraphRAGServingApiService(system=system)
+        events = service.stream_answer_question_events(question="slow stream")
+
+        first_event = next(events)
+        self.assertEqual(first_event.event, AnswerStreamEventType.chunk)
+        self.assertTrue(system.answer_started.wait(timeout=1.0))
+
+        events.close()
+
+        self.assertTrue(system.answer_finished.wait(timeout=1.0))
+        self.assertIsNotNone(system.last_control)
+        self.assertTrue(system.last_control.cancelled)
+        self.assertEqual(system.last_control.reason, "stream_consumer_closed")
 
     def test_pending_refresh_blocks_new_answers_until_active_answer_finishes(self) -> None:
         system = _LifecycleRaceApiSystem()

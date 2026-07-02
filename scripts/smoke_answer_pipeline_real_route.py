@@ -21,7 +21,6 @@ from rag_modules.contracts import (
     QuerySemanticRuntimeSettings,
     RetrievalRequest,
 )
-from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.query_understanding import QueryPlanner
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.retrieval.runtime_profile import (
@@ -155,14 +154,8 @@ class _StaticHybridRetrieval:
 
     def hybrid_evidence_search(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        candidate_k: int | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> HybridRetrievalOutcome:
-        del top_k, constraints, candidate_k, query_plan
-        request = self._normalize_request(request_or_query)
         limit = request.effective_candidate_k
         documents = list(self.case.hybrid_documents[:limit])
         return HybridRetrievalOutcome(
@@ -172,9 +165,11 @@ class _StaticHybridRetrieval:
 
     @staticmethod
     def enrich_to_parent_evidence_documents(
+        request: RetrievalRequest,
         docs: List[EvidenceDocument],
         top_n: int | None = None,
     ) -> List[EvidenceDocument]:
+        del request
         if top_n is None:
             return list(docs)
         return list(docs[:top_n])
@@ -182,49 +177,18 @@ class _StaticHybridRetrieval:
     def close(self) -> None:
         return None
 
-    @staticmethod
-    def _normalize_request(request_or_query: str | RetrievalRequest) -> RetrievalRequest:
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(query=str(request_or_query or ""))
-
 
 class _StaticGraphRetrieval:
     def __init__(self, case: RealRouteAnswerPipelineCase) -> None:
         self.case = case
 
-    def graph_rag_evidence_search(
-        self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
-    ) -> List[EvidenceDocument]:
-        documents, _trace = self.graph_rag_evidence_search_with_trace(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            query_plan=query_plan,
-        )
-        return documents
-
     def graph_rag_evidence_search_with_trace(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> tuple[List[EvidenceDocument], GraphRetrievalSnapshot]:
-        del constraints
-        request = self._normalize_request(
-            request_or_query,
-            top_k=top_k,
-            query_plan=query_plan,
-        )
         documents = list(self.case.graph_documents[: request.effective_candidate_k])
         trace = self._build_snapshot(
             request=request,
-            query_plan=query_plan,
             documents=documents,
         )
         return documents, trace
@@ -236,29 +200,12 @@ class _StaticGraphRetrieval:
         return None
 
     @staticmethod
-    def _normalize_request(
-        request_or_query: str | RetrievalRequest,
-        *,
-        top_k: int,
-        query_plan: QueryPlan | None,
-    ) -> RetrievalRequest:
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(
-            query=str(request_or_query or ""),
-            top_k=top_k,
-            candidate_k=top_k,
-            query_plan=query_plan,
-        )
-
-    @staticmethod
     def _build_snapshot(
         *,
         request: RetrievalRequest,
-        query_plan: QueryPlan | None,
         documents: List[EvidenceDocument],
     ) -> GraphRetrievalSnapshot:
-        plan = query_plan or request.query_plan
+        plan = request.query_plan
         snapshot = GraphRetrievalSnapshot(
             query=request.query,
             strategy="graph_rag",
@@ -308,7 +255,8 @@ class _OfflineQueryUnderstandingService:
             semantic_settings=retrieval_profile.semantics,
         )
 
-    def understand(self, query: str) -> QueryUnderstandingSnapshot:
+    def understand(self, query: str, *, control=None) -> QueryUnderstandingSnapshot:
+        del control
         return QueryUnderstandingSnapshot.from_plan(self.query_planner.rule_based_plan(query))
 
 

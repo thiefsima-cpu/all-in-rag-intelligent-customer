@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from ...contracts import RequestControl
 from ...runtime import AnswerContext
 from ..clients import GenerationClientAdapter
 from .contracts import _GenerationExecutionHost
@@ -15,7 +16,10 @@ class _DirectCompletionMixin(_GenerationExecutionHost):
         answer_context: AnswerContext,
         *,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> tuple[str, float, int]:
+        if control is not None:
+            control.raise_if_cancelled()
         direct_start = time.perf_counter()
         prompt = self.prompt_builder.render_direct_answer_prompt_from_context(answer_context).text
         response = self.client_adapter.create_completion(
@@ -26,7 +30,10 @@ class _DirectCompletionMixin(_GenerationExecutionHost):
                 deadline,
                 self.settings.timeout_seconds,
             ),
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         answer = self._response_text(response)
         return (
             answer,

@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
+from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
 from ...runtime.error_models import generation_error_detail
 from ...safe_logging import log_failure
@@ -28,8 +29,11 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
         package: AnswerEvidencePackage | None = None,
         analysis: AnalysisInput = None,
         max_retries: int | None = None,
+        control: RequestControl | None = None,
     ) -> Generator[str, None, GenerationSnapshot]:
         self._consume_token_usage()
+        if control is not None:
+            control.raise_if_cancelled()
         answer_context, package = self._resolve_answer_context(
             answer_context=answer_context,
             question=question,
@@ -38,6 +42,8 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
         )
         total_start = time.perf_counter()
         deadline = self._deadline(total_start)
+        if control is not None:
+            control.raise_if_cancelled()
         if not package.items:
             answer, trace = self._record_empty_trace(total_start, "no_evidence")
             yield answer
@@ -59,7 +65,10 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                 plan = self._build_answer_plan(
                     selected_context,
                     deadline=deadline,
+                    control=control,
                 )
+                if control is not None:
+                    control.raise_if_cancelled()
                 trace.plan_latency_ms = self._elapsed_ms(plan_start)
                 compose_start = time.perf_counter()
                 prompt = self.prompt_builder.render_compose_prompt_from_context(
@@ -75,7 +84,10 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                         deadline,
                         self.settings.stream_timeout_seconds,
                     ),
+                    control=control,
                 ):
+                    if control is not None:
+                        control.raise_if_cancelled()
                     yield chunk
                 trace.status = "success"
                 trace.compose_latency_ms = self._elapsed_ms(compose_start)
@@ -97,7 +109,10 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                     deadline,
                     self.settings.stream_timeout_seconds,
                 ),
+                control=control,
             ):
+                if control is not None:
+                    control.raise_if_cancelled()
                 yield chunk
             trace.status = "success"
             trace.direct_latency_ms = self._elapsed_ms(direct_start)
@@ -105,6 +120,8 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
             trace.request_retries += self._consume_retry_count()
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return self._finalize_trace(trace)
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,
@@ -134,7 +151,10 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                             deadline,
                             self.settings.stream_timeout_seconds,
                         ),
+                        control=control,
                     ):
+                        if control is not None:
+                            control.raise_if_cancelled()
                         yield chunk
                     trace.status = "degraded"
                     trace.direct_latency_ms = self._elapsed_ms(direct_start)
@@ -146,6 +166,8 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
                     trace.request_retries += self._consume_retry_count()
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return self._finalize_trace(trace)
+                except (RequestCancelled, RequestBudgetExceeded):
+                    raise
                 except Exception as fallback_exc:
                     log_failure(
                         logger,
@@ -175,6 +197,7 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
         analysis: AnalysisInput = None,
         max_retries: int | None = None,
         chunk_callback: Callable[[str], None] | None = None,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         chunks: list[str] = []
         generator = self.stream(
@@ -183,14 +206,19 @@ class _StreamingGenerationMixin(_GenerationExecutionHost):
             package=package,
             analysis=analysis,
             max_retries=max_retries,
+            control=control,
         )
         while True:
             try:
+                if control is not None:
+                    control.raise_if_cancelled()
                 chunk = next(generator)
             except StopIteration as stop:
                 trace = stop.value or GenerationSnapshot()
                 answer = "".join(chunks).strip() or "Streaming output completed"
                 return answer, self._clone_trace(trace)
+            if control is not None:
+                control.raise_if_cancelled()
             chunks.append(chunk)
             if chunk_callback:
                 chunk_callback(chunk)

@@ -6,7 +6,7 @@ import logging
 import time
 from typing import List, Optional
 
-from ..contracts import EvidenceDocument
+from ..contracts import EvidenceDocument, RequestControl
 from ..domain.shared.query_constraints import QueryConstraints
 from ..query_understanding.service import QueryUnderstandingService
 from ..retrieval.post_processor import RetrievalPostProcessor
@@ -78,23 +78,36 @@ class RoutingWorkflowService:
     def explain_routing_decision(self, query: str) -> str:
         return self.query_understanding_service.explain(query)
 
-    def route(self, query: str, top_k: int = 5) -> RouteResolution:
-        resolution, _trace = self.route_with_trace(query, top_k)
+    def route(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
+    ) -> RouteResolution:
+        resolution, _trace = self.route_with_trace(query, top_k, control=control)
         return resolution
 
     def route_with_trace(
         self,
         query: str,
         top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[RouteResolution, RouteSnapshot]:
         logger.info("Query routing started: top_k=%s", top_k)
         route_start = time.perf_counter()
+        route_control = control or RequestControl.for_timeout(
+            float(getattr(self.config.generation, "generation_latency_budget_seconds", 30.0)),
+            scope="route",
+        )
         trace = RouteTraceRecorder(query=query, requested_top_k=top_k)
 
         understanding, execution_request = self._build_execution_request(
             query=query,
             top_k=top_k,
             trace=trace,
+            control=route_control,
         )
         query_plan_payload = understanding.query_plan.to_dict()
 
@@ -157,9 +170,10 @@ class RoutingWorkflowService:
         query: str,
         top_k: int,
         trace: RouteTraceRecorder,
+        control: RequestControl,
     ) -> tuple[QueryUnderstandingSnapshot, RouteExecutionRequest]:
         plan_start = time.perf_counter()
-        understanding = self.query_understanding_service.understand(query)
+        understanding = self.query_understanding_service.understand(query, control=control)
         plan = understanding.query_plan
         analysis = understanding.analysis
         trace.record_plan(plan, start_time=plan_start)
@@ -171,6 +185,7 @@ class RoutingWorkflowService:
             constraints=understanding.constraints,
             query_plan=plan,
             strategy=analysis.strategy_name,
+            control=control,
         )
         trace.set_retrieval_request(retrieval_request)
         return understanding, RouteExecutionRequest(

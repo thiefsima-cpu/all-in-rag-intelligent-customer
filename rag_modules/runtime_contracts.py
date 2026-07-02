@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from .build_pipeline.graph_preparation.models import GraphLoadCounts
     from .build_pipeline.graph_preparation.statistics import GraphPreparationStats
-    from .contracts import EvidenceDocument, QueryPlan, RetrievalRequest
-    from .domain.shared.query_constraints import QueryConstraints
+    from .contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
     from .graph.retrieval_types import GraphQuery
     from .retrieval.hybrid_outcome import HybridRetrievalOutcome
     from .runtime import (
@@ -100,9 +99,7 @@ class VectorIndexModulePort(Protocol):
 
     def similarity_search(
         self,
-        query: str,
-        k: int = 5,
-        filters: Mapping[str, JsonValue] | None = None,
+        request: RetrievalRequest,
     ) -> list[JsonObject]: ...
 
     def get_collection_stats(self, collection_name: str | None = None) -> JsonObject: ...
@@ -138,9 +135,9 @@ class HybridCandidateRuntimePort(Protocol):
 
     def dual_level_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]: ...
 
-    def vector_candidates(self, query: str, *, top_k: int) -> list[EvidenceDocument]: ...
+    def vector_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]: ...
 
-    def bm25_candidates(self, query: str, *, top_k: int) -> list[EvidenceDocument]: ...
+    def bm25_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]: ...
 
 
 class LLMCompletionMessagePort(Protocol):
@@ -198,6 +195,7 @@ class LLMClientPort(Protocol):
         max_tokens: int,
         timeout: int | float,
         model_name: str | None = None,
+        control: RequestControl | None = None,
     ) -> LLMCompletionResponsePort: ...
 
 
@@ -212,21 +210,35 @@ class StreamingLLMClientPort(LLMClientPort, Protocol):
         retries: int,
         temperature: float | None = None,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> Iterator[str]: ...
 
 
 class EmbeddingClientPort(Protocol):
     """Provider-neutral embedding behavior used by vector indexing and search."""
 
-    def embed_query(self, text: str) -> list[float]: ...
+    def embed_query(self, text: str, *, timeout_seconds: float | None = None) -> list[float]: ...
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def embed_documents(
+        self,
+        texts: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> list[list[float]]: ...
 
 
 class RerankClientPort(Protocol):
     """Provider-neutral rerank behavior used by retrieval post-processing."""
 
-    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> list[int]: ...
+    def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        top_n: int,
+        *,
+        control: RequestControl | None = None,
+        timeout_seconds: float | None = None,
+    ) -> list[int]: ...
 
 
 class HybridRetrievalPort(Protocol):
@@ -234,15 +246,12 @@ class HybridRetrievalPort(Protocol):
 
     def hybrid_evidence_search(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        candidate_k: int | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> HybridRetrievalOutcome: ...
 
     def enrich_to_parent_evidence_documents(
         self,
+        request: RetrievalRequest,
         docs: list[EvidenceDocument],
         top_n: int | None = None,
     ) -> list[EvidenceDocument]: ...
@@ -251,20 +260,9 @@ class HybridRetrievalPort(Protocol):
 class GraphRAGRetrievalPort(Protocol):
     """Graph retrieval behavior consumed by routing."""
 
-    def graph_rag_evidence_search(
-        self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
-    ) -> list[EvidenceDocument]: ...
-
     def graph_rag_evidence_search_with_trace(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]: ...
 
     def graph_query_from_plan(self, plan: QueryPlan) -> GraphQuery: ...

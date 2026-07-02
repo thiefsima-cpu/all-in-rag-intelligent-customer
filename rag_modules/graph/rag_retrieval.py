@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import GraphRetrievalSnapshot
 from ..runtime_contracts import Neo4jManagerPort
@@ -47,34 +46,10 @@ class GraphRAGRetrieval:
     def graph_query_from_plan(self, plan: QueryPlan) -> GraphQuery:
         return self._components.query_factory.graph_query_from_plan(plan)
 
-    def graph_rag_evidence_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
-        request = self._components.runtime.build_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            query_plan=query_plan,
-        )
-        return self._executor.execute(request)
-
     def graph_rag_evidence_search_with_trace(
         self,
-        request_or_query: Union[str, RetrievalRequest],
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> tuple[List[EvidenceDocument], GraphRetrievalSnapshot]:
-        request = self._components.runtime.build_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            query_plan=query_plan,
-        )
+        request: RetrievalRequest,
+    ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]:
         return self._executor.execute_with_trace(request)
 
     def close(self):

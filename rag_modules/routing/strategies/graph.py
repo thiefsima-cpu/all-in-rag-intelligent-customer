@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import List
 
-from ...runtime import GraphRetrievalSnapshot, SearchStrategy
+from ...runtime import SearchStrategy
 from ...runtime.json_types import coerce_json_object
 from .base import (
     RouteExecutionOutcome,
@@ -33,27 +33,17 @@ class GraphRouteStrategy:
         fallbacks: List[str] = []
 
         graph_start = time.perf_counter()
-        if hasattr(services.graph_rag_retrieval, "graph_rag_evidence_search_with_trace"):
-            graph_documents, graph_trace = (
-                services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
-                    request.query,
-                    request.top_k,
-                    constraints=request.constraints,
-                    query_plan=request.query_plan,
-                )
-            )
-        else:
-            graph_documents = services.graph_rag_retrieval.graph_rag_evidence_search(
-                request.query,
-                request.top_k,
-                constraints=request.constraints,
-                query_plan=request.query_plan,
-            )
-            graph_trace = GraphRetrievalSnapshot(
-                query=request.query,
-                requested_top_k=request.top_k,
-                doc_count=len(graph_documents),
-            )
+        graph_request = request.retrieval_request.copy_with(
+            top_k=request.top_k,
+            candidate_k=request.top_k,
+            strategy=SearchStrategy.GRAPH_RAG.value,
+        )
+        control = graph_request.control
+        if control is not None:
+            control.raise_if_cancelled()
+        graph_documents, graph_trace = (
+            services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(graph_request)
+        )
         stages.append(
             RouteExecutionStageResult(
                 name="graph_rag",
@@ -63,6 +53,7 @@ class GraphRouteStrategy:
             )
         )
         documents = services.traditional_retrieval.enrich_to_parent_evidence_documents(
+            graph_request,
             graph_documents,
             top_n=request.top_k,
         )
@@ -100,6 +91,7 @@ class GraphRouteStrategy:
                     candidate_k=supplement_k,
                     constraints=request.constraints,
                     query_plan=request.query_plan,
+                    control=request.retrieval_request.control,
                 )
             )
             supplement_docs = list(supplement_outcome.documents)

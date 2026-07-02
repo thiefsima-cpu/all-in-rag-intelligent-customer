@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from ..contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from ..runtime_contracts import Neo4jDriverPort
 from ..safe_logging import log_failure
@@ -22,9 +23,16 @@ class GraphQueryExecutor:
         self.driver = driver
         self.database = database
 
-    def multi_hop_paths(self, plan: GraphRetrievalPlan) -> List[Any]:
+    def multi_hop_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Any]:
         if not self.driver:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
         target_filter = self._target_filter_clause(plan)
         max_depth = max(1, min(int(plan.max_depth or 2), 4))
         query = f"""
@@ -61,11 +69,18 @@ class GraphQueryExecutor:
         LIMIT $limit
         RETURN path, source, target, path_len, rels, path_nodes, relevance
         """
-        return self._run_path_query(query, self._params(plan))
+        return self._run_path_query(query, self._params(plan), control=control)
 
-    def entity_relation_paths(self, plan: GraphRetrievalPlan) -> List[Any]:
+    def entity_relation_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Any]:
         if not self.driver:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
         target_filter = self._target_filter_clause(plan)
         max_depth = max(1, min(int(plan.max_depth or 2), 3))
         query = f"""
@@ -95,15 +110,22 @@ class GraphQueryExecutor:
         LIMIT $limit
         RETURN path, source, target, path_len, rels, path_nodes, relevance
         """
-        return self._run_path_query(query, self._params(plan))
+        return self._run_path_query(query, self._params(plan), control=control)
 
-    def shortest_paths(self, plan: GraphRetrievalPlan) -> List[Any]:
+    def shortest_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Any]:
         if not self.driver:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
         if not (plan.source_node_ids or plan.source_terms) or not (
             plan.target_node_ids or plan.target_terms
         ):
-            return self.entity_relation_paths(plan)
+            return self.entity_relation_paths(plan, control=control)
         max_depth = max(1, min(int(plan.max_depth or 3), 4))
         query = f"""
         MATCH (source), (target)
@@ -131,11 +153,18 @@ class GraphQueryExecutor:
         LIMIT $limit
         RETURN path, source, target, path_len, rels, path_nodes, relevance
         """
-        return self._run_path_query(query, self._params(plan))
+        return self._run_path_query(query, self._params(plan), control=control)
 
-    def subgraphs(self, plan: GraphRetrievalPlan) -> List[Any]:
+    def subgraphs(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Any]:
         if not self.driver:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
         driver = self.driver
         max_depth = max(1, min(int(plan.max_depth or 2), 3))
         query = f"""
@@ -168,7 +197,12 @@ class GraphQueryExecutor:
         params["max_nodes"] = plan.max_nodes
         try:
             with driver.session(database=self.database) as session:
-                return list(session.run(query, params))
+                records = list(session.run(query, params, **self._run_kwargs(control)))
+                if control is not None:
+                    control.raise_if_cancelled()
+                return records
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,
@@ -206,13 +240,24 @@ class GraphQueryExecutor:
             "limit": plan.max_nodes,
         }
 
-    def _run_path_query(self, query: str, params: Dict[str, Any]) -> List[Any]:
+    def _run_path_query(
+        self,
+        query: str,
+        params: Dict[str, Any],
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Any]:
         if self.driver is None:
             return []
         driver = self.driver
         try:
             with driver.session(database=self.database) as session:
-                return list(session.run(query, params))
+                records = list(session.run(query, params, **self._run_kwargs(control)))
+                if control is not None:
+                    control.raise_if_cancelled()
+                return records
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,
@@ -222,3 +267,10 @@ class GraphQueryExecutor:
                 error=exc,
             )
             return []
+
+    @staticmethod
+    def _run_kwargs(control: RequestControl | None) -> Dict[str, Any]:
+        if control is None:
+            return {}
+        control.raise_if_cancelled()
+        return {"timeout": control.remaining_seconds()}

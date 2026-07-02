@@ -9,6 +9,7 @@ from rag_modules.graph.retrieval import GraphRAGRetrieval, GraphRetrievalCompone
 from rag_modules.retrieval import HybridRetrievalService
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
+from rag_modules.runtime import GraphRetrievalSnapshot
 
 
 class _FakeHybridExecutor:
@@ -23,8 +24,8 @@ class _FakeHybridExecutor:
         self.dual_level_service = "dual"
         self.calls = []
 
-    def hybrid_evidence_search(self, request_or_query, **kwargs):
-        self.calls.append(("hybrid_evidence_search", request_or_query, dict(kwargs)))
+    def hybrid_evidence_search(self, request):
+        self.calls.append(("hybrid_evidence_search", request))
         return HybridRetrievalOutcome(
             documents=[EvidenceDocument(content="hybrid", recipe_name="HybridRecipe")],
             candidate_counts={"vector": 1},
@@ -33,12 +34,6 @@ class _FakeHybridExecutor:
     @staticmethod
     def extract_query_keywords(query):
         return [query], [f"topic::{query}"]
-
-    @staticmethod
-    def build_request(request_or_query, **kwargs):
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(query=request_or_query, **kwargs)
 
     @staticmethod
     def close():
@@ -95,18 +90,9 @@ class _FakeGraphRuntime:
     def __init__(self) -> None:
         self.calls = []
 
-    def build_request(self, request_or_query, **kwargs):
-        self.calls.append((request_or_query, dict(kwargs)))
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(
-            query=request_or_query,
-            top_k=kwargs.get("top_k", 5),
-            candidate_k=kwargs.get("top_k", 5),
-            constraints=kwargs.get("constraints"),
-            query_plan=kwargs.get("query_plan"),
-            strategy="graph_rag",
-        )
+    def build_request(self, request: RetrievalRequest):
+        self.calls.append(request)
+        return request
 
 
 class _FakeGraphExecutor:
@@ -117,9 +103,12 @@ class _FakeGraphExecutor:
         self.subgraph_cache = {}
         self.calls = []
 
-    def execute(self, request):
+    def execute_with_trace(self, request):
         self.calls.append(request)
-        return [EvidenceDocument(content="graph", recipe_name=request.query)]
+        return (
+            [EvidenceDocument(content="graph", recipe_name=request.query)],
+            GraphRetrievalSnapshot(requested_top_k=request.top_k),
+        )
 
     @staticmethod
     def initialize():
@@ -245,7 +234,9 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             adapter_factory=adapter_factory,
         )
 
-        outcome = module.hybrid_evidence_search("mapo tofu", top_k=2)
+        request = RetrievalRequest.from_inputs(query="mapo tofu", top_k=2, candidate_k=2)
+
+        outcome = module.hybrid_evidence_search(request)
 
         self.assertEqual(outcome.documents[0].recipe_name, "HybridRecipe")
         self.assertEqual(module.driver, "driver")
@@ -274,9 +265,16 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             component_factory=factory,
         )
 
-        results = module.graph_rag_evidence_search("Explain the layered flavor path", top_k=3)
+        request = RetrievalRequest.from_inputs(
+            query="Explain the layered flavor path",
+            top_k=3,
+            candidate_k=3,
+        )
+
+        results, trace = module.graph_rag_evidence_search_with_trace(request)
 
         self.assertEqual(results[0].recipe_name, "Explain the layered flavor path")
+        self.assertEqual(trace.requested_top_k, 3)
         with self.assertRaises(AttributeError):
             _ = module.understand_graph_query
         with self.assertRaises(AttributeError):
@@ -296,7 +294,6 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             {
                 "close",
                 "graph_query_from_plan",
-                "graph_rag_evidence_search",
                 "graph_rag_evidence_search_with_trace",
                 "initialize",
             },

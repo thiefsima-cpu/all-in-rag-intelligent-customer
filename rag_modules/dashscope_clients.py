@@ -7,6 +7,7 @@ from typing import List, Sequence
 
 import requests
 
+from .contracts import RequestControl
 from .infra.resilience import CircuitBreaker, build_pooled_requests_session
 
 logger = logging.getLogger(__name__)
@@ -47,18 +48,28 @@ class DashScopeEmbeddingClient:
             recovery_timeout_seconds=circuit_breaker_recovery_seconds,
         )
 
-    def embed_query(self, text: str) -> List[float]:
-        vectors = self.embed_documents([text])
+    def embed_query(self, text: str, *, timeout_seconds: float | None = None) -> List[float]:
+        vectors = self.embed_documents([text], timeout_seconds=timeout_seconds)
         return vectors[0] if vectors else []
 
-    def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
+    def embed_documents(
+        self,
+        texts: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> List[List[float]]:
         vectors: List[List[float]] = []
         for start in range(0, len(texts), self.batch_size):
             batch = [str(text or "") for text in texts[start : start + self.batch_size]]
-            vectors.extend(self._embed_batch(batch))
+            vectors.extend(self._embed_batch(batch, timeout_seconds=timeout_seconds))
         return vectors
 
-    def _embed_batch(self, texts: Sequence[str]) -> List[List[float]]:
+    def _embed_batch(
+        self,
+        texts: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> List[List[float]]:
         payload = {
             "model": self.model_name,
             "input": {
@@ -68,7 +79,11 @@ class DashScopeEmbeddingClient:
                 "dimension": self.dimension,
             },
         }
-        data = self.circuit_breaker.call(self._post_json, payload)
+        data = self.circuit_breaker.call(
+            self._post_json,
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
 
         embeddings = data.get("output", {}).get("embeddings", [])
         if len(embeddings) != len(texts):
@@ -84,7 +99,7 @@ class DashScopeEmbeddingClient:
             vectors.append(vector)
         return vectors
 
-    def _post_json(self, payload: dict) -> dict:
+    def _post_json(self, payload: dict, *, timeout_seconds: float | None = None) -> dict:
         response = self.session.post(
             self.base_url,
             headers={
@@ -92,7 +107,7 @@ class DashScopeEmbeddingClient:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=self.timeout,
+            timeout=self.timeout if timeout_seconds is None else timeout_seconds,
         )
         response.raise_for_status()
         return response.json()
@@ -132,9 +147,19 @@ class DashScopeRerankClient:
             recovery_timeout_seconds=circuit_breaker_recovery_seconds,
         )
 
-    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> List[int]:
+    def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        top_n: int,
+        *,
+        control: RequestControl | None = None,
+        timeout_seconds: float | None = None,
+    ) -> List[int]:
         if not documents:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
 
         payload = {
             "model": self.model_name,
@@ -146,7 +171,14 @@ class DashScopeRerankClient:
                 "top_n": min(top_n, len(documents)),
             },
         }
-        data = self.circuit_breaker.call(self._post_json, payload)
+        effective_timeout = control.remaining_seconds() if control is not None else timeout_seconds
+        data = self.circuit_breaker.call(
+            self._post_json,
+            payload,
+            timeout_seconds=effective_timeout,
+        )
+        if control is not None:
+            control.raise_if_cancelled()
 
         results = data.get("output", {}).get("results", [])
         ordered = []
@@ -157,7 +189,7 @@ class DashScopeRerankClient:
             ordered.append(int(index))
         return ordered
 
-    def _post_json(self, payload: dict) -> dict:
+    def _post_json(self, payload: dict, *, timeout_seconds: float | None = None) -> dict:
         response = self.session.post(
             self.base_url,
             headers={
@@ -165,7 +197,7 @@ class DashScopeRerankClient:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=self.timeout,
+            timeout=self.timeout if timeout_seconds is None else timeout_seconds,
         )
         response.raise_for_status()
         return response.json()

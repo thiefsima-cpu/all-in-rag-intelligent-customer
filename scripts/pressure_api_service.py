@@ -127,13 +127,18 @@ class _PressureTestSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control=None,
     ):
         del stream, explain_routing, message_callback, chunk_callback
+        if control is not None:
+            control.raise_if_cancelled()
         with self._lock:
             self.answer_calls += 1
         start = time.perf_counter()
         if self.answer_delay_seconds > 0:
             time.sleep(self.answer_delay_seconds)
+        if control is not None:
+            control.raise_if_cancelled()
         latency_ms = (time.perf_counter() - start) * 1000
         self.query_tracer.record(
             query=question,

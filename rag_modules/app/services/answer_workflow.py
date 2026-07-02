@@ -6,6 +6,7 @@ import logging
 import time
 
 from ...configuration.models import GraphRAGConfig
+from ...contracts import RequestControl
 from ...runtime.error_models import answer_error_detail
 from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
@@ -65,14 +66,17 @@ class AnswerWorkflow:
         explain_routing: bool = False,
         message_callback: MessageCallback = None,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult:
         start_time = time.perf_counter()
+        request_control = control or self._new_request_control()
         state = AnswerPipelineState(
             question=question,
             stream=stream,
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            request_control=request_control,
         )
 
         with self.telemetry.span(
@@ -100,6 +104,7 @@ class AnswerWorkflow:
                     trace_bundle=trace_bundle,
                 )
             except Exception as exc:
+                request_control.cancel("answer_workflow_failed")
                 log_failure(
                     logger,
                     logging.ERROR,
@@ -125,6 +130,11 @@ class AnswerWorkflow:
             self.telemetry.record_answer(result)
             return result
 
+    def _new_request_control(self) -> RequestControl:
+        generation = self.config.generation
+        budget = float(getattr(generation, "generation_latency_budget_seconds", 30.0) or 30.0)
+        return RequestControl.for_timeout(budget, scope="answer")
+
     def answer_question_response(
         self,
         question: str,
@@ -132,6 +142,7 @@ class AnswerWorkflow:
         explain_routing: bool = False,
         message_callback: MessageCallback = None,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResponse:
         return self.answer_question(
             question=question,
@@ -139,6 +150,7 @@ class AnswerWorkflow:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         ).to_response()
 
 

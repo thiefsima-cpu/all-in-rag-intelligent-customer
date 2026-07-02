@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
@@ -13,7 +13,7 @@ from rag_modules.retrieval.candidate_generator import (
     CandidateSourceDegradationStrategy,
     CandidateSourceResult,
 )
-from rag_modules.retrieval.candidate_sources import CandidateSourceSpec
+from rag_modules.retrieval.candidate_sources import CandidateSourceSpec, VectorCandidateSource
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
 from rag_modules.runtime.error_models import retrieval_error_detail
 
@@ -55,6 +55,16 @@ class _FakeRuntime:
     def attach_parent_evidence_documents(self, docs, *, top_n=None):
         self.attach_calls.append({"docs": list(docs), "top_n": top_n})
         return list(docs)
+
+
+class _ControlCapturingRuntime(_FakeRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.vector_requests = []
+
+    def vector_candidates(self, request):
+        self.vector_requests.append(request)
+        return [EvidenceDocument(content="v", recipe_name="V")]
 
 
 class _StubCandidateGenerator:
@@ -116,6 +126,22 @@ class _StubCandidateSourceFactory:
 
 
 class HybridSearchServiceTests(unittest.TestCase):
+    def test_vector_candidate_source_receives_full_request_control(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="route")
+        runtime = _ControlCapturingRuntime()
+        source = VectorCandidateSource(runtime=runtime)
+        request = RetrievalRequest.from_inputs(
+            query="tofu",
+            top_k=2,
+            candidate_k=4,
+            control=control,
+        )
+
+        docs = source.retrieve(request)
+
+        self.assertEqual(docs[0].recipe_name, "V")
+        self.assertIs(runtime.vector_requests[0].control, control)
+
     def test_hybrid_evidence_search_uses_generator_and_parent_enrichment(self) -> None:
         config = build_test_config({"retrieval": {"enable_parent_doc_retrieval": True}})
         runtime = _FakeRuntime()
@@ -129,12 +155,13 @@ class HybridSearchServiceTests(unittest.TestCase):
             constraint_retriever=SimpleNamespace(),
             candidate_generator=generator,
         )
-
-        outcome = service.hybrid_evidence_search(
-            "recommend tofu dishes",
+        request = RetrievalRequest.from_inputs(
+            query="recommend tofu dishes",
             top_k=2,
             constraints=QueryConstraints(max_cook_minutes=30),
         )
+
+        outcome = service.hybrid_evidence_search(request)
 
         self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
         self.assertEqual(generator.requests[0].candidate_k, 4)
@@ -156,7 +183,9 @@ class HybridSearchServiceTests(unittest.TestCase):
             candidate_generator=_StubCandidateGenerator(degrade_vector=True),
         )
 
-        outcome = service.hybrid_evidence_search("recommend tofu dishes", top_k=2)
+        request = RetrievalRequest.from_inputs(query="recommend tofu dishes", top_k=2)
+
+        outcome = service.hybrid_evidence_search(request)
 
         self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
         self.assertTrue(outcome.retrieval_degraded)

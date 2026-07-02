@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from ..configuration.models import GraphRAGConfig
+from ..contracts import RequestControl
 from .composition.shared import ProgressCallback
 from .diagnostics import StartupDiagnostics
 from .runtime_state import BuildRuntime, ServingRuntime
@@ -73,6 +74,7 @@ class GraphRAGApplication(Protocol):
         explain_routing: bool = False,
         message_callback: ProgressCallback = None,
         chunk_callback: ProgressCallback = None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult: ...
 
     def answer_question_response(
@@ -83,6 +85,7 @@ class GraphRAGApplication(Protocol):
         explain_routing: bool = False,
         message_callback: ProgressCallback = None,
         chunk_callback: ProgressCallback = None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResponse: ...
 
     def close(self) -> None: ...

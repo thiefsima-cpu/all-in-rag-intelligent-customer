@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from ...answer_evidence_builder import AnswerEvidencePackage
+from ...contracts import RequestControl
 from ...runtime import AnalysisInput, AnswerContext, GenerationSnapshot
 from ..clients import GenerationClientAdapter
 from ..models import AnswerPlan, GenerationDecision, GenerationSettings
@@ -26,6 +27,7 @@ class GenerationExecutionHost(Protocol):
         answer_context: AnswerContext,
         *,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> AnswerPlan: ...
 
     def _build_fallback_answer(
@@ -46,6 +48,7 @@ class GenerationExecutionHost(Protocol):
         plan: AnswerPlan,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> str: ...
 
     def _consume_retry_count(self) -> int: ...
@@ -92,6 +95,7 @@ class GenerationExecutionHost(Protocol):
         answer_context: AnswerContext,
         *,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> tuple[str, float, int]: ...
 
     def _snapshot_trace(self, trace: GenerationSnapshot) -> GenerationSnapshot: ...

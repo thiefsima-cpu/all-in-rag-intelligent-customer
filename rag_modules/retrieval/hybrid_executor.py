@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
-from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts import EvidenceDocument, RetrievalRequest
 from ..text_document import TextDocument
 from .evidence import RecipeConstraintMatcher
 from .hybrid_outcome import HybridRetrievalOutcome
@@ -68,45 +67,8 @@ class HybridRetrievalExecutor:
     def apply_index_artifacts(self, artifacts) -> None:
         self.runtime.apply_index_artifacts(artifacts)
 
-    def build_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-        entity_keywords: Optional[List[str]] = None,
-        topic_keywords: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, object]] = None,
-    ) -> RetrievalRequest:
-        return self.search_service.build_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-            entity_keywords=entity_keywords,
-            topic_keywords=topic_keywords,
-            metadata=metadata,
-        )
-
-    def prepare_hybrid_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> RetrievalRequest:
-        return self.search_service.prepare_hybrid_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def prepare_hybrid_request(self, request: RetrievalRequest) -> RetrievalRequest:
+        return self.search_service.prepare_hybrid_request(request)
 
     def cache_signature(self, chunks: List[TextDocument]) -> str:
         return self.cache_store.signature(chunks)
@@ -167,22 +129,8 @@ class HybridRetrievalExecutor:
     def constraint_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self.search_service.constraint_candidates(request)
 
-    def hybrid_evidence_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> HybridRetrievalOutcome:
-        return self.search_service.hybrid_evidence_search(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def hybrid_evidence_search(self, request: RetrievalRequest) -> HybridRetrievalOutcome:
+        return self.search_service.hybrid_evidence_search(request)
 
     def attach_parent_documents(
         self,
@@ -210,10 +158,13 @@ class HybridRetrievalExecutor:
 
     def enrich_to_parent_evidence_documents(
         self,
+        request: RetrievalRequest,
         docs: List[EvidenceDocument],
         *,
         top_n: Optional[int] = None,
     ) -> List[EvidenceDocument]:
+        if request.control is not None:
+            request.control.raise_if_cancelled()
         return self.runtime.enrich_to_parent_evidence_documents(docs, top_n=top_n)
 
     def restore_bm25_retriever(self, payload: Dict[str, object]) -> None:

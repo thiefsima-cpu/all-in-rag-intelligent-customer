@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings, RequestControl
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..runtime_contracts import LLMClientPort
 from .planner_service import QueryPlanner
@@ -33,14 +33,19 @@ class QueryUnderstandingService:
             semantic_settings=self.semantic_settings,
         )
 
-    def understand(self, query: str) -> QueryUnderstandingResult:
-        return QueryUnderstandingResult.from_plan(self.query_planner.plan(query))
+    def understand(
+        self,
+        query: str,
+        *,
+        control: RequestControl | None = None,
+    ) -> QueryUnderstandingResult:
+        return QueryUnderstandingResult.from_plan(self.query_planner.plan(query, control=control))
 
-    def analyze(self, query: str) -> QueryAnalysis:
-        return self.understand(query).analysis
+    def analyze(self, query: str, *, control: RequestControl | None = None) -> QueryAnalysis:
+        return self.understand(query, control=control).analysis
 
-    def explain(self, query: str) -> str:
-        return self.explain_result(self.understand(query))
+    def explain(self, query: str, *, control: RequestControl | None = None) -> str:
+        return self.explain_result(self.understand(query, control=control))
 
     @staticmethod
     def explain_result(result: QueryUnderstandingResult) -> str:

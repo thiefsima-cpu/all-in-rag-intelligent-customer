@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from ..answer_evidence_builder import AnswerEvidencePackage
+from ..contracts import RequestControl
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
 from ..runtime.json_types import JsonObject
 from .clients import GenerationClientAdapter
@@ -32,13 +33,17 @@ class GenerationPlanner:
         answer_context: AnswerContext,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         package = self.prompt_builder._package_from_context(answer_context)
         return self._build_answer_plan_for_package(
             answer_context.question,
             package,
             answer_context.analysis,
             timeout_seconds=timeout_seconds,
+            control=control,
         )
 
     def _build_answer_plan_for_package(
@@ -48,7 +53,10 @@ class GenerationPlanner:
         analysis: AnalysisInput = None,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         if self.settings.planner_mode is GenerationPlannerMode.RULE:
             return self._build_rule_based_plan(question, package)
         if self.settings.planner_mode is GenerationPlannerMode.HYBRID and self._can_use_rule_plan(
@@ -62,7 +70,10 @@ class GenerationPlanner:
             temperature=self.settings.planner_temperature,
             max_tokens=self.settings.planner_max_tokens,
             timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         plan_data = self.client_adapter.load_json_payload(
             self.client_adapter.response_text(response)
         )

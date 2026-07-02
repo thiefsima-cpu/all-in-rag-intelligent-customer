@@ -1548,6 +1548,45 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             "Found routing calls that bypass RouteResolution.route():\n" + "\n".join(violations),
         )
 
+    def test_online_graph_route_requires_trace_capable_graph_retrieval(self) -> None:
+        source = (RAG_MODULES_DIR / "routing" / "strategies" / "graph.py").read_text(
+            encoding="utf-8-sig"
+        )
+
+        self.assertNotIn("hasattr", source)
+        self.assertNotIn("graph_rag_evidence_search(", source)
+
+    def test_online_runtime_does_not_use_dual_shape_retrieval_signatures(self) -> None:
+        files = [
+            RAG_MODULES_DIR / "retrieval" / "hybrid_executor.py",
+            RAG_MODULES_DIR / "retrieval" / "hybrid_search_service.py",
+            RAG_MODULES_DIR / "graph" / "rag_retrieval.py",
+            RAG_MODULES_DIR / "graph" / "retrieval_runtime.py",
+            RAG_MODULES_DIR / "routing" / "strategies" / "graph.py",
+            RAG_MODULES_DIR / "routing" / "strategies" / "combined.py",
+        ]
+        source = "\n".join(path.read_text(encoding="utf-8-sig") for path in files)
+
+        self.assertNotIn("request_or_query", source)
+        self.assertNotIn("hasattr(", source)
+        self.assertNotIn("graph_rag_evidence_search(", source)
+
+    def test_combined_route_reports_control_cancellation_not_future_cancellation(self) -> None:
+        source = (RAG_MODULES_DIR / "routing" / "strategies" / "combined.py").read_text(
+            encoding="utf-8-sig"
+        )
+
+        self.assertIn("cancel_observed_branches", source)
+        self.assertNotIn('"cancelled_branches"', source)
+
+    def test_graph_retrieval_executor_exposes_trace_only_execution(self) -> None:
+        source = (RAG_MODULES_DIR / "graph" / "retrieval_executor.py").read_text(
+            encoding="utf-8-sig"
+        )
+
+        self.assertIn("def execute_with_trace", source)
+        self.assertNotIn("def execute(self, request", source)
+
     def test_internal_generation_assembly_uses_workflow_service_not_legacy_facade(self) -> None:
         violations: list[str] = []
         allowed_files = {

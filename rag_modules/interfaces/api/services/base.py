@@ -108,7 +108,7 @@ class _BaseGraphRAGApiService:
         system: GraphRAGApplication | None = None,
         config: Optional[GraphRAGConfig] = None,
     ) -> None:
-        self.system = system or create_application_system(config=config)
+        self.system: GraphRAGApplication = system or create_application_system(config=config)
         self._locks = _resolve_shared_api_locks(self.system)
         self._stats_cache: JsonObject | None = None
         self._diagnostics_cache: dict[str, JsonObject] = {}

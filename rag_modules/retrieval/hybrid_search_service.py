@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Union
 
-from ..contracts import QueryPlan, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts import RetrievalRequest
 from ..fusion import FusionRanker
 from .adapters import ConstraintRetriever
 from .candidate_generator import RetrievalCandidateGenerator
@@ -62,48 +60,7 @@ class HybridSearchService:
             ),
         )
 
-    def build_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-        entity_keywords: Optional[List[str]] = None,
-        topic_keywords: Optional[List[str]] = None,
-        metadata: Optional[dict] = None,
-    ) -> RetrievalRequest:
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(
-            query=request_or_query,
-            top_k=top_k,
-            candidate_k=candidate_k,
-            strategy=query_plan.strategy_value if query_plan else "",
-            constraints=constraints,
-            query_plan=query_plan,
-            entity_keywords=entity_keywords,
-            topic_keywords=topic_keywords,
-            metadata=metadata,
-        )
-
-    def prepare_hybrid_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> RetrievalRequest:
-        request = self.build_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def prepare_hybrid_request(self, request: RetrievalRequest) -> RetrievalRequest:
         effective_constraints = request.effective_constraints
         if request.candidate_k <= 0:
             constrained = bool(effective_constraints and effective_constraints.has_constraints())
@@ -115,22 +72,11 @@ class HybridSearchService:
             )
         return request
 
-    def hybrid_evidence_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> HybridRetrievalOutcome:
-        request = self.prepare_hybrid_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def hybrid_evidence_search(self, request: RetrievalRequest) -> HybridRetrievalOutcome:
+        request = self.prepare_hybrid_request(request)
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
         effective_constraints = request.effective_constraints
 
         logger.info(
@@ -140,18 +86,24 @@ class HybridSearchService:
         )
 
         candidates = self.candidate_generator.generate(request)
+        if control is not None:
+            control.raise_if_cancelled()
         final_docs = self.fusion_ranker.rrf_merge(
             ranked_lists=candidates.ranked_lists,
             top_k=request.top_k,
         )
 
         if self.retrieval.enable_parent_doc_retrieval:
+            if control is not None:
+                control.raise_if_cancelled()
             final_docs = self.runtime.attach_parent_evidence_documents(
                 final_docs,
                 top_n=request.top_k
                 if effective_constraints and effective_constraints.has_constraints()
                 else None,
             )
+        if control is not None:
+            control.raise_if_cancelled()
 
         stats = candidates.stats
         logger.info(

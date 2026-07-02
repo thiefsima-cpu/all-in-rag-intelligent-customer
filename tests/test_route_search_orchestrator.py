@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.contracts import EvidenceDocument, QueryPlan
+from rag_modules.contracts import EvidenceDocument, QueryPlan, RequestControl
 from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
@@ -31,20 +31,23 @@ class _FakeTraditionalRetrieval:
             candidate_counts={"vector": len(self.hybrid_docs)},
         )
 
-    def enrich_to_parent_evidence_documents(self, docs, top_n=None):
-        del top_n
+    def enrich_to_parent_evidence_documents(self, request, docs, top_n=None):
+        del request, top_n
         return list(docs)
 
 
 class _FakeGraphRetrieval:
-    def graph_rag_evidence_search(self, query, top_k, constraints=None, query_plan=None):
-        del query, top_k, constraints, query_plan
-        return []
+    def graph_rag_evidence_search_with_trace(self, request):
+        del request
+        return [], {}
 
 
 class _FakePostProcessor:
+    def __init__(self) -> None:
+        self.contexts = []
+
     def post_process(self, evidence_documents, top_k, context):
-        del context
+        self.contexts.append(context)
         return list(evidence_documents)[:top_k]
 
 
@@ -232,6 +235,40 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
         orchestrator.close()
 
         self.assertTrue(strategy.closed)
+
+    def test_post_process_receives_request_control(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="route")
+        post_processor = _FakePostProcessor()
+        orchestrator = RouteSearchOrchestrator(
+            traditional_retrieval=_FakeTraditionalRetrieval(),
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=SimpleNamespace(candidates=SimpleNamespace()),
+            post_processor=post_processor,
+            strategies=[_StubStrategy()],
+        )
+        plan = QueryPlan(query="recommend tofu dishes")
+        request = RouteExecutionRequest(
+            query="recommend tofu dishes",
+            top_k=2,
+            analysis=QueryAnalysis(recommended_strategy=SearchStrategy.HYBRID_TRADITIONAL),
+            retrieval_request=RouteSearchOrchestrator.build_retrieval_request(
+                query="recommend tofu dishes",
+                top_k=2,
+                strategy="hybrid_traditional",
+                query_plan=plan,
+                control=control,
+            ),
+            constraints=QueryConstraints(),
+            query_plan=plan,
+        )
+
+        orchestrator.post_process(
+            request,
+            [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")],
+            trace=RouteTraceRecorder(query=request.query, requested_top_k=request.top_k),
+        )
+
+        self.assertIs(post_processor.contexts[0].control, control)
 
 
 if __name__ == "__main__":

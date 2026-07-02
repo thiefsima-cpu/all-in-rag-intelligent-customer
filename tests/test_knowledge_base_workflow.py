@@ -360,9 +360,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         index_module = type("IndexModule", (), {})()
         index_module.has_collection = lambda: False
         index_module.load_collection = lambda: False
-        index_module.build_vector_index = lambda chunks: (_ for _ in ()).throw(
-            RuntimeError(secret)
-        )
+        index_module.build_vector_index = lambda chunks: (_ for _ in ()).throw(RuntimeError(secret))
         index_module.delete_collection = lambda: True
         index_module.get_collection_stats = lambda: {"row_count": 0}
         workflow = KnowledgeBaseBuildWorkflow(

@@ -13,6 +13,9 @@ from ...contracts import (
     QueryPlannerRuntimeSettings,
     QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
 )
 from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
 from ...runtime_contracts import LLMClientPort
@@ -51,7 +54,9 @@ class QueryPlanner:
         self._calibrator = QueryPlanCalibrator(self.semantic_settings)
         self._rule_planner = RuleBasedPlanner(self.semantic_settings, self._calibrator)
 
-    def plan(self, query: str) -> QueryPlan:
+    def plan(self, query: str, *, control: RequestControl | None = None) -> QueryPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         cache_key = (query or "").strip()
         cached = self._cached_plan(cache_key)
         if cached is not None:
@@ -61,13 +66,17 @@ class QueryPlanner:
 
         future, is_owner = self._claim_planning(cache_key)
         if not is_owner:
-            plan = deepcopy(future.result())
+            plan = deepcopy(
+                future.result(timeout=control.remaining_seconds() if control is not None else None)
+            )
+            if control is not None:
+                control.raise_if_cancelled()
             plan.used_cache = True
             logger.info("Query planning joined in-flight request")
             return plan
 
         try:
-            plan = self._create_plan(query, cache_key=cache_key)
+            plan = self._create_plan(query, cache_key=cache_key, control=control)
             self._remember(cache_key, plan)
             future.set_result(deepcopy(plan))
             return plan
@@ -77,7 +86,15 @@ class QueryPlanner:
         finally:
             self._release_planning(cache_key, future)
 
-    def _create_plan(self, query: str, *, cache_key: str) -> QueryPlan:
+    def _create_plan(
+        self,
+        query: str,
+        *,
+        cache_key: str,
+        control: RequestControl | None = None,
+    ) -> QueryPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         if self.settings.fast_rule_planning and self._should_use_fast_rule_plan(cache_key):
             plan = self.rule_based_plan(query)
             self._calibrate_plan(plan)
@@ -95,7 +112,10 @@ class QueryPlanner:
                 temperature=self.settings.llm_temperature,
                 max_tokens=self.settings.llm_max_tokens,
                 timeout=self.settings.timeout_seconds,
+                control=control,
             )
+            if control is not None:
+                control.raise_if_cancelled()
             response_content = self._response_text(response) or "{}"
             plan = QueryPlan.from_dict(
                 query,
@@ -109,6 +129,8 @@ class QueryPlanner:
             strategy = plan.strategy_value
             logger.info("Query plan created: mode=%s strategy=%s", planner_mode, strategy)
             return plan
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,

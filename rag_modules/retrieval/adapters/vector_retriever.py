@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any, Dict, List, cast
 
-from ...contracts import EvidenceDocument
+from ...contracts import EvidenceDocument, RetrievalRequest
 from ...runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
 from ...safe_logging import log_failure
 
@@ -37,9 +37,12 @@ class VectorRetriever:
         self.driver = driver
         self.database = database
 
-    def search(self, query: str, top_k: int = 5) -> List[EvidenceDocument]:
+    def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
         try:
-            vector_docs = self.milvus_module.similarity_search(query, k=top_k * 2)
+            vector_docs = self.milvus_module.similarity_search(request)
         except Exception as exc:
             log_failure(
                 logger,
@@ -52,13 +55,15 @@ class VectorRetriever:
 
         if not vector_docs:
             return []
+        if control is not None:
+            control.raise_if_cancelled()
 
         node_ids = []
         for result in vector_docs:
             node_id = _metadata_dict(result.get("metadata")).get("node_id")
             if node_id:
                 node_ids.append(str(node_id))
-        neighbor_map = self._batch_get_neighbors(node_ids) if node_ids else {}
+        neighbor_map = self._batch_get_neighbors(request, node_ids) if node_ids else {}
 
         enhanced: List[EvidenceDocument] = []
         for result in vector_docs:
@@ -97,13 +102,19 @@ class VectorRetriever:
                 )
             )
 
-        return enhanced[:top_k]
+        return enhanced[: request.effective_candidate_k]
 
     def _batch_get_neighbors(
-        self, node_ids: List[str], max_neighbors: int = 3
+        self,
+        request: RetrievalRequest,
+        node_ids: List[str],
+        max_neighbors: int = 3,
     ) -> Dict[str, List[str]]:
         if not self.driver or not node_ids:
             return {}
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
         try:
             with self.driver.session(database=self.database) as session:
                 query = """
@@ -115,6 +126,7 @@ class VectorRetriever:
                 result = session.run(
                     query,
                     {"node_ids": list(set(node_ids)), "max_n": max_neighbors},
+                    timeout=control.remaining_seconds() if control is not None else None,
                 )
                 records = cast(Iterable[Mapping[str, Any]], result)
                 return {

@@ -21,7 +21,7 @@ from ._common import coerce_float, coerce_str
 from .query import QueryPlan
 
 if TYPE_CHECKING:
-    from ..runtime.request_control import RequestControl
+    from .request_control import RequestControl
 
 
 class PageDocumentLike(Protocol):
@@ -399,7 +399,7 @@ class RetrievalRequest:
         return replace(self, **changes)
 
     def to_dict(self) -> Dict[str, Any]:
-        from ..runtime.request_control import control_trace_details
+        from .request_control import control_trace_details
 
         payload = {
             "query": self.query,

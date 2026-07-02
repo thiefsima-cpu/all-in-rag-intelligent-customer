@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.contracts import RequestControl
 from rag_modules.generation import (
     AnswerPlan,
     GenerationDecision,
@@ -117,10 +118,13 @@ class _FakeClientAdapter:
         self.prompts: list[str] = []
         self.stream_prompts: list[str] = []
         self.timeouts: list[float] = []
+        self.controls: list[object] = []
+        self.stream_controls: list[object] = []
 
     def create_completion(self, *, prompt: str, timeout: float, **_: object):
         self.prompts.append(prompt)
         self.timeouts.append(float(timeout))
+        self.controls.append(_.get("control"))
         if not self.completions:
             raise AssertionError("Unexpected completion request.")
         next_result = self.completions.pop(0)
@@ -130,6 +134,7 @@ class _FakeClientAdapter:
 
     def stream_prompt(self, *, prompt: str, **_: object):
         self.stream_prompts.append(prompt)
+        self.stream_controls.append(_.get("control"))
         if not self.stream_responses:
             raise AssertionError("Unexpected stream request.")
         next_result = self.stream_responses.pop(0)
@@ -448,6 +453,48 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(len(client.timeouts), 1)
         self.assertGreater(client.timeouts[0], 0)
         self.assertLessEqual(client.timeouts[0], 2)
+
+    def test_generate_with_trace_passes_control_to_direct_completion(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="generation")
+        client = _FakeClientAdapter([_FakeResponse("controlled answer")])
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.generate_with_trace(
+            question="controlled question",
+            package=self._build_package(),
+            control=control,
+        )
+
+        self.assertEqual(answer, "controlled answer")
+        self.assertEqual(trace.status, "success")
+        self.assertIs(client.controls[0], control)
+
+    def test_stream_with_trace_passes_control_to_streaming_client(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="generation")
+        client = _FakeClientAdapter(stream_responses=[["chunk"]])
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1, stream_retries=1),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.stream_with_trace(
+            question="controlled stream",
+            package=self._build_package(),
+            control=control,
+        )
+
+        self.assertEqual(answer, "chunk")
+        self.assertEqual(trace.status, "success")
+        self.assertIs(client.stream_controls[0], control)
 
     def _trace_for_generation_error(self, error: Exception) -> GenerationSnapshot:
         engine = GenerationExecutionEngine(

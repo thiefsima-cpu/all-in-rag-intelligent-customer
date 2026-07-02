@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
-from ...contracts import EvidenceDocument
+from ...contracts import EvidenceDocument, RequestControl
 from ...runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -298,6 +298,7 @@ class AnswerPipelineState:
     generation_trace: GenerationSnapshot = field(default_factory=GenerationSnapshot)
     trace_event: QueryTraceEvent = field(default_factory=QueryTraceEvent)
     answer: str = ""
+    request_control: RequestControl | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.question = str(self.question or self.answer_context.question or "")
@@ -332,6 +333,7 @@ class QuestionAnswerer(Protocol):
         explain_routing: bool = False,
         message_callback: MessageCallback = None,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult: ...
 
     def answer_question_response(
@@ -342,6 +344,7 @@ class QuestionAnswerer(Protocol):
         explain_routing: bool = False,
         message_callback: MessageCallback = None,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> "QuestionAnswerResponse": ...
 
 

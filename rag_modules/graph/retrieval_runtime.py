@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import time
 
-from ..contracts import QueryPlan, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts import RetrievalRequest
 from ..query_policy import get_query_policy
 from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
 from ..runtime.error_models import ensure_runtime_error_detail
@@ -24,22 +23,9 @@ class GraphRetrievalRuntime:
 
     def build_request(
         self,
-        request_or_query: str | RetrievalRequest,
-        *,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> RetrievalRequest:
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(
-            query=request_or_query,
-            top_k=top_k,
-            candidate_k=top_k,
-            constraints=constraints,
-            query_plan=query_plan,
-            strategy="graph_rag",
-        )
+        return request
 
     def resolve_request_context(self, request: RetrievalRequest) -> tuple[GraphQuery, list[str]]:
         graph_query = (

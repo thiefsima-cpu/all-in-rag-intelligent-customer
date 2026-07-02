@@ -12,6 +12,7 @@ from typing import Protocol
 
 from ....app.application_protocol import GraphRAGApplication
 from ....app.services.answer_models import QuestionAnswerResponse
+from ....contracts import RequestControl
 from ....safe_logging import log_failure
 from ..answer_models import (
     AnswerPayloadModel,
@@ -57,6 +58,7 @@ class ServingSseRunner:
         answer_operation: Callable[[], AbstractContextManager[None]],
         readiness_guard: _ReadinessGuard,
         answer_payload_factory: Callable[[QuestionAnswerResponse], AnswerPayloadModel],
+        request_control_factory: Callable[[], RequestControl],
         max_workers: int,
         queue_max_size: int,
     ) -> None:
@@ -65,6 +67,7 @@ class ServingSseRunner:
         self.answer_operation = answer_operation
         self.readiness_guard = readiness_guard
         self.answer_payload_factory = answer_payload_factory
+        self.request_control_factory = request_control_factory
         self.max_workers = max(1, int(max_workers or 1))
         self.queue_max_size = max(1, int(queue_max_size or 1))
         self._executor: ThreadPoolExecutor | None = None
@@ -89,6 +92,7 @@ class ServingSseRunner:
             maxsize=self.queue_max_size
         )
         stream_closed = threading.Event()
+        request_control = self.request_control_factory()
 
         def emit(event: AnswerStreamEventModel) -> None:
             while True:
@@ -131,6 +135,7 @@ class ServingSseRunner:
                             explain_routing=explain_routing,
                             message_callback=on_message,
                             chunk_callback=on_chunk,
+                            control=request_control,
                         )
                 answer_payload = self.answer_payload_factory(response)
                 result_payload: AnswerPayloadModel | PublicAnswerPayloadModel = answer_payload
@@ -169,6 +174,7 @@ class ServingSseRunner:
             return
 
         try:
+            completed = False
             while True:
                 try:
                     item = event_queue.get(timeout=_STREAM_QUEUE_POLL_SECONDS)
@@ -183,9 +189,12 @@ class ServingSseRunner:
                     continue
                 if isinstance(item, _StreamEnd):
                     yield AnswerStreamEventModel.done()
+                    completed = True
                     break
                 yield item
         finally:
+            if not completed:
+                request_control.cancel("stream_consumer_closed")
             stream_closed.set()
             future.cancel()
 

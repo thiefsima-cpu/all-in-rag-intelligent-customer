@@ -87,6 +87,9 @@ class RouteSearchOrchestrator:
         *,
         trace: RouteTraceRecorder,
     ) -> List[EvidenceDocument]:
+        control = request.retrieval_request.control
+        if control is not None:
+            control.raise_if_cancelled()
         strategy = self.strategy_registry.get(request.analysis.recommended_strategy)
         if strategy is None:
             logger.warning(
@@ -111,6 +114,9 @@ class RouteSearchOrchestrator:
         trace: RouteTraceRecorder,
         query_plan_payload: JsonObject | None = None,
     ) -> List[EvidenceDocument]:
+        control = request.retrieval_request.control
+        if control is not None:
+            control.raise_if_cancelled()
         post_start = time.perf_counter()
         processed_documents = self.post_processor.post_process(
             evidence_documents,
@@ -122,6 +128,7 @@ class RouteSearchOrchestrator:
                 relationship_intensity=request.analysis.relationship_intensity,
                 route_confidence=request.analysis.confidence,
                 query_plan=query_plan_payload or {},
+                control=control,
             ),
         )
         trace.add_stage("post_process", start_time=post_start, documents=processed_documents)
@@ -134,6 +141,9 @@ class RouteSearchOrchestrator:
         trace: RouteTraceRecorder,
         error: Exception,
     ) -> List[EvidenceDocument]:
+        control = request.retrieval_request.control
+        if control is not None:
+            control.raise_if_cancelled()
         log_failure(
             logger,
             logging.ERROR,
@@ -154,6 +164,7 @@ class RouteSearchOrchestrator:
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
         strategy: str = "",
+        control=None,
     ) -> RetrievalRequest:
         return build_route_retrieval_request(
             query=query,
@@ -162,6 +173,7 @@ class RouteSearchOrchestrator:
             candidate_k=candidate_k,
             query_plan=query_plan,
             strategy=strategy,
+            control=control,
         )
 
     @staticmethod

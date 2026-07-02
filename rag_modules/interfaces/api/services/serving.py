@@ -7,6 +7,7 @@ from typing import Iterator, Optional
 from ....app.application_protocol import GraphRAGApplication
 from ....app.services.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
+from ....contracts import RequestControl
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
 from ....runtime.json_types import JsonObject
@@ -38,6 +39,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         self._validate_startup_config = system is None
         super().__init__(system=system, config=config)
         resolved_config = config or getattr(self.system, "config", None)
+        self._config = resolved_config
         api_settings = getattr(resolved_config, "api", None)
         self._answer_admission = ServingAnswerAdmissionController(
             max_concurrent_answers=getattr(
@@ -80,6 +82,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             answer_operation=self._locks.answer_operation,
             readiness_guard=self._runtime_readiness,
             answer_payload_factory=self._answer_payload,
+            request_control_factory=self._new_stream_request_control,
             max_workers=stream_executor_max_workers,
             queue_max_size=stream_queue_max_size,
         )
@@ -169,6 +172,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         question: str,
         stream: bool = False,
         explain_routing: bool = False,
+        control: RequestControl | None = None,
     ) -> AnswerPayloadModel:
         self._ensure_serving_runtime_initialized()
         self._refresh_serving_runtime_if_stale()
@@ -180,8 +184,15 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                     question=question,
                     stream=stream,
                     explain_routing=explain_routing,
+                    control=control,
                 )
                 return self._answer_payload(response)
+
+    def _new_stream_request_control(self) -> RequestControl:
+        config = self._config or getattr(self.system, "config", None)
+        generation = getattr(config, "generation", None)
+        budget = float(getattr(generation, "generation_latency_budget_seconds", 30.0) or 30.0)
+        return RequestControl.for_timeout(budget, scope="answer.stream")
 
     def stream_answer_question_events(
         self,

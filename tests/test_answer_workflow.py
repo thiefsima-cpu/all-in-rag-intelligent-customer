@@ -97,17 +97,20 @@ class _FakeGenerationService:
         self.stream_calls = 0
         self.answer_contexts = []
 
-    def generate_answer_from_context(self, answer_context):
+    def generate_answer_from_context(self, answer_context, *, control=None):
+        del control
         self.direct_calls += 1
         self.answer_contexts.append(answer_context)
         return self.answer
 
-    def generate_answer_with_trace_from_context(self, answer_context):
+    def generate_answer_with_trace_from_context(self, answer_context, *, control=None):
+        del control
         self.direct_calls += 1
         self.answer_contexts.append(answer_context)
         return self.answer, self.trace
 
-    def generate_answer_stream_from_context(self, answer_context):
+    def generate_answer_stream_from_context(self, answer_context, *, control=None):
+        del control
         self.stream_calls += 1
         self.answer_contexts.append(answer_context)
         if self.stream_error:
@@ -121,8 +124,9 @@ class _FakeGenerationService:
         *,
         max_retries=None,
         chunk_callback=None,
+        control=None,
     ):
-        del max_retries
+        del max_retries, control
         self.stream_calls += 1
         self.answer_contexts.append(answer_context)
         if self.stream_error:
@@ -153,14 +157,15 @@ class _FakeQueryRouter:
         self.graph_trace = graph_trace or GraphRetrievalSnapshot()
         self.route_calls: list[tuple[str, int]] = []
 
-    def route(self, question: str, top_k: int):
+    def route(self, question: str, top_k: int, *, control=None):
+        del control
         self.route_calls.append((question, top_k))
         if self.route_error:
             raise self.route_error
         return self.resolution
 
-    def route_with_trace(self, question: str, top_k: int):
-        resolution = self.route(question, top_k)
+    def route_with_trace(self, question: str, top_k: int, *, control=None):
+        resolution = self.route(question, top_k, control=control)
         route_trace = RouteSnapshot.from_dict(self.route_trace.to_dict())
         if self.graph_trace.has_content() and route_trace.strategy in {"graph_rag", "combined"}:
             if route_trace.strategy == "combined":
@@ -185,6 +190,31 @@ class _FakeQueryRouter:
         return f"explain:{question}"
 
 
+class _ControlCapturingRouter:
+    def __init__(self) -> None:
+        self.controls = []
+
+    def route_with_trace(self, question: str, top_k: int, *, control=None):
+        self.controls.append(control)
+        return (
+            _build_resolution(
+                question,
+                documents=[EvidenceDocument(content="doc", recipe_name="recipe")],
+            ),
+            RouteSnapshot(query=question, requested_top_k=top_k),
+        )
+
+
+class _ControlCapturingGeneration:
+    def __init__(self) -> None:
+        self.controls = []
+
+    def generate_answer_with_trace_from_context(self, answer_context, *, control=None):
+        del answer_context
+        self.controls.append(control)
+        return "answer", GenerationSnapshot(status="success")
+
+
 class AnswerWorkflowTests(unittest.TestCase):
     @staticmethod
     def make_result(question: str) -> QuestionAnswerResult:
@@ -192,6 +222,22 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.config = build_test_config()
+
+    def test_answer_workflow_uses_one_root_control_for_route_and_generation(self) -> None:
+        router = _ControlCapturingRouter()
+        generation = _ControlCapturingGeneration()
+        workflow = AnswerWorkflow(
+            self.config,
+            query_router=router,
+            generation_module=generation,
+            query_tracer=None,
+        )
+
+        result = workflow.answer_question("tofu")
+
+        self.assertEqual(result.answer, "answer")
+        self.assertIs(router.controls[0], generation.controls[0])
+        self.assertEqual(router.controls[0].scope, "answer")
 
     def test_no_evidence_returns_fallback_and_records_trace(self) -> None:
         question = "Which recipe connects tofu and fermented bean paste?"
@@ -435,7 +481,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             route_trace=RouteSnapshot(query="stale-question", strategy="hybrid_traditional"),
             graph_trace=GraphRetrievalSnapshot(query="stale-question", doc_count=99),
         )
-        router.route_with_trace = lambda q, top_k: (
+        router.route_with_trace = lambda q, top_k, **kwargs: (
             router.resolution,
             RouteSnapshot.from_dict(resolution.metadata["route_trace"]),
         )
@@ -458,7 +504,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             route_trace=RouteSnapshot(query=question, strategy="combined"),
             graph_trace=GraphRetrievalSnapshot(query=question, doc_count=1),
         )
-        router.route_with_trace = lambda q, top_k: (
+        router.route_with_trace = lambda q, top_k, **kwargs: (
             router.resolution,
             RouteSnapshot(query=q, strategy="combined"),
         )
@@ -556,7 +602,8 @@ class AnswerWorkflowTests(unittest.TestCase):
             def explain_routing_decision(question: str) -> str:
                 return question
 
-            def route_with_trace(self, question: str, top_k: int):
+            def route_with_trace(self, question: str, top_k: int, *, control=None):
+                del control
                 document = EvidenceDocument(
                     content=f"evidence:{question}",
                     recipe_name=question,
@@ -589,7 +636,8 @@ class AnswerWorkflowTests(unittest.TestCase):
                 return resolution, route_trace
 
         class _ConcurrentGeneration:
-            def generate_answer_with_trace_from_context(self, answer_context):
+            def generate_answer_with_trace_from_context(self, answer_context, *, control=None):
+                del control
                 question = answer_context.question
                 generation_barrier.wait(timeout=2.0)
                 request_number = 1 if question == "concurrent-one" else 2
@@ -649,15 +697,16 @@ class AnswerWorkflowTests(unittest.TestCase):
                     last_trace=GraphRetrievalSnapshot(query=question, doc_count=1, path_count=2)
                 )
 
-            def route(self, query: str, top_k: int):
-                del query, top_k
+            def route(self, query: str, top_k: int, *, control=None):
+                del query, top_k, control
                 return resolution
 
         class _LegacyGeneration:
             def __init__(self) -> None:
                 self.last_trace = GenerationSnapshot(mode="direct", total_evidence_items=1)
 
-            def generate_answer_from_context(self, answer_context):
+            def generate_answer_from_context(self, answer_context, *, control=None):
+                del control
                 self.answer_context = answer_context
                 return "legacy answer"
 

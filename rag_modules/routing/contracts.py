@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ..contracts import RequestControl
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot, RouteResolution, RouteSnapshot
 from ..runtime.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort
@@ -20,12 +21,20 @@ class RoutingWorkflowProtocol(Protocol):
 
     def explain_routing_decision(self, query: str) -> str: ...
 
-    def route(self, query: str, top_k: int = 5) -> RouteResolution: ...
+    def route(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
+    ) -> RouteResolution: ...
 
     def route_with_trace(
         self,
         query: str,
         top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[RouteResolution, RouteSnapshot]: ...
 
     def get_route_statistics(self) -> JsonObject: ...

@@ -6,7 +6,7 @@ import logging
 from contextlib import nullcontext
 from typing import List
 
-from ...contracts import EvidenceDocument
+from ...contracts import EvidenceDocument, RequestControl
 from ...runtime import (
     AnswerContext,
     GenerationMode,
@@ -50,6 +50,9 @@ class AnswerPipelineService:
         self.telemetry = telemetry
 
     def execute(self, state: AnswerPipelineState) -> AnswerPipelineState:
+        control = state.request_control
+        if control is not None:
+            control.raise_if_cancelled()
         self._emit(state.message_callback, f"\nUser question: {state.question}")
         if state.explain_routing and isinstance(
             self.query_router,
@@ -73,6 +76,7 @@ class AnswerPipelineService:
             resolution, route_trace = self.router_traces.route_with_trace(
                 state.question,
                 self.top_k,
+                control=control,
             )
             if span is not None:
                 span.set_attribute(
@@ -125,6 +129,7 @@ class AnswerPipelineService:
                 stream=state.stream,
                 chunk_callback=state.chunk_callback,
                 message_callback=state.message_callback,
+                control=control,
             )
             if span is not None:
                 span.set_attribute(
@@ -164,14 +169,19 @@ class AnswerPipelineService:
         stream: bool,
         chunk_callback: ChunkCallback,
         message_callback: MessageCallback,
+        control: RequestControl | None,
     ) -> tuple[str, GenerationSnapshot]:
         if not stream:
-            return self.generation_traces.generate_answer_with_trace_from_context(answer_context)
+            return self.generation_traces.generate_answer_with_trace_from_context(
+                answer_context,
+                control=control,
+            )
 
         try:
             answer, trace = self.generation_traces.generate_answer_stream_with_trace_from_context(
                 answer_context,
                 chunk_callback=chunk_callback,
+                control=control,
             )
             if chunk_callback:
                 chunk_callback("\n")
@@ -188,7 +198,10 @@ class AnswerPipelineService:
                 message_callback,
                 "\n[WARN] Streaming output interrupted. Falling back to standard mode...",
             )
-            return self.generation_traces.generate_answer_with_trace_from_context(answer_context)
+            return self.generation_traces.generate_answer_with_trace_from_context(
+                answer_context,
+                control=control,
+            )
 
     @staticmethod
     def _format_strategy_summary(analysis: QueryAnalysis) -> str:

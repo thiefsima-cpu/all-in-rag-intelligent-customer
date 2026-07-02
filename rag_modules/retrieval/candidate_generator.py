@@ -163,15 +163,22 @@ class RetrievalCandidateGenerator:
 
     def generate(self, request: RetrievalRequest) -> CandidateSet:
         effective_request = self._calibrate_request(request)
+        control = effective_request.control
+        if control is not None:
+            control.raise_if_cancelled()
         results: List[CandidateSourceResult] = []
         degraded: List[CandidateSourceDegradation] = []
         skipped_sources = self._request_skipped_sources(effective_request)
         for source in self.sources:
+            if control is not None:
+                control.raise_if_cancelled()
             documents, degradation = self._retrieve_source(
                 source,
                 effective_request,
                 skipped_sources=skipped_sources,
             )
+            if control is not None:
+                control.raise_if_cancelled()
             if degradation:
                 degraded.append(degradation)
             results.append(

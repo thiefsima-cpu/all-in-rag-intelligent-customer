@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
 from rag_modules.text_document import TextDocument
@@ -14,9 +14,9 @@ class _StubVectorRetriever:
     def __init__(self) -> None:
         self.calls = []
 
-    def search(self, query, *, top_k):
-        self.calls.append((query, top_k))
-        return [EvidenceDocument(content="vector", recipe_name=query)]
+    def search(self, request):
+        self.calls.append(request)
+        return [EvidenceDocument(content="vector", recipe_name=request.query)]
 
 
 class _StubDualLevelService:
@@ -232,11 +232,35 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         runtime.state.bm25 = "cached-bm25"
         runtime.state.bm25_corpus_docs = [TextDocument(content="cached-doc")]
 
-        docs = runtime.bm25_candidates("spicy tofu", top_k=4)
+        request = RetrievalRequest.from_inputs(query="spicy tofu", top_k=2, candidate_k=4)
+
+        docs = runtime.bm25_candidates(request)
 
         self.assertEqual(docs[0].recipe_name, "spicy tofu")
         self.assertEqual(bm25_retriever.calls[0][0], "build")
         self.assertEqual(bm25_retriever.calls[1], ("spicy tofu", 4))
+
+    def test_vector_candidates_forward_request_control(self) -> None:
+        adapter_factory = _StubAdapterFactory()
+        runtime = self._build_runtime(
+            index_service=_StubIndexService(),
+            bm25_retriever=_StubBm25Retriever(ready=True),
+            adapter_factory=adapter_factory,
+            driver_service=_StubDriverService(),
+            parent_documents=_StubParentDocumentService(),
+        )
+        control = RequestControl.for_timeout(5.0, scope="route")
+        request = RetrievalRequest.from_inputs(
+            query="spicy tofu",
+            top_k=2,
+            candidate_k=4,
+            control=control,
+        )
+
+        docs = runtime.vector_candidates(request)
+
+        self.assertEqual(docs[0].recipe_name, "spicy tofu")
+        self.assertIs(adapter_factory.vector.calls[0].control, control)
 
     def test_sync_bm25_state_refreshes_runtime_state_from_retriever(self) -> None:
         cached_doc = TextDocument(content="cached")

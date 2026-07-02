@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
+from ...contracts import RequestControl
 from ...runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -23,7 +24,13 @@ from .answer_models import ChunkCallback
 class QueryRouterProtocol(Protocol):
     """Router surface consumed by the answer pipeline."""
 
-    def route(self, query: str, top_k: int = 5) -> object: ...
+    def route(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
+    ) -> object: ...
 
 
 @runtime_checkable
@@ -34,6 +41,8 @@ class QueryRouterWithTraceProtocol(Protocol):
         self,
         query: str,
         top_k: int = 5,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[object, object | None]: ...
 
 
@@ -50,11 +59,18 @@ class ExplainableQueryRouterProtocol(Protocol):
 class GenerationServiceProtocol(Protocol):
     """Generation surface consumed by the answer pipeline."""
 
-    def generate_answer_from_context(self, answer_context: AnswerContext) -> str: ...
+    def generate_answer_from_context(
+        self,
+        answer_context: AnswerContext,
+        *,
+        control: RequestControl | None = None,
+    ) -> str: ...
 
     def generate_answer_stream_from_context(
         self,
         answer_context: AnswerContext,
+        *,
+        control: RequestControl | None = None,
     ) -> Iterable[object]: ...
 
 
@@ -65,6 +81,8 @@ class GenerationTraceServiceProtocol(Protocol):
     def generate_answer_with_trace_from_context(
         self,
         answer_context: AnswerContext,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[object, object]: ...
 
 
@@ -77,6 +95,7 @@ class GenerationStreamTraceServiceProtocol(Protocol):
         answer_context: AnswerContext,
         *,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> tuple[object, object]: ...
 
 
@@ -93,11 +112,25 @@ class QueryRouterTraceAdapter:
     def __init__(self, router: QueryRouterSource) -> None:
         self.router = router
 
-    def route_with_trace(self, question: str, top_k: int) -> tuple[RouteResolution, RouteSnapshot]:
+    def route_with_trace(
+        self,
+        question: str,
+        top_k: int,
+        *,
+        control: RequestControl | None = None,
+    ) -> tuple[RouteResolution, RouteSnapshot]:
         if isinstance(self.router, QueryRouterWithTraceProtocol):
-            raw_resolution, route_trace = self.router.route_with_trace(question, top_k)
+            raw_resolution, route_trace = self.router.route_with_trace(
+                question,
+                top_k,
+                control=control,
+            )
         else:
-            raw_resolution = cast(QueryRouterProtocol, self.router).route(question, top_k)
+            raw_resolution = cast(QueryRouterProtocol, self.router).route(
+                question,
+                top_k,
+                control=control,
+            )
             route_trace = None
         if isinstance(raw_resolution, RouteResolution):
             resolution = raw_resolution
@@ -176,15 +209,18 @@ class GenerationTraceAdapter:
     def generate_answer_with_trace_from_context(
         self,
         answer_context: AnswerContext,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         if isinstance(self.generation_service, GenerationTraceServiceProtocol):
             answer, trace = self.generation_service.generate_answer_with_trace_from_context(
-                answer_context
+                answer_context,
+                control=control,
             )
             return str(answer), clone_generation_snapshot(trace)
         answer = cast(
             GenerationServiceProtocol, self.generation_service
-        ).generate_answer_from_context(answer_context)
+        ).generate_answer_from_context(answer_context, control=control)
         return str(answer), GenerationSnapshot()
 
     def generate_answer_stream_with_trace_from_context(
@@ -192,17 +228,22 @@ class GenerationTraceAdapter:
         answer_context: AnswerContext,
         *,
         chunk_callback: ChunkCallback = None,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         if isinstance(self.generation_service, GenerationStreamTraceServiceProtocol):
             answer, trace = self.generation_service.generate_answer_stream_with_trace_from_context(
                 answer_context,
                 chunk_callback=chunk_callback,
+                control=control,
             )
             return str(answer), clone_generation_snapshot(trace)
 
         chunks: list[str] = []
         generation_service = cast(GenerationServiceProtocol, self.generation_service)
-        for chunk_text in generation_service.generate_answer_stream_from_context(answer_context):
+        for chunk_text in generation_service.generate_answer_stream_from_context(
+            answer_context,
+            control=control,
+        ):
             chunks.append(str(chunk_text))
             if chunk_callback:
                 chunk_callback(str(chunk_text))

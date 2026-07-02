@@ -10,6 +10,7 @@ from rag_modules.app.runtime_contracts import (
     Neo4jSessionPort,
     VectorIndexModulePort,
 )
+from rag_modules.contracts import RetrievalRequest
 from rag_modules.runtime import QueryAnalysis, ensure_optional_query_analysis
 from rag_modules.text_document import TextDocument
 
@@ -60,12 +61,15 @@ class _VectorIndexFake:
 
     def similarity_search(
         self,
-        query: str,
-        k: int = 5,
-        filters: dict[str, object] | None = None,
+        request: RetrievalRequest,
     ) -> list[dict[str, object]]:
-        del filters
-        return [{"text": query, "score": float(k), "metadata": {}}]
+        return [
+            {
+                "text": request.query,
+                "score": float(request.effective_candidate_k),
+                "metadata": {},
+            }
+        ]
 
     def get_collection_stats(self, collection_name: str | None = None) -> dict[str, object]:
         return {"collection_name": collection_name or self.collection_name}
@@ -112,7 +116,8 @@ def _uses_graph_data_port(port: GraphDataModulePort) -> dict[str, object]:
 
 
 def _uses_vector_index_port(port: VectorIndexModulePort) -> list[dict[str, object]]:
-    return port.similarity_search("tofu", k=2)
+    request = RetrievalRequest.from_inputs(query="tofu", top_k=2, candidate_k=2)
+    return port.similarity_search(request)
 
 
 def _uses_neo4j_port(port: Neo4jManagerPort) -> object:

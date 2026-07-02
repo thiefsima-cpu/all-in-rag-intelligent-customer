@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..contracts import EvidenceDocument
+from ..contracts import EvidenceDocument, RequestControl
 from ..dashscope_clients import DashScopeRerankClient
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
 from ..runtime_contracts import RerankClientPort
@@ -30,6 +30,7 @@ class RetrievalPostProcessContext:
     relationship_intensity: float
     route_confidence: float
     query_plan: Optional[dict] = None
+    control: RequestControl | None = None
 
 
 class RetrievalPostProcessor:
@@ -78,6 +79,7 @@ class RetrievalPostProcessor:
             query=context.query,
             documents=list(evidence_documents or []),
             top_k=top_k,
+            control=context.control,
         )
         if context.strategy in {"graph_rag", "combined"}:
             reranked_documents = self.evidence_unit_ranker.rank_evidence_documents(
@@ -121,16 +123,23 @@ class RetrievalPostProcessor:
         query: str,
         documents: List[EvidenceDocument],
         top_k: int,
+        control: RequestControl | None = None,
     ) -> List[EvidenceDocument]:
         if not documents or not self.rerank_client:
             return documents[:top_k]
+        if control is not None:
+            control.raise_if_cancelled()
 
         try:
             ordered_indices = self.rerank_client.rerank(
                 query=query,
                 documents=[self._build_rerank_text(doc) for doc in documents],
                 top_n=min(top_k, len(documents)),
+                control=control,
+                timeout_seconds=control.remaining_seconds() if control is not None else None,
             )
+            if control is not None:
+                control.raise_if_cancelled()
         except Exception as exc:
             log_failure(
                 logger,

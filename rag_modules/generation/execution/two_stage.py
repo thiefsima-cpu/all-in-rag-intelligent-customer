@@ -7,6 +7,7 @@ import logging
 import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
+from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...runtime import AnswerContext, GenerationSnapshot
 from ...runtime.error_models import generation_error_detail
 from ...safe_logging import log_failure
@@ -27,12 +28,14 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
         trace: GenerationSnapshot,
         total_start: float,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         try:
             answer, plan_latency_ms, compose_latency_ms, attempts_used = (
                 self._run_two_stage_completion(
                     answer_context,
                     deadline=deadline,
+                    control=control,
                 )
             )
             trace.status = "success"
@@ -42,6 +45,8 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
             trace.request_retries = max(0, attempts_used - 1)
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return answer, self._snapshot_trace(trace)
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,
@@ -59,6 +64,7 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                     answer, direct_latency_ms, attempts_used = self._run_direct_completion(
                         answer_context,
                         deadline=deadline,
+                        control=control,
                     )
                     trace.status = "degraded"
                     trace.fallback_used = True
@@ -72,6 +78,8 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                     trace.request_retries += max(0, attempts_used - 1)
                     trace.total_latency_ms = self._elapsed_ms(total_start)
                     return answer, self._snapshot_trace(trace)
+                except (RequestCancelled, RequestBudgetExceeded):
+                    raise
                 except Exception as fallback_exc:
                     log_failure(
                         logger,
@@ -95,12 +103,18 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
         answer_context: AnswerContext,
         *,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> tuple[str, float, float, int]:
+        if control is not None:
+            control.raise_if_cancelled()
         plan_start = time.perf_counter()
         plan = self._build_answer_plan(
             answer_context,
             deadline=deadline,
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         plan_latency_ms = self._elapsed_ms(plan_start)
         retries_used = self._consume_retry_count()
 
@@ -112,7 +126,10 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                 deadline,
                 self.settings.timeout_seconds,
             ),
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         compose_latency_ms = self._elapsed_ms(compose_start)
         retries_used += self._consume_retry_count()
         return answer, plan_latency_ms, compose_latency_ms, retries_used + 1
@@ -147,15 +164,26 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
         answer_context: AnswerContext,
         *,
         deadline: float,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         build_plan = self.planner.build_answer_plan_from_context
         parameters = inspect.signature(build_plan).parameters
-        if "timeout_seconds" in parameters:
+        timeout_seconds = self._remaining_timeout(
+            deadline,
+            self.settings.timeout_seconds,
+        )
+        accepts_timeout = "timeout_seconds" in parameters
+        accepts_control = "control" in parameters
+        if accepts_timeout and accepts_control:
             return build_plan(
                 answer_context,
-                timeout_seconds=self._remaining_timeout(
-                    deadline,
-                    self.settings.timeout_seconds,
-                ),
+                timeout_seconds=timeout_seconds,
+                control=control,
             )
+        if accepts_timeout:
+            return build_plan(answer_context, timeout_seconds=timeout_seconds)
+        if accepts_control:
+            return build_plan(answer_context, control=control)
         return build_plan(answer_context)

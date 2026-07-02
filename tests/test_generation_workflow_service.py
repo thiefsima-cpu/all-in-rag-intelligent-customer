@@ -54,23 +54,34 @@ class _StubExecutor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    def generate(self, *, answer_context):
+    def generate(self, *, answer_context, control=None):
+        del control
         self.calls.append(("generate", answer_context))
         return f"answer::{answer_context.question}"
 
-    def generate_with_trace(self, *, answer_context):
+    def generate_with_trace(self, *, answer_context, control=None):
+        del control
         self.calls.append(("generate_with_trace", answer_context))
         return (
             f"trace-answer::{answer_context.question}",
             GenerationSnapshot(mode="direct", total_evidence_items=1),
         )
 
-    def stream(self, *, answer_context, max_retries=None):
+    def stream(self, *, answer_context, max_retries=None, control=None):
+        del control
         self.calls.append(("stream", answer_context))
         self.max_retries = max_retries
         return iter([f"stream::{answer_context.question}"])
 
-    def stream_with_trace(self, *, answer_context, max_retries=None, chunk_callback=None):
+    def stream_with_trace(
+        self,
+        *,
+        answer_context,
+        max_retries=None,
+        chunk_callback=None,
+        control=None,
+    ):
+        del control
         self.calls.append(("stream_with_trace", answer_context))
         self.max_retries = max_retries
         if chunk_callback:
@@ -80,7 +91,8 @@ class _StubExecutor:
             GenerationSnapshot(mode="stream", total_evidence_items=2),
         )
 
-    def compose_from_context(self, context, plan):
+    def compose_from_context(self, context, plan, *, control=None):
+        del control
         self.calls.append(("compose", context))
         self.plan = plan
         return f"compose::{context.question}::{plan.answer_type}"
@@ -90,7 +102,8 @@ class _StubPlanner:
     def __init__(self) -> None:
         self.calls: list[object] = []
 
-    def build_answer_plan_from_context(self, context):
+    def build_answer_plan_from_context(self, context, *, control=None):
+        del control
         self.calls.append(context)
         return AnswerPlan(answer_type="summary", key_points=["k"], outline=["o"])
 

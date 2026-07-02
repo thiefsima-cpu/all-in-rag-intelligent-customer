@@ -81,10 +81,7 @@ class VectorCandidateSource:
     )
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        return self.runtime.vector_candidates(
-            request.query,
-            top_k=request.effective_candidate_k,
-        )
+        return self.runtime.vector_candidates(request)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,10 +98,7 @@ class Bm25CandidateSource:
     )
 
     def retrieve(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        return self.runtime.bm25_candidates(
-            request.query,
-            top_k=request.effective_candidate_k,
-        )
+        return self.runtime.bm25_candidates(request)
 
 
 class HybridCandidateSourceFactory(Protocol):

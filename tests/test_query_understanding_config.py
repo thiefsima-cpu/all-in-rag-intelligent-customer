@@ -1,12 +1,36 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.contracts import QueryPlannerRuntimeSettings, RequestControl
+from rag_modules.query_understanding import QueryPlanner
+
+
+class _ControlCapturingLLM:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def create_completion(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
 
 class QueryUnderstandingConfigTests(unittest.TestCase):
+    def test_query_planner_passes_request_control_to_llm_client(self) -> None:
+        llm_client = _ControlCapturingLLM()
+        control = RequestControl.for_timeout(5.0, scope="query_planning")
+        planner = QueryPlanner(
+            llm_client,
+            settings=QueryPlannerRuntimeSettings(fast_rule_planning=False),
+        )
+
+        planner.plan("recommend tofu", control=control)
+
+        self.assertIs(llm_client.calls[0]["control"], control)
+
     def test_query_understanding_domain_payload_is_nested(self) -> None:
         config = load_config()
 

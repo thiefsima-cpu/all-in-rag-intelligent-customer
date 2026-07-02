@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from ..configuration.models import GraphRAGConfig
+from ..contracts import RequestControl
 from ..runtime import AnswerContext, GenerationSnapshot
 from .context_factory import GenerationContextFactory
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt
@@ -116,27 +117,40 @@ class GenerationWorkflowService:
             circuit_breaker_recovery_seconds=(models.circuit_breaker_recovery_seconds),
         )
 
-    def generate_answer_from_context(self, answer_context: AnswerContext | dict) -> str:
+    def generate_answer_from_context(
+        self,
+        answer_context: AnswerContext | dict,
+        *,
+        control: RequestControl | None = None,
+    ) -> str:
         context = self._ensure_context(answer_context)
-        return self.executor.generate(answer_context=context)
+        return self.executor.generate(answer_context=context, control=control)
 
     def generate_answer_with_trace_from_context(
         self,
         answer_context: AnswerContext | dict,
+        *,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         context = self._ensure_context(answer_context)
-        answer, trace = self.executor.generate_with_trace(answer_context=context)
+        answer, trace = self.executor.generate_with_trace(
+            answer_context=context,
+            control=control,
+        )
         return answer, GenerationSnapshot.from_dict(trace.to_dict())
 
     def generate_answer_stream_from_context(
         self,
         answer_context: AnswerContext | dict,
         max_retries: int | None = None,
+        *,
+        control: RequestControl | None = None,
     ):
         context = self._ensure_context(answer_context)
         return self.executor.stream(
             answer_context=context,
             max_retries=max_retries,
+            control=control,
         )
 
     def generate_answer_stream_with_trace_from_context(
@@ -145,33 +159,38 @@ class GenerationWorkflowService:
         *,
         max_retries: int | None = None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         context = self._ensure_context(answer_context)
         answer, trace = self.executor.stream_with_trace(
             answer_context=context,
             max_retries=max_retries,
             chunk_callback=chunk_callback,
+            control=control,
         )
         return answer, GenerationSnapshot.from_dict(trace.to_dict())
 
     def build_answer_plan_from_context(
         self,
         answer_context: AnswerContext | dict,
+        *,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
         context = self._ensure_context(answer_context)
-        return self.planner.build_answer_plan_from_context(context)
+        return self.planner.build_answer_plan_from_context(context, control=control)
 
     def compose_answer_from_context(
         self,
         answer_context: AnswerContext | dict,
         *,
         plan: AnswerPlan | dict | None = None,
+        control: RequestControl | None = None,
     ) -> str:
         context = self._ensure_context(answer_context)
         resolved_plan = self.context_factory.ensure_plan(
             plan
-        ) or self.build_answer_plan_from_context(context)
-        return self.executor.compose_from_context(context, resolved_plan)
+        ) or self.build_answer_plan_from_context(context, control=control)
+        return self.executor.compose_from_context(context, resolved_plan, control=control)
 
     def render_plan_prompt_from_context(
         self,

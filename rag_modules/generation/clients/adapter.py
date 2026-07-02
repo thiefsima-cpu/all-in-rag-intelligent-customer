@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from openai import OpenAI
 
+from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...infra.resilience import CircuitBreaker
 from ...runtime_contracts import LLMCompletionResponsePort
 from ...safe_logging import log_failure
@@ -76,12 +77,20 @@ class GenerationClientAdapter:
         max_tokens: int,
         timeout: int | float,
         model_name: str | None = None,
+        control: RequestControl | None = None,
     ) -> LLMCompletionResponsePort:
         last_exc: Exception | None = None
-        request_deadline = time.perf_counter() + max(0.1, float(timeout))
+        configured_deadline = time.perf_counter() + max(0.1, float(timeout))
+        request_deadline = (
+            min(configured_deadline, control.deadline)
+            if control is not None
+            else configured_deadline
+        )
         for attempt in range(self.request_retries):
             self._attempt_count.set(attempt + 1)
             try:
+                if control is not None:
+                    control.raise_if_cancelled()
                 remaining = request_deadline - time.perf_counter()
                 if remaining <= 0:
                     raise GenerationLatencyBudgetExceeded(
@@ -101,6 +110,8 @@ class GenerationClientAdapter:
                         completion=response_content(response),
                     )
                 return cast(LLMCompletionResponsePort, response)
+            except (RequestCancelled, RequestBudgetExceeded):
+                raise
             except Exception as exc:
                 last_exc = exc
                 logger.warning("Completion attempt failed: attempt=%s", attempt + 1)
@@ -130,6 +141,7 @@ class GenerationClientAdapter:
         retries: int,
         temperature: float | None = None,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> Generator[str, None, None]:
         last_exc: Exception | None = None
         resolved_temperature = self.default_temperature if temperature is None else temperature
@@ -139,12 +151,19 @@ class GenerationClientAdapter:
             if timeout_seconds is not None
             else float(self.stream_timeout_seconds)
         )
-        request_deadline = time.perf_counter() + resolved_timeout
+        configured_deadline = time.perf_counter() + resolved_timeout
+        request_deadline = (
+            min(configured_deadline, control.deadline)
+            if control is not None
+            else configured_deadline
+        )
         for attempt in range(resolved_attempts):
             self._attempt_count.set(attempt + 1)
             emitted_content = False
             circuit_started = False
             try:
+                if control is not None:
+                    control.raise_if_cancelled()
                 remaining = request_deadline - time.perf_counter()
                 if remaining <= 0:
                     raise GenerationLatencyBudgetExceeded(
@@ -163,6 +182,8 @@ class GenerationClientAdapter:
                 reported_usage = False
                 emitted_chunks: list[str] = []
                 for chunk in response:
+                    if control is not None:
+                        control.raise_if_cancelled()
                     reported_usage = self._record_token_usage(chunk) or reported_usage
                     choices = getattr(chunk, "choices", None) or []
                     if not choices:
@@ -185,6 +206,8 @@ class GenerationClientAdapter:
                     )
                 self.circuit_breaker.record_success()
                 return
+            except (RequestCancelled, RequestBudgetExceeded):
+                raise
             except Exception as exc:
                 if circuit_started:
                     self.circuit_breaker.record_failure()

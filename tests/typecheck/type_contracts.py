@@ -42,9 +42,9 @@ from rag_modules.contracts import (
     QueryPlan,
     QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
+    RequestControl,
     RetrievalRequest,
 )
-from rag_modules.domain.shared.query_constraints import QueryConstraints
 from rag_modules.generation.execution.contracts import GenerationExecutionHost
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.graph.retrieval_types import (
@@ -130,8 +130,9 @@ class _LLMClient:
         max_tokens: int,
         timeout: int | float,
         model_name: str | None = None,
+        control: RequestControl | None = None,
     ) -> LLMCompletionResponsePort:
-        del prompt, temperature, max_tokens, timeout, model_name
+        del prompt, temperature, max_tokens, timeout, model_name, control
         return _CompletionResponse()
 
     def stream_prompt(
@@ -142,68 +143,65 @@ class _LLMClient:
         retries: int,
         temperature: float | None = None,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> Iterator[str]:
-        del prompt, max_tokens, retries, temperature, timeout_seconds
+        del prompt, max_tokens, retries, temperature, timeout_seconds, control
         return iter(())
 
 
 class _EmbeddingClient:
-    def embed_query(self, text: str) -> list[float]:
-        del text
+    def embed_query(self, text: str, *, timeout_seconds: float | None = None) -> list[float]:
+        del text, timeout_seconds
         return []
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        del texts
+    def embed_documents(
+        self,
+        texts: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> list[list[float]]:
+        del texts, timeout_seconds
         return []
 
 
 class _RerankClient:
-    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> list[int]:
-        del query, documents, top_n
+    def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        top_n: int,
+        *,
+        control: RequestControl | None = None,
+        timeout_seconds: float | None = None,
+    ) -> list[int]:
+        del query, documents, top_n, control, timeout_seconds
         return []
 
 
 class _HybridRetrieval:
     def hybrid_evidence_search(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        candidate_k: int | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> HybridRetrievalOutcome:
-        del request_or_query, top_k, constraints, candidate_k, query_plan
+        del request
         return HybridRetrievalOutcome()
 
     def enrich_to_parent_evidence_documents(
         self,
+        request: RetrievalRequest,
         docs: list[EvidenceDocument],
         top_n: int | None = None,
     ) -> list[EvidenceDocument]:
-        del top_n
+        del request, top_n
         return list(docs)
 
 
 class _GraphRetrieval:
-    def graph_rag_evidence_search(
-        self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
-    ) -> list[EvidenceDocument]:
-        del request_or_query, top_k, constraints, query_plan
-        return []
-
     def graph_rag_evidence_search_with_trace(
         self,
-        request_or_query: str | RetrievalRequest,
-        top_k: int = 5,
-        constraints: QueryConstraints | None = None,
-        query_plan: QueryPlan | None = None,
+        request: RetrievalRequest,
     ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]:
-        del request_or_query, constraints, query_plan
-        return [], GraphRetrievalSnapshot(requested_top_k=top_k)
+        return [], GraphRetrievalSnapshot(requested_top_k=request.top_k)
 
     def graph_query_from_plan(self, plan: QueryPlan) -> GraphQuery:
         del plan
@@ -296,7 +294,14 @@ def accept_json_runtime_ports(
     return (
         query_tracer.stats(),
         index_module.get_collection_stats(),
-        index_module.similarity_search("question", filters=payload),
+        index_module.similarity_search(
+            RetrievalRequest.from_inputs(
+                query="question",
+                top_k=1,
+                candidate_k=1,
+                metadata={"filters": payload},
+            )
+        ),
         event,
     )
 

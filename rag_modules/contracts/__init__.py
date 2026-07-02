@@ -9,6 +9,13 @@ from .query import (
     SearchStrategy,
 )
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from .request_control import (
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+    RequestControlError,
+    control_trace_details,
+)
 from .retrieval import (
     EvidenceDocument,
     PageDocumentLike,
@@ -26,7 +33,12 @@ __all__ = [
     "QuerySemanticProfile",
     "QuerySemanticRuntimeSettings",
     "QuerySemanticScoreBreakdown",
+    "RequestBudgetExceeded",
+    "RequestCancelled",
+    "RequestControl",
+    "RequestControlError",
     "RetrievalRequest",
+    "control_trace_details",
     "SearchStrategy",
     "ensure_evidence_documents",
 ]

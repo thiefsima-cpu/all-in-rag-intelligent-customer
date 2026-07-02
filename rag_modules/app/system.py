@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..configuration.models import GraphRAGConfig
+from ..contracts import RequestControl
 from ..runtime.artifacts import ArtifactManifest
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
@@ -143,6 +144,7 @@ class AdvancedGraphRAGSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult:
         return self.answering_service.answer_question(
             question=question,
@@ -150,6 +152,7 @@ class AdvancedGraphRAGSystem:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
 
     def answer_question_response(
@@ -160,6 +163,7 @@ class AdvancedGraphRAGSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResponse:
         return self.answering_service.answer_question_response(
             question=question,
@@ -167,6 +171,7 @@ class AdvancedGraphRAGSystem:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
 
     def ask_question_with_routing(

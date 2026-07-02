@@ -51,7 +51,8 @@ class _OfflineQueryRouter:
     def explain_routing_decision(self, question: str) -> str:
         return f"offline-route::{question}::{self.case.analysis.strategy_name}"
 
-    def route(self, question: str, top_k: int):
+    def route(self, question: str, top_k: int, *, control=None):
+        del control
         del top_k
         understanding = build_understanding_snapshot(self.case)
         outcome = RetrievalOutcome(
@@ -66,8 +67,12 @@ class _OfflineQueryRouter:
             retrieval=outcome,
         )
 
-    def route_with_trace(self, question: str, top_k: int):
-        return self.route(question, top_k), RouteSnapshot.from_dict(self.route_trace.to_dict())
+    def route_with_trace(self, question: str, top_k: int, *, control=None):
+        return self.route(
+            question,
+            top_k,
+            control=control,
+        ), RouteSnapshot.from_dict(self.route_trace.to_dict())
 
 
 @dataclass

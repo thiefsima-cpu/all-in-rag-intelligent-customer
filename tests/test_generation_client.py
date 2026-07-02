@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from rag_modules.contracts import RequestCancelled, RequestControl
 from rag_modules.generation.clients import (
     GenerationClientAdapter,
     GenerationProviderResponseError,
@@ -79,6 +80,29 @@ class GenerationClientAdapterTests(unittest.TestCase):
             },
         )
 
+    def test_completion_timeout_is_capped_by_request_control(self) -> None:
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+        client = _FakeClient([response])
+        adapter = GenerationClientAdapter(
+            client=client,
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=1,
+            stream_timeout_seconds=5,
+        )
+        control = RequestControl.for_timeout(2.0, scope="generation")
+
+        adapter.create_completion(
+            prompt="test",
+            temperature=0.0,
+            max_tokens=10,
+            timeout=30,
+            control=control,
+        )
+
+        self.assertGreater(client.completions.calls[0]["timeout"], 0)
+        self.assertLessEqual(client.completions.calls[0]["timeout"], 2.0)
+
     def test_response_text_rejects_empty_choices_with_stable_code(self) -> None:
         with self.assertRaises(GenerationProviderResponseError) as raised:
             GenerationClientAdapter.response_text(SimpleNamespace(choices=[]))
@@ -117,6 +141,30 @@ class GenerationClientAdapterTests(unittest.TestCase):
 
         self.assertEqual(chunks, ["hello"])
         self.assertEqual(len(client.completions.calls), 1)
+
+    def test_stream_stops_when_control_cancelled_between_chunks(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="generation")
+        client = _FakeClient([[_stream_chunk("hello"), _stream_chunk("world")]])
+        adapter = GenerationClientAdapter(
+            client=client,
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=1,
+            stream_timeout_seconds=5,
+        )
+
+        stream = adapter.stream_prompt(
+            prompt="test",
+            max_tokens=10,
+            retries=1,
+            timeout_seconds=5,
+            control=control,
+        )
+        self.assertEqual(next(stream), "hello")
+        control.cancel("client_disconnect")
+
+        with self.assertRaises(RequestCancelled):
+            next(stream)
 
     def test_stream_with_only_empty_events_fails_without_retry(self) -> None:
         client = _FakeClient(

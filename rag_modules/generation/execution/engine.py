@@ -6,6 +6,7 @@ import logging
 import time
 
 from ...answer_evidence_builder import AnswerEvidencePackage
+from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...runtime import (
     AnalysisInput,
     AnswerContext,
@@ -60,12 +61,14 @@ class GenerationExecutionEngine(
         question: str = "",
         package: AnswerEvidencePackage | None = None,
         analysis: AnalysisInput = None,
+        control: RequestControl | None = None,
     ) -> str:
         answer, _trace = self.generate_with_trace(
             answer_context=answer_context,
             question=question,
             package=package,
             analysis=analysis,
+            control=control,
         )
         return answer
 
@@ -76,8 +79,11 @@ class GenerationExecutionEngine(
         question: str = "",
         package: AnswerEvidencePackage | None = None,
         analysis: AnalysisInput = None,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
         self._consume_token_usage()
+        if control is not None:
+            control.raise_if_cancelled()
         answer_context, package = self._resolve_answer_context(
             answer_context=answer_context,
             question=question,
@@ -86,6 +92,8 @@ class GenerationExecutionEngine(
         )
         total_start = time.perf_counter()
         deadline = self._deadline(total_start)
+        if control is not None:
+            control.raise_if_cancelled()
         if not package.items:
             answer, trace = self._record_empty_trace(total_start, "no_evidence")
             return answer, self._finalize_trace(trace)
@@ -107,11 +115,13 @@ class GenerationExecutionEngine(
                     trace=trace,
                     total_start=total_start,
                     deadline=deadline,
+                    control=control,
                 )
                 return answer, self._finalize_trace(trace)
             answer, direct_latency_ms, attempts_used = self._run_direct_completion(
                 selected_context,
                 deadline=deadline,
+                control=control,
             )
             trace.status = "success"
             trace.direct_latency_ms = direct_latency_ms
@@ -119,6 +129,8 @@ class GenerationExecutionEngine(
             trace.request_retries = max(0, attempts_used - 1)
             trace.total_latency_ms = self._elapsed_ms(total_start)
             return answer, self._finalize_trace(trace)
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
             log_failure(
                 logger,
@@ -143,6 +155,7 @@ class GenerationExecutionEngine(
         plan: AnswerPlan,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> str:
         answer_context = AnswerContext(
             question=question,
@@ -153,6 +166,7 @@ class GenerationExecutionEngine(
             answer_context,
             plan,
             timeout_seconds=timeout_seconds,
+            control=control,
         )
 
     def compose_from_context(
@@ -161,7 +175,10 @@ class GenerationExecutionEngine(
         plan: AnswerPlan,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> str:
+        if control is not None:
+            control.raise_if_cancelled()
         prompt = self.prompt_builder.render_compose_prompt_from_context(
             answer_context,
             plan,
@@ -171,7 +188,10 @@ class GenerationExecutionEngine(
             temperature=self.settings.temperature,
             max_tokens=self.settings.composer_max_tokens,
             timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         return self._response_text(response)
 
     def _resolve_answer_context(

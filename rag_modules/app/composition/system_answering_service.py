@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...contracts import RequestControl
 from ..services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from .contracts import SystemOperationsProtocol
 from .runtime_state_store import RuntimeStateStore
@@ -27,6 +28,7 @@ class SystemAnsweringService:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult:
         answer_workflow = self.require_answer_workflow()
         result = answer_workflow.answer_question(
@@ -35,6 +37,7 @@ class SystemAnsweringService:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
         return result
 
@@ -46,6 +49,7 @@ class SystemAnsweringService:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResponse:
         answer_workflow = self.require_answer_workflow()
         response = answer_workflow.answer_question_response(
@@ -54,6 +58,7 @@ class SystemAnsweringService:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
         return response
 

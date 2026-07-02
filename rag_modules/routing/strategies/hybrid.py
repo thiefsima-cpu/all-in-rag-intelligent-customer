@@ -27,6 +27,9 @@ class HybridRouteStrategy:
         services: RouteRetrievalServices,
     ) -> RouteExecutionOutcome:
         start = time.perf_counter()
+        control = request.retrieval_request.control
+        if control is not None:
+            control.raise_if_cancelled()
         outcome = services.traditional_retrieval.hybrid_evidence_search(request.retrieval_request)
         documents = list(outcome.documents)
         return RouteExecutionOutcome(

@@ -5,11 +5,14 @@ import unittest
 
 import pytest
 
-from rag_modules.contracts import EvidenceDocument, RetrievalRequest
-from rag_modules.runtime import (
+from rag_modules.contracts import (
+    EvidenceDocument,
     RequestBudgetExceeded,
     RequestCancelled,
     RequestControl,
+    RetrievalRequest,
+)
+from rag_modules.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )

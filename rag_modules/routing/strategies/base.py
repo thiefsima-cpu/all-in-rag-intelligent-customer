@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol
 
-from ...contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ...contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
 from ...domain.shared.query_constraints import QueryConstraints
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...runtime import QueryAnalysis, SearchStrategy
@@ -75,6 +75,7 @@ def build_route_retrieval_request(
     candidate_k: Optional[int] = None,
     query_plan: Optional[QueryPlan] = None,
     strategy: str = "",
+    control: RequestControl | None = None,
 ) -> RetrievalRequest:
     return RetrievalRequest.from_inputs(
         query=query,
@@ -83,6 +84,7 @@ def build_route_retrieval_request(
         constraints=constraints,
         query_plan=query_plan,
         strategy=strategy,
+        control=control,
     )
 
 

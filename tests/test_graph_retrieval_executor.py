@@ -4,7 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
+from rag_modules.graph.query_executor import GraphQueryExecutor
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
 from rag_modules.runtime.error_models import ensure_runtime_error_detail
 from rag_modules.runtime.graph_models import GraphRetrievalSnapshot
@@ -59,12 +60,42 @@ class _FakeGraphRuntime:
 class _FakeRetrievalPlan:
     linked_sources = [SimpleNamespace(resolved_value="水煮肉片")]
     linked_targets = [SimpleNamespace(resolved_value="麻辣鲜香")]
+    source_node_ids = []
+    source_terms = ["tofu"]
+    target_node_ids = []
+    target_terms = []
+    relation_types = []
     max_depth = 3
     max_nodes = 24
 
     @staticmethod
     def to_trace():
         return {"max_depth": 3, "max_nodes": 24}
+
+
+class _RecordingNeo4jSession:
+    def __init__(self) -> None:
+        self.run_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        del exc_type, exc, tb
+        return None
+
+    def run(self, query, parameters=None, **kwargs):
+        self.run_calls.append({"query": query, "parameters": parameters, "kwargs": kwargs})
+        return []
+
+
+class _RecordingNeo4jDriver:
+    def __init__(self) -> None:
+        self.session_obj = _RecordingNeo4jSession()
+
+    def session(self, **kwargs):
+        del kwargs
+        return self.session_obj
 
 
 class _FakeOrchestrator:
@@ -96,6 +127,50 @@ class _FailingNeo4jManager:
 
 
 class GraphRetrievalExecutorTests(unittest.TestCase):
+    def test_graph_query_executor_passes_control_timeout_to_neo4j(self) -> None:
+        driver = _RecordingNeo4jDriver()
+        executor = GraphQueryExecutor(driver, database="neo4j")
+        plan = _FakeRetrievalPlan()
+        request = RetrievalRequest.from_inputs(
+            query="tofu",
+            top_k=2,
+            control=RequestControl.for_timeout(3.0, scope="graph"),
+        )
+
+        executor.multi_hop_paths(plan, control=request.control)
+
+        timeout = driver.session_obj.run_calls[0]["kwargs"]["timeout"]
+        self.assertGreater(timeout, 0)
+        self.assertLessEqual(timeout, 3.0)
+
+    def test_execute_stops_when_control_cancelled_before_retrieve(self) -> None:
+        runtime = _FakeGraphRuntime()
+        control = RequestControl.for_timeout(5.0, scope="graph")
+        control.cancel("combined_branch_timeout")
+        executor = GraphRetrievalExecutor(
+            config=build_test_config(),
+            runtime=runtime,
+            orchestrator=_FakeOrchestrator(
+                [EvidenceDocument(content="should not return", recipe_name="late")]
+            ),
+            cache_warmup=SimpleNamespace(),
+            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
+            entity_linker=SimpleNamespace(driver=None),
+            graph_executor=SimpleNamespace(driver=None),
+            database_name="neo4j",
+        )
+        executor.driver = object()
+        request = RetrievalRequest.from_inputs(query="tofu", top_k=2, control=control)
+
+        results, trace = executor.execute_with_trace(request)
+
+        self.assertEqual(results, [])
+        self.assertEqual(trace.error.detail, "combined_branch_timeout")
+        self.assertIn(
+            ("request_control_cancelled", "error", {"reason": "combined_branch_timeout"}),
+            runtime.events,
+        )
+
     def test_initialize_raises_when_driver_setup_fails(self) -> None:
         runtime = _FakeGraphRuntime()
         executor = GraphRetrievalExecutor(

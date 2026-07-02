@@ -73,13 +73,18 @@ class OfflineGenerationModule:
             empty_evidence_answer="empty",
         )
 
-    def generate_answer_from_context(self, answer_context):
-        answer, _trace = self.generate_answer_with_trace_from_context(answer_context)
+    def generate_answer_from_context(self, answer_context, *, control=None):
+        answer, _trace = self.generate_answer_with_trace_from_context(
+            answer_context,
+            control=control,
+        )
         return answer
 
     def generate_answer_with_trace_from_context(
         self,
         answer_context,
+        *,
+        control=None,
     ) -> tuple[str, GenerationSnapshot]:
         context = (
             answer_context
@@ -92,6 +97,7 @@ class OfflineGenerationModule:
         )
         return self.executor.generate_with_trace(
             answer_context=context.with_evidence_package(package),
+            control=control,
         )
 
 

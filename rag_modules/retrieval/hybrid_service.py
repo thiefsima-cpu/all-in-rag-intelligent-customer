@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
@@ -115,7 +115,7 @@ class HybridRetrievalService:
 
     def _build_request(
         self,
-        request_or_query: Union[str, RetrievalRequest],
+        query: str,
         top_k: int = 5,
         constraints: Optional[QueryConstraints] = None,
         candidate_k: Optional[int] = None,
@@ -125,11 +125,12 @@ class HybridRetrievalService:
         topic_keywords: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> RetrievalRequest:
-        return self._executor.build_request(
-            request_or_query,
+        return RetrievalRequest.from_inputs(
+            query=query,
             top_k=top_k,
-            constraints=constraints,
             candidate_k=candidate_k,
+            strategy=query_plan.strategy_value if query_plan else "",
+            constraints=constraints,
             query_plan=query_plan,
             entity_keywords=entity_keywords,
             topic_keywords=topic_keywords,
@@ -238,10 +239,11 @@ class HybridRetrievalService:
 
     def enrich_to_parent_evidence_documents(
         self,
+        request: RetrievalRequest,
         docs: List[EvidenceDocument],
         top_n: Optional[int] = None,
     ) -> List[EvidenceDocument]:
-        return self._executor.enrich_to_parent_evidence_documents(docs, top_n=top_n)
+        return self._executor.enrich_to_parent_evidence_documents(request, docs, top_n=top_n)
 
     def _attach_parent_evidence_documents(
         self,
@@ -250,53 +252,14 @@ class HybridRetrievalService:
     ) -> List[EvidenceDocument]:
         return self._executor.attach_parent_evidence_documents(docs, top_n=top_n)
 
-    def _prepare_hybrid_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> RetrievalRequest:
-        return self._executor.prepare_hybrid_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def _prepare_hybrid_request(self, request: RetrievalRequest) -> RetrievalRequest:
+        return self._executor.prepare_hybrid_request(request)
 
-    def hybrid_evidence_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> HybridRetrievalOutcome:
-        return self._executor.hybrid_evidence_search(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def hybrid_evidence_search(self, request: RetrievalRequest) -> HybridRetrievalOutcome:
+        return self._executor.hybrid_evidence_search(request)
 
-    def hybrid_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
-        outcome = self.hybrid_evidence_search(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def hybrid_search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+        outcome = self.hybrid_evidence_search(request)
         return list(outcome.documents)
 
     def close(self):

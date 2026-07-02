@@ -223,29 +223,22 @@ class HybridRetrievalRuntime:
         )
 
     def dual_level_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+        if request.control is not None:
+            request.control.raise_if_cancelled()
         return self.ensure_dual_level_service().search(request)
 
-    def vector_candidates(
-        self,
-        query: str,
-        *,
-        top_k: int,
-    ) -> List[EvidenceDocument]:
-        return self.ensure_vector_retriever().search(
-            query,
-            top_k=top_k,
-        )
+    def vector_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+        if request.control is not None:
+            request.control.raise_if_cancelled()
+        return self.ensure_vector_retriever().search(request)
 
-    def bm25_candidates(
-        self,
-        query: str,
-        *,
-        top_k: int,
-    ) -> List[EvidenceDocument]:
+    def bm25_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+        if request.control is not None:
+            request.control.raise_if_cancelled()
         if not self._ensure_bm25_ready():
             logger.warning("BM25 index not initialized, returning empty result set.")
             return []
-        return self.bm25_retriever.search(query, top_k=top_k)
+        return self.bm25_retriever.search(request.query, top_k=request.effective_candidate_k)
 
     def close(self) -> None:
         self.driver_service.close(self.state)
