@@ -13,7 +13,10 @@ class _FakeRuntimeStatsAccess:
 
     def get_graph_data_stats(self, data_module):
         self.graph_stats_calls += 1
-        return dict(data_module.stats)
+        stats = data_module.get_statistics()
+        if hasattr(stats, "to_dict"):
+            return stats.to_dict()
+        return dict(stats)
 
     def get_vector_collection_stats(self, index_module):
         self.vector_stats_calls += 1
@@ -30,7 +33,9 @@ class KnowledgeBaseStatsPresenterTests(unittest.TestCase):
         presenter = KnowledgeBaseStatsPresenter(
             runtime_stats_access=stats_access,
             data_module=type(
-                "DataModule", (), {"stats": {"total_recipes": 2, "total_chunks": 4}}
+                "DataModule",
+                (),
+                {"get_statistics": lambda self: {"total_recipes": 2, "total_chunks": 4}},
             )(),
             index_module=type("IndexModule", (), {"stats": {"row_count": 4}})(),
             query_router=type("QueryRouter", (), {"stats": {"total_queries": 3}})(),

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List
+from collections.abc import Iterable, Mapping
 
 from ...domain.shared.semantic_schema import infer_recipe_semantics
+from ...runtime.json_types import JsonObject, coerce_json_object
 from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
 from ...text_document import TextDocument
-from .models import GraphNode
+from .models import GraphNode, PreparedIngredientInput, PreparedStepInput
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class RecipeDocumentBuilder:
         driver: Neo4jDriverPort,
         database: str,
         recipes: Iterable[GraphNode],
-    ) -> List[TextDocument]:
+    ) -> list[TextDocument]:
         recipe_list = [recipe for recipe in recipes]
         if not recipe_list:
             return []
@@ -70,15 +71,15 @@ class RecipeDocumentBuilder:
             recipe_ids=recipe_ids,
         )
 
-        documents: List[TextDocument] = []
+        documents: list[TextDocument] = []
         for recipe_id in recipe_ids:
             recipe = recipe_map[recipe_id]
             try:
                 documents.append(
                     self.build_document(
                         recipe=recipe,
-                        raw_ingredients=ingredients_by_recipe.get(recipe_id, []),
-                        raw_steps=steps_by_recipe.get(recipe_id, []),
+                        ingredients=ingredients_by_recipe.get(recipe_id, []),
+                        steps=steps_by_recipe.get(recipe_id, []),
                     )
                 )
             except Exception as exc:
@@ -96,12 +97,22 @@ class RecipeDocumentBuilder:
         *,
         driver: Neo4jDriverPort,
         database: str,
-        recipe_ids: List[str],
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        ingredients_by_recipe: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        recipe_ids: list[str],
+    ) -> dict[str, list[PreparedIngredientInput]]:
+        ingredients_by_recipe: dict[str, list[PreparedIngredientInput]] = defaultdict(list)
         with driver.session(database=database) as session:
             for record in session.run(RECIPE_INGREDIENTS_QUERY, {"recipe_ids": recipe_ids}):
-                ingredients_by_recipe[str(record["recipe_id"])].append(dict(record))
+                recipe_id = str(record["recipe_id"])
+                ingredients_by_recipe[recipe_id].append(
+                    PreparedIngredientInput(
+                        recipe_id=recipe_id,
+                        name=str(record.get("name") or ""),
+                        category=str(record.get("category") or ""),
+                        amount=str(record.get("amount") or ""),
+                        unit=str(record.get("unit") or ""),
+                        description=str(record.get("description") or ""),
+                    )
+                )
         return dict(ingredients_by_recipe)
 
     def _load_steps_by_recipe(
@@ -109,25 +120,37 @@ class RecipeDocumentBuilder:
         *,
         driver: Neo4jDriverPort,
         database: str,
-        recipe_ids: List[str],
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        steps_by_recipe: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        recipe_ids: list[str],
+    ) -> dict[str, list[PreparedStepInput]]:
+        steps_by_recipe: dict[str, list[PreparedStepInput]] = defaultdict(list)
         with driver.session(database=database) as session:
             for record in session.run(RECIPE_STEPS_QUERY, {"recipe_ids": recipe_ids}):
-                steps_by_recipe[str(record["recipe_id"])].append(dict(record))
+                recipe_id = str(record["recipe_id"])
+                steps_by_recipe[recipe_id].append(
+                    PreparedStepInput(
+                        recipe_id=recipe_id,
+                        name=str(record.get("name") or ""),
+                        description=str(record.get("description") or ""),
+                        step_number=_int_value(record.get("stepNumber")),
+                        methods=str(record.get("methods") or ""),
+                        tools=str(record.get("tools") or ""),
+                        time_estimate=str(record.get("timeEstimate") or ""),
+                        step_order=_int_value(record.get("stepOrder")),
+                    )
+                )
         return dict(steps_by_recipe)
 
     def build_document(
         self,
         *,
         recipe: GraphNode,
-        raw_ingredients: List[Dict[str, Any]],
-        raw_steps: List[Dict[str, Any]],
+        ingredients: list[PreparedIngredientInput],
+        steps: list[PreparedStepInput],
     ) -> TextDocument:
         recipe_name = recipe.name
-        recipe_properties = dict(recipe.properties or {})
-        ingredients_info = [self._format_ingredient_line(item) for item in raw_ingredients]
-        steps_info = [self._format_step_text(item) for item in raw_steps]
+        recipe_properties: JsonObject = dict(recipe.properties or {})
+        ingredients_info = [self._format_ingredient_line(item) for item in ingredients]
+        steps_info = [self._format_step_text(item) for item in steps]
 
         full_content = self._compose_recipe_content(
             recipe_name=recipe_name,
@@ -135,11 +158,13 @@ class RecipeDocumentBuilder:
             ingredients_info=ingredients_info,
             steps_info=steps_info,
         )
-        semantics = infer_recipe_semantics(
-            recipe_properties=recipe_properties,
-            ingredients=ingredients_info,
-            steps=steps_info,
-            full_content=full_content,
+        semantics = coerce_json_object(
+            infer_recipe_semantics(
+                recipe_properties=recipe_properties,
+                ingredients=ingredients_info,
+                steps=steps_info,
+                full_content=full_content,
+            )
         )
         recipe_properties.update(semantics)
         full_content = self._append_semantic_section(
@@ -161,54 +186,54 @@ class RecipeDocumentBuilder:
                 "servings": recipe_properties.get("servings", ""),
                 "ingredients_count": len(ingredients_info),
                 "steps_count": len(steps_info),
-                "flavor_tags": semantics["flavor_tags"],
-                "technique_tags": semantics["technique_tags"],
-                "diet_tags": semantics["diet_tags"],
-                "health_tags": semantics["health_tags"],
-                "cuisine_style_tags": semantics["cuisine_style_tags"],
-                "ingredient_category_tags": semantics["ingredient_category_tags"],
-                "time_profile_tags": semantics["time_profile_tags"],
-                "difficulty_level_tags": semantics["difficulty_level_tags"],
-                "semantic_relations": semantics["semantic_relations"],
+                "flavor_tags": semantics.get("flavor_tags", []),
+                "technique_tags": semantics.get("technique_tags", []),
+                "diet_tags": semantics.get("diet_tags", []),
+                "health_tags": semantics.get("health_tags", []),
+                "cuisine_style_tags": semantics.get("cuisine_style_tags", []),
+                "ingredient_category_tags": semantics.get("ingredient_category_tags", []),
+                "time_profile_tags": semantics.get("time_profile_tags", []),
+                "difficulty_level_tags": semantics.get("difficulty_level_tags", []),
+                "semantic_relations": semantics.get("semantic_relations", {}),
                 "doc_type": "recipe",
                 "content_length": len(full_content),
             },
         )
 
     @staticmethod
-    def _format_ingredient_line(ingredient: Dict[str, Any]) -> str:
-        text = str(ingredient.get("name") or "")
-        category = ingredient.get("category")
+    def _format_ingredient_line(ingredient: PreparedIngredientInput) -> str:
+        text = ingredient.name
+        category = ingredient.category
         if category:
             text += f" [{category}]"
-        amount = ingredient.get("amount")
-        unit = ingredient.get("unit")
+        amount = ingredient.amount
+        unit = ingredient.unit
         if amount or unit:
             text += f" ({amount or ''}{unit or ''})"
-        if ingredient.get("description"):
-            text += f" - {ingredient['description']}"
+        if ingredient.description:
+            text += f" - {ingredient.description}"
         return text.strip()
 
     @staticmethod
-    def _format_step_text(step: Dict[str, Any]) -> str:
-        parts = [f"步骤: {step.get('name') or ''}"]
-        if step.get("description"):
-            parts.append(f"描述: {step['description']}")
-        if step.get("methods"):
-            parts.append(f"方法: {step['methods']}")
-        if step.get("tools"):
-            parts.append(f"工具: {step['tools']}")
-        if step.get("timeEstimate"):
-            parts.append(f"时间: {step['timeEstimate']}")
+    def _format_step_text(step: PreparedStepInput) -> str:
+        parts = [f"步骤: {step.name}"]
+        if step.description:
+            parts.append(f"描述: {step.description}")
+        if step.methods:
+            parts.append(f"方法: {step.methods}")
+        if step.tools:
+            parts.append(f"工具: {step.tools}")
+        if step.time_estimate:
+            parts.append(f"时间: {step.time_estimate}")
         return "\n".join(parts)
 
     def _compose_recipe_content(
         self,
         *,
         recipe_name: str,
-        recipe_properties: Dict[str, Any],
-        ingredients_info: List[str],
-        steps_info: List[str],
+        recipe_properties: Mapping[str, object],
+        ingredients_info: list[str],
+        steps_info: list[str],
     ) -> str:
         content_parts = [f"# {recipe_name}"]
         if recipe_properties.get("description"):
@@ -242,7 +267,7 @@ class RecipeDocumentBuilder:
         self,
         *,
         full_content: str,
-        semantics: Dict[str, Any],
+        semantics: Mapping[str, object],
     ) -> str:
         semantic_lines = self._build_semantic_lines(semantics)
         if not semantic_lines:
@@ -250,30 +275,65 @@ class RecipeDocumentBuilder:
         return full_content + "\n\n## 语义标签\n" + "\n".join(semantic_lines)
 
     @staticmethod
-    def _build_semantic_lines(semantics: Dict[str, Any]) -> List[str]:
-        semantic_lines: List[str] = []
-        if semantics["flavor_tags"]:
-            semantic_lines.append(f"风味标签: {', '.join(semantics['flavor_tags'])}")
-        if semantics["technique_tags"]:
-            semantic_lines.append(f"技法标签: {', '.join(semantics['technique_tags'])}")
-        if semantics["diet_tags"]:
-            semantic_lines.append(f"饮食标签: {', '.join(semantics['diet_tags'])}")
-        if semantics["health_tags"]:
-            semantic_lines.append(f"健康标签: {', '.join(semantics['health_tags'])}")
-        if semantics["cuisine_style_tags"]:
-            semantic_lines.append(f"菜系风格标签: {', '.join(semantics['cuisine_style_tags'])}")
-        if semantics["ingredient_category_tags"]:
-            semantic_lines.append(
-                f"食材类别标签: {', '.join(semantics['ingredient_category_tags'])}"
-            )
-        if semantics["time_profile_tags"]:
-            semantic_lines.append(f"时间轮廓标签: {', '.join(semantics['time_profile_tags'])}")
-        if semantics["difficulty_level_tags"]:
-            semantic_lines.append(f"难度标签: {', '.join(semantics['difficulty_level_tags'])}")
-        contribution_items = semantics["semantic_relations"].get("CONTRIBUTES_TO") or []
+    def _build_semantic_lines(semantics: Mapping[str, object]) -> list[str]:
+        semantic_lines: list[str] = []
+        flavor_tags = _string_values(semantics.get("flavor_tags"))
+        technique_tags = _string_values(semantics.get("technique_tags"))
+        diet_tags = _string_values(semantics.get("diet_tags"))
+        health_tags = _string_values(semantics.get("health_tags"))
+        cuisine_style_tags = _string_values(semantics.get("cuisine_style_tags"))
+        ingredient_category_tags = _string_values(semantics.get("ingredient_category_tags"))
+        time_profile_tags = _string_values(semantics.get("time_profile_tags"))
+        difficulty_level_tags = _string_values(semantics.get("difficulty_level_tags"))
+
+        if flavor_tags:
+            semantic_lines.append(f"风味标签: {', '.join(flavor_tags)}")
+        if technique_tags:
+            semantic_lines.append(f"技法标签: {', '.join(technique_tags)}")
+        if diet_tags:
+            semantic_lines.append(f"饮食标签: {', '.join(diet_tags)}")
+        if health_tags:
+            semantic_lines.append(f"健康标签: {', '.join(health_tags)}")
+        if cuisine_style_tags:
+            semantic_lines.append(f"菜系风格标签: {', '.join(cuisine_style_tags)}")
+        if ingredient_category_tags:
+            semantic_lines.append(f"食材类别标签: {', '.join(ingredient_category_tags)}")
+        if time_profile_tags:
+            semantic_lines.append(f"时间轮廓标签: {', '.join(time_profile_tags)}")
+        if difficulty_level_tags:
+            semantic_lines.append(f"难度标签: {', '.join(difficulty_level_tags)}")
+        semantic_relations = coerce_json_object(semantics.get("semantic_relations"))
+        contribution_items = semantic_relations.get("CONTRIBUTES_TO")
         if contribution_items:
             relation_text = [
-                f"{'/'.join(item['causes'])} -> {item['effect']}" for item in contribution_items
+                f"{'/'.join(_string_values(item_payload.get('causes')))} "
+                f"-> {item_payload.get('effect') or ''}"
+                for item_payload in (
+                    coerce_json_object(item) for item in _object_values(contribution_items)
+                )
             ]
             semantic_lines.append(f"语义贡献: {'; '.join(relation_text)}")
         return semantic_lines
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, (bool, int, float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _object_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return list(value)
+    return []
+
+
+def _string_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    return []

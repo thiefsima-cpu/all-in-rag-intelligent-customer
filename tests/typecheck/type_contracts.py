@@ -33,6 +33,8 @@ from rag_modules.app.runtime_views import (
     SystemRetrievalView,
     SystemServicesView,
 )
+from rag_modules.build_pipeline.graph_preparation.models import GraphLoadCounts
+from rag_modules.build_pipeline.graph_preparation.statistics import GraphPreparationStats
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import (
     EvidenceDocument,
@@ -81,6 +83,8 @@ graph_relationship_snapshot: GraphRelationshipSnapshot = GraphRelationshipSnapsh
     start_node_id="r1",
     end_node_id="i1",
 )
+graph_load_counts: GraphLoadCounts = GraphLoadCounts(recipes=1)
+graph_preparation_stats: GraphPreparationStats = GraphPreparationStats(total_recipes=1)
 
 
 class _CompletionMessage:

@@ -6,6 +6,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from .build_pipeline.graph_preparation.models import GraphLoadCounts
+    from .build_pipeline.graph_preparation.statistics import GraphPreparationStats
     from .contracts import EvidenceDocument, QueryPlan, RetrievalRequest
     from .domain.shared.query_constraints import QueryConstraints
     from .graph.retrieval_types import GraphQuery
@@ -65,7 +67,7 @@ class GraphDataModulePort(Protocol):
     documents: list[TextDocument]
     chunks: list[TextDocument]
 
-    def load_graph_data(self) -> JsonObject: ...
+    def load_graph_data(self) -> GraphLoadCounts | JsonObject: ...
 
     def build_recipe_documents(self) -> list[TextDocument]: ...
 
@@ -75,7 +77,7 @@ class GraphDataModulePort(Protocol):
         chunk_overlap: int = 50,
     ) -> list[TextDocument]: ...
 
-    def get_statistics(self) -> JsonObject: ...
+    def get_statistics(self) -> GraphPreparationStats | JsonObject: ...
 
     def close(self) -> None: ...
 

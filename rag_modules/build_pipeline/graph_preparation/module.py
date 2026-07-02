@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
 
 from ...infra.neo4j import create_neo4j_driver
 from ...runtime_contracts import Neo4jDriverPort
@@ -11,9 +10,9 @@ from ...text_document import TextDocument
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
 from .loader import Neo4jGraphDataLoader
-from .models import GraphNode
+from .models import GraphLoadCounts, GraphNode, PreparedIngredientInput, PreparedStepInput
 from .state import GraphPreparationState
-from .statistics import GraphPreparationStatisticsService
+from .statistics import GraphPreparationStatisticsService, GraphPreparationStats
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +27,13 @@ class GraphDataPreparationModule:
         password: str = "",
         database: str = "neo4j",
         *,
-        driver: Optional[Neo4jDriverPort] = None,
+        driver: Neo4jDriverPort | None = None,
         state: GraphPreparationState | None = None,
         loader: Neo4jGraphDataLoader | None = None,
         document_builder: RecipeDocumentBuilder | None = None,
         chunker: RecipeDocumentChunker | None = None,
         statistics_service: GraphPreparationStatisticsService | None = None,
-    ):
+    ) -> None:
         self.database = database
         self.state = state or GraphPreparationState()
         self.loader = loader or Neo4jGraphDataLoader()
@@ -53,43 +52,43 @@ class GraphDataPreparationModule:
             logger.info("Neo4j connection established")
 
     @property
-    def recipes(self) -> List[GraphNode]:
+    def recipes(self) -> list[GraphNode]:
         return self.state.recipes
 
     @recipes.setter
-    def recipes(self, value: List[GraphNode]) -> None:
+    def recipes(self, value: list[GraphNode]) -> None:
         self.state.recipes = list(value or [])
 
     @property
-    def ingredients(self) -> List[GraphNode]:
+    def ingredients(self) -> list[GraphNode]:
         return self.state.ingredients
 
     @ingredients.setter
-    def ingredients(self, value: List[GraphNode]) -> None:
+    def ingredients(self, value: list[GraphNode]) -> None:
         self.state.ingredients = list(value or [])
 
     @property
-    def cooking_steps(self) -> List[GraphNode]:
+    def cooking_steps(self) -> list[GraphNode]:
         return self.state.cooking_steps
 
     @cooking_steps.setter
-    def cooking_steps(self, value: List[GraphNode]) -> None:
+    def cooking_steps(self, value: list[GraphNode]) -> None:
         self.state.cooking_steps = list(value or [])
 
     @property
-    def documents(self) -> List[TextDocument]:
+    def documents(self) -> list[TextDocument]:
         return self.state.documents
 
     @documents.setter
-    def documents(self, value: List[TextDocument]) -> None:
+    def documents(self, value: list[TextDocument]) -> None:
         self.state.documents = list(value or [])
 
     @property
-    def chunks(self) -> List[TextDocument]:
+    def chunks(self) -> list[TextDocument]:
         return self.state.chunks
 
     @chunks.setter
-    def chunks(self, value: List[TextDocument]) -> None:
+    def chunks(self, value: list[TextDocument]) -> None:
         self.state.chunks = list(value or [])
 
     def close(self) -> None:
@@ -99,7 +98,7 @@ class GraphDataPreparationModule:
             self.driver.close()
             logger.info("Neo4j connection closed.")
 
-    def load_graph_data(self) -> Dict[str, Any]:
+    def load_graph_data(self) -> GraphLoadCounts:
         """Load recipes, ingredients, and cooking steps from Neo4j."""
 
         loaded = self.loader.load(self.driver, database=self.database)
@@ -108,7 +107,7 @@ class GraphDataPreparationModule:
         self.cooking_steps = loaded.cooking_steps
         return loaded.to_counts()
 
-    def build_recipe_documents(self) -> List[TextDocument]:
+    def build_recipe_documents(self) -> list[TextDocument]:
         """Build recipe documents with semantic tags in batch mode."""
 
         logger.info("Building recipe documents in batch mode...")
@@ -125,16 +124,16 @@ class GraphDataPreparationModule:
         self,
         *,
         recipe: GraphNode,
-        raw_ingredients: List[Dict[str, Any]],
-        raw_steps: List[Dict[str, Any]],
+        ingredients: list[PreparedIngredientInput],
+        steps: list[PreparedStepInput],
     ) -> TextDocument:
         return self.document_builder.build_document(
             recipe=recipe,
-            raw_ingredients=raw_ingredients,
-            raw_steps=raw_steps,
+            ingredients=ingredients,
+            steps=steps,
         )
 
-    def chunk_documents(self, chunk_size: int = 500, chunk_overlap: int = 50) -> List[TextDocument]:
+    def chunk_documents(self, chunk_size: int = 500, chunk_overlap: int = 50) -> list[TextDocument]:
         """Split recipe documents into retrieval chunks."""
 
         logger.info(
@@ -154,12 +153,12 @@ class GraphDataPreparationModule:
         logger.info("Chunking complete: generated %d chunks.", len(chunks))
         return chunks
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> GraphPreparationStats:
         """Return dataset statistics for diagnostics and UI output."""
 
         return self.statistics_service.build(self.state)
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             self.close()
         except Exception:

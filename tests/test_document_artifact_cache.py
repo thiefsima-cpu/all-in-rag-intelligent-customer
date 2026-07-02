@@ -10,6 +10,8 @@ from rag_modules.build_pipeline.document_artifacts import (
     DocumentArtifactBuildService,
     DocumentIndexCache,
 )
+from rag_modules.build_pipeline.document_artifacts.statistics import DocumentArtifactStatsCollector
+from rag_modules.build_pipeline.graph_preparation.statistics import GraphPreparationStats
 from rag_modules.text_document import TextDocument
 
 
@@ -197,6 +199,30 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             )
 
             self.assertIsNone(cache.load(StubDataModule()))
+
+    def test_stats_collector_accepts_typed_graph_preparation_stats(self) -> None:
+        data_module = SimpleNamespace(
+            recipes=[],
+            ingredients=[],
+            cooking_steps=[],
+            documents=[],
+            chunks=[],
+            get_statistics=lambda: GraphPreparationStats(
+                total_recipes=2,
+                total_ingredients=3,
+                total_cooking_steps=4,
+                total_documents=5,
+                total_chunks=6,
+            ),
+        )
+
+        stats = DocumentArtifactStatsCollector().collect(data_module)
+
+        self.assertEqual(stats.total_recipes, 2)
+        self.assertEqual(stats.total_ingredients, 3)
+        self.assertEqual(stats.total_cooking_steps, 4)
+        self.assertEqual(stats.total_documents, 5)
+        self.assertEqual(stats.total_chunks, 6)
 
 
 if __name__ == "__main__":

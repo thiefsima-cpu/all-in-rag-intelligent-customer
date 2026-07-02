@@ -155,7 +155,9 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
 
         counts = module.load_graph_data()
 
-        self.assertEqual(counts, {"recipes": 1, "ingredients": 2, "cooking_steps": 1})
+        self.assertEqual(counts.recipes, 1)
+        self.assertEqual(counts.ingredients, 2)
+        self.assertEqual(counts.cooking_steps, 1)
         self.assertEqual(module.recipes[0].properties["category"], "家常菜")
         self.assertEqual(module.recipes[0].properties["all_categories"], ["家常菜", "川菜"])
         self.assertEqual(module.ingredients[1].name, "豆瓣酱")
@@ -192,12 +194,30 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
         self.assertEqual(chunks[0].metadata["chunk_index"], 0)
         self.assertEqual(chunks[0].metadata["section_title"], "main_title")
         self.assertEqual(chunks[-1].metadata["section_title"], "语义标签")
-        self.assertEqual(stats["total_recipes"], 1)
-        self.assertEqual(stats["total_documents"], 1)
-        self.assertEqual(stats["total_chunks"], 6)
-        self.assertEqual(stats["categories"]["家常菜"], 1)
-        self.assertEqual(stats["cuisines"]["川菜"], 1)
-        self.assertGreater(stats["avg_chunk_size"], 0)
+        self.assertEqual(stats.total_recipes, 1)
+        self.assertEqual(stats.total_documents, 1)
+        self.assertEqual(stats.total_chunks, 6)
+        self.assertEqual(stats.categories["家常菜"], 1)
+        self.assertEqual(stats.cuisines["川菜"], 1)
+        self.assertGreater(stats.avg_chunk_size, 0)
+        self.assertEqual(stats.to_dict()["total_recipes"], 1)
+
+    def test_empty_statistics_to_dict_preserves_legacy_sparse_shape(self) -> None:
+        module = self._build_module()
+        module.load_graph_data()
+
+        stats = module.get_statistics()
+
+        self.assertEqual(
+            stats.to_dict(),
+            {
+                "total_recipes": 1,
+                "total_ingredients": 2,
+                "total_cooking_steps": 1,
+                "total_documents": 0,
+                "total_chunks": 0,
+            },
+        )
 
 
 if __name__ == "__main__":
