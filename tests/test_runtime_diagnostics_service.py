@@ -59,13 +59,16 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
 
     def test_build_metadata_preserves_partial_config_profile_payload(self) -> None:
         metadata = ArtifactBuildMetadataDiagnostics.from_payload(
-            {"config_profile": {"name": "dev"}}
+            {"config_profile": {"name": "dev", "source": "manual"}}
         )
 
         self.assertEqual(metadata.config_profile.name, "dev")
         self.assertEqual(metadata.config_profile.path, "")
         self.assertEqual(metadata.config_profile.hash, "")
-        self.assertEqual(metadata.to_dict(), {"config_profile": {"name": "dev"}})
+        self.assertEqual(
+            metadata.to_dict(),
+            {"config_profile": {"name": "dev", "source": "manual"}},
+        )
 
     def test_collect_system_stats_uses_runtime_stats_access(self) -> None:
         runtime_stats_access = _FakeRuntimeStatsAccess()

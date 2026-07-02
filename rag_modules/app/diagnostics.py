@@ -323,6 +323,7 @@ class ConfigProfileDiagnostics:
     name: str = ""
     path: str = ""
     hash: str = ""
+    extra: JsonObject = field(default_factory=dict)
     present_keys: frozenset[str] = field(default_factory=frozenset)
 
     @property
@@ -336,11 +337,12 @@ class ConfigProfileDiagnostics:
             name=str(data.get("name") or ""),
             path=str(data.get("path") or ""),
             hash=str(data.get("hash") or ""),
+            extra=_extra_payload(data, frozenset({"name", "path", "hash"})),
             present_keys=frozenset(data),
         )
 
     def to_dict(self) -> JsonObject:
-        payload: JsonObject = {}
+        payload = dict(self.extra)
         _put_if_present_or_meaningful(payload, self.present_keys, "name", self.name)
         _put_if_present_or_meaningful(payload, self.present_keys, "path", self.path)
         _put_if_present_or_meaningful(payload, self.present_keys, "hash", self.hash)
