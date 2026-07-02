@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
+from ...runtime.json_types import coerce_json_object
 from ...runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..diagnostics import (
     ArtifactManifestDiagnostics,
+    DataStatsDiagnostics,
+    IndexStatsDiagnostics,
+    ModelDiagnostics,
+    RouteStatsDiagnostics,
     StartupDiagnostics,
     SystemStatsDiagnostics,
+    TraceStatsDiagnostics,
 )
 from ..runtime_view import SystemRuntime
 
@@ -50,17 +56,17 @@ class RuntimeDiagnosticsService:
             serving_initialized=serving_initialized,
             artifacts_ready=runtime.artifacts_ready,
             ready=runtime.system_ready,
-            models={
-                "embedding_model": models.embedding_model,
-                "llm_model": models.llm_model,
-                "rerank_model": models.rerank_model,
-            },
-            trace_stats=trace_stats,
-            retrieval_runtime_profile=runtime_profile,
+            models=ModelDiagnostics(
+                embedding_model=models.embedding_model,
+                llm_model=models.llm_model,
+                rerank_model=models.rerank_model,
+            ),
+            trace_stats=TraceStatsDiagnostics.from_payload(trace_stats),
+            retrieval_runtime_profile=coerce_json_object(runtime_profile),
             manifest=ArtifactManifestDiagnostics.from_manifest(runtime.artifact_manifest),
-            data_stats=data_stats,
-            index_stats=index_stats,
-            route_stats=route_stats,
+            data_stats=DataStatsDiagnostics.from_payload(data_stats),
+            index_stats=IndexStatsDiagnostics.from_payload(index_stats),
+            route_stats=RouteStatsDiagnostics.from_payload(route_stats),
         )
 
     def collect_startup_diagnostics(
@@ -88,7 +94,7 @@ class RuntimeDiagnosticsService:
             rerank_model=models.rerank_model,
             trace_enabled=bool(observability.enable_query_tracing),
             trace_path=str(observability.query_trace_path),
-            trace_stats=trace_stats,
+            trace_stats=TraceStatsDiagnostics.from_payload(trace_stats),
             build_initialized=build_initialized,
             serving_initialized=serving_initialized,
             artifacts_ready=runtime.artifacts_ready,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 
+from rag_modules.app.diagnostics import DataStatsDiagnostics, TraceStatsDiagnostics
 from rag_modules.app.providers import (
     ApplicationServiceProvider,
     InfrastructureProvider,
@@ -62,6 +63,9 @@ runtime_provider = create_default_runtime_provider()
 infrastructure_provider: InfrastructureProvider = runtime_provider.infrastructure
 retrieval_provider: RetrievalRuntimeProvider = runtime_provider.retrieval_runtime
 service_provider: ApplicationServiceProvider = runtime_provider.services
+
+trace_stats: TraceStatsDiagnostics = TraceStatsDiagnostics.from_payload({"dropped_events": 1})
+data_stats: DataStatsDiagnostics = DataStatsDiagnostics.from_payload({"total_recipes": 2})
 
 
 class _CompletionMessage:
