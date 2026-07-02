@@ -103,11 +103,31 @@ class AdvancedGraphRAGSystem:
     def is_serving_initialized(self) -> bool:
         return self.operations_service.is_serving_initialized()
 
-    def build_knowledge_base(self, progress=None) -> None:
-        self.operations_service.build_knowledge_base(progress=progress)
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.operations_service.build_knowledge_base(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
-    def rebuild_knowledge_base(self, progress=None) -> None:
-        self.operations_service.rebuild_knowledge_base(progress=progress)
+    def rebuild_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.operations_service.rebuild_knowledge_base(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
     def refresh_serving_runtime(self, progress=None, *, force: bool = True):
         return self.operations_service.refresh_serving_runtime(

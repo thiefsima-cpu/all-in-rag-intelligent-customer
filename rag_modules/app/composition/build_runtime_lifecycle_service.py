@@ -28,11 +28,15 @@ class BuildRuntimeLifecycleService:
         *,
         serving_runtime: ServingRuntime | None = None,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> tuple[BuildRuntime, ServingRuntime | None]:
         build_runtime = self.readiness_service.require_build_runtime(build_runtime)
         build_runtime = self.build_runtime_executor.build_knowledge_base(
             build_runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
         serving_runtime = self.serving_lifecycle_service.refresh_from_build(
             serving_runtime,
@@ -48,11 +52,15 @@ class BuildRuntimeLifecycleService:
         *,
         serving_runtime: ServingRuntime | None = None,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> tuple[BuildRuntime, ServingRuntime | None]:
         build_runtime = self.readiness_service.require_build_runtime(build_runtime)
         build_runtime = self.build_runtime_executor.rebuild_knowledge_base(
             build_runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
         serving_runtime = self.serving_lifecycle_service.refresh_from_build(
             serving_runtime,

@@ -33,13 +33,30 @@ class _BuildSystem:
         del progress, neo4j_manager
         self.build_initialized = True
 
-    def build_knowledge_base(self, progress=None) -> None:
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del request_id, build_job_id
         if progress:
             progress("Building Milvus vector index...")
         self.system_ready = True
 
-    def rebuild_knowledge_base(self, progress=None) -> None:
-        self.build_knowledge_base(progress=progress)
+    def rebuild_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.build_knowledge_base(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
     def collect_system_stats(self) -> dict:
         return {"ready": self.system_ready}
@@ -68,7 +85,14 @@ class _BlockingBuildSystem(_BuildSystem):
         self.build_started = threading.Event()
         self.release_build = threading.Event()
 
-    def build_knowledge_base(self, progress=None) -> None:
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del request_id, build_job_id
         if progress:
             progress("building")
         self.build_started.set()
@@ -81,7 +105,14 @@ class _FailingBuildSystem(_BuildSystem):
         super().__init__(config)
         self.secret = secret
 
-    def build_knowledge_base(self, progress=None) -> None:
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del request_id, build_job_id
         if progress:
             progress(f"private progress {self.secret}")
         raise RuntimeError(self.secret)

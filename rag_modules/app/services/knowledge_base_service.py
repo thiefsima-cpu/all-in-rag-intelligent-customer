@@ -66,11 +66,31 @@ class KnowledgeBaseService:
     def artifact_manifest(self, manifest: ArtifactManifest) -> None:
         self.workflow.artifact_manifest = manifest
 
-    def build(self, progress: ProgressCallback = None) -> None:
-        self.workflow.build(progress=progress)
+    def build(
+        self,
+        progress: ProgressCallback = None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.workflow.build(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
-    def rebuild(self, progress: ProgressCallback = None) -> None:
-        self.workflow.rebuild(progress=progress)
+    def rebuild(
+        self,
+        progress: ProgressCallback = None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.workflow.rebuild(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
     def show_stats(self, progress: ProgressCallback = None) -> None:
         self.workflow.show_stats(progress)

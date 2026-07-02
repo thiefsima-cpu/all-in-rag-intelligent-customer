@@ -77,11 +77,15 @@ class BuildBootstrapper(_ComposedBootstrapperFacade[BuildBootstrapperInvocationA
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         return self._invocations.build_knowledge_base(
             executor=self.executor,
             runtime=runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
 
     def rebuild_knowledge_base(
@@ -89,11 +93,15 @@ class BuildBootstrapper(_ComposedBootstrapperFacade[BuildBootstrapperInvocationA
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         return self._invocations.rebuild_knowledge_base(
             executor=self.executor,
             runtime=runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
 
 

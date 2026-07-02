@@ -10,7 +10,11 @@ from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifac
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.milvus_index_construction import MilvusIndexConstructionModule
-from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
+from rag_modules.runtime.artifacts import (
+    ARTIFACT_STAGE_MANIFEST_UNREADABLE,
+    ArtifactManifest,
+    ArtifactManifestStore,
+)
 from rag_modules.text_document import TextDocument
 
 
@@ -198,6 +202,25 @@ class MilvusBlueGreenTests(unittest.TestCase):
             self.assertEqual(second.manifest_version, 2)
             self.assertEqual(store.list_versions(), [1, 2])
             self.assertEqual(store.load().collection_name, "recipes__green")
+
+    def test_manifest_store_load_unreadable_manifest_uses_stable_error_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            secret = "customer-token-secret"
+            manifest_path = Path(tmp_dir) / "artifact_manifest.json"
+            manifest_path.write_text(f'{{"token": "{secret}",', encoding="utf-8")
+            store = ArtifactManifestStore(
+                SimpleNamespace(
+                    storage=SimpleNamespace(
+                        artifact_manifest_path=str(manifest_path),
+                    )
+                )
+            )
+
+            manifest = store.load()
+
+        self.assertEqual(manifest.stage, ARTIFACT_STAGE_MANIFEST_UNREADABLE)
+        self.assertEqual(manifest.last_error, "MANIFEST_UNREADABLE")
+        self.assertNotIn(secret, str(manifest.to_dict()))
 
     def test_milvus_module_alternates_slots_and_switches_stable_alias(self) -> None:
         client = _FakeMilvusClient()

@@ -374,13 +374,25 @@ class _FakeApiSystem:
         self.serving_initialized = True
         return None
 
-    def build_knowledge_base(self, progress=None) -> None:
-        del progress
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del progress, request_id, build_job_id
         self.build_calls += 1
         self.system_ready = True
 
-    def rebuild_knowledge_base(self, progress=None) -> None:
-        del progress
+    def rebuild_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del progress, request_id, build_job_id
         self.rebuild_calls += 1
         self.system_ready = True
 
@@ -536,8 +548,14 @@ class _BlockingBuildApiSystem(_FakeApiSystem):
         self.build_started = threading.Event()
         self.release_build = threading.Event()
 
-    def build_knowledge_base(self, progress=None) -> None:
-        del progress
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del progress, request_id, build_job_id
         self.build_calls += 1
         self.build_started.set()
         self.release_build.wait(timeout=2.0)
@@ -549,8 +567,18 @@ class _FailingBuildApiSystem(_FakeApiSystem):
         super().__init__()
         self.build_initialized = True
         self.secret = secret
+        self.received_build_request_id = ""
+        self.received_build_job_id = ""
 
-    def build_knowledge_base(self, progress=None) -> None:
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.received_build_request_id = request_id
+        self.received_build_job_id = build_job_id
         if progress:
             progress(f"private progress {self.secret}")
         raise RuntimeError(self.secret)
@@ -1427,6 +1455,8 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(failed["request_id"], "build-http-42")
         self.assertEqual(failed["error"]["request_id"], "build-http-42")
         self.assertEqual(failed["error"]["code"], "BUILD_FAILED")
+        self.assertEqual(system.received_build_request_id, "build-http-42")
+        self.assertEqual(system.received_build_job_id, submitted["job_id"])
         self.assertNotIn(secret, json.dumps(failed, ensure_ascii=False))
 
     def test_answer_flow_uses_serving_api_surface(self) -> None:

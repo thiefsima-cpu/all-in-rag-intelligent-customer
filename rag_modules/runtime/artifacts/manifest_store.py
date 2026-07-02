@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, List, Mapping
 
+from ...safe_logging import log_failure
 from .json import write_json_atomic
 from .manifest import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_STAGE_MANIFEST_UNREADABLE,
     ArtifactManifest,
 )
+
+MANIFEST_UNREADABLE_ERROR_CODE = "MANIFEST_UNREADABLE"
+logger = logging.getLogger(__name__)
 
 
 class ArtifactManifestStore:
@@ -42,11 +47,18 @@ class ArtifactManifestStore:
                 manifest = manifest.evolve(manifest_path=self.manifest_path)
             return manifest
         except Exception as exc:
+            log_failure(
+                logger,
+                logging.WARNING,
+                "artifact_manifest_load_failed",
+                code=MANIFEST_UNREADABLE_ERROR_CODE,
+                error=exc,
+            )
             return ArtifactManifest.missing(
                 manifest_path=self.manifest_path,
             ).evolve(
                 stage=ARTIFACT_STAGE_MANIFEST_UNREADABLE,
-                last_error=str(exc),
+                last_error=MANIFEST_UNREADABLE_ERROR_CODE,
             )
 
     def save(self, manifest: ArtifactManifest) -> ArtifactManifest:
@@ -136,4 +148,4 @@ class ArtifactManifestStore:
         write_json_atomic(path, payload)
 
 
-__all__ = ["ArtifactManifestStore"]
+__all__ = ["ArtifactManifestStore", "MANIFEST_UNREADABLE_ERROR_CODE"]

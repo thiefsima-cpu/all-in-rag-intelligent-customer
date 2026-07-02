@@ -14,6 +14,25 @@ from ..runtime.artifacts import (
     utc_now_iso,
 )
 
+BUILD_FAILED_ERROR_CODE = "BUILD_FAILED"
+
+
+def _failure_metadata(
+    exc: Exception,
+    *,
+    request_id: str = "",
+    build_job_id: str = "",
+) -> dict[str, str]:
+    metadata = {
+        "code": BUILD_FAILED_ERROR_CODE,
+        "error_type": type(exc).__name__,
+    }
+    if request_id:
+        metadata["request_id"] = str(request_id)
+    if build_job_id:
+        metadata["build_job_id"] = str(build_job_id)
+    return metadata
+
 
 class KnowledgeBaseManifestLifecycle:
     """Own manifest loading and stage transitions for build workflows."""
@@ -72,11 +91,24 @@ class KnowledgeBaseManifestLifecycle:
             clear_candidate()
         return self.artifact_manifest
 
-    def mark_failed(self, exc: Exception) -> ArtifactManifest:
+    def mark_failed(
+        self,
+        exc: Exception,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> ArtifactManifest:
         failed_base = self.candidate_manifest or self.artifact_manifest
         failed_manifest = failed_base.evolve(
             stage=ARTIFACT_STAGE_FAILED,
-            last_error=str(exc),
+            last_error=BUILD_FAILED_ERROR_CODE,
+            build_metadata={
+                "failure": _failure_metadata(
+                    exc,
+                    request_id=request_id,
+                    build_job_id=build_job_id,
+                )
+            },
         )
         if self.artifact_manifest.is_ready:
             self.candidate_manifest = self._save_candidate(failed_manifest)
@@ -104,4 +136,4 @@ class KnowledgeBaseManifestLifecycle:
         return manifest
 
 
-__all__ = ["KnowledgeBaseManifestLifecycle"]
+__all__ = ["BUILD_FAILED_ERROR_CODE", "KnowledgeBaseManifestLifecycle"]

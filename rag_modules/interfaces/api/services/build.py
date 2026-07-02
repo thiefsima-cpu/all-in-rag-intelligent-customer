@@ -185,6 +185,7 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                     job_id,
                     rebuild,
                     build_lock,
+                    resolved_request_id,
                 )
             except Exception:
                 build_lock.release()
@@ -229,6 +230,7 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         job_id: str,
         rebuild: bool,
         build_lock: _InterprocessFileLock,
+        request_id: str,
     ) -> None:
         try:
             self._mark_job_running(
@@ -256,13 +258,21 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                     if not self.system.is_build_initialized():
                         self.system.initialize_build_runtime(progress=progress)
                     if rebuild:
-                        self.system.rebuild_knowledge_base(progress=progress)
+                        self.system.rebuild_knowledge_base(
+                            progress=progress,
+                            request_id=request_id,
+                            build_job_id=job_id,
+                        )
                         operation_result = self._operation_response(
                             message="Knowledge base rebuild completed.",
                             mode=self._MODE,
                         )
                     else:
-                        self.system.build_knowledge_base(progress=progress)
+                        self.system.build_knowledge_base(
+                            progress=progress,
+                            request_id=request_id,
+                            build_job_id=job_id,
+                        )
                         operation_result = self._operation_response(
                             message="Knowledge base build completed.",
                             mode=self._MODE,

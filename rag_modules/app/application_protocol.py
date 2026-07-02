@@ -38,9 +38,21 @@ class GraphRAGApplication(Protocol):
         neo4j_manager: Any | None = None,
     ) -> ServingRuntime: ...
 
-    def build_knowledge_base(self, progress: ProgressCallback = None) -> None: ...
+    def build_knowledge_base(
+        self,
+        progress: ProgressCallback = None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None: ...
 
-    def rebuild_knowledge_base(self, progress: ProgressCallback = None) -> None: ...
+    def rebuild_knowledge_base(
+        self,
+        progress: ProgressCallback = None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None: ...
 
     def refresh_serving_runtime(
         self,

@@ -54,13 +54,27 @@ class _FakeKnowledgeBaseService(_FakeClosable):
         self.build_calls = 0
         self.rebuild_calls = 0
 
-    def build(self, progress=None) -> None:
+    def build(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del request_id, build_job_id
         self.build_calls += 1
         if progress:
             progress("build-called")
         self.artifact_manifest = self.artifact_manifest.evolve(stage="ready")
 
-    def rebuild(self, progress=None) -> None:
+    def rebuild(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del request_id, build_job_id
         self.rebuild_calls += 1
         if progress:
             progress("rebuild-called")
@@ -99,15 +113,37 @@ class _FakeBuildBootstrapper(BuildBootstrapper):
         self.build_calls += 1
         return self.runtime
 
-    def build_knowledge_base(self, runtime: BuildRuntime, *, progress=None) -> BuildRuntime:
+    def build_knowledge_base(
+        self,
+        runtime: BuildRuntime,
+        *,
+        progress=None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
         self.build_knowledge_base_calls += 1
-        runtime.knowledge_base_service.build(progress=progress)
+        runtime.knowledge_base_service.build(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
         runtime.artifact_manifest = runtime.knowledge_base_service.artifact_manifest
         return runtime
 
-    def rebuild_knowledge_base(self, runtime: BuildRuntime, *, progress=None) -> BuildRuntime:
+    def rebuild_knowledge_base(
+        self,
+        runtime: BuildRuntime,
+        *,
+        progress=None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
         self.rebuild_knowledge_base_calls += 1
-        runtime.knowledge_base_service.rebuild(progress=progress)
+        runtime.knowledge_base_service.rebuild(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
         runtime.artifact_manifest = runtime.knowledge_base_service.artifact_manifest
         return runtime
 

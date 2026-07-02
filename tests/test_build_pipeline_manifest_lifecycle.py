@@ -89,6 +89,7 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
         self.assertEqual(lifecycle.artifact_manifest.stage, ARTIFACT_STAGE_READY)
 
     def test_mark_failed_persists_failure_state(self) -> None:
+        secret = "postgres://user:pass@example.test/customer"
         store = _FakeManifestStore(
             ArtifactManifest.missing(manifest_path="manifest.json").evolve(
                 stage=ARTIFACT_STAGE_BUILDING
@@ -96,10 +97,24 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
         )
         lifecycle = KnowledgeBaseManifestLifecycle(store)
 
-        manifest = lifecycle.mark_failed(RuntimeError("boom"))
+        manifest = lifecycle.mark_failed(
+            RuntimeError(secret),
+            request_id="request-42",
+            build_job_id="job-42",
+        )
 
         self.assertEqual(manifest.stage, ARTIFACT_STAGE_FAILED)
-        self.assertEqual(manifest.last_error, "boom")
+        self.assertEqual(manifest.last_error, "BUILD_FAILED")
+        self.assertEqual(
+            manifest.build_metadata["failure"],
+            {
+                "code": "BUILD_FAILED",
+                "error_type": "RuntimeError",
+                "request_id": "request-42",
+                "build_job_id": "job-42",
+            },
+        )
+        self.assertNotIn(secret, str(manifest.to_dict()))
         self.assertEqual(store.saved[-1].stage, ARTIFACT_STAGE_FAILED)
 
     def test_reset_clears_error_and_cache_hit(self) -> None:

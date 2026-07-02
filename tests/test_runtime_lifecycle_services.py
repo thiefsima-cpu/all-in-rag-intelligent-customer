@@ -31,13 +31,27 @@ class _FakeBuildBootstrapper:
         self.build_calls += 1
         return self.runtime
 
-    def build_knowledge_base(self, runtime: BuildRuntime, *, progress=None) -> BuildRuntime:
-        del progress
+    def build_knowledge_base(
+        self,
+        runtime: BuildRuntime,
+        *,
+        progress=None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
+        del progress, request_id, build_job_id
         self.build_knowledge_base_calls += 1
         return runtime
 
-    def rebuild_knowledge_base(self, runtime: BuildRuntime, *, progress=None) -> BuildRuntime:
-        del progress
+    def rebuild_knowledge_base(
+        self,
+        runtime: BuildRuntime,
+        *,
+        progress=None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
+        del progress, request_id, build_job_id
         self.rebuild_knowledge_base_calls += 1
         return runtime
 

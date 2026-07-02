@@ -84,11 +84,19 @@ class SystemRuntimeManager:
             serving_runtime=serving_runtime,
         )
 
-    def build_knowledge_base(self, *, progress: ProgressCallback = None) -> BuildRuntime:
+    def build_knowledge_base(
+        self,
+        *,
+        progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
         build_runtime, serving_runtime = self.build_lifecycle_service.build_knowledge_base(
             self.build_runtime,
             serving_runtime=self.serving_runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
         self.runtime_state_store.replace(
             build_runtime=build_runtime,
@@ -96,11 +104,19 @@ class SystemRuntimeManager:
         )
         return build_runtime
 
-    def rebuild_knowledge_base(self, *, progress: ProgressCallback = None) -> BuildRuntime:
+    def rebuild_knowledge_base(
+        self,
+        *,
+        progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> BuildRuntime:
         build_runtime, serving_runtime = self.build_lifecycle_service.rebuild_knowledge_base(
             self.build_runtime,
             serving_runtime=self.serving_runtime,
             progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
         )
         self.runtime_state_store.replace(
             build_runtime=build_runtime,

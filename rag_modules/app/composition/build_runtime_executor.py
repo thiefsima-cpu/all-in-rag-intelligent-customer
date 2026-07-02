@@ -14,11 +14,17 @@ class BuildRuntimeExecutor:
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         knowledge_base_service = runtime.knowledge_base_service
         if knowledge_base_service is None:
             raise ValueError("Build runtime is missing a knowledge base service.")
-        knowledge_base_service.build(progress=progress)
+        knowledge_base_service.build(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
         runtime.artifact_manifest = knowledge_base_service.artifact_manifest
         return runtime
 
@@ -27,11 +33,17 @@ class BuildRuntimeExecutor:
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         knowledge_base_service = runtime.knowledge_base_service
         if knowledge_base_service is None:
             raise ValueError("Build runtime is missing a knowledge base service.")
-        knowledge_base_service.rebuild(progress=progress)
+        knowledge_base_service.rebuild(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
         runtime.artifact_manifest = knowledge_base_service.artifact_manifest
         return runtime
 

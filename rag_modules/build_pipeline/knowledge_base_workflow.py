@@ -90,6 +90,8 @@ class KnowledgeBaseBuildWorkflow(
         progress: ProgressCallback = None,
         *,
         force_rebuild: bool = False,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> ArtifactManifest:
         self._emit(progress, "\nChecking knowledge base state...")
         active_manifest = self.artifact_manifest
@@ -182,23 +184,39 @@ class KnowledgeBaseBuildWorkflow(
             if build_target:
                 self._discard_vector_build(build_target["collection_name"])
             self._configure_active_collection(active_manifest)
-            self.manifest_lifecycle.mark_failed(exc)
+            self.manifest_lifecycle.mark_failed(
+                exc,
+                request_id=request_id,
+                build_job_id=build_job_id,
+            )
             log_failure(
                 logger,
                 logging.ERROR,
                 "build_failed",
                 code="BUILD_FAILED",
                 error=exc,
+                request_id=request_id,
             )
             raise
 
-    def rebuild(self, progress: ProgressCallback = None) -> ArtifactManifest:
+    def rebuild(
+        self,
+        progress: ProgressCallback = None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> ArtifactManifest:
         self.manifest_lifecycle.reset(stage=ARTIFACT_STAGE_REBUILDING)
         self._emit(
             progress,
             "Building the inactive Milvus collection; the active collection remains available.",
         )
-        return self.build(progress=progress, force_rebuild=True)
+        return self.build(
+            progress=progress,
+            force_rebuild=True,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
     def show_stats(self, progress: ProgressCallback = None) -> None:
         self.stats_presenter.show(progress)

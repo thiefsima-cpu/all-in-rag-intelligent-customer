@@ -56,6 +56,8 @@ class BuildBootstrapperInvocationProtocol(Protocol):
         executor: BuildRuntimeExecutorProtocol,
         runtime: BuildRuntime,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
     def rebuild_knowledge_base(
@@ -64,6 +66,8 @@ class BuildBootstrapperInvocationProtocol(Protocol):
         executor: BuildRuntimeExecutorProtocol,
         runtime: BuildRuntime,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
 

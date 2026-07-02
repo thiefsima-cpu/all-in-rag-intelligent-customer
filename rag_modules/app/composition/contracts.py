@@ -34,6 +34,8 @@ class BuildRuntimeExecutorProtocol(Protocol):
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
     def rebuild_knowledge_base(
@@ -41,6 +43,8 @@ class BuildRuntimeExecutorProtocol(Protocol):
         runtime: BuildRuntime,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
 
@@ -180,12 +184,16 @@ class SystemOperationsProtocol(Protocol):
         self,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
     def rebuild_knowledge_base(
         self,
         *,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime: ...
 
     def refresh_serving_runtime(

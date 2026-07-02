@@ -76,6 +76,8 @@ class BuildBootstrapperInvocationAdapter(
         executor: BuildRuntimeExecutorProtocol,
         runtime: BuildRuntime,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         return cast(
             BuildRuntime,
@@ -84,6 +86,8 @@ class BuildBootstrapperInvocationAdapter(
                 "build_knowledge_base",
                 runtime,
                 progress=progress,
+                request_id=request_id,
+                build_job_id=build_job_id,
             ),
         )
 
@@ -93,6 +97,8 @@ class BuildBootstrapperInvocationAdapter(
         executor: BuildRuntimeExecutorProtocol,
         runtime: BuildRuntime,
         progress: ProgressCallback = None,
+        request_id: str = "",
+        build_job_id: str = "",
     ) -> BuildRuntime:
         return cast(
             BuildRuntime,
@@ -101,6 +107,8 @@ class BuildBootstrapperInvocationAdapter(
                 "rebuild_knowledge_base",
                 runtime,
                 progress=progress,
+                request_id=request_id,
+                build_job_id=build_job_id,
             ),
         )
 

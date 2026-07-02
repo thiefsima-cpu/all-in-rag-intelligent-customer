@@ -335,6 +335,66 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         self.assertEqual(runtime_artifact_access.vector_build_calls, 1)
         self.assertEqual(manifest.index_signature, "fresh-index")
 
+    def test_build_failure_manifest_uses_safe_failure_context(self) -> None:
+        secret = "milvus password leaked"
+        config = build_test_config(
+            {
+                "graph": {
+                    "enable_semantic_graph_schema": False,
+                }
+            }
+        )
+        manifest_store = _FakeManifestStore(ArtifactManifest.missing(manifest_path="manifest.json"))
+        runtime_artifact_access = _FakeRuntimeArtifactAccess()
+        runtime_stats_access = _FakeRuntimeStatsAccess()
+        document_result = DocumentArtifactResult(
+            documents=[TextDocument(content="doc")],
+            chunks=[TextDocument(content="chunk")],
+            manifest=ArtifactManifest.missing(manifest_path="manifest.json"),
+            cache_hit=False,
+        )
+        data_module = type("DataModule", (), {})()
+        data_module.documents = [TextDocument(content="doc")]
+        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.load_graph_data = lambda: None
+        index_module = type("IndexModule", (), {})()
+        index_module.has_collection = lambda: False
+        index_module.load_collection = lambda: False
+        index_module.build_vector_index = lambda chunks: (_ for _ in ()).throw(
+            RuntimeError(secret)
+        )
+        index_module.delete_collection = lambda: True
+        index_module.get_collection_stats = lambda: {"row_count": 0}
+        workflow = KnowledgeBaseBuildWorkflow(
+            config=config,
+            neo4j_manager=None,
+            data_module=data_module,
+            index_module=index_module,
+            manifest_store=manifest_store,
+            runtime_artifact_access=runtime_artifact_access,
+            runtime_stats_access=runtime_stats_access,
+            document_artifact_builder=_FakeDocumentArtifactBuilder(document_result),
+            semantic_graph_schema_sync=_FakeSemanticGraphSchemaSync(
+                SemanticGraphSchemaSyncResult(enabled=False)
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, secret):
+            workflow.build(request_id="request-42", build_job_id="job-42")
+
+        failed_manifest = manifest_store.saved[-1]
+        self.assertEqual(failed_manifest.last_error, "BUILD_FAILED")
+        self.assertEqual(
+            failed_manifest.build_metadata["failure"],
+            {
+                "code": "BUILD_FAILED",
+                "error_type": "RuntimeError",
+                "request_id": "request-42",
+                "build_job_id": "job-42",
+            },
+        )
+        self.assertNotIn(secret, str(failed_manifest.to_dict()))
+
 
 if __name__ == "__main__":
     unittest.main()
