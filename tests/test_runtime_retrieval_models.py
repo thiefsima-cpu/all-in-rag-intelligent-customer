@@ -1,11 +1,60 @@
 from __future__ import annotations
 
+import time
 import unittest
 
-from rag_modules.contracts import EvidenceDocument
-from rag_modules.runtime import RouteSnapshot, RouteStageSnapshot
+import pytest
+
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.runtime import (
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+    RouteSnapshot,
+    RouteStageSnapshot,
+)
 from rag_modules.runtime.retrieval_models import RetrievalOutcome
 from rag_modules.runtime.workflow_models import AnswerContext
+
+
+def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None:
+    parent = RequestControl.for_timeout(10.0, scope="answer")
+    child = parent.child(0.25, scope="combined.graph")
+
+    assert child.scope == "combined.graph"
+    assert child.deadline <= time.perf_counter() + 0.30
+    assert child.deadline <= parent.deadline
+
+    child.cancel("combined_branch_timeout")
+
+    assert parent.cancelled
+    assert child.cancelled
+    assert parent.reason == "combined_branch_timeout"
+    assert child.reason == "combined_branch_timeout"
+
+
+def test_request_control_raises_cancelled_and_budget_exceeded() -> None:
+    cancelled = RequestControl.for_timeout(5.0, scope="answer")
+    cancelled.cancel("client_disconnect")
+
+    with pytest.raises(RequestCancelled, match="client_disconnect"):
+        cancelled.raise_if_cancelled()
+
+    exhausted = RequestControl(deadline=time.perf_counter() - 0.01, scope="answer")
+
+    with pytest.raises(RequestBudgetExceeded, match="answer"):
+        exhausted.raise_if_cancelled()
+
+
+def test_retrieval_request_serializes_safe_control_details_only() -> None:
+    control = RequestControl.for_timeout(5.0, scope="route")
+    request = RetrievalRequest.from_inputs(query="tofu", top_k=2, control=control)
+
+    payload = request.to_dict()
+
+    assert payload["control"]["scope"] == "route"
+    assert payload["control"]["cancelled"] is False
+    assert "cancel_event" not in str(payload)
 
 
 class RetrievalRuntimeModelTests(unittest.TestCase):

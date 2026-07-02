@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, TypeVar, cast
+from dataclasses import dataclass, field, replace
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    TypeVar,
+    cast,
+)
 
 from ..domain.shared.query_constraints import QueryConstraints
 from ._common import coerce_float, coerce_str
 from .query import QueryPlan
+
+if TYPE_CHECKING:
+    from ..runtime.request_control import RequestControl
 
 
 class PageDocumentLike(Protocol):
@@ -273,6 +287,7 @@ class RetrievalRequest:
     entity_keywords: List[str] = field(default_factory=list)
     topic_keywords: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    control: Optional[RequestControl] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.query = coerce_str(self.query)
@@ -314,6 +329,7 @@ class RetrievalRequest:
             entity_keywords=payload.get("entity_keywords") or [],
             topic_keywords=payload.get("topic_keywords") or [],
             metadata=payload.get("metadata") or {},
+            control=None,
         )
 
     @classmethod
@@ -329,6 +345,7 @@ class RetrievalRequest:
         entity_keywords: Optional[Iterable[str]] = None,
         topic_keywords: Optional[Iterable[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        control: Optional[RequestControl] = None,
     ) -> "RetrievalRequest":
         resolved_constraints = constraints or (
             query_plan.constraints if query_plan else QueryConstraints()
@@ -344,6 +361,7 @@ class RetrievalRequest:
             entity_keywords=[str(item) for item in (entity_keywords or []) if str(item).strip()],
             topic_keywords=[str(item) for item in (topic_keywords or []) if str(item).strip()],
             metadata=dict(metadata or {}),
+            control=control,
         )
 
     @property
@@ -381,9 +399,22 @@ class RetrievalRequest:
         return replace(self, **changes)
 
     def to_dict(self) -> Dict[str, Any]:
-        payload = asdict(self)
-        payload["constraints"] = self.effective_constraints.to_dict()
-        payload["query_plan"] = self.query_plan.to_dict() if self.query_plan else None
+        from ..runtime.request_control import control_trace_details
+
+        payload = {
+            "query": self.query,
+            "top_k": self.top_k,
+            "candidate_k": self.candidate_k,
+            "strategy": self.strategy,
+            "constraints": self.effective_constraints.to_dict(),
+            "query_plan": self.query_plan.to_dict() if self.query_plan else None,
+            "entity_keywords": list(self.entity_keywords),
+            "topic_keywords": list(self.topic_keywords),
+            "metadata": dict(self.metadata or {}),
+        }
+        control_details = control_trace_details(self.control)
+        if control_details:
+            payload["control"] = control_details
         return payload
 
 

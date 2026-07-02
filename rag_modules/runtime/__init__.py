@@ -24,6 +24,13 @@ from .graph_models import (
     GraphTraceEventSnapshot,
 )
 from .policy_models import PolicySnapshot
+from .request_control import (
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+    RequestControlError,
+    control_trace_details,
+)
 from .retrieval_models import RetrievalOutcome
 from .route_models import RouteDiagnostics, RouteSnapshot, RouteStageSnapshot
 from .stats_adapters import DefaultRuntimeStatsAccess
@@ -56,6 +63,10 @@ __all__ = [
     "QueryDiagnostics",
     "QueryTraceEvent",
     "QueryUnderstandingSnapshot",
+    "RequestBudgetExceeded",
+    "RequestCancelled",
+    "RequestControl",
+    "RequestControlError",
     "RetrievalOutcome",
     "RetrievalTraceSnapshot",
     "RouteResolution",
@@ -69,6 +80,7 @@ __all__ = [
     "analysis_payload",
     "analysis_strategy_name",
     "analysis_value",
+    "control_trace_details",
     "ensure_optional_query_analysis",
     "ensure_query_analysis",
 ]
