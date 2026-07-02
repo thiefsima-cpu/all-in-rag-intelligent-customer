@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
 
 from ..candidate_generator import (
     CandidateSourceDegradationStrategy,
@@ -18,27 +17,21 @@ SUPPORTED_CANDIDATE_SOURCE_DEGRADATION_STRATEGIES = {
 }
 
 
-def _as_recovery_seconds(value: Any, default: float) -> float:
-    try:
-        resolved = float(value)
-    except (TypeError, ValueError):
-        resolved = default
+def _as_recovery_seconds(value: object, default: float) -> float:
+    resolved = default
+    if isinstance(value, (bool, int, float, str)):
+        try:
+            resolved = float(value)
+        except (TypeError, ValueError):
+            resolved = default
     return max(0.1, resolved)
 
 
-def _normalize_degradation_strategy(value: Any) -> CandidateSourceDegradationStrategy:
-    default = (
-        str(
-            _CANDIDATE_SOURCE_DEFAULTS.get(
-                "degradation_strategy",
-                CANDIDATE_SOURCE_DEGRADATION_CONTINUE,
-            )
-        )
-        .strip()
-        .lower()
-    )
+def _normalize_degradation_strategy(value: object) -> CandidateSourceDegradationStrategy:
+    default = str(_CANDIDATE_SOURCE_DEFAULTS.degradation_strategy).strip().lower()
+    candidate = value if isinstance(value, (CandidateSourceDegradationStrategy, str)) else default
     try:
-        return _normalize_source_degradation_strategy(value or default)
+        return _normalize_source_degradation_strategy(candidate or default)
     except ValueError:
         supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
         raise ValueError(
@@ -48,25 +41,21 @@ def _normalize_degradation_strategy(value: Any) -> CandidateSourceDegradationStr
 
 @dataclass
 class RetrievalCandidateSourceSettings:
-    failure_threshold: int = int(_CANDIDATE_SOURCE_DEFAULTS.get("failure_threshold", 1))
-    recovery_timeout_seconds: float = float(
-        _CANDIDATE_SOURCE_DEFAULTS.get("recovery_timeout_seconds", 30.0)
-    )
+    failure_threshold: int = _CANDIDATE_SOURCE_DEFAULTS.failure_threshold
+    recovery_timeout_seconds: float = _CANDIDATE_SOURCE_DEFAULTS.recovery_timeout_seconds
     degradation_strategy: CandidateSourceDegradationStrategy | str = str(
-        _CANDIDATE_SOURCE_DEFAULTS.get(
-            "degradation_strategy", CANDIDATE_SOURCE_DEGRADATION_CONTINUE
-        )
+        _CANDIDATE_SOURCE_DEFAULTS.degradation_strategy
     )
 
     def __post_init__(self) -> None:
         self.failure_threshold = _as_int(
             self.failure_threshold,
-            int(_CANDIDATE_SOURCE_DEFAULTS.get("failure_threshold", 1)),
+            _CANDIDATE_SOURCE_DEFAULTS.failure_threshold,
             minimum=1,
         )
         self.recovery_timeout_seconds = _as_recovery_seconds(
             self.recovery_timeout_seconds,
-            float(_CANDIDATE_SOURCE_DEFAULTS.get("recovery_timeout_seconds", 30.0)),
+            _CANDIDATE_SOURCE_DEFAULTS.recovery_timeout_seconds,
         )
         self.degradation_strategy = _normalize_degradation_strategy(
             self.degradation_strategy,
@@ -81,8 +70,8 @@ class RetrievalCandidateSourceSettings:
             degradation_strategy=retrieval.candidate_source_degradation_strategy,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {}
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {}
         for field in self.__dataclass_fields__.values():
             value = getattr(self, field.name)
             payload[field.name] = (

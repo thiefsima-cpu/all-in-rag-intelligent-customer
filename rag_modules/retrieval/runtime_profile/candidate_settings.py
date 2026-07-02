@@ -3,31 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
 
 from .shared import _CANDIDATE_DEFAULTS, _as_int
 
 
 @dataclass
 class RetrievalCandidateSizingSettings:
-    hybrid_default_multiplier: int = int(_CANDIDATE_DEFAULTS.get("hybrid_default_multiplier", 2))
-    hybrid_default_min_candidates: int = int(
-        _CANDIDATE_DEFAULTS.get("hybrid_default_min_candidates", 10)
-    )
-    hybrid_constraint_multiplier: int = int(
-        _CANDIDATE_DEFAULTS.get("hybrid_constraint_multiplier", 6)
-    )
-    hybrid_constraint_min_candidates: int = int(
-        _CANDIDATE_DEFAULTS.get("hybrid_constraint_min_candidates", 30)
-    )
-    combined_multiplier: int = int(_CANDIDATE_DEFAULTS.get("combined_multiplier", 6))
-    combined_min_candidates: int = int(_CANDIDATE_DEFAULTS.get("combined_min_candidates", 30))
-    graph_supplement_multiplier: int = int(
-        _CANDIDATE_DEFAULTS.get("graph_supplement_multiplier", 2)
-    )
-    graph_supplement_min_candidates: int = int(
-        _CANDIDATE_DEFAULTS.get("graph_supplement_min_candidates", 10)
-    )
+    hybrid_default_multiplier: int = _CANDIDATE_DEFAULTS.hybrid_default_multiplier
+    hybrid_default_min_candidates: int = _CANDIDATE_DEFAULTS.hybrid_default_min_candidates
+    hybrid_constraint_multiplier: int = _CANDIDATE_DEFAULTS.hybrid_constraint_multiplier
+    hybrid_constraint_min_candidates: int = _CANDIDATE_DEFAULTS.hybrid_constraint_min_candidates
+    combined_multiplier: int = _CANDIDATE_DEFAULTS.combined_multiplier
+    combined_min_candidates: int = _CANDIDATE_DEFAULTS.combined_min_candidates
+    graph_supplement_multiplier: int = _CANDIDATE_DEFAULTS.graph_supplement_multiplier
+    graph_supplement_min_candidates: int = _CANDIDATE_DEFAULTS.graph_supplement_min_candidates
 
     def __post_init__(self) -> None:
         defaults = _CANDIDATE_DEFAULTS
@@ -46,7 +35,7 @@ class RetrievalCandidateSizingSettings:
                 field_name,
                 _as_int(
                     getattr(self, field_name),
-                    int(defaults.get(field_name, getattr(self, field_name))),
+                    int(getattr(defaults, field_name)),
                     minimum=1,
                 ),
             )
@@ -81,7 +70,7 @@ class RetrievalCandidateSizingSettings:
         base = _as_int(top_k, 5, minimum=1)
         return max(base * self.graph_supplement_multiplier, self.graph_supplement_min_candidates)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()
         }

@@ -15,13 +15,13 @@ def decide_generation_mode(
     analysis: AnalysisInput = None,
 ) -> GenerationDecision:
     decision_policy = get_query_policy().generation.decision
-    reasons = decision_policy["reasons"]
-    high_pressure_margin = float(decision_policy["high_pressure_margin"])
+    reasons = decision_policy.reasons
+    high_pressure_margin = decision_policy.high_pressure_margin
 
     if not settings.enable_two_stage:
         return GenerationDecision(
             mode=GenerationMode.DIRECT,
-            reason=str(reasons["two_stage_disabled"]),
+            reason=reasons.two_stage_disabled,
             evidence_limit=settings.direct_max_evidence_items,
         )
 
@@ -33,12 +33,12 @@ def decide_generation_mode(
         if has_graph_evidence and len(package.items) > 1:
             return GenerationDecision(
                 mode=GenerationMode.TWO_STAGE,
-                reason=str(reasons["graph_without_analysis"]),
+                reason=reasons.graph_without_analysis,
                 evidence_limit=settings.two_stage_max_evidence_items,
             )
         return GenerationDecision(
             mode=GenerationMode.DIRECT,
-            reason=str(reasons["no_route_analysis"]),
+            reason=reasons.no_route_analysis,
             evidence_limit=settings.direct_max_evidence_items,
         )
 
@@ -50,7 +50,7 @@ def decide_generation_mode(
     if strategy == "graph_rag":
         return GenerationDecision(
             mode=GenerationMode.TWO_STAGE,
-            reason=str(reasons["graph_rag"]),
+            reason=reasons.graph_rag,
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
@@ -61,7 +61,7 @@ def decide_generation_mode(
     ):
         return GenerationDecision(
             mode=GenerationMode.TWO_STAGE,
-            reason=str(reasons["combined_pressure"]),
+            reason=reasons.combined_pressure,
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
@@ -72,12 +72,12 @@ def decide_generation_mode(
     ):
         return GenerationDecision(
             mode=GenerationMode.TWO_STAGE,
-            reason=str(reasons["high_pressure"]),
+            reason=reasons.high_pressure,
             evidence_limit=settings.two_stage_max_evidence_items,
         )
 
     return GenerationDecision(
         mode=GenerationMode.DIRECT,
-        reason=str(reasons["simple"]),
+        reason=reasons.simple,
         evidence_limit=settings.direct_max_evidence_items,
     )

@@ -123,6 +123,8 @@ module = [
   "rag_modules.retrieval.hybrid_runtime",
   "rag_modules.retrieval.hybrid_runtime_state",
   "rag_modules.retrieval.runtime_adapter_factory",
+  "rag_modules.query_policy.models",
+  "rag_modules.query_policy.loader",
   "rag_modules.generation.decision",
   "rag_modules.generation.context_factory",
   "rag_modules.generation.planner",

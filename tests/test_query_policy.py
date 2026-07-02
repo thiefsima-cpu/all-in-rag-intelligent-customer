@@ -194,10 +194,20 @@ class QueryPolicyTests(unittest.TestCase):
             bundle.routing.validation_labels["strategy"],
         )
         self.assertTrue(bundle.graph.sub_questions)
-        self.assertIn("id", bundle.graph.sub_questions[0])
-        self.assertIn("template", bundle.graph.sub_questions[0])
+        sub_question = next(rule for rule in bundle.graph.sub_questions if rule.id == "fallback")
+        self.assertEqual("fallback", sub_question.id)
+        self.assertTrue(sub_question.when.fallback)
         self.assertIn("direct_answer", bundle.generation.answer_types)
-        self.assertIsInstance(bundle.generation.answer_types["direct_answer"], dict)
+        self.assertEqual((), bundle.generation.answer_types["direct_answer"].markers)
+        self.assertEqual(
+            "direct_answer",
+            bundle.generation.decision.default_answer_type,
+        )
+        self.assertEqual(
+            bundle.generation.decision.reasons.graph_rag,
+            "graph_rag_strategy",
+        )
+        self.assertTrue(bundle.generation.rule_plan.default_outline)
         self.assertIn("REQUIRES", bundle.relations.preferred_relation_excluded_types)
         self.assertIn(
             "CONTRIBUTES_TO",
@@ -299,6 +309,17 @@ def test_policy_loader_rejects_unversioned_schema(tmp_path: Path) -> None:
 
     with pytest.raises(PolicyLoadError, match="schema_version"):
         load_policy_bundle(tmp_path)
+
+
+def test_policy_runtime_defaults_are_typed_sections(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import load_policy_bundle
+
+    _write_bundle(tmp_path)
+    load_policy_bundle.cache_clear()
+    bundle = load_policy_bundle(tmp_path)
+
+    assert bundle.runtime_defaults.planner.model_name == "test"
+    assert bundle.runtime_defaults.semantics.default_max_depth == 2
 
 
 def test_policy_loader_rejects_missing_prompt_variable(tmp_path: Path) -> None:

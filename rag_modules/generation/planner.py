@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Literal
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
+from ..runtime.json_types import JsonObject
 from .clients import GenerationClientAdapter
 from .models import AnswerPlan, GenerationPlannerMode, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
@@ -80,11 +81,25 @@ class GenerationPlanner:
             return True
         return len(package.items) <= self.settings.plan_max_evidence_items
 
-    def _rule_plan_list(self, key: str) -> list[str]:
-        return [str(item) for item in self.rule_plan_policy[key] if str(item).strip()]
+    def _rule_plan_list(self, key: Literal["default_outline", "fallback_outline"]) -> list[str]:
+        values = (
+            self.rule_plan_policy.default_outline
+            if key == "default_outline"
+            else self.rule_plan_policy.fallback_outline
+        )
+        return [str(item) for item in values if str(item).strip()]
 
-    def _rule_plan_text(self, key: str) -> str:
-        return str(self.rule_plan_policy[key])
+    def _rule_plan_text(
+        self,
+        key: Literal[
+            "graph_caution",
+            "missing_relation_evidence",
+            "sparse_evidence",
+            "missing_information_caution",
+            "fallback_claim_template",
+        ],
+    ) -> str:
+        return str(getattr(self.rule_plan_policy, key))
 
     def _fallback_claim(self, *, recipe_name: str, citation: str) -> str:
         template = self._rule_plan_text("fallback_claim_template")
@@ -100,7 +115,7 @@ class GenerationPlanner:
             unit.get("is_graph_evidence") for item in package.items for unit in item.evidence_units
         )
         reasoning_mode = "grounded_with_limited_inference" if has_graph_claims else "grounded"
-        key_points: list[dict[str, Any]] = []
+        key_points: list[JsonObject] = []
 
         for item in package.items[: self.settings.plan_max_evidence_items]:
             graph_claim = next(

@@ -177,10 +177,10 @@ class GenerationPromptBuilder:
     def infer_answer_type(self, question: str) -> str:
         question = (question or "").strip()
         for answer_type, config in self.generation_policy.answer_types.items():
-            markers = tuple(str(marker) for marker in config.get("markers", ()))
+            markers = config.markers
             if markers and any(marker in question for marker in markers):
                 return answer_type
-        return str(self.generation_policy.decision["default_answer_type"])
+        return self.generation_policy.decision.default_answer_type
 
     def question_needs_relation_explanation(self, question: str) -> bool:
         question = (question or "").strip()

@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from ..contracts import QueryPlan, QuerySemanticRuntimeSettings
 from ..query_policy import get_query_policy
+from ..query_policy.models import GraphSubQuestionCondition, GraphSubQuestionPolicy
 from ..query_understanding import (
     estimate_query_complexity,
     infer_graph_max_depth,
@@ -163,11 +164,11 @@ class GraphQueryFactory:
         )
         relation_types = graph_query.relation_types or profile.relation_types or []
         sub_questions: List[str] = []
-        fallback_rules: list[dict[str, Any]] = []
+        fallback_rules: list[GraphSubQuestionPolicy] = []
 
         for rule in self.graph_policy.sub_questions:
-            when = dict(rule.get("when") or {})
-            if when.get("fallback"):
+            when = rule.when
+            if when.fallback:
                 fallback_rules.append(rule)
                 continue
             if _sub_question_rule_matches(
@@ -178,8 +179,7 @@ class GraphQueryFactory:
                 relation_types=relation_types,
             ):
                 sub_questions.append(
-                    _render_sub_question(
-                        rule,
+                    rule.render(
                         query=query,
                         entities=entities,
                         relation_types=relation_types,
@@ -189,8 +189,7 @@ class GraphQueryFactory:
         if not sub_questions:
             for rule in fallback_rules:
                 sub_questions.append(
-                    _render_sub_question(
-                        rule,
+                    rule.render(
                         query=query,
                         entities=entities,
                         relation_types=relation_types,
@@ -201,67 +200,49 @@ class GraphQueryFactory:
 
 
 def _sub_question_rule_matches(
-    when: Dict[str, Any],
+    when: GraphSubQuestionCondition,
     *,
     query: str,
     profile,
     entities: List[str],
     relation_types: List[str],
 ) -> bool:
-    if not when:
-        return False
-    supported_keys = {
-        "entities_present",
-        "relation_types_any",
-        "constraints_present",
-        "relationship_intensity_at_least",
-        "query_markers_any",
-        "fallback",
-    }
-    if set(when) - supported_keys:
-        return False
-    if "entities_present" in when and bool(entities) != bool(when.get("entities_present")):
-        return False
-    relation_type_rules = _string_list(when.get("relation_types_any"))
-    if relation_type_rules and not any(
-        relation in relation_types for relation in relation_type_rules
+    if (
+        when.entities_present is None
+        and not when.relation_types_any
+        and not when.constraints_present
+        and not when.constraints_present_any
+        and when.relationship_intensity_at_least is None
+        and not when.query_markers_any
     ):
         return False
-    constraint_rules = when.get("constraints_present")
-    if constraint_rules is not None and not _constraints_present(
-        profile.constraints, constraint_rules
+    if when.entities_present is not None and bool(entities) != when.entities_present:
+        return False
+    if when.relation_types_any and not any(
+        relation in relation_types for relation in when.relation_types_any
     ):
         return False
-    threshold = when.get("relationship_intensity_at_least")
-    if threshold is not None and profile.relationship_intensity < float(threshold):
+    if (when.constraints_present or when.constraints_present_any) and not _constraints_present(
+        profile.constraints, when
+    ):
         return False
-    query_markers = _string_list(when.get("query_markers_any"))
-    if query_markers and not any(marker in query for marker in query_markers):
+    if (
+        when.relationship_intensity_at_least is not None
+        and profile.relationship_intensity < when.relationship_intensity_at_least
+    ):
         return False
-    return not bool(when.get("fallback"))
+    if when.query_markers_any and not any(marker in query for marker in when.query_markers_any):
+        return False
+    return not when.fallback
 
 
-def _render_sub_question(
-    rule: Dict[str, Any],
-    *,
-    query: str,
-    entities: List[str],
-    relation_types: List[str],
-) -> str:
-    template = str(rule.get("template") or "").strip()
-    if not template:
-        return ""
-    return template.format(
-        query=query,
-        entities=", ".join(entities[:4]),
-        relation_types=", ".join(relation_types),
-    )
-
-
-def _constraints_present(constraints: Dict[str, Any], rule: Any) -> bool:
-    if isinstance(rule, bool):
-        return bool(rule) and _any_constraint_present(constraints)
-    for field_name in _string_list(rule):
+def _constraints_present(
+    constraints: Dict[str, Any],
+    condition: GraphSubQuestionCondition,
+) -> bool:
+    if condition.constraints_present_any:
+        return _any_constraint_present(constraints)
+    for field_name in condition.constraints_present:
         value = constraints.get(field_name)
         if field_name == "time" and isinstance(value, dict):
             if any(item is not None for item in value.values()):
@@ -281,13 +262,3 @@ def _any_constraint_present(constraints: Dict[str, Any]) -> bool:
         if value:
             return True
     return False
-
-
-def _string_list(value: Any) -> List[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value] if value.strip() else []
-    if isinstance(value, (list, tuple)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [str(value).strip()] if str(value).strip() else []

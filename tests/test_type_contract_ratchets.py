@@ -24,6 +24,8 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "app" / "services" / "answer_workflow.py",
     ROOT / "rag_modules" / "app" / "services" / "runtime_diagnostics_service.py",
     ROOT / "rag_modules" / "app" / "services" / "trace_adapters.py",
+    ROOT / "rag_modules" / "query_policy" / "models.py",
+    ROOT / "rag_modules" / "query_policy" / "loader.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "answer_models.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "build_models.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "diagnostics_models.py",

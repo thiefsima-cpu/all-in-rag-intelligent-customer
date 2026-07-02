@@ -48,6 +48,8 @@ from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.graph.retrieval_types import GraphQuery
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
+from rag_modules.query_policy import get_query_policy
+from rag_modules.query_policy.models import GenerationDecisionPolicy, GraphSubQuestionPolicy
 from rag_modules.query_understanding.planning import QueryPlanCalibrator
 from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.runtime import (
@@ -66,6 +68,9 @@ service_provider: ApplicationServiceProvider = runtime_provider.services
 
 trace_stats: TraceStatsDiagnostics = TraceStatsDiagnostics.from_payload({"dropped_events": 1})
 data_stats: DataStatsDiagnostics = DataStatsDiagnostics.from_payload({"total_recipes": 2})
+policy_bundle = get_query_policy()
+first_sub_question: GraphSubQuestionPolicy = policy_bundle.graph.sub_questions[0]
+generation_decision_policy: GenerationDecisionPolicy = policy_bundle.generation.decision
 
 
 class _CompletionMessage:
