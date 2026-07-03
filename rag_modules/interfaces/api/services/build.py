@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from ....app.application_protocol import GraphRAGApplication
 from ....configuration.models import GraphRAGConfig
-from ....runtime.artifacts import ArtifactManifestStore
+from ....runtime.artifacts import ARTIFACT_STAGE_FAILED, ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry, ArtifactRegistrySnapshot
 from ....runtime.json_types import JsonObject, coerce_json_object
 from ..build_job_store import (
@@ -25,6 +25,7 @@ from ..build_job_store import (
 )
 from ..build_jobs.locks import _InterprocessFileLock
 from ..build_jobs.models import format_build_progress_log
+from ..error_models import ErrorCode
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
 from .errors import BuildJobConflictError, BuildJobNotFoundError, InvalidApiRequestError
@@ -60,6 +61,7 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         self._artifact_registry = artifact_registry or ArtifactRegistry(
             ArtifactManifestStore(resolved_config)
         )
+        recover_interrupted = not resolved_job_store.build_lock_held()
         api_settings = getattr(resolved_config, "api", None)
         repository_settings = BuildJobRepositorySettings(
             retention_limit=int(getattr(api_settings, "build_job_retention_limit", 100)),
@@ -69,9 +71,11 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         self._job_registry = PersistentBuildJobRegistry(
             resolved_job_store,
             now=_utc_now_iso,
-            recover_interrupted=not resolved_job_store.build_lock_held(),
+            recover_interrupted=recover_interrupted,
             settings=repository_settings,
         )
+        if recover_interrupted:
+            self._recover_interrupted_candidate_manifest()
 
     def _ensure_build_runtime_initialized(self) -> None:
         self._ensure_runtime_initialized(
@@ -210,6 +214,29 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
 
     def artifact_registry_snapshot(self) -> ArtifactRegistrySnapshot:
         return self._artifact_registry.snapshot()
+
+    def _recover_interrupted_candidate_manifest(self) -> None:
+        manifest_store = self._artifact_registry.manifest_store
+        load_candidate = getattr(manifest_store, "load_candidate", None)
+        save_candidate = getattr(manifest_store, "save_candidate", None)
+        if not callable(load_candidate) or not callable(save_candidate):
+            return
+        candidate = load_candidate()
+        if candidate is None or not candidate.is_in_progress:
+            return
+        failure_code = ErrorCode.BUILD_FAILED.value
+        save_candidate(
+            candidate.evolve(
+                stage=ARTIFACT_STAGE_FAILED,
+                last_error=failure_code,
+                build_metadata={
+                    "failure": {
+                        "code": failure_code,
+                        "error_type": "ProcessInterrupted",
+                    }
+                },
+            )
+        )
 
     def _resolve_build_executor(self) -> ThreadPoolExecutor:
         executor = self._build_executor

@@ -15,6 +15,7 @@ from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
     GraphRAGBuildApiService,
 )
+from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
 
 
 class _BuildSystem:
@@ -414,6 +415,75 @@ class BuildJobPersistenceTests(unittest.TestCase):
                     submitted["job_id"],
                     "succeeded",
                 )
+
+    def test_service_startup_marks_interrupted_candidate_manifest_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "build_jobs.json"),
+                    }
+                }
+            )
+            manifest_store = ArtifactManifestStore(config)
+            active = manifest_store.save(
+                ArtifactManifest(
+                    stage="ready",
+                    manifest_version=4,
+                    index_signature="sig-old",
+                    index_version="v000004-sig-old",
+                    collection_name="recipes__blue",
+                    collection_base_name="recipes",
+                    collection_slot="blue",
+                )
+            )
+            manifest_store.save_candidate(
+                active.evolve(
+                    stage="building",
+                    index_signature="sig-new",
+                    collection_name="recipes__green",
+                    collection_slot="green",
+                    previous_collection_name="recipes__blue",
+                )
+            )
+            store = FileBuildJobStore(config.storage.build_job_store_path)
+            store.save_all(
+                [
+                    {
+                        "job_id": "a" * 32,
+                        "request_id": "request-killed-build",
+                        "job_type": "rebuild",
+                        "status": "running",
+                        "created_at": "2026-06-12T00:00:00Z",
+                    }
+                ]
+            )
+
+            service = GraphRAGBuildApiService(
+                system=_BuildSystem(config),
+                job_store=store,
+            )
+
+            recovered_job = service.get_build_job("a" * 32)
+            active_after_restart = manifest_store.load()
+            candidate_after_restart = manifest_store.load_candidate()
+            self.assertEqual(recovered_job["status"], "failed")
+            self.assertEqual(active_after_restart.stage, "ready")
+            self.assertEqual(active_after_restart.collection_name, "recipes__blue")
+            self.assertIsNotNone(candidate_after_restart)
+            assert candidate_after_restart is not None
+            self.assertEqual(candidate_after_restart.stage, "failed")
+            self.assertEqual(candidate_after_restart.last_error, "BUILD_FAILED")
+            self.assertEqual(candidate_after_restart.collection_name, "recipes__green")
+            self.assertEqual(
+                candidate_after_restart.build_metadata["failure"],
+                {
+                    "code": "BUILD_FAILED",
+                    "error_type": "ProcessInterrupted",
+                },
+            )
 
 
 if __name__ == "__main__":

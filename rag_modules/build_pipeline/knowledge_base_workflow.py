@@ -175,7 +175,18 @@ class KnowledgeBaseBuildWorkflow(
                 vector_rows=self.stats_presenter.vector_row_count(),
                 build_metadata=self._build_metadata(document_result, schema_sync_result),
             )
-            self.stats_presenter.show(progress)
+            try:
+                self.stats_presenter.show(progress)
+            except Exception as stats_exc:
+                log_failure(
+                    logger,
+                    logging.WARNING,
+                    "build_stats_report_failed",
+                    code="BUILD_STATS_REPORT_FAILED",
+                    error=stats_exc,
+                    request_id=request_id,
+                )
+                self._emit(progress, "[WARN] Knowledge base stats unavailable after publish.")
             self._emit(progress, "[OK] Knowledge base build completed.")
             return self.artifact_manifest
         except Exception as exc:
