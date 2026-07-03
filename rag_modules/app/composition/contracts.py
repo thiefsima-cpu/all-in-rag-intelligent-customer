@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
 from ...configuration.models import GraphRAGConfig
 from ...runtime.artifacts import ArtifactManifest
+from ...runtime.json_types import JsonObject
+from ...text_document import TextDocument
 from ..diagnostics import StartupDiagnostics
+from ..runtime_contracts import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
+from ..runtime_views import (
+    SystemInfrastructureView,
+    SystemRetrievalView,
+    SystemServicesView,
+)
 from .shared import ProgressCallback
 
 
@@ -19,9 +32,9 @@ class BuildRuntimeFactoryProtocol(Protocol):
         self,
         config: GraphRAGConfig | None = None,
         *,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime: ...
 
@@ -56,10 +69,10 @@ class ServingRuntimeFactoryProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -71,7 +84,7 @@ class ServingRuntimePreparerProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks: Any | None = None,
+        chunks: list[TextDocument] | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -95,10 +108,10 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         config: GraphRAGConfig | None = None,
         *,
         shared_runtime: BuildRuntime | None = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
-        data_module: Any | None = None,
-        index_module: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
+        data_module: GraphDataModulePort | None = None,
+        index_module: VectorIndexModulePort | None = None,
         progress: ProgressCallback = None,
     ) -> ServingRuntime: ...
 
@@ -106,7 +119,7 @@ class ServingRuntimeLifecycleServiceProtocol(Protocol):
         self,
         runtime: ServingRuntime,
         *,
-        chunks: Any | None = None,
+        chunks: list[TextDocument] | None = None,
         artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
@@ -155,23 +168,23 @@ class SystemOperationsProtocol(Protocol):
         self,
         *,
         progress: ProgressCallback = None,
-        neo4j_manager: Any | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
     ) -> BuildRuntime: ...
 
     def initialize_serving_runtime(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
     ) -> ServingRuntime: ...
 
     def initialize_system(
         self,
         *,
         progress: ProgressCallback = None,
-        query_tracer: Any | None = None,
-        neo4j_manager: Any | None = None,
+        query_tracer: QueryTracerPort | None = None,
+        neo4j_manager: Neo4jManagerPort | None = None,
     ) -> SystemRuntime: ...
 
     def is_initialized(self) -> bool: ...
@@ -203,7 +216,7 @@ class SystemOperationsProtocol(Protocol):
         force: bool = True,
     ) -> ServingRuntime: ...
 
-    def collect_system_stats(self) -> dict[str, Any]: ...
+    def collect_system_stats(self) -> JsonObject: ...
 
     def collect_startup_diagnostics(self, mode: str) -> StartupDiagnostics: ...
 
@@ -225,13 +238,13 @@ class SystemFacadeSupportProtocol(Protocol):
     def serving_runtime(self) -> ServingRuntime | None: ...
 
     @property
-    def infrastructure(self) -> Any: ...
+    def infrastructure(self) -> SystemInfrastructureView: ...
 
     @property
-    def retrieval(self) -> Any: ...
+    def retrieval(self) -> SystemRetrievalView: ...
 
     @property
-    def services(self) -> Any: ...
+    def services(self) -> SystemServicesView: ...
 
     @property
     def artifact_manifest(self) -> ArtifactManifest: ...

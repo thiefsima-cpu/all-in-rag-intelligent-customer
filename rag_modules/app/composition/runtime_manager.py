@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
 from ...runtime.artifacts import ArtifactManifest
+from ...runtime.json_types import JsonObject
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
@@ -124,7 +125,7 @@ class SystemRuntimeManager:
         )
         return build_runtime
 
-    def collect_system_stats(self) -> dict:
+    def collect_system_stats(self) -> JsonObject:
         runtime = self.runtime_view()
         return self.diagnostics_service.collect_system_stats(
             runtime=runtime,

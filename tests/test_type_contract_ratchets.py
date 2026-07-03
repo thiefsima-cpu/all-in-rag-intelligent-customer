@@ -20,6 +20,7 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "app" / "diagnostics.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_contracts.py",
     ROOT / "rag_modules" / "app" / "bootstrap_facade_support.py",
+    ROOT / "rag_modules" / "app" / "composition" / "contracts.py",
     ROOT / "rag_modules" / "app" / "services" / "answer_models.py",
     ROOT / "rag_modules" / "app" / "services" / "answer_pipeline.py",
     ROOT / "rag_modules" / "app" / "services" / "answer_trace_assembler.py",
