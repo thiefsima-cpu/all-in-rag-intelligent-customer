@@ -80,18 +80,11 @@ class GateCheckResult:
         name: str,
         *,
         code: str,
-        expected: Any = None,
-        actual: Any = None,
-        duration_ms: float = 0.0,
     ) -> GateCheckResult:
         return cls(
             name=name,
             status=GateCheckStatus.BLOCKED,
-            failure_type=None,
             code=code,
-            expected=expected,
-            actual=actual,
-            duration_ms=duration_ms,
         )
 
     def to_dict(self) -> dict[str, Any]:

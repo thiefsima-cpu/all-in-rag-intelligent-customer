@@ -4,6 +4,7 @@ import json
 import math
 from dataclasses import FrozenInstanceError, dataclass
 from fractions import Fraction
+from inspect import Parameter, signature
 from pathlib import Path
 
 import numpy as np
@@ -61,9 +62,7 @@ from scripts.gates import (
             },
         ),
         (
-            GateCheckResult.block_check(
-                "database", code="DATABASE_UNAVAILABLE", actual="connection refused"
-            ),
+            GateCheckResult.block_check("database", code="DATABASE_UNAVAILABLE"),
             {
                 "name": "database",
                 "status": "blocked",
@@ -71,7 +70,7 @@ from scripts.gates import (
                 "failure_type": None,
                 "code": "DATABASE_UNAVAILABLE",
                 "expected": None,
-                "actual": "connection refused",
+                "actual": None,
                 "duration_ms": 0.0,
             },
         ),
@@ -82,6 +81,15 @@ def test_gate_check_result_factories_produce_stable_payloads(
 ) -> None:
     assert result.to_dict() == expected
     assert result.passed is (result.status is GateCheckStatus.PASSED)
+
+
+def test_block_check_signature_is_restricted_to_name_and_keyword_only_code() -> None:
+    parameters = signature(GateCheckResult.block_check).parameters
+
+    assert list(parameters) == ["name", "code"]
+    assert parameters["name"].kind is Parameter.POSITIONAL_OR_KEYWORD
+    assert parameters["code"].kind is Parameter.KEYWORD_ONLY
+    assert parameters["code"].default is Parameter.empty
 
 
 def test_gate_check_result_defaults_match_public_contract() -> None:
