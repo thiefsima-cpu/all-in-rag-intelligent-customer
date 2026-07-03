@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import fnmatch
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -76,6 +78,37 @@ NO_EXPLICIT_ANY_TARGETS = (
 )
 
 
+def _module_name_for_target(path: Path) -> str:
+    relative_path = path.relative_to(ROOT)
+    module_path = relative_path.with_suffix("")
+    module_parts = list(module_path.parts)
+    if module_parts[-1] == "__init__":
+        module_parts = module_parts[:-1]
+    return ".".join(module_parts)
+
+
+def _strict_mypy_modules() -> list[str]:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    overrides = pyproject["tool"]["mypy"]["overrides"]
+    modules: list[str] = []
+
+    for override in overrides:
+        if not (
+            override.get("check_untyped_defs")
+            and override.get("disallow_untyped_defs")
+            and override.get("warn_return_any")
+        ):
+            continue
+
+        module_patterns = override["module"]
+        if isinstance(module_patterns, str):
+            modules.append(module_patterns)
+        else:
+            modules.extend(module_patterns)
+
+    return modules
+
+
 class TypeContractRatchetTests(unittest.TestCase):
     def test_target_contract_modules_do_not_use_explicit_any(self) -> None:
         violations: list[str] = []
@@ -92,6 +125,23 @@ class TypeContractRatchetTests(unittest.TestCase):
         self.assertFalse(
             violations,
             "Found explicit Any in the next strict type-contract island:\n" + "\n".join(violations),
+        )
+
+    def test_target_contract_modules_are_under_strict_mypy_override(self) -> None:
+        strict_modules = _strict_mypy_modules()
+        missing_modules: list[str] = []
+
+        for path in NO_EXPLICIT_ANY_TARGETS:
+            module_name = _module_name_for_target(path)
+            if not any(
+                fnmatch.fnmatchcase(module_name, strict_module) for strict_module in strict_modules
+            ):
+                missing_modules.append(module_name)
+
+        self.assertFalse(
+            missing_modules,
+            "Found type-contract targets outside the strict mypy override:\n"
+            + "\n".join(missing_modules),
         )
 
 

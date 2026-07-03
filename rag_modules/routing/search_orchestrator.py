@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
 from ..domain.shared.query_constraints import QueryConstraints
 from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
@@ -164,7 +164,7 @@ class RouteSearchOrchestrator:
         candidate_k: Optional[int] = None,
         query_plan: Optional[QueryPlan] = None,
         strategy: str = "",
-        control=None,
+        control: Optional[RequestControl] = None,
     ) -> RetrievalRequest:
         return build_route_retrieval_request(
             query=query,
