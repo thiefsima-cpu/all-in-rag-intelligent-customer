@@ -1,65 +1,410 @@
 [
   {
+    "id": "complex-relation-01",
     "query": "为什么水煮肉片能形成麻辣鲜香的口味？它和豆瓣酱、花椒、辣椒、垫底蔬菜、肉片上浆这些食材和步骤之间有什么关系？",
     "category": "complex_relation",
-    "expected_strategy": "graph_rag",
-    "expected_recipe_names": ["水煮肉片"],
-    "expected_answer_terms": ["麻辣", "花椒"]
+    "dimensions": ["complex_relation", "multi_hop", "long_query"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "graph_rag",
+      "recipe_names": ["水煮肉片"],
+      "answer_terms": ["麻辣", "花椒"],
+      "recipe_relevance": {"水煮肉片": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "graph_rag",
+      "answer": "依据菜谱证据 #1，水煮肉片通过豆瓣酱、花椒和辣椒形成麻辣鲜香。",
+      "evidence": [
+        {
+          "recipe_name": "水煮肉片",
+          "content": "水煮肉片使用豆瓣酱、花椒和辣椒，形成麻辣鲜香的川菜风味。",
+          "score": 1.0,
+          "evidence_type": "graph"
+        }
+      ]
+    }
   },
   {
+    "id": "semantic-flavor-01",
     "query": "麻辣口味通常和哪些食材、技法或步骤关系更紧密？请用图谱关系解释。",
     "category": "semantic_flavor",
-    "expected_strategy": "graph_rag",
-    "expected_recipe_names": [],
-    "expected_answer_terms": ["麻辣"]
+    "dimensions": ["semantic_flavor", "multi_hop"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "graph_rag",
+      "recipe_names": [],
+      "answer_terms": ["麻辣"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "graph_rag",
+      "answer": "依据菜谱证据 #1，麻辣风味通常来自花椒、辣椒、豆瓣酱和热油激香。",
+      "evidence": [
+        {
+          "recipe_name": "川菜风味关系",
+          "content": "麻辣风味与花椒、辣椒、豆瓣酱、热油激香等食材和技法关系紧密。",
+          "score": 1.0,
+          "evidence_type": "graph"
+        }
+      ]
+    }
   },
   {
+    "id": "single-recipe-01",
     "query": "宫保鸡丁怎么做？",
     "category": "single_recipe",
-    "expected_strategy": "hybrid_traditional",
-    "expected_recipe_names": ["宫保鸡丁"],
-    "expected_answer_terms": []
+    "dimensions": ["single_recipe"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": ["宫保鸡丁"],
+      "answer_terms": ["宫保鸡丁"],
+      "recipe_relevance": {"宫保鸡丁": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，宫保鸡丁需要鸡丁、花生、干辣椒和调味汁快炒。",
+      "evidence": [
+        {
+          "recipe_name": "宫保鸡丁",
+          "content": "宫保鸡丁的做法包括鸡丁上浆、花生备用、干辣椒爆香并用调味汁快炒。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "single-recipe-02",
     "query": "鱼香肉丝的主要做法是什么？",
     "category": "single_recipe",
-    "expected_strategy": "hybrid_traditional",
-    "expected_recipe_names": ["鱼香肉丝"],
-    "expected_answer_terms": []
+    "dimensions": ["single_recipe"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": ["鱼香肉丝"],
+      "answer_terms": ["鱼香肉丝"],
+      "recipe_relevance": {"鱼香肉丝": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，鱼香肉丝用肉丝、木耳、笋丝和鱼香汁炒成酸甜咸鲜。",
+      "evidence": [
+        {
+          "recipe_name": "鱼香肉丝",
+          "content": "鱼香肉丝需要肉丝、木耳、笋丝和鱼香汁，炒出酸甜咸鲜的风味。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "constrained-recommendation-01",
     "query": "20分钟内少油的鸡肉菜有哪些？",
     "category": "constrained_recommendation",
-    "expected_strategy": null,
-    "expected_recipe_names": [],
-    "expected_answer_terms": []
+    "dimensions": ["constrained_recommendation"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": null,
+      "recipe_names": [],
+      "answer_terms": ["少油", "鸡肉"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，可优先考虑少油鸡肉快手菜，并控制在二十分钟内完成。",
+      "evidence": [
+        {
+          "recipe_name": "少油鸡肉推荐",
+          "content": "少油鸡肉快手菜适合二十分钟内完成，适合有时间和油量约束的推荐。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "recommendation-01",
     "query": "推荐几道带豆腐、口味清淡一点的家常菜。",
     "category": "recommendation",
-    "expected_strategy": null,
-    "expected_recipe_names": [],
-    "expected_answer_terms": []
+    "dimensions": ["recommendation"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": null,
+      "recipe_names": [],
+      "answer_terms": ["豆腐", "清淡"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，可以推荐豆腐类清淡家常菜，减少辣椒和重油。",
+      "evidence": [
+        {
+          "recipe_name": "清淡豆腐推荐",
+          "content": "豆腐类家常菜可以做得清淡，少放辣椒和重油，适合作为推荐。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "single-recipe-03",
     "query": "番茄炒蛋的做法是什么？",
     "category": "single_recipe",
-    "expected_strategy": "hybrid_traditional",
-    "expected_recipe_names": ["西红柿炒鸡蛋"],
-    "expected_answer_terms": []
+    "dimensions": ["single_recipe"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": ["西红柿炒鸡蛋"],
+      "answer_terms": ["西红柿炒鸡蛋"],
+      "recipe_relevance": {"西红柿炒鸡蛋": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，西红柿炒鸡蛋先炒鸡蛋，再炒西红柿出汁后合炒。",
+      "evidence": [
+        {
+          "recipe_name": "西红柿炒鸡蛋",
+          "content": "西红柿炒鸡蛋先把鸡蛋炒熟盛出，再炒西红柿出汁，最后合炒调味。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "constrained-recommendation-02",
     "query": "推荐30分钟内适合新手的素菜。",
     "category": "constrained_recommendation",
-    "expected_strategy": "hybrid_traditional",
-    "expected_recipe_names": [],
-    "expected_answer_terms": []
+    "dimensions": ["constrained_recommendation"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["新手", "三十分钟"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，新手可选择三十分钟内完成的简单素菜。",
+      "evidence": [
+        {
+          "recipe_name": "新手素菜推荐",
+          "content": "适合新手的素菜应步骤少、调味简单，并能在三十分钟内完成。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   },
   {
+    "id": "subgraph-01",
     "query": "分析川菜麻辣风味的关系网络。",
     "category": "subgraph",
-    "expected_strategy": "graph_rag",
-    "expected_recipe_names": [],
-    "expected_answer_terms": ["麻辣"]
+    "dimensions": ["subgraph"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "graph_rag",
+      "recipe_names": [],
+      "answer_terms": ["麻辣", "关系"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "graph_rag",
+      "answer": "依据菜谱证据 #1，麻辣风味关系网络连接花椒、辣椒、豆瓣酱和热油技法。",
+      "evidence": [
+        {
+          "recipe_name": "川菜麻辣子图",
+          "content": "麻辣风味的关系网络包括花椒、辣椒、豆瓣酱、热油技法和多道川菜。",
+          "score": 1.0,
+          "evidence_type": "graph"
+        }
+      ]
+    }
+  },
+  {
+    "id": "no-evidence-01",
+    "query": "有没有一道叫“月光炒彩虹”的传统川菜？请给我可靠做法。",
+    "category": "no_evidence",
+    "dimensions": ["no_evidence"],
+    "expectation": {
+      "response_mode": "no_evidence",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["证据不足"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "当前菜谱资料证据不足，无法给出可靠做法。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "no-evidence-02",
+    "query": "请找一道同时属于明代宫廷菜、完全不使用任何食材、五分钟完成且名叫“云端凤凰”的菜，并给出处和步骤。",
+    "category": "no_evidence",
+    "dimensions": ["no_evidence", "long_query"],
+    "expectation": {
+      "response_mode": "no_evidence",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["证据不足"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "当前菜谱资料证据不足，无法确认这道菜的出处或步骤。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "ambiguity-01",
+    "query": "那个鸡丁咋整来着？",
+    "category": "ambiguity",
+    "dimensions": ["ambiguity", "colloquial_zh"],
+    "expectation": {
+      "response_mode": "clarification",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["请说明具体"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "请说明具体是哪一道鸡丁菜，比如宫保鸡丁还是其他鸡丁做法。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "ambiguity-02",
+    "query": "来个不辣的、快点的，那个家常菜怎么弄？",
+    "category": "ambiguity",
+    "dimensions": ["ambiguity", "colloquial_zh"],
+    "expectation": {
+      "response_mode": "clarification",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["请说明具体"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "请说明具体想做哪道家常菜，以及可用食材和人数。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "multi-hop-01",
+    "query": "从豆瓣酱和花椒出发，经过上浆、爆香和泼油这些步骤，怎样共同形成水煮肉片的麻辣风味？",
+    "category": "multi_hop_relation",
+    "dimensions": ["multi_hop"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "graph_rag",
+      "recipe_names": ["水煮肉片"],
+      "answer_terms": ["豆瓣酱", "花椒", "水煮肉片"],
+      "recipe_relevance": {"水煮肉片": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "graph_rag",
+      "answer": "依据菜谱证据 #1，水煮肉片通过豆瓣酱炒香、花椒爆香和热油泼香形成麻辣风味。",
+      "evidence": [
+        {
+          "recipe_name": "水煮肉片",
+          "content": "水煮肉片的多跳做法包括豆瓣酱炒香、花椒爆香、肉片上浆和热油泼香。",
+          "score": 1.0,
+          "evidence_type": "graph"
+        }
+      ]
+    }
+  },
+  {
+    "id": "constraint-conflict-01",
+    "query": "推荐一道五分钟内完成、完全不用火、但必须慢炖两小时的牛肉菜。",
+    "category": "constraint_conflict",
+    "dimensions": ["constraint_conflict", "long_query"],
+    "expectation": {
+      "response_mode": "constraint_conflict",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["冲突", "放宽"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "这些条件互相冲突，请放宽五分钟完成、不用火或慢炖两小时中的一个条件。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "constraint-conflict-02",
+    "query": "我不要花生但又必须保留花生，整一道正宗宫保鸡丁，还一个条件都不能改。",
+    "category": "constraint_conflict",
+    "dimensions": ["constraint_conflict", "colloquial_zh"],
+    "expectation": {
+      "response_mode": "constraint_conflict",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["冲突", "放宽"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "不要花生和必须保留花生这两个条件冲突，请放宽其中一个条件。",
+      "evidence": []
+    }
+  },
+  {
+    "id": "long-query-01",
+    "query": "家里只有一口锅，我是新手，希望三十分钟内做好两人份、少油、不辣、不要豆腐和花生、步骤不超过六步的热菜，请说明为什么符合每个条件。",
+    "category": "constrained_recommendation",
+    "dimensions": ["long_query", "constrained_recommendation"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": [],
+      "answer_terms": ["少油", "不辣", "三十分钟"],
+      "recipe_relevance": {}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，可选少油、不辣、三十分钟内完成的一锅热菜，并避开豆腐和花生。",
+      "evidence": [
+        {
+          "recipe_name": "少油不辣热菜推荐",
+          "content": "少油、不辣、三十分钟内完成的一锅热菜适合新手两人份，并可避开豆腐和花生。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "id": "colloquial-zh-01",
+    "query": "冰箱里就俩西红柿和几个蛋，咋整一盘下饭的？",
+    "category": "single_recipe",
+    "dimensions": ["colloquial_zh", "single_recipe"],
+    "expectation": {
+      "response_mode": "grounded_answer",
+      "strategy": "hybrid_traditional",
+      "recipe_names": ["西红柿炒鸡蛋"],
+      "answer_terms": ["西红柿炒鸡蛋", "下饭"],
+      "recipe_relevance": {"西红柿炒鸡蛋": 3.0}
+    },
+    "offline_fixture": {
+      "strategy": "hybrid_traditional",
+      "answer": "依据菜谱证据 #1，西红柿炒鸡蛋用西红柿和鸡蛋就能做成下饭热菜。",
+      "evidence": [
+        {
+          "recipe_name": "西红柿炒鸡蛋",
+          "content": "西红柿炒鸡蛋只需要西红柿和鸡蛋，酸甜下饭，适合家常快手菜。",
+          "score": 1.0,
+          "evidence_type": "text"
+        }
+      ]
+    }
   }
 ]

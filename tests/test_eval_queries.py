@@ -5,6 +5,7 @@ import json
 import math
 import tempfile
 import unittest
+from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -840,12 +841,28 @@ class EvalQueriesTests(unittest.TestCase):
 
         cases = load_eval_cases(DEFAULT_CORPUS_PATH)
 
-        self.assertGreaterEqual(len(cases), 9)
-        self.assertTrue(any(case.expected_strategy == "graph_rag" for case in cases))
-        self.assertTrue(any(case.category == "subgraph" for case in cases))
-        self.assertTrue(any(case.category == "constrained_recommendation" for case in cases))
-        self.assertTrue(any("水煮肉片" in case.query for case in cases))
+        self.assertEqual(len(cases), 18)
+        self.assertEqual(len({case.case_id for case in cases}), 18)
         self.assertFalse(any("\ufffd" in case.query for case in cases))
+        dimension_counts = Counter(dimension for case in cases for dimension in case.dimensions)
+        for dimension in {
+            "no_evidence",
+            "ambiguity",
+            "multi_hop",
+            "constraint_conflict",
+            "long_query",
+            "colloquial_zh",
+        }:
+            self.assertGreaterEqual(dimension_counts[dimension], 2)
+        self.assertEqual(
+            Counter(case.expectation.response_mode.value for case in cases),
+            {
+                "grounded_answer": 12,
+                "no_evidence": 2,
+                "clarification": 2,
+                "constraint_conflict": 2,
+            },
+        )
 
     def test_offline_quality_queries_return_gate_metrics_without_runtime_services(self) -> None:
         with patch("scripts.eval_queries.AdvancedGraphRAGSystem") as system:
