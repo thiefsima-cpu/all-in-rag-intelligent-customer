@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import unittest
 from pathlib import Path
@@ -7,6 +8,11 @@ from pathlib import Path
 import pytest
 
 from rag_modules.query_policy import get_query_policy
+
+QUERY_UNDERSTANDING_PACKAGE = Path("rag_modules/query_understanding")
+GRAPH_INDEX_PACKAGE = Path("rag_modules/graph_index")
+GRAPH_PACKAGE = Path("rag_modules/graph")
+LEGACY_PREFERRED_RELATION_TYPES = frozenset({"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"})
 
 
 def _minimal_policy_payload() -> dict:
@@ -173,6 +179,84 @@ def _write_bundle(
     )
 
 
+def _iter_package_nodes(package_path: Path, node_types):
+    for path in sorted(package_path.rglob("*.py")):
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, node_types):
+                yield path, node
+
+
+def _attribute_path(node: ast.AST) -> tuple[str, ...] | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return tuple(reversed(parts))
+    return None
+
+
+def _literal_string_values(node: ast.AST) -> frozenset[str] | None:
+    if not isinstance(node, ast.Set | ast.List | ast.Tuple):
+        return None
+    values: set[str] = set()
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            return None
+        values.add(item.value)
+    return frozenset(values)
+
+
+def _assignment_value(node: ast.AST) -> ast.AST | None:
+    if isinstance(node, ast.Assign | ast.AnnAssign):
+        return node.value
+    return None
+
+
+def _assignment_targets(node: ast.AST) -> tuple[ast.AST, ...]:
+    if isinstance(node, ast.Assign):
+        return tuple(node.targets)
+    if isinstance(node, ast.AnnAssign):
+        return (node.target,)
+    return ()
+
+
+def _node_location(path: Path, node: ast.AST) -> str:
+    return f"{path}:{getattr(node, 'lineno', '?')}"
+
+
+def _annotation_name(node: ast.AST | None) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Constant) and node.value is None:
+        return "None"
+    return ""
+
+
+def _is_optional_query_policy_bundle(node: ast.AST | None) -> bool:
+    return (
+        isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.BitOr)
+        and _annotation_name(node.left) == "QueryPolicyBundle"
+        and _annotation_name(node.right) == "None"
+    )
+
+
+def _has_policy_bundle_default_none_arg(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+        if (
+            arg.arg == "policy_bundle"
+            and _is_optional_query_policy_bundle(arg.annotation)
+            and isinstance(default, ast.Constant)
+            and default.value is None
+        ):
+            return True
+    return False
+
+
 class QueryPolicyTests(unittest.TestCase):
     def test_policy_bundle_exposes_versions_and_hashes(self) -> None:
         bundle = get_query_policy()
@@ -260,35 +344,65 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertEqual(POLICY.lexicon.term_group("relation_markers"), RELATION_MARKERS)
 
     def test_query_understanding_consumers_use_typed_policy_sections(self) -> None:
-        registry_source = Path("rag_modules/query_understanding/registry.py").read_text(
-            encoding="utf-8"
+        query_understanding_calls = tuple(
+            _iter_package_nodes(QUERY_UNDERSTANDING_PACKAGE, ast.Call)
         )
-        features_source = Path("rag_modules/query_understanding/features.py").read_text(
-            encoding="utf-8"
-        )
-        lexical_features_source = Path(
-            "rag_modules/query_understanding/lexical_features.py"
-        ).read_text(encoding="utf-8")
-        prompting_source = Path("rag_modules/query_understanding/planning/prompting.py").read_text(
-            encoding="utf-8"
-        )
-        relation_index_source = Path("rag_modules/graph_index/relation_index_builder.py").read_text(
-            encoding="utf-8"
-        )
-        reasoning_source = Path("rag_modules/graph/reasoning_strategy.py").read_text(
-            encoding="utf-8"
-        )
+        query_understanding_call_paths = {
+            _attribute_path(node.func) for _, node in query_understanding_calls
+        }
+        legacy_policy_helper_calls = [
+            _node_location(path, node)
+            for path, node in query_understanding_calls
+            if _attribute_path(node.func)
+            in {
+                ("POLICY", "term_group"),
+                ("POLICY", "regex_group"),
+            }
+        ]
+        legacy_relation_type_hint_names = [
+            _node_location(path, node)
+            for path, node in _iter_package_nodes(GRAPH_INDEX_PACKAGE, ast.Name)
+            if node.id == "_RELATION_TYPE_HINTS"
+        ]
+        legacy_preferred_relation_literals = [
+            _node_location(path, node)
+            for path, node in _iter_package_nodes(QUERY_UNDERSTANDING_PACKAGE, ast.AST)
+            if _literal_string_values(node) == LEGACY_PREFERRED_RELATION_TYPES
+        ]
+        hardcoded_causal_relation_assignments = [
+            _node_location(path, node)
+            for path, node in _iter_package_nodes(GRAPH_PACKAGE, (ast.Assign, ast.AnnAssign))
+            if isinstance(_assignment_value(node), ast.Set)
+            for target in _assignment_targets(node)
+            if _attribute_path(target)
+            in {
+                ("causal_relation_types",),
+                ("self", "causal_relation_types"),
+            }
+        ]
+        planning_prompt_injection_points = [
+            _node_location(path, node)
+            for path, node in _iter_package_nodes(
+                QUERY_UNDERSTANDING_PACKAGE,
+                (ast.FunctionDef, ast.AsyncFunctionDef),
+            )
+            if node.name == "build_planning_prompt" and _has_policy_bundle_default_none_arg(node)
+        ]
 
-        self.assertNotIn("POLICY.term_group", registry_source)
-        self.assertNotIn("POLICY.regex_group", features_source)
-        self.assertNotIn("POLICY.term_group", features_source)
-        self.assertNotIn("_RELATION_TYPE_HINTS", relation_index_source)
-        self.assertNotIn('{"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}', prompting_source)
-        self.assertNotIn("causal_relation_types = {", reasoning_source)
-        self.assertIn("policy.lexicon.term_group", registry_source)
-        self.assertIn("active_registry.policy.lexicon.regex_group", lexical_features_source)
-        self.assertIn("policy_bundle: QueryPolicyBundle | None = None", prompting_source)
-        self.assertIn("policy.prompts.query_planner", prompting_source)
+        self.assertEqual([], legacy_policy_helper_calls)
+        self.assertEqual([], legacy_relation_type_hint_names)
+        self.assertEqual([], legacy_preferred_relation_literals)
+        self.assertEqual([], hardcoded_causal_relation_assignments)
+        self.assertIn(("policy", "lexicon", "term_group"), query_understanding_call_paths)
+        self.assertIn(
+            ("active_registry", "policy", "lexicon", "regex_group"),
+            query_understanding_call_paths,
+        )
+        self.assertTrue(planning_prompt_injection_points)
+        self.assertIn(
+            ("policy", "prompts", "query_planner", "format"),
+            query_understanding_call_paths,
+        )
 
 
 def test_policy_loader_rejects_unversioned_schema(tmp_path: Path) -> None:

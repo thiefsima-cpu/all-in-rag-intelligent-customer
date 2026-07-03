@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ from rag_modules.graph.query_resolution import GraphQueryFactory
 from rag_modules.graph.retrieval_runtime import GraphRetrievalRuntime
 from rag_modules.query_policy.loader import load_policy_bundle
 from rag_modules.query_understanding.planning.service import QueryPlanner
+
+QUERY_UNDERSTANDING_PACKAGE = Path("rag_modules/query_understanding")
 
 
 def _policy_payload() -> dict:
@@ -202,6 +205,44 @@ def _write_policy_bundle(root: Path, *, name: str = "custom-bundle") -> None:
     )
 
 
+def _iter_python_paths(path: Path) -> tuple[Path, ...]:
+    if path.is_file():
+        return (path,)
+    return tuple(sorted(path.rglob("*.py")))
+
+
+def _iter_package_nodes(path: Path, node_types):
+    for module_path in _iter_python_paths(path):
+        source = module_path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(module_path))
+        for node in ast.walk(tree):
+            if isinstance(node, node_types):
+                yield module_path, node
+
+
+def _attribute_path(node: ast.AST) -> tuple[str, ...] | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return tuple(reversed(parts))
+    return None
+
+
+def _assignment_targets(node: ast.AST) -> tuple[ast.AST, ...]:
+    if isinstance(node, ast.Assign):
+        return tuple(node.targets)
+    if isinstance(node, ast.AnnAssign):
+        return (node.target,)
+    return ()
+
+
+def _node_location(path: Path, node: ast.AST) -> str:
+    return f"{path}:{getattr(node, 'lineno', '?')}"
+
+
 class _PromptCapturingLLM:
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -328,10 +369,21 @@ def test_serving_runtime_factory_passes_selected_policy_bundle_to_runtime_provid
 
 
 def test_query_understanding_registry_does_not_load_policy_at_import_time() -> None:
-    registry_source = Path("rag_modules/query_understanding/registry.py").read_text(
-        encoding="utf-8"
-    )
-    package_source = Path("rag_modules/query_understanding/__init__.py").read_text(encoding="utf-8")
+    eager_policy_assignments = [
+        _node_location(path, node)
+        for path, node in _iter_package_nodes(
+            QUERY_UNDERSTANDING_PACKAGE,
+            (ast.Assign, ast.AnnAssign),
+        )
+        if any(_attribute_path(target) == ("POLICY",) for target in _assignment_targets(node))
+        if isinstance(node.value, ast.Call)
+        and _attribute_path(node.value.func) == ("get_query_policy",)
+    ]
+    package_eager_registry_imports = [
+        _node_location(path, node)
+        for path, node in _iter_package_nodes(QUERY_UNDERSTANDING_PACKAGE / "__init__.py", ast.AST)
+        if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module == "registry"
+    ]
 
-    assert "POLICY = get_query_policy()" not in registry_source
-    assert "from .registry import (" not in package_source
+    assert eager_policy_assignments == []
+    assert package_eager_registry_imports == []
