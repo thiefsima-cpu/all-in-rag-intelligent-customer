@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
-
 from ...configuration.models import GraphRAGConfig
 from ...query_policy import resolve_query_policy_bundle
 from ...runtime.artifacts import ArtifactManifest
@@ -13,24 +11,6 @@ from .shared import (
     emit_progress,
     resolve_config,
 )
-
-
-def _accepts_policy_bundle(method) -> bool:
-    try:
-        signature = inspect.signature(method)
-    except (TypeError, ValueError):
-        return True
-    parameters = signature.parameters.values()
-    return any(
-        parameter.name == "policy_bundle" or parameter.kind is inspect.Parameter.VAR_KEYWORD
-        for parameter in parameters
-    )
-
-
-def _call_with_policy_bundle(method, *args, policy_bundle, **kwargs):
-    if _accepts_policy_bundle(method):
-        return method(*args, **kwargs, policy_bundle=policy_bundle)
-    return method(*args, **kwargs)
 
 
 class ServingRuntimeFactory:
@@ -79,21 +59,18 @@ class ServingRuntimeFactory:
         tracer = infrastructure.provide_query_tracer(config, query_tracer)
 
         emit_progress(progress, "Initializing generation service...")
-        generation_service = _call_with_policy_bundle(
-            self.provider.provide_generation_module,
+        generation_service = self.provider.provide_generation_module(
             config,
             policy_bundle=policy_bundle,
         )
         llm_client = getattr(generation_service, "llm_client", generation_service.client)
-        retrieval_runtime_profile = _call_with_policy_bundle(
-            retrieval_runtime.provide_retrieval_runtime_profile,
+        retrieval_runtime_profile = retrieval_runtime.provide_retrieval_runtime_profile(
             config,
             policy_bundle=policy_bundle,
         )
 
         emit_progress(progress, "Initializing query understanding service...")
-        query_understanding_service = _call_with_policy_bundle(
-            retrieval_runtime.provide_query_understanding_service,
+        query_understanding_service = retrieval_runtime.provide_query_understanding_service(
             config=config,
             llm_client=llm_client,
             retrieval_profile=retrieval_runtime_profile,
@@ -101,8 +78,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing hybrid retrieval module...")
-        traditional_retrieval = _call_with_policy_bundle(
-            retrieval_runtime.provide_traditional_retrieval,
+        traditional_retrieval = retrieval_runtime.provide_traditional_retrieval(
             config=config,
             milvus_module=index_module,
             data_module=data_module,
@@ -113,8 +89,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing graph retrieval module...")
-        graph_rag_retrieval = _call_with_policy_bundle(
-            retrieval_runtime.provide_graph_rag_retrieval,
+        graph_rag_retrieval = retrieval_runtime.provide_graph_rag_retrieval(
             config=config,
             llm_client=llm_client,
             neo4j_manager=graph_manager,
@@ -123,8 +98,7 @@ class ServingRuntimeFactory:
         )
 
         emit_progress(progress, "Initializing routing workflow...")
-        query_router = _call_with_policy_bundle(
-            retrieval_runtime.provide_routing_workflow,
+        query_router = retrieval_runtime.provide_routing_workflow(
             config=config,
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,

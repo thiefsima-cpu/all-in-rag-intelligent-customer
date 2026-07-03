@@ -416,15 +416,15 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
                 self.services = services
                 self.calls: list[str] = []
 
-            def provide_generation_module(self, config):
-                del config
+            def provide_generation_module(self, config, *, policy_bundle):
+                del config, policy_bundle
                 return SimpleNamespace(
                     client=client,
                     llm_client=llm_client,
                 )
 
-            def provide_retrieval_runtime_profile(self, config):
-                del config
+            def provide_retrieval_runtime_profile(self, config, *, policy_bundle):
+                del config, policy_bundle
                 self.calls.append("profile")
                 return profile
 
@@ -434,22 +434,24 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
                 config,
                 llm_client,
                 retrieval_profile,
+                policy_bundle,
             ):
+                del config, policy_bundle
                 self.calls.append("service")
                 self.last_llm_client = llm_client
                 self.last_profile = retrieval_profile
                 return understanding_service
 
-            def provide_traditional_retrieval(self, **kwargs):
-                del kwargs
+            def provide_traditional_retrieval(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
                 return traditional_retrieval
 
-            def provide_graph_rag_retrieval(self, **kwargs):
-                del kwargs
+            def provide_graph_rag_retrieval(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
                 return graph_rag_retrieval
 
-            def provide_routing_workflow(self, **kwargs):
-                del kwargs
+            def provide_routing_workflow(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
                 return router
 
         provider = _RootProvider()
@@ -490,12 +492,20 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         provider = SimpleNamespace(
             infrastructure=infrastructure,
             build_pipeline=SimpleNamespace(),
-            provide_generation_module=lambda config: SimpleNamespace(client=SimpleNamespace()),
+            provide_generation_module=(
+                lambda config, *, policy_bundle: SimpleNamespace(client=SimpleNamespace())
+            ),
             retrieval_runtime=SimpleNamespace(
-                provide_retrieval_runtime_profile=lambda config: profile,
-                provide_query_understanding_service=lambda **kwargs: understanding_service,
-                provide_traditional_retrieval=lambda **kwargs: SimpleNamespace(name="traditional"),
-                provide_graph_rag_retrieval=lambda **kwargs: SimpleNamespace(name="graph"),
+                provide_retrieval_runtime_profile=lambda config, *, policy_bundle: profile,
+                provide_query_understanding_service=(
+                    lambda *, policy_bundle, **kwargs: understanding_service
+                ),
+                provide_traditional_retrieval=(
+                    lambda *, policy_bundle, **kwargs: SimpleNamespace(name="traditional")
+                ),
+                provide_graph_rag_retrieval=(
+                    lambda *, policy_bundle, **kwargs: SimpleNamespace(name="graph")
+                ),
             ),
             services=SimpleNamespace(
                 provide_answer_workflow=lambda **kwargs: SimpleNamespace(name="workflow"),
@@ -505,6 +515,65 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         factory = ServingRuntimeFactory(provider=provider)
 
         with self.assertRaisesRegex(AttributeError, "provide_routing_workflow"):
+            factory.build(config=config)
+
+    def test_build_rejects_provider_without_policy_bundle_argument(self) -> None:
+        config = build_test_config()
+
+        infrastructure = SimpleNamespace(
+            provide_neo4j_manager=(
+                lambda config, existing=None: existing or SimpleNamespace(name="neo4j")
+            ),
+            provide_data_module=(
+                lambda config, neo4j_manager, existing=None: (
+                    existing or SimpleNamespace(name="data", neo4j_manager=neo4j_manager)
+                )
+            ),
+            provide_index_module=(
+                lambda config, existing=None: existing or SimpleNamespace(name="index")
+            ),
+            provide_query_tracer=(
+                lambda config, existing=None: existing or SimpleNamespace(name="tracer")
+            ),
+        )
+        services = SimpleNamespace(
+            provide_answer_workflow=lambda **kwargs: SimpleNamespace(name="workflow"),
+        )
+
+        class _Provider:
+            def __init__(self) -> None:
+                self.infrastructure = infrastructure
+                self.build_pipeline = SimpleNamespace()
+                self.retrieval_runtime = self
+                self.services = services
+
+            def provide_generation_module(self, config):
+                del config
+                return SimpleNamespace(client=SimpleNamespace())
+
+            def provide_retrieval_runtime_profile(self, config, *, policy_bundle):
+                del config, policy_bundle
+                return SimpleNamespace(name="profile")
+
+            def provide_query_understanding_service(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
+                return SimpleNamespace(name="understanding")
+
+            def provide_traditional_retrieval(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
+                return SimpleNamespace(name="traditional")
+
+            def provide_graph_rag_retrieval(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
+                return SimpleNamespace(name="graph")
+
+            def provide_routing_workflow(self, *, policy_bundle, **kwargs):
+                del policy_bundle, kwargs
+                return SimpleNamespace(name="router")
+
+        factory = ServingRuntimeFactory(provider=_Provider())
+
+        with self.assertRaisesRegex(TypeError, "policy_bundle"):
             factory.build(config=config)
 
 
