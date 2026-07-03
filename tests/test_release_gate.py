@@ -111,6 +111,21 @@ def _passing_reports_for_policy(policy: dict) -> dict:
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def _assert_policy_rejected_before_suites(self, policy: dict) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            policy_path = Path(temp_dir) / "release_gate.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with (
+                patch("scripts.offline_gate.service.run_suites") as run,
+                self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
+            ):
+                run_release_gate(
+                    policy_path=policy_path,
+                    output_dir=temp_dir,
+                )
+
+        run.assert_not_called()
+
     def test_default_offline_release_gate_passes(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         report = evaluate_gate(policy, _passing_reports_for_policy(policy))
@@ -369,6 +384,34 @@ class ReleaseGateTests(unittest.TestCase):
                 )
 
         run.assert_not_called()
+
+    def test_run_release_gate_rejects_malformed_policy_fields_before_suites(self) -> None:
+        invalid_cases = (
+            ("schema_version_bool", ("schema_version",), True),
+            ("schema_version_string", ("schema_version",), "1"),
+            ("minimum_total_cases_bool", ("minimum_total_cases",), False),
+            ("minimum_total_cases_string", ("minimum_total_cases",), "57"),
+            ("suite_minimum_cases_list", ("suite_minimum_cases",), []),
+            ("suite_minimum_cases_bool_value", ("suite_minimum_cases", "quality_eval"), True),
+            ("minimum_overall_pass_rate_string", ("minimum_overall_pass_rate",), "1.0"),
+            ("required_route_categories_empty", ("required_route_categories",), [""]),
+            ("required_route_categories_string", ("required_route_categories",), "single_recipe"),
+            ("quality_dimension_minimum_cases_list", ("quality_dimension_minimum_cases",), []),
+            (
+                "quality_dimension_minimum_cases_negative",
+                ("quality_dimension_minimum_cases", "no_evidence"),
+                -1,
+            ),
+        )
+        for case_name, path, invalid_value in invalid_cases:
+            with self.subTest(case=case_name):
+                policy = load_policy(DEFAULT_POLICY_PATH)
+                target = policy
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = invalid_value
+
+                self._assert_policy_rejected_before_suites(policy)
 
     def test_quality_thresholds_pass_at_boundaries_and_fail_outside_them(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
