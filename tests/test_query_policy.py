@@ -10,6 +10,8 @@ import pytest
 from rag_modules.query_policy import get_query_policy
 
 QUERY_UNDERSTANDING_PACKAGE = Path("rag_modules/query_understanding")
+QUERY_POLICY_MODELS = Path("rag_modules/query_policy/models.py")
+QUERY_UNDERSTANDING_REGISTRY = Path("rag_modules/query_understanding/registry.py")
 GRAPH_INDEX_PACKAGE = Path("rag_modules/graph_index")
 GRAPH_PACKAGE = Path("rag_modules/graph")
 LEGACY_PREFERRED_RELATION_TYPES = frozenset({"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"})
@@ -228,6 +230,20 @@ def _node_location(path: Path, node: ast.AST) -> str:
     return f"{path}:{getattr(node, 'lineno', '?')}"
 
 
+def _class_method_names(path: Path, class_name: str) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    matches = [
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"Expected one {class_name} in {path}, found {len(matches)}")
+    return {
+        node.name
+        for node in matches[0].body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+
 def _annotation_name(node: ast.AST | None) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -258,6 +274,20 @@ def _has_policy_bundle_default_none_arg(node: ast.FunctionDef | ast.AsyncFunctio
 
 
 class QueryPolicyTests(unittest.TestCase):
+    def test_bundle_types_do_not_expose_lexicon_convenience_methods(self) -> None:
+        retired_methods = {"term_group", "regex_group"}
+
+        self.assertTrue(
+            retired_methods.isdisjoint(
+                _class_method_names(QUERY_POLICY_MODELS, "QueryPolicyBundle")
+            )
+        )
+        self.assertTrue(
+            retired_methods.isdisjoint(
+                _class_method_names(QUERY_UNDERSTANDING_REGISTRY, "_LazyPolicyBundle")
+            )
+        )
+
     def test_policy_bundle_exposes_versions_and_hashes(self) -> None:
         bundle = get_query_policy()
 

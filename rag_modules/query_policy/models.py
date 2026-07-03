@@ -312,12 +312,6 @@ class QueryPolicyBundle:
     runtime_defaults: RuntimeDefaultsPolicy
     prompts: PromptTemplates
 
-    def term_group(self, name: str) -> tuple[str, ...]:
-        return self.lexicon.term_group(name)
-
-    def regex_group(self, name: str) -> tuple[str, ...]:
-        return self.lexicon.regex_group(name)
-
     @property
     def graph_routing_strategies(self) -> tuple[str, ...]:
         return self.relations.graph_routing_strategies

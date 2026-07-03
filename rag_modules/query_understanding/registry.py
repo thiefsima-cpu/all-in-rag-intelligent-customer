@@ -253,12 +253,6 @@ class _LazyPolicyBundle:
     def prompts(self):
         return default_query_registry().policy.prompts
 
-    def term_group(self, name: str) -> tuple[str, ...]:
-        return default_query_registry().policy.term_group(name)
-
-    def regex_group(self, name: str) -> tuple[str, ...]:
-        return default_query_registry().policy.regex_group(name)
-
 
 class _LazyRegistryTuple(Sequence[str]):
     def __init__(self, registry_attribute: str) -> None:
