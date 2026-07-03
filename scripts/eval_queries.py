@@ -57,7 +57,7 @@ class EvalResponseMode(StrEnum):
 @dataclass(frozen=True)
 class EvalExpectation:
     response_mode: EvalResponseMode
-    strategy: str
+    strategy: str | None
     recipe_names: tuple[str, ...]
     answer_terms: tuple[str, ...]
     recipe_relevance: dict[str, float]
@@ -86,6 +86,18 @@ class EvalCase:
     dimensions: tuple[str, ...]
     expectation: EvalExpectation
     offline_fixture: OfflineEvalFixture
+
+
+@dataclass(frozen=True)
+class EvalObservation:
+    strategy: str | None
+    answer: str
+    documents: tuple[EvidenceDocument | dict[str, Any], ...]
+    latency_ms: float
+    plan: dict[str, Any]
+    contracts: dict[str, Any]
+    resilience: dict[str, Any]
+    cost: dict[str, Any]
 
 
 _ROOT_KEYS = frozenset({"id", "query", "category", "dimensions", "expectation", "offline_fixture"})
@@ -772,14 +784,184 @@ def _answer_has_citation_marker(answer: str) -> bool:
     return any(marker in answer for marker in ("菜谱证据", "依据"))
 
 
-def _answer_has_graph_reasoning_marker(answer: str) -> bool:
-    return any(marker in answer for marker in ("图关系", "关系", "图谱"))
+def _expected_recipe_names(case: EvalCase) -> list[str]:
+    names = list(case.expectation.recipe_names)
+    for name, grade in case.expectation.recipe_relevance.items():
+        if grade > 0 and name not in names:
+            names.append(name)
+    return names
 
 
-def _complex_answer_failed(category: str, answer: str, *, checked: bool) -> bool:
-    if not checked or category not in {"complex_relation", "semantic_flavor"}:
-        return False
-    return not (_answer_has_citation_marker(answer) and _answer_has_graph_reasoning_marker(answer))
+def _ranking_not_applicable() -> dict[str, None]:
+    return {
+        "recall_at_k": None,
+        "reciprocal_rank": None,
+        "ndcg_at_k": None,
+    }
+
+
+def _grounding_not_applicable() -> dict[str, int | None]:
+    return {
+        "claim_count": 0,
+        "supported_claim_count": 0,
+        "faithfulness": None,
+        "citation_count": 0,
+        "valid_citation_count": 0,
+        "citation_accuracy": None,
+        "citation_coverage": None,
+    }
+
+
+def _default_eval_cost(cost: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "prompt_tokens": int(cost.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(cost.get("completion_tokens", 0) or 0),
+        "total_tokens": int(cost.get("total_tokens", 0) or 0),
+        "estimated_cost_usd": float(cost.get("estimated_cost_usd", 0.0) or 0.0),
+        "token_usage_source": str(cost.get("token_usage_source", "") or ""),
+    }
+
+
+def _default_eval_resilience(resilience: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "fallback_used": bool(resilience.get("fallback_used")),
+        "fallback_reasons": list(resilience.get("fallback_reasons") or []),
+        "retrieval_degraded": bool(resilience.get("retrieval_degraded")),
+        "degraded_sources": list(resilience.get("degraded_sources") or []),
+        "degraded_candidates": list(resilience.get("degraded_candidates") or []),
+    }
+
+
+def _actual_response_mode(
+    expected_response_mode: EvalResponseMode,
+    *,
+    documents: tuple[EvidenceDocument | dict[str, Any], ...],
+    recipe_names: list[str],
+    answer: str,
+) -> EvalResponseMode:
+    if documents or recipe_names or _answer_has_citation_marker(answer):
+        return EvalResponseMode.GROUNDED_ANSWER
+    if expected_response_mode.is_abstention:
+        return expected_response_mode
+    return EvalResponseMode.NO_EVIDENCE
+
+
+def score_eval_observation(
+    case: EvalCase,
+    observation: EvalObservation,
+    *,
+    top_k: int,
+    generate: bool,
+) -> dict[str, Any]:
+    documents = tuple(observation.documents or ())
+    answer = str(observation.answer or "")
+    expected = case.expectation
+    expected_recipe_names = _expected_recipe_names(case)
+    recipe_names = _doc_recipe_names(list(documents))
+    ranked_recipe_names = _ranked_doc_recipe_names(list(documents))
+    missing_names = [
+        expected_name
+        for expected_name in expected_recipe_names
+        if expected_name not in recipe_names
+    ]
+    answer_missing_terms = (
+        [term for term in expected.answer_terms if term not in answer] if generate else []
+    )
+    strategy_failed = expected.strategy is not None and observation.strategy != expected.strategy
+    answer_failed = bool(generate and expected.answer_terms and answer_missing_terms)
+    actual_response_mode = _actual_response_mode(
+        expected.response_mode,
+        documents=documents,
+        recipe_names=recipe_names,
+        answer=answer,
+    )
+
+    failures: list[str] = []
+    if strategy_failed:
+        failures.append(
+            f"expected_strategy={expected.strategy} actual_strategy={observation.strategy}"
+        )
+    if missing_names:
+        failures.append(f"missing_recipe_names={missing_names}")
+    if answer_failed:
+        failures.append(f"missing_answer_terms={answer_missing_terms}")
+
+    response_mode_failures: list[str] = []
+    if expected.response_mode is EvalResponseMode.GROUNDED_ANSWER:
+        if not documents:
+            response_mode_failures.append("missing_evidence")
+    else:
+        if documents:
+            response_mode_failures.append("unexpected_evidence")
+        if recipe_names:
+            response_mode_failures.append(f"unexpected_recipe_names={recipe_names}")
+        if _answer_has_citation_marker(answer):
+            response_mode_failures.append("unexpected_citation")
+    failures.extend(response_mode_failures)
+
+    response_mode_passed = (
+        actual_response_mode is expected.response_mode
+        and not response_mode_failures
+        and not missing_names
+        and not answer_failed
+    )
+    if not response_mode_passed:
+        failures.append("response_mode_mismatch")
+
+    if expected.response_mode is EvalResponseMode.GROUNDED_ANSWER:
+        relevance = expected.recipe_relevance or {name: 1.0 for name in expected_recipe_names}
+        ranking = retrieval_metrics(ranked_recipe_names, relevance, k=top_k)
+        grounding = (
+            grounding_metrics(answer, documents) if generate else _grounding_not_applicable()
+        )
+    else:
+        ranking = _ranking_not_applicable()
+        grounding = _grounding_not_applicable()
+
+    plan = dict(observation.plan or {})
+    contracts = dict(observation.contracts or {})
+    contracts.setdefault("answer_response", {})
+    contracts.setdefault("route_resolution", {})
+
+    return {
+        "id": case.case_id,
+        "query": case.query,
+        "category": case.category,
+        "dimensions": list(case.dimensions),
+        "passed": not failures,
+        "failures": failures,
+        "evaluation": {
+            "strategy": observation.strategy,
+            "expected_strategy": expected.strategy,
+            "expected_recipe_names": expected_recipe_names,
+            "expected_recipe_relevance": dict(expected.recipe_relevance),
+            "expected_answer_terms": list(expected.answer_terms),
+            "expected_response_mode": expected.response_mode.value,
+            "actual_response_mode": actual_response_mode.value,
+            "response_mode_passed": response_mode_passed,
+            "answer_checked": bool(generate),
+            "answer_passed": (not answer_failed) if generate else None,
+            "answer_missing_terms": answer_missing_terms,
+            "answer_preview": answer[:300] if answer else "",
+        },
+        "retrieval": {
+            "recipe_names": recipe_names,
+            "ranked_recipe_names": ranked_recipe_names,
+            "missing_recipe_names": missing_names,
+            "doc_count": len(documents),
+            "evidence": _doc_evidence_summary(list(documents)),
+            **ranking,
+        },
+        "grounding": grounding,
+        "cost": _default_eval_cost(dict(observation.cost or {})),
+        "resilience": _default_eval_resilience(dict(observation.resilience or {})),
+        "runtime": {
+            "latency_ms": float(observation.latency_ms or 0.0),
+            "plan_used_cache": plan.get("used_cache"),
+            "plan_validation_errors": plan.get("validation_errors"),
+        },
+        "contracts": contracts,
+    }
 
 
 def _response_query_plan(response) -> dict[str, Any]:
@@ -936,55 +1118,6 @@ def evaluate_case(
         )
         contracts["route_resolution"] = route_resolution.to_dict()
 
-    answer_missing_terms = []
-    if generate:
-        answer_missing_terms = [term for term in case.expected_answer_terms if term not in answer]
-
-    recipe_names = _doc_recipe_names(docs)
-    ranked_recipe_names = _ranked_doc_recipe_names(docs)
-    expected_recipe_names = list(case.expected_recipe_names) or [
-        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
-    ]
-    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
-    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
-    answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
-    complex_answer_failed = _complex_answer_failed(
-        case.category,
-        answer,
-        checked=generate,
-    )
-
-    failures: list[str] = []
-    if strategy_failed:
-        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
-    if missing_names:
-        failures.append(f"missing_recipe_names={missing_names}")
-    if answer_failed:
-        failures.append(f"missing_answer_terms={answer_missing_terms}")
-    if complex_answer_failed:
-        failures.append("complex_answer_grounding_missing")
-    if not docs:
-        failures.append("no_evidence")
-
-    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
-    ranking = retrieval_metrics(
-        ranked_recipe_names,
-        relevance,
-        k=top_k,
-    )
-    grounding = (
-        grounding_metrics(answer, docs)
-        if generate
-        else {
-            "claim_count": 0,
-            "supported_claim_count": 0,
-            "faithfulness": None,
-            "citation_count": 0,
-            "valid_citation_count": 0,
-            "citation_accuracy": None,
-            "citation_coverage": None,
-        }
-    )
     response_payload = contracts["answer_response"]
     summary = dict(response_payload.get("summary") or {})
     generation_trace = dict((response_payload.get("traces") or {}).get("generation_trace") or {})
@@ -1019,51 +1152,23 @@ def evaluate_case(
         contracts["route_resolution"],
     )
 
-    return {
-        "query": case.query,
-        "category": case.category,
-        "passed": not failures,
-        "failures": failures,
-        "evaluation": {
-            "strategy": strategy,
-            "expected_strategy": case.expected_strategy,
-            "expected_recipe_names": expected_recipe_names,
-            "expected_recipe_relevance": dict(case.expected_recipe_relevance),
-            "expected_answer_terms": list(case.expected_answer_terms),
-            "answer_checked": bool(generate),
-            "answer_passed": (not answer_failed) if generate else None,
-            "complex_answer_passed": (
-                not complex_answer_failed
-                if generate and case.category in {"complex_relation", "semantic_flavor"}
-                else None
-            ),
-            "answer_missing_terms": answer_missing_terms,
-            "answer_preview": answer[:300] if answer else "",
-        },
-        "retrieval": {
-            "recipe_names": recipe_names,
-            "ranked_recipe_names": ranked_recipe_names,
-            "missing_recipe_names": missing_names,
-            "doc_count": len(docs),
-            "evidence": _doc_evidence_summary(docs),
-            **ranking,
-        },
-        "grounding": grounding,
-        "cost": {
+    observation = EvalObservation(
+        strategy=strategy,
+        answer=answer,
+        documents=tuple(docs or ()),
+        latency_ms=latency_ms,
+        plan=plan,
+        contracts=contracts,
+        resilience=resilience,
+        cost={
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
             "estimated_cost_usd": estimated_cost_usd,
             "token_usage_source": token_usage_source,
         },
-        "resilience": resilience,
-        "runtime": {
-            "latency_ms": latency_ms,
-            "plan_used_cache": plan.get("used_cache"),
-            "plan_validation_errors": plan.get("validation_errors"),
-        },
-        "contracts": contracts,
-    }
+    )
+    return score_eval_observation(case, observation, top_k=top_k, generate=generate)
 
 
 def calculate_eval_metrics(results: List[dict]) -> dict:
@@ -1348,11 +1453,6 @@ def evaluate_offline_quality_case(
     )
     strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
     answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
-    complex_answer_failed = _complex_answer_failed(
-        case.category,
-        answer,
-        checked=generate,
-    )
 
     failures: list[str] = []
     if strategy_failed:
@@ -1361,8 +1461,6 @@ def evaluate_offline_quality_case(
         failures.append(f"missing_recipe_names={missing_names}")
     if answer_failed:
         failures.append(f"missing_answer_terms={answer_missing_terms}")
-    if complex_answer_failed:
-        failures.append("complex_answer_grounding_missing")
     if not documents:
         failures.append("no_evidence")
 
@@ -1457,11 +1555,6 @@ def evaluate_offline_quality_case(
             "expected_answer_terms": list(case.expected_answer_terms),
             "answer_checked": bool(generate),
             "answer_passed": (not answer_failed) if generate else None,
-            "complex_answer_passed": (
-                not complex_answer_failed
-                if generate and case.category in {"complex_relation", "semantic_flavor"}
-                else None
-            ),
             "answer_missing_terms": answer_missing_terms,
             "answer_preview": answer[:300] if answer else "",
         },

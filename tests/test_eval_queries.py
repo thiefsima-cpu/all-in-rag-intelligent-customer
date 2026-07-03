@@ -11,16 +11,22 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts import EvidenceDocument
 from scripts.eval_queries import (
     DEFAULT_CORPUS_PATH,
     EvalCase,
+    EvalExpectation,
+    EvalObservation,
     EvalResponseMode,
+    OfflineEvalFixture,
+    OfflineEvidenceFixture,
     build_eval_report,
     evaluate_case,
     evaluate_offline_quality_queries,
     evaluate_queries,
     load_eval_cases,
     run_eval,
+    score_eval_observation,
 )
 
 
@@ -64,6 +70,106 @@ def _load_temporary_eval_text(payload: str):
         path = Path(temp_dir) / "quality-eval.json"
         path.write_text(payload, encoding="utf-8")
         return load_eval_cases(path)
+
+
+def _eval_case(
+    response_mode: EvalResponseMode = EvalResponseMode.GROUNDED_ANSWER,
+    *,
+    case_id: str = "case-01",
+    query: str = "How do I cook gongbao chicken?",
+    category: str = "single_recipe",
+    dimensions: tuple[str, ...] = ("single_recipe",),
+    strategy: str | None = "hybrid_traditional",
+    recipe_names: tuple[str, ...] = ("gongbao chicken",),
+    answer_terms: tuple[str, ...] = ("gongbao chicken",),
+    recipe_relevance: dict[str, float] | None = None,
+    fixture_answer: str = "According to recipe evidence #1, gongbao chicken uses peanuts.",
+    fixture_evidence: tuple[OfflineEvidenceFixture, ...] | None = None,
+) -> EvalCase:
+    if recipe_relevance is None:
+        recipe_relevance = (
+            {recipe_name: 3.0 for recipe_name in recipe_names}
+            if response_mode is EvalResponseMode.GROUNDED_ANSWER
+            else {}
+        )
+    if fixture_evidence is None:
+        fixture_evidence = (
+            (
+                OfflineEvidenceFixture(
+                    recipe_name=recipe_names[0] if recipe_names else "fixture-recipe",
+                    content="gongbao chicken uses peanuts.",
+                    score=1.0,
+                    evidence_type="text",
+                ),
+            )
+            if response_mode is EvalResponseMode.GROUNDED_ANSWER
+            else ()
+        )
+    return EvalCase(
+        case_id=case_id,
+        query=query,
+        category=category,
+        dimensions=dimensions,
+        expectation=EvalExpectation(
+            response_mode=response_mode,
+            strategy=strategy,
+            recipe_names=recipe_names,
+            answer_terms=answer_terms,
+            recipe_relevance=recipe_relevance,
+        ),
+        offline_fixture=OfflineEvalFixture(
+            strategy=strategy or "hybrid_traditional",
+            answer=fixture_answer,
+            evidence=fixture_evidence,
+        ),
+    )
+
+
+def _eval_observation(
+    *,
+    strategy: str | None = "hybrid_traditional",
+    answer: str = "According to recipe evidence #1, gongbao chicken uses peanuts.",
+    documents: tuple[EvidenceDocument, ...] | None = None,
+    latency_ms: float = 12.5,
+    plan: dict | None = None,
+    contracts: dict | None = None,
+    resilience: dict | None = None,
+    cost: dict | None = None,
+) -> EvalObservation:
+    if documents is None:
+        documents = (
+            EvidenceDocument(
+                content="gongbao chicken uses peanuts.",
+                recipe_name="gongbao chicken",
+                doc_id="doc-1",
+                score=1.0,
+                source="test",
+            ),
+        )
+    return EvalObservation(
+        strategy=strategy,
+        answer=answer,
+        documents=documents,
+        latency_ms=latency_ms,
+        plan=plan or {"used_cache": False, "validation_errors": []},
+        contracts=contracts or {"answer_response": {}, "route_resolution": {}},
+        resilience=resilience
+        or {
+            "fallback_used": False,
+            "fallback_reasons": [],
+            "retrieval_degraded": False,
+            "degraded_sources": [],
+            "degraded_candidates": [],
+        },
+        cost=cost
+        or {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "token_usage_source": "test",
+        },
+    )
 
 
 class StrictEvalCaseContractTests(unittest.TestCase):
@@ -323,6 +429,94 @@ class StrictEvalCaseContractTests(unittest.TestCase):
                 _load_temporary_eval_payload([payload])
 
 
+class EvalObservationScoringTests(unittest.TestCase):
+    def test_score_eval_observation_passes_grounded_answer(self) -> None:
+        case = _eval_case(
+            EvalResponseMode.GROUNDED_ANSWER,
+            answer_terms=("gongbao chicken", "peanuts"),
+        )
+        observation = _eval_observation()
+
+        result = score_eval_observation(case, observation, top_k=6, generate=True)
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["evaluation"]["response_mode_passed"])
+        self.assertEqual(result["id"], "case-01")
+        self.assertEqual(result["dimensions"], ["single_recipe"])
+        self.assertEqual(result["evaluation"]["expected_response_mode"], "grounded_answer")
+        self.assertEqual(result["evaluation"]["actual_response_mode"], "grounded_answer")
+        self.assertEqual(result["retrieval"]["recipe_names"], ["gongbao chicken"])
+
+    def test_score_eval_observation_passes_abstention_modes(self) -> None:
+        cases = [
+            (
+                EvalResponseMode.NO_EVIDENCE,
+                ("insufficient evidence",),
+                "Current recipe has insufficient evidence.",
+            ),
+            (
+                EvalResponseMode.CLARIFICATION,
+                ("Please clarify",),
+                "Please clarify which recipe or preference you mean.",
+            ),
+            (
+                EvalResponseMode.CONSTRAINT_CONFLICT,
+                ("conflict", "relax"),
+                "These constraints conflict; please relax one condition.",
+            ),
+        ]
+
+        for response_mode, answer_terms, answer in cases:
+            with self.subTest(response_mode=response_mode.value):
+                case = _eval_case(
+                    response_mode,
+                    dimensions=(response_mode.value,),
+                    recipe_names=(),
+                    answer_terms=answer_terms,
+                    recipe_relevance={},
+                    fixture_answer=answer,
+                    fixture_evidence=(),
+                )
+                result = score_eval_observation(
+                    case,
+                    _eval_observation(answer=answer, documents=()),
+                    top_k=6,
+                    generate=True,
+                )
+
+                self.assertTrue(result["passed"])
+                self.assertTrue(result["evaluation"]["response_mode_passed"])
+                self.assertEqual(
+                    result["evaluation"]["actual_response_mode"],
+                    response_mode.value,
+                )
+                self.assertEqual(result["retrieval"]["doc_count"], 0)
+                self.assertIsNone(result["grounding"]["faithfulness"])
+
+    def test_score_eval_observation_rejects_no_evidence_with_unexpected_evidence(self) -> None:
+        case = _eval_case(
+            EvalResponseMode.NO_EVIDENCE,
+            dimensions=("no_evidence",),
+            recipe_names=(),
+            answer_terms=("insufficient evidence",),
+            recipe_relevance={},
+            fixture_answer="Current evidence is insufficient.",
+            fixture_evidence=(),
+        )
+
+        result = score_eval_observation(
+            case,
+            _eval_observation(answer="Current evidence is insufficient."),
+            top_k=6,
+            generate=True,
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertIn("unexpected_evidence", result["failures"])
+        self.assertIn("response_mode_mismatch", result["failures"])
+        self.assertFalse(result["evaluation"]["response_mode_passed"])
+
+
 class _FakeResponse:
     def __init__(
         self,
@@ -454,7 +648,7 @@ class EvalQueriesTests(unittest.TestCase):
     def test_evaluate_queries_returns_report_and_closes_system(self) -> None:
         config = build_test_config()
         config.profile_name = "eval_quality"
-        case = EvalCase(query="quality query")
+        case = _eval_case(query="quality query")
         item = {"query": case.query, "passed": True}
         metrics = {"case_count": 1, "pass_rate": 1.0}
         system = MagicMock()
@@ -544,12 +738,14 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertFalse(report["failures"])
 
     def test_evaluate_case_generate_returns_response_native_contract(self) -> None:
-        case = EvalCase(
+        case = _eval_case(
             query="为什么水煮肉片里的豆瓣酱和花椒会共同形成麻辣鲜香？",
             category="complex_relation",
-            expected_strategy="graph_rag",
-            expected_recipe_names=["水煮肉片"],
-            expected_answer_terms=["依据"],
+            dimensions=("complex_relation",),
+            strategy="graph_rag",
+            recipe_names=("水煮肉片",),
+            answer_terms=("依据",),
+            recipe_relevance={"水煮肉片": 3.0},
         )
         evidence_documents = [
             {
@@ -596,11 +792,14 @@ class EvalQueriesTests(unittest.TestCase):
         )
 
     def test_evaluate_case_route_only_returns_route_resolution_contract(self) -> None:
-        case = EvalCase(
+        case = _eval_case(
             query="宫保鸡丁怎么做？",
             category="general",
-            expected_strategy="hybrid_traditional",
-            expected_recipe_names=["宫保鸡丁"],
+            dimensions=("single_recipe",),
+            strategy="hybrid_traditional",
+            recipe_names=("宫保鸡丁",),
+            answer_terms=(),
+            recipe_relevance={"宫保鸡丁": 3.0},
         )
         evidence_documents = [
             {
@@ -635,12 +834,14 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertEqual(item["retrieval"]["doc_count"], 1)
 
     def test_evaluate_case_reports_fallback_and_degraded_sources(self) -> None:
-        case = EvalCase(
+        case = _eval_case(
             query="解释带降级的回答",
             category="complex_relation",
-            expected_strategy="graph_rag",
-            expected_recipe_names=["水煮肉片"],
-            expected_answer_terms=["依据"],
+            dimensions=("complex_relation",),
+            strategy="graph_rag",
+            recipe_names=("水煮肉片",),
+            answer_terms=("依据",),
+            recipe_relevance={"水煮肉片": 3.0},
         )
         evidence_documents = [
             {
