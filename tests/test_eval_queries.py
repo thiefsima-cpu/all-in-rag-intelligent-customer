@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import math
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -11,6 +14,7 @@ from rag_modules.configuration.testing import build_test_config
 from scripts.eval_queries import (
     DEFAULT_CORPUS_PATH,
     EvalCase,
+    EvalResponseMode,
     build_eval_report,
     evaluate_case,
     evaluate_offline_quality_queries,
@@ -18,6 +22,212 @@ from scripts.eval_queries import (
     load_eval_cases,
     run_eval,
 )
+
+
+def _valid_strict_eval_payload() -> dict:
+    return {
+        "id": "grounded-01",
+        "query": "宫保鸡丁怎么做？",
+        "category": "single_recipe",
+        "dimensions": ["single_recipe"],
+        "expectation": {
+            "response_mode": "grounded_answer",
+            "strategy": "hybrid_traditional",
+            "recipe_names": ["宫保鸡丁"],
+            "answer_terms": ["宫保鸡丁"],
+            "recipe_relevance": {"宫保鸡丁": 3.0},
+        },
+        "offline_fixture": {
+            "strategy": "hybrid_traditional",
+            "answer": "依据菜谱证据 #1，宫保鸡丁需要鸡丁、花生和调味汁。",
+            "evidence": [
+                {
+                    "recipe_name": "宫保鸡丁",
+                    "content": "宫保鸡丁需要鸡丁、花生和调味汁。",
+                    "score": 1.0,
+                    "evidence_type": "text",
+                }
+            ],
+        },
+    }
+
+
+def _load_temporary_eval_payload(payload: object):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "quality-eval.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return load_eval_cases(path)
+
+
+class StrictEvalCaseContractTests(unittest.TestCase):
+    def test_strict_contract_parses_nested_case(self) -> None:
+        case = _load_temporary_eval_payload([_valid_strict_eval_payload()])[0]
+
+        self.assertEqual(case.case_id, "grounded-01")
+        self.assertEqual(case.dimensions, ("single_recipe",))
+        self.assertIs(case.expectation.response_mode, EvalResponseMode.GROUNDED_ANSWER)
+        self.assertEqual(case.expectation.recipe_relevance, {"宫保鸡丁": 3.0})
+        self.assertEqual(case.offline_fixture.evidence[0].recipe_name, "宫保鸡丁")
+
+    def test_strict_contract_rejects_legacy_expected_field(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expected_strategy"] = "hybrid_traditional"
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*grounded-01.*legacy.*expected_strategy",
+        ):
+            _load_temporary_eval_payload([payload])
+
+    def test_strict_contract_rejects_duplicate_ids(self) -> None:
+        payload = _valid_strict_eval_payload()
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[1\].*grounded-01.*duplicate",
+        ):
+            _load_temporary_eval_payload([payload, payload])
+
+    def test_strict_contract_rejects_abstention_evidence(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expectation"]["response_mode"] = "no_evidence"
+        payload["expectation"]["recipe_names"] = []
+        payload["expectation"]["recipe_relevance"] = {}
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*grounded-01.*abstention.*evidence",
+        ):
+            _load_temporary_eval_payload([payload])
+
+    def test_strict_contract_rejects_non_object_rows(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*JSON object",
+        ):
+            _load_temporary_eval_payload(["not-an-object"])
+
+    def test_strict_contract_rejects_unknown_and_missing_keys_at_each_level(self) -> None:
+        payloads: list[tuple[str, dict, str]] = []
+        root_unknown = _valid_strict_eval_payload()
+        root_unknown["surprise"] = True
+        payloads.append(("root unknown", root_unknown, "surprise"))
+        expectation_unknown = _valid_strict_eval_payload()
+        expectation_unknown["expectation"]["surprise"] = True
+        payloads.append(("expectation unknown", expectation_unknown, "surprise"))
+        fixture_unknown = _valid_strict_eval_payload()
+        fixture_unknown["offline_fixture"]["surprise"] = True
+        payloads.append(("fixture unknown", fixture_unknown, "surprise"))
+        evidence_unknown = _valid_strict_eval_payload()
+        evidence_unknown["offline_fixture"]["evidence"][0]["surprise"] = True
+        payloads.append(("evidence unknown", evidence_unknown, "surprise"))
+        missing_root = _valid_strict_eval_payload()
+        del missing_root["query"]
+        payloads.append(("missing root", missing_root, "query"))
+        missing_nested = _valid_strict_eval_payload()
+        del missing_nested["expectation"]["strategy"]
+        payloads.append(("missing nested", missing_nested, "strategy"))
+
+        for label, payload, field_name in payloads:
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    ValueError,
+                    rf"quality-eval\.json.*case\[0\].*grounded-01.*{field_name}",
+                ),
+            ):
+                _load_temporary_eval_payload([payload])
+
+    def test_strict_contract_rejects_invalid_strings_lists_and_response_modes(self) -> None:
+        payloads: list[tuple[str, dict, str]] = []
+        empty_query = _valid_strict_eval_payload()
+        empty_query["query"] = "  "
+        payloads.append(("empty query", empty_query, "query"))
+        empty_evidence_type = _valid_strict_eval_payload()
+        empty_evidence_type["offline_fixture"]["evidence"][0]["evidence_type"] = ""
+        payloads.append(("empty evidence type", empty_evidence_type, "evidence_type"))
+        duplicate_dimensions = _valid_strict_eval_payload()
+        duplicate_dimensions["dimensions"] = ["single_recipe", "single_recipe"]
+        payloads.append(("duplicate dimensions", duplicate_dimensions, "dimensions"))
+        unknown_mode = _valid_strict_eval_payload()
+        unknown_mode["expectation"]["response_mode"] = "unsupported"
+        payloads.append(("unknown mode", unknown_mode, "response_mode"))
+
+        for label, payload, field_name in payloads:
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    ValueError,
+                    rf"quality-eval\.json.*case\[0\].*grounded-01.*{field_name}",
+                ),
+            ):
+                _load_temporary_eval_payload([payload])
+
+    def test_strict_contract_rejects_invalid_numeric_values(self) -> None:
+        payloads: list[tuple[str, dict, str]] = []
+        bool_relevance = _valid_strict_eval_payload()
+        bool_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = True
+        payloads.append(("bool relevance", bool_relevance, "recipe_relevance"))
+        negative_relevance = _valid_strict_eval_payload()
+        negative_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = -0.1
+        payloads.append(("negative relevance", negative_relevance, "recipe_relevance"))
+        nonfinite_relevance = _valid_strict_eval_payload()
+        nonfinite_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = math.inf
+        payloads.append(("nonfinite relevance", nonfinite_relevance, "recipe_relevance"))
+        bool_score = _valid_strict_eval_payload()
+        bool_score["offline_fixture"]["evidence"][0]["score"] = False
+        payloads.append(("bool score", bool_score, "score"))
+        negative_score = _valid_strict_eval_payload()
+        negative_score["offline_fixture"]["evidence"][0]["score"] = -0.1
+        payloads.append(("negative score", negative_score, "score"))
+        nonfinite_score = _valid_strict_eval_payload()
+        nonfinite_score["offline_fixture"]["evidence"][0]["score"] = math.nan
+        payloads.append(("nonfinite score", nonfinite_score, "score"))
+        overflowing_score = _valid_strict_eval_payload()
+        overflowing_score["offline_fixture"]["evidence"][0]["score"] = 10**400
+        payloads.append(("overflowing score", overflowing_score, "score"))
+
+        for label, payload, field_name in payloads:
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    ValueError,
+                    rf"quality-eval\.json.*case\[0\].*grounded-01.*{field_name}",
+                ),
+            ):
+                _load_temporary_eval_payload([payload])
+
+    def test_strict_contract_rejects_cross_field_inconsistencies(self) -> None:
+        payloads: list[tuple[str, dict, str]] = []
+        strategy_mismatch = _valid_strict_eval_payload()
+        strategy_mismatch["offline_fixture"]["strategy"] = "graph_rag"
+        payloads.append(("strategy mismatch", strategy_mismatch, "strategy"))
+        grounded_without_evidence = _valid_strict_eval_payload()
+        grounded_without_evidence["offline_fixture"]["evidence"] = []
+        payloads.append(("grounded without evidence", grounded_without_evidence, "evidence"))
+        missing_expected_recipe = _valid_strict_eval_payload()
+        missing_expected_recipe["offline_fixture"]["evidence"][0]["recipe_name"] = "鱼香肉丝"
+        payloads.append(("missing expected recipe", missing_expected_recipe, "宫保鸡丁"))
+        abstention_recipe_names = _valid_strict_eval_payload()
+        abstention_recipe_names["expectation"]["response_mode"] = "clarification"
+        abstention_recipe_names["offline_fixture"]["evidence"] = []
+        abstention_recipe_names["expectation"]["recipe_relevance"] = {}
+        payloads.append(("abstention recipe names", abstention_recipe_names, "recipe_names"))
+        abstention_relevance = _valid_strict_eval_payload()
+        abstention_relevance["expectation"]["response_mode"] = "constraint_conflict"
+        abstention_relevance["offline_fixture"]["evidence"] = []
+        abstention_relevance["expectation"]["recipe_names"] = []
+        payloads.append(("abstention relevance", abstention_relevance, "recipe_relevance"))
+
+        for label, payload, detail in payloads:
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    ValueError,
+                    rf"quality-eval\.json.*case\[0\].*grounded-01.*{detail}",
+                ),
+            ):
+                _load_temporary_eval_payload([payload])
 
 
 class _FakeResponse:
