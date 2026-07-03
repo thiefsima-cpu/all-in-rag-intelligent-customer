@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from .loader import DEFAULT_BUNDLE_NAME, default_policy_bundle_path, get_query_policy
 from .models import QueryPolicyBundle
 

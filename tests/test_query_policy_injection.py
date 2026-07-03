@@ -193,8 +193,7 @@ def _write_policy_bundle(root: Path, *, name: str = "custom-bundle") -> None:
                 "name": name,
                 "policy_path": "policy.json",
                 "prompts": {
-                    prompt_name: f"prompts/{prompt_name}.txt"
-                    for prompt_name in prompt_payloads
+                    prompt_name: f"prompts/{prompt_name}.txt" for prompt_name in prompt_payloads
                 },
             },
             ensure_ascii=False,
@@ -332,9 +331,7 @@ def test_query_understanding_registry_does_not_load_policy_at_import_time() -> N
     registry_source = Path("rag_modules/query_understanding/registry.py").read_text(
         encoding="utf-8"
     )
-    package_source = Path("rag_modules/query_understanding/__init__.py").read_text(
-        encoding="utf-8"
-    )
+    package_source = Path("rag_modules/query_understanding/__init__.py").read_text(encoding="utf-8")
 
     assert "POLICY = get_query_policy()" not in registry_source
     assert "from .registry import (" not in package_source
