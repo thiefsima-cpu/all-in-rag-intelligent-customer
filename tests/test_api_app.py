@@ -29,6 +29,7 @@ from rag_modules.interfaces.api.answer_models import (
     AnswerStreamEventType,
     PublicAnswerPayloadModel,
 )
+from rag_modules.interfaces.api.build_jobs import InProcessBuildJobRunner
 from rag_modules.interfaces.api.error_models import ErrorCode, build_error_payload
 from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
@@ -586,6 +587,27 @@ class _FailingBuildApiSystem(_FakeApiSystem):
         if progress:
             progress(f"private progress {self.secret}")
         raise RuntimeError(self.secret)
+
+
+class _FailOnceBuildApiSystem(_FakeApiSystem):
+    def __init__(self) -> None:
+        super().__init__()
+        self.build_initialized = True
+        self.failures_remaining = 1
+
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        del progress, request_id, build_job_id
+        self.build_calls += 1
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("first build attempt fails")
+        self.system_ready = True
 
 
 class _ChunkFloodApiSystem(_FakeApiSystem):
@@ -1470,6 +1492,75 @@ class ApiAppTests(unittest.TestCase):
         )
         self.assertEqual(conflict_payload["error"]["details"]["job_id"], first_job["job_id"])
 
+    def test_build_job_cancel_route_cancels_running_job(self) -> None:
+        system = _BlockingBuildApiSystem()
+        app = create_build_api_app(system=system)
+
+        with _client(app) as client:
+            submitted_response = client.post("/v1/jobs/build")
+            submitted = submitted_response.json()["job"]
+            self.assertTrue(system.build_started.wait(timeout=1.0))
+
+            cancel_response = client.post(f"/v1/jobs/{submitted['job_id']}/cancel")
+
+            system.release_build.set()
+            cancelled = _wait_for_job_status(client, submitted["job_id"], "cancelled")
+
+        self.assertEqual(cancel_response.status_code, 202)
+        self.assertIn(cancel_response.json()["job"]["status"], {"cancel_requested", "cancelled"})
+        self.assertEqual(cancelled["status"], "cancelled")
+
+    def test_build_job_retry_route_queues_new_job_from_failed_job(self) -> None:
+        system = _FailOnceBuildApiSystem()
+        app = create_build_api_app(system=system)
+
+        with _client(app) as client:
+            submitted = client.post("/v1/jobs/build").json()["job"]
+            failed = _wait_for_job_status(client, submitted["job_id"], "failed")
+
+            retry_response = client.post(f"/v1/jobs/{failed['job_id']}/retry")
+            retried = retry_response.json()["job"]
+            completed = _wait_for_job_status(client, retried["job_id"], "succeeded")
+
+        self.assertEqual(retry_response.status_code, 202)
+        self.assertNotEqual(retried["job_id"], failed["job_id"])
+        self.assertEqual(completed["retry_of_job_id"], failed["job_id"])
+        self.assertEqual(system.build_calls, 2)
+
+    def test_build_job_retry_route_rejects_running_job(self) -> None:
+        system = _BlockingBuildApiSystem()
+        app = create_build_api_app(system=system)
+
+        with _client(app) as client:
+            submitted = client.post("/v1/jobs/build").json()["job"]
+            self.assertTrue(system.build_started.wait(timeout=1.0))
+
+            retry_response = client.post(f"/v1/jobs/{submitted['job_id']}/retry")
+
+            system.release_build.set()
+            _wait_for_job_status(client, submitted["job_id"], "succeeded")
+
+        _assert_error_response(
+            retry_response,
+            status_code=409,
+            code="BUILD_JOB_CONFLICT",
+        )
+
+    def test_build_job_cancel_route_rejects_succeeded_job(self) -> None:
+        app = create_build_api_app(system=_FakeApiSystem())
+
+        with _client(app) as client:
+            submitted = client.post("/v1/jobs/build").json()["job"]
+            succeeded = _wait_for_job_status(client, submitted["job_id"], "succeeded")
+
+            cancel_response = client.post(f"/v1/jobs/{succeeded['job_id']}/cancel")
+
+        _assert_error_response(
+            cancel_response,
+            status_code=409,
+            code="BUILD_JOB_CONFLICT",
+        )
+
     def test_build_http_failed_build_job_keeps_submission_request_id_without_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
@@ -1742,6 +1833,8 @@ class ApiAppTests(unittest.TestCase):
                 "/runtime/build/initialize": client.post("/runtime/build/initialize"),
                 "/jobs": client.get("/jobs"),
                 f"/jobs/{'0' * 32}": client.get(f"/jobs/{'0' * 32}"),
+                f"/jobs/{'0' * 32}/cancel": client.post(f"/jobs/{'0' * 32}/cancel"),
+                f"/jobs/{'0' * 32}/retry": client.post(f"/jobs/{'0' * 32}/retry"),
                 "/jobs/build": client.post("/jobs/build"),
                 "/jobs/rebuild": client.post("/jobs/rebuild"),
                 "/artifacts": client.get("/artifacts"),
@@ -1753,11 +1846,20 @@ class ApiAppTests(unittest.TestCase):
 
         for path, response in responses.items():
             self.assertEqual(response.status_code, 404, path)
-            templated_path = "/jobs/{job_id}" if path.startswith("/jobs/") else path
+            if path.endswith("/cancel"):
+                templated_path = "/jobs/{job_id}/cancel"
+            elif path.endswith("/retry"):
+                templated_path = "/jobs/{job_id}/retry"
+            elif path.startswith("/jobs/"):
+                templated_path = "/jobs/{job_id}"
+            else:
+                templated_path = path
             self.assertNotIn(templated_path, schema["paths"])
 
         self.assertIn("/v1/health", schema["paths"])
         self.assertIn("/v1/jobs", schema["paths"])
+        self.assertIn("/v1/jobs/{job_id}/cancel", schema["paths"])
+        self.assertIn("/v1/jobs/{job_id}/retry", schema["paths"])
         self.assertIn("/v1/jobs/build", schema["paths"])
 
     def test_openapi_distinguishes_public_and_debug_answer_schemas(self) -> None:
@@ -2155,6 +2257,32 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(service._stream_executor_max_workers, 2)
         self.assertEqual(service._stream_queue_max_size, 7)
+
+    def test_build_service_delegates_executor_ownership_to_runner(self) -> None:
+        service = GraphRAGBuildApiService(system=_FakeApiSystem())
+
+        self.assertIsInstance(service._build_job_runner, InProcessBuildJobRunner)
+        self.assertFalse(hasattr(service, "_build_executor"))
+        self.assertFalse(hasattr(service, "_build_executor_lock"))
+        self.assertFalse(hasattr(service, "_resolve_build_executor"))
+        self.assertFalse(hasattr(service, "_job_registry"))
+
+    def test_build_service_uses_configured_runner_backend_and_limits(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "build_job_runner_backend": "in_process",
+                    "build_job_runner_max_workers": 3,
+                }
+            }
+        )
+        system = _FakeApiSystem()
+        system.config = config
+
+        service = GraphRAGBuildApiService(system=system, config=config)
+
+        self.assertEqual(service._build_job_runner.backend, "in_process")
+        self.assertEqual(service._build_job_runner.max_workers, 3)
 
     def test_serving_answers_return_429_when_admission_limit_is_full(self) -> None:
         system = _BlockingApiSystem()

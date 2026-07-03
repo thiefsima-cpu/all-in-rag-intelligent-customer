@@ -16,7 +16,7 @@ from .models import (
 from .record_store import BuildJobRecordStore
 
 BUILD_JOB_REPOSITORY_SCHEMA_VERSION = "graph-rag-build-job-repository-v1"
-_ACTIVE_JOB_STATUSES = frozenset({"queued", "running"})
+_ACTIVE_JOB_STATUSES = frozenset({"queued", "running", "cancel_requested"})
 
 _WarningRecorder = Callable[[str, str, str], None]
 _Now = Callable[[], str]

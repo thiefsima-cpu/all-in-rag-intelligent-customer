@@ -152,6 +152,7 @@ class BuildJobRepository:
         job_type: str,
         message: str,
         idempotency_key: str = "",
+        retry_of_job_id: str = "",
     ) -> tuple[bool, dict | None, _InterprocessFileLock | None]:
         with self._lock:
             with self.locked():
@@ -199,6 +200,7 @@ class BuildJobRepository:
                     created_at=self._now(),
                     message=message,
                     idempotency_key_hash=key_hash,
+                    retry_of_job_id=str(retry_of_job_id or ""),
                 )
                 self._record_store.write(job)
                 if key_hash:
@@ -273,6 +275,27 @@ class BuildJobRepository:
                 job.started_at = self._now()
                 job.message = message
                 self._record_store.write(job)
+
+    def mark_cancel_requested(self, job_id: str, *, message: str) -> None:
+        with self._lock:
+            with self.locked():
+                job = self._record_store.require(job_id)
+                job.status = "cancel_requested"
+                job.message = message
+                job.logs.append("Build cancellation requested.")
+                self._record_store.write(job)
+
+    def mark_cancelled(self, job_id: str, *, result: dict) -> None:
+        with self._lock:
+            with self.locked():
+                job = self._record_store.require(job_id)
+                job.status = "cancelled"
+                job.finished_at = self._now()
+                job.message = str(result.get("message", "Knowledge base build cancelled."))
+                job.logs.append("Build cancelled.")
+                job.result = copy.deepcopy(result)
+                self._record_store.write(job)
+                self._lifecycle.apply_retention()
 
     def mark_succeeded(self, job_id: str, *, result: dict) -> None:
         with self._lock:

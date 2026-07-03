@@ -10,7 +10,9 @@ from ....runtime.artifacts import write_json_atomic
 from .models import BuildJobRecord
 
 _VALID_JOB_TYPES = frozenset({"build", "rebuild"})
-_VALID_JOB_STATUSES = frozenset({"queued", "running", "succeeded", "failed"})
+_VALID_JOB_STATUSES = frozenset(
+    {"queued", "running", "cancel_requested", "succeeded", "failed", "cancelled"}
+)
 _VALID_RESULT_KEYS = frozenset({"message", "diagnostics", "stats"})
 
 _WarningRecorder = Callable[[str, str, str], None]

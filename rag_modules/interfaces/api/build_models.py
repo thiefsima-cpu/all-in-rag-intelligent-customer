@@ -19,8 +19,10 @@ class BuildJobType(str, Enum):
 class BuildJobStatus(str, Enum):
     queued = "queued"
     running = "running"
+    cancel_requested = "cancel_requested"
     succeeded = "succeeded"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class ArtifactManifestResponseModel(BaseModel):
@@ -85,6 +87,7 @@ class BuildJobPayloadModel(BaseModel):
     error: Optional[BuildJobFailureModel] = None
     logs: list[str] = Field(default_factory=list)
     result: Optional[BuildJobResultModel] = None
+    retry_of_job_id: str = ""
 
 
 class BuildJobResponseModel(BaseModel):
