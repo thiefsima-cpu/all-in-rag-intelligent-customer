@@ -6,12 +6,15 @@ from typing import Any
 import pytest
 
 from scripts.gates import GateFailureType
+from scripts.integration_gate import probes
 from scripts.integration_gate.models import (
     DEFAULT_POLICY_PATH,
     IntegrationGateSettings,
     load_integration_policy,
 )
 from scripts.integration_gate.probes import run_dependency_probes
+
+FORBIDDEN_FAILURE_SUBSTRINGS = ("secret", "password", "leaked", "token", "bearer")
 
 
 def build_settings(*, api_token: str | None = "secret-token") -> IntegrationGateSettings:
@@ -152,6 +155,7 @@ class FakeHttpSession:
         self._get_responses = get_responses
         self._get_error = get_error
         self.requests: list[dict[str, Any]] = []
+        self.closed = False
 
     def get(
         self,
@@ -170,11 +174,28 @@ class FakeHttpSession:
             return response
         return FakeResponse(response)
 
+    def close(self) -> None:
+        self.closed = True
+
+
+def health_ready_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "status": "ok",
+        "build_initialized": True,
+        "serving_initialized": True,
+        "artifacts_ready": True,
+        "system_ready": True,
+        "retrieval_engines_initialized": True,
+        "manifest_health": "ready",
+    }
+    payload.update(overrides)
+    return payload
+
 
 def ready_http_session() -> FakeHttpSession:
     return FakeHttpSession(
         get_responses={
-            "/v1/health/ready": {"ready": True},
+            "/v1/health/ready": health_ready_payload(),
             "/v1/diagnostics": {
                 "diagnostics": {
                     "artifacts_ready": True,
@@ -211,7 +232,7 @@ def test_dependency_probes_return_counts_and_readiness_without_secrets() -> None
     milvus = FakeMilvusClient(collections=["cooking_knowledge"], row_count=20)
     http = FakeHttpSession(
         get_responses={
-            "/v1/health/ready": {"ready": True},
+            "/v1/health/ready": health_ready_payload(),
             "/v1/diagnostics": {
                 "diagnostics": {
                     "artifacts_ready": True,
@@ -327,7 +348,10 @@ def test_milvus_probe_accepts_configured_collection_alias() -> None:
             lambda: {
                 "http": FakeHttpSession(
                     get_responses={
-                        "/v1/health/ready": {"ready": False},
+                        "/v1/health/ready": health_ready_payload(
+                            status="not_ready",
+                            system_ready=False,
+                        ),
                         "/v1/diagnostics": {
                             "diagnostics": {
                                 "artifacts_ready": True,
@@ -353,9 +377,9 @@ def test_dependency_probe_failures_use_stable_codes_without_exception_text(
     failure = failures[0]
     assert failure.failure_type is GateFailureType.DEPENDENCY_UNAVAILABLE
     assert failure.actual in {False, 0, None}
-    assert "secret" not in str(failure.actual)
-    assert "password" not in str(failure.actual)
-    assert "leaked" not in str(failure.actual)
+    for value in (failure.code, failure.expected, failure.actual, failure.to_dict()):
+        text = str(value).lower()
+        assert not any(forbidden in text for forbidden in FORBIDDEN_FAILURE_SUBSTRINGS)
 
 
 def test_neo4j_driver_closes_when_query_fails() -> None:
@@ -420,3 +444,86 @@ def test_serving_probe_sends_bearer_token_only_when_configured() -> None:
 
     assert with_token_http.requests[0]["headers"] == {"Authorization": "Bearer secret-token"}
     assert without_token_http.requests[0]["headers"] == {}
+
+
+def test_run_dependency_probes_closes_owned_http_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    created_sessions: list[FakeHttpSession] = []
+
+    class OwnedHttpSession(FakeHttpSession):
+        def __init__(self) -> None:
+            super().__init__(
+                get_responses={
+                    "/v1/health/ready": health_ready_payload(),
+                    "/v1/diagnostics": {
+                        "diagnostics": {
+                            "artifacts_ready": True,
+                            "retrieval_engines_initialized": True,
+                            "system_ready": True,
+                        }
+                    },
+                }
+            )
+            created_sessions.append(self)
+
+    monkeypatch.setattr(probes.requests, "Session", OwnedHttpSession)
+
+    results = run_dependency_probes(
+        settings=build_settings(),
+        policy=load_integration_policy(DEFAULT_POLICY_PATH),
+        neo4j_driver_factory=lambda *_args, **_kwargs: FakeNeo4jDriver(),
+        milvus_client_factory=lambda *_args, **_kwargs: FakeMilvusClient(
+            collections=["cooking_knowledge"]
+        ),
+        http_session=None,
+    )
+
+    assert all(result.passed for result in results)
+    assert len(created_sessions) == 1
+    assert created_sessions[0].closed is True
+
+
+def test_run_dependency_probes_closes_owned_http_session_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_sessions: list[FakeHttpSession] = []
+
+    class OwnedHttpSession(FakeHttpSession):
+        def __init__(self) -> None:
+            super().__init__(
+                get_responses={},
+                get_error=RuntimeError("Bearer secret-token leaked"),
+            )
+            created_sessions.append(self)
+
+    monkeypatch.setattr(probes.requests, "Session", OwnedHttpSession)
+
+    results = run_dependency_probes(
+        settings=build_settings(),
+        policy=load_integration_policy(DEFAULT_POLICY_PATH),
+        neo4j_driver_factory=lambda *_args, **_kwargs: FakeNeo4jDriver(),
+        milvus_client_factory=lambda *_args, **_kwargs: FakeMilvusClient(
+            collections=["cooking_knowledge"]
+        ),
+        http_session=None,
+    )
+
+    assert results[2].code == "SERVING_API_UNAVAILABLE"
+    assert len(created_sessions) == 1
+    assert created_sessions[0].closed is True
+
+
+def test_run_dependency_probes_does_not_close_external_http_session() -> None:
+    http = ready_http_session()
+
+    results = run_dependency_probes(
+        settings=build_settings(),
+        policy=load_integration_policy(DEFAULT_POLICY_PATH),
+        neo4j_driver_factory=lambda *_args, **_kwargs: FakeNeo4jDriver(),
+        milvus_client_factory=lambda *_args, **_kwargs: FakeMilvusClient(
+            collections=["cooking_knowledge"]
+        ),
+        http_session=http,
+    )
+
+    assert all(result.passed for result in results)
+    assert http.closed is False

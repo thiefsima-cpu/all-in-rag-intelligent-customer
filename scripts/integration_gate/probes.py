@@ -33,24 +33,29 @@ def run_dependency_probes(
     milvus_client_factory: MilvusClientFactory = MilvusClient,
     http_session: requests.Session | None = None,
 ) -> tuple[GateCheckResult, ...]:
-    session = http_session or requests.Session()
-    return (
-        probe_neo4j(
-            settings=settings,
-            minimum_count=policy.dependency_minimums.neo4j_recipe_count,
-            driver_factory=neo4j_driver_factory,
-        ),
-        probe_milvus(
-            settings=settings,
-            minimum_count=policy.dependency_minimums.milvus_entity_count,
-            client_factory=milvus_client_factory,
-        ),
-        probe_serving(
-            settings=settings,
-            timeout_seconds=policy.timeouts.probe_seconds,
-            http_session=session,
-        ),
-    )
+    owns_session = http_session is None
+    session = http_session if http_session is not None else requests.Session()
+    try:
+        return (
+            probe_neo4j(
+                settings=settings,
+                minimum_count=policy.dependency_minimums.neo4j_recipe_count,
+                driver_factory=neo4j_driver_factory,
+            ),
+            probe_milvus(
+                settings=settings,
+                minimum_count=policy.dependency_minimums.milvus_entity_count,
+                client_factory=milvus_client_factory,
+            ),
+            probe_serving(
+                settings=settings,
+                timeout_seconds=policy.timeouts.probe_seconds,
+                http_session=session,
+            ),
+        )
+    finally:
+        if owns_session:
+            _close_quietly(session)
 
 
 def probe_neo4j(
@@ -219,7 +224,7 @@ def probe_serving(
             start_time=start_time,
         )
 
-    if ready_payload.get("ready") is not True or not _diagnostics_ready(diagnostics_payload):
+    if not _readiness_ready(ready_payload) or not _diagnostics_ready(diagnostics_payload):
         return _dependency_failure(
             "dependency.serving.ready",
             code="SERVING_API_NOT_READY",
@@ -296,6 +301,15 @@ def _diagnostics_ready(payload: Mapping[str, Any]) -> bool:
         diagnostics.get("artifacts_ready") is True
         and diagnostics.get("retrieval_engines_initialized") is True
         and diagnostics.get("system_ready") is True
+    )
+
+
+def _readiness_ready(payload: Mapping[str, Any]) -> bool:
+    return (
+        payload.get("status") == "ok"
+        and payload.get("artifacts_ready") is True
+        and payload.get("retrieval_engines_initialized") is True
+        and payload.get("system_ready") is True
     )
 
 
