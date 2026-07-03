@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import copy
+import io
 import json
-import os
 import re
 import sys
 import tempfile
@@ -10,19 +9,20 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.release_gate import (
+from scripts.gates import GateFailureType
+from scripts.offline_gate import (
     DEFAULT_POLICY_PATH,
-    INCLUDE_QUALITY_EVAL_ENV,
-    _environment_flag,
-    _run_quality_eval,
-    activate_optional_stages,
     evaluate_gate,
     load_policy,
-    main,
+    required_quality_stage,
+    run_quality_eval,
     run_release_gate,
     run_suites,
     write_report,
 )
+from scripts.offline_gate.policy import QualityRunnerSettings
+from scripts.offline_gate.runners import OfflineSuiteFailure
+from scripts.release_gate import main
 
 
 def _suite_report(case_count: int) -> dict:
@@ -110,137 +110,7 @@ def _passing_reports_for_policy(policy: dict) -> dict:
     }
 
 
-def _legacy_optional_policy() -> dict:
-    policy = copy.deepcopy(load_policy(DEFAULT_POLICY_PATH))
-    policy["required_suites"] = [
-        suite for suite in policy["required_suites"] if suite != "quality_eval"
-    ]
-    policy["minimum_total_cases"] = 39
-    policy["suite_minimum_cases"].pop("quality_eval", None)
-    policy["suite_minimum_pass_rate"].pop("quality_eval", None)
-    policy.pop("suite_runners", None)
-    for metric_path in list(policy["metric_thresholds"]):
-        if metric_path.startswith("quality_eval."):
-            policy["metric_thresholds"].pop(metric_path)
-    policy["optional_stages"] = {
-        "quality_eval": {
-            "suite": "quality_eval",
-            "runner": {"profile": "eval_quality", "top_k": 6, "generate": True},
-            "suite_minimum_cases": 18,
-            "suite_minimum_pass_rate": 1.0,
-            "metric_thresholds": {
-                "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
-                "quality_eval.metrics.faithfulness": {"minimum": 0.8},
-                "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
-                "quality_eval.metrics.response_mode_accuracy": {"minimum": 1.0},
-                "quality_eval.metrics.abstention_accuracy": {"minimum": 1.0},
-                "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
-                "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
-                "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
-                "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0},
-            },
-        }
-    }
-    return policy
-
-
 class ReleaseGateTests(unittest.TestCase):
-    def test_environment_flag_accepts_explicit_boolean_spellings(self) -> None:
-        for value in ("1", "true", "TRUE", "yes", "on"):
-            with self.subTest(value=value):
-                self.assertTrue(
-                    _environment_flag(
-                        INCLUDE_QUALITY_EVAL_ENV,
-                        {INCLUDE_QUALITY_EVAL_ENV: value},
-                    )
-                )
-        for value in ("0", "false", "FALSE", "no", "off"):
-            with self.subTest(value=value):
-                self.assertFalse(
-                    _environment_flag(
-                        INCLUDE_QUALITY_EVAL_ENV,
-                        {INCLUDE_QUALITY_EVAL_ENV: value},
-                    )
-                )
-        self.assertFalse(_environment_flag(INCLUDE_QUALITY_EVAL_ENV, {}))
-        self.assertFalse(
-            _environment_flag(
-                INCLUDE_QUALITY_EVAL_ENV,
-                {
-                    key: value
-                    for key, value in os.environ.items()
-                    if key != INCLUDE_QUALITY_EVAL_ENV
-                },
-            )
-        )
-
-    def test_environment_flag_rejects_ambiguous_values(self) -> None:
-        with self.assertRaisesRegex(ValueError, INCLUDE_QUALITY_EVAL_ENV):
-            _environment_flag(
-                INCLUDE_QUALITY_EVAL_ENV,
-                {INCLUDE_QUALITY_EVAL_ENV: "sometimes"},
-            )
-
-    def test_activate_quality_stage_copies_and_merges_policy(self) -> None:
-        policy = _legacy_optional_policy()
-        original = copy.deepcopy(policy)
-
-        active = activate_optional_stages(policy, ["quality_eval"])
-
-        self.assertEqual(policy, original)
-        self.assertEqual(active["required_suites"][-1], "quality_eval")
-        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 18)
-        self.assertEqual(active["suite_minimum_pass_rate"]["quality_eval"], 1.0)
-        self.assertEqual(
-            active["metric_thresholds"]["quality_eval.metrics.recall_at_k"],
-            {"minimum": 0.8},
-        )
-
-    def test_activate_quality_stage_requires_policy_configuration(self) -> None:
-        policy = _legacy_optional_policy()
-        policy.pop("optional_stages")
-
-        with self.assertRaisesRegex(ValueError, "quality_eval"):
-            activate_optional_stages(policy, ["quality_eval"])
-
-    def test_activate_optional_stages_leaves_unselected_legacy_policy_unchanged(
-        self,
-    ) -> None:
-        policy = _legacy_optional_policy()
-        policy.pop("optional_stages")
-
-        self.assertEqual(activate_optional_stages(policy, []), policy)
-
-    def test_activate_quality_stage_rejects_collisions_and_malformed_runner(
-        self,
-    ) -> None:
-        malformed_optional_stages = _legacy_optional_policy()
-        malformed_optional_stages["optional_stages"] = []
-        with self.assertRaisesRegex(ValueError, "optional_stages"):
-            activate_optional_stages(malformed_optional_stages, ["quality_eval"])
-
-        duplicate_suite = _legacy_optional_policy()
-        duplicate_suite["optional_stages"]["quality_eval"]["suite"] = "route_semantics"
-        with self.assertRaisesRegex(ValueError, "already required"):
-            activate_optional_stages(duplicate_suite, ["quality_eval"])
-
-        duplicate_metric = _legacy_optional_policy()
-        duplicate_metric["optional_stages"]["quality_eval"]["metric_thresholds"] = {
-            "answer_pipeline_real_route.metrics.plan_contract_pass_rate": {"minimum": 1.0}
-        }
-        with self.assertRaisesRegex(ValueError, "duplicates metric thresholds"):
-            activate_optional_stages(duplicate_metric, ["quality_eval"])
-
-        malformed_thresholds = _legacy_optional_policy()
-        malformed_thresholds["optional_stages"]["quality_eval"]["metric_thresholds"] = []
-        with self.assertRaisesRegex(ValueError, "metric thresholds"):
-            activate_optional_stages(malformed_thresholds, ["quality_eval"])
-
-        malformed_runner = _legacy_optional_policy()
-        malformed_runner["optional_stages"]["quality_eval"]["runner"] = {"top_k": 0}
-        with self.assertRaisesRegex(ValueError, "runner"):
-            activate_optional_stages(malformed_runner, ["quality_eval"])
-
     def test_default_offline_release_gate_passes(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         report = evaluate_gate(policy, _passing_reports_for_policy(policy))
@@ -258,21 +128,10 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertFalse(reports["answer_pipeline_real_route"]["failures"])
         log_failure.assert_not_called()
 
-    def test_default_policy_does_not_configure_quality_eval_as_optional(self) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
-
-        self.assertIn("quality_eval", policy["required_suites"])
-        self.assertNotIn("optional_stages", policy)
-        self.assertEqual(
-            policy["suite_runners"]["quality_eval"],
-            {"profile": "eval_quality", "top_k": 6, "generate": True},
-        )
-
     def test_default_policy_requires_quality_eval(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
 
         self.assertIn("quality_eval", policy["required_suites"])
-        self.assertNotIn("optional_stages", policy)
         self.assertEqual(policy["minimum_total_cases"], 57)
         self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 18)
         self.assertEqual(policy["suite_minimum_pass_rate"]["quality_eval"], 1.0)
@@ -319,14 +178,13 @@ class ReleaseGateTests(unittest.TestCase):
             "failures": [],
             "profile": {"name": "eval_quality"},
         }
-        runner = load_policy(DEFAULT_POLICY_PATH)["suite_runners"]["quality_eval"]
-        stage = {"suite": "quality_eval", "runner": runner}
+        settings = required_quality_stage(load_policy(DEFAULT_POLICY_PATH))
 
         with patch(
             "scripts.eval_reporting.evaluate_offline_quality_queries",
             return_value=eval_report,
         ) as evaluate:
-            report = _run_quality_eval(stage)
+            report = run_quality_eval(settings)
 
         evaluate.assert_called_once_with(
             top_k=6,
@@ -338,57 +196,80 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["recall_at_k"], 0.8)
         self.assertEqual(report["profile"], {"name": "eval_quality"})
 
-    def test_run_release_gate_include_flag_keeps_required_quality_suite(self) -> None:
+    def test_required_quality_stage_reads_suite_runner(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+
+        settings = required_quality_stage(policy)
+
+        self.assertEqual(
+            settings,
+            QualityRunnerSettings(profile="eval_quality", top_k=6, generate=True),
+        )
+
+    def test_required_quality_stage_rejects_missing_suite_runner(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        del policy["suite_runners"]["quality_eval"]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Required release-gate suite has no runner: quality_eval",
+        ):
+            required_quality_stage(policy)
+
+    def test_required_quality_stage_rejects_malformed_suite_runner(self) -> None:
+        invalid_runner_values = (
+            {"profile": "", "top_k": 6, "generate": True},
+            {"profile": "eval_quality", "top_k": 0, "generate": True},
+            {"profile": "eval_quality", "top_k": True, "generate": True},
+            {"profile": "eval_quality", "top_k": 6, "generate": "yes"},
+        )
+        for runner in invalid_runner_values:
+            with self.subTest(runner=runner):
+                policy = load_policy(DEFAULT_POLICY_PATH)
+                policy["suite_runners"]["quality_eval"] = runner
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "Required release-gate suite has invalid runner settings: quality_eval",
+                ):
+                    required_quality_stage(policy)
+
+    def test_run_release_gate_registers_required_quality_runner(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         suite_reports = _passing_reports_for_policy(policy)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
-                report = run_release_gate(
-                    output_dir=temp_dir,
-                    include_quality_eval=True,
-                )
+            with patch(
+                "scripts.offline_gate.service.run_suites", return_value=suite_reports
+            ) as run:
+                report = run_release_gate(output_dir=temp_dir)
 
         suite_names = run.call_args.args[0]
         self.assertIn("quality_eval", suite_names)
         self.assertIn("quality_eval", run.call_args.kwargs["runners"])
-        self.assertEqual(report["included_optional_stages"], [])
         self.assertTrue(report["quality_eval_required"])
+        self.assertEqual(
+            set(report),
+            {
+                "generated_at",
+                "passed",
+                "query_policy",
+                "metrics",
+                "failure_types",
+                "suite_metrics",
+                "checks",
+                "failed_checks",
+                "suite_reports",
+                "quality_eval_required",
+                "policy_path",
+                "report_path",
+                "summary_path",
+            },
+        )
         self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 57)
-        self.assertTrue(report["passed"])
-
-    def test_run_release_gate_default_does_not_mark_quality_optional(self) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = _passing_reports_for_policy(policy)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
-                report = run_release_gate(output_dir=temp_dir)
-
-        self.assertIn("quality_eval", run.call_args.args[0])
-        self.assertIn("quality_eval", run.call_args.kwargs["runners"])
-        self.assertEqual(report["included_optional_stages"], [])
-        self.assertTrue(report["quality_eval_required"])
         self.assertEqual(report["metrics"]["case_count"], 57)
         self.assertEqual(report["query_policy"]["policy_version"], "c9-default-policy-v1")
         self.assertEqual(report["query_policy"]["prompt_version"], "c9-default-prompts-v1")
-
-    def test_run_release_gate_default_registers_required_quality_runner(self) -> None:
-        policy = load_policy(DEFAULT_POLICY_PATH)
-        suite_reports = _passing_reports_for_policy(policy)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
-                report = run_release_gate(output_dir=temp_dir)
-
-        suite_names = run.call_args.args[0]
-        self.assertIn("quality_eval", suite_names)
-        self.assertIn("quality_eval", run.call_args.kwargs["runners"])
-        self.assertEqual(report["included_optional_stages"], [])
-        self.assertTrue(report["quality_eval_required"])
-        self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 57)
         self.assertTrue(report["passed"])
 
     def test_quality_runner_failure_becomes_failed_suite_report(self) -> None:
@@ -400,14 +281,12 @@ class ReleaseGateTests(unittest.TestCase):
             runners={"quality_eval": fail_quality_eval},
         )
 
-        self.assertIn(
-            "RuntimeError: quality backend unavailable",
-            reports["quality_eval"]["suite_error"],
-        )
+        self.assertEqual(reports["quality_eval"]["failure_type"], "gate-error")
+        self.assertNotIn("quality backend unavailable", json.dumps(reports["quality_eval"]))
 
-    def test_run_suites_marks_neo4j_connection_failure_as_dependency_unavailable(self) -> None:
+    def test_run_suites_preserves_explicit_dependency_failure_type(self) -> None:
         def fail_quality_eval() -> dict:
-            raise RuntimeError("Neo4j ServiceUnavailable: Failed to establish connection")
+            raise OfflineSuiteFailure(GateFailureType.DEPENDENCY_UNAVAILABLE)
 
         reports = run_suites(
             ["quality_eval"],
@@ -441,7 +320,7 @@ class ReleaseGateTests(unittest.TestCase):
             policy_path = Path(temp_dir) / "release_gate.json"
             policy_path.write_text(json.dumps(policy), encoding="utf-8")
             with (
-                patch("scripts.release_policy.run_suites") as run,
+                patch("scripts.offline_gate.service.run_suites") as run,
                 self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
             ):
                 run_release_gate(
@@ -459,7 +338,7 @@ class ReleaseGateTests(unittest.TestCase):
             policy_path = Path(temp_dir) / "release_gate.json"
             policy_path.write_text(json.dumps(policy), encoding="utf-8")
             with (
-                patch("scripts.release_policy.run_suites") as run,
+                patch("scripts.offline_gate.service.run_suites") as run,
                 self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
             ):
                 run_release_gate(
@@ -507,7 +386,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(failed["quality_dimension:no_evidence"]["expected"], ">=2")
         self.assertEqual(failed["quality_dimension:no_evidence"]["actual"], 1)
 
-    def test_gate_marks_quality_threshold_failure_as_metric_regression(self) -> None:
+    def test_gate_marks_quality_threshold_failure_as_quality_regression(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         reports = _passing_reports_for_policy(policy)
         reports["quality_eval"]["metrics"]["recall_at_k"] = 0.79
@@ -517,10 +396,10 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         failed_checks = {item["name"]: item for item in report["failed_checks"]}
         check = failed_checks["metric_minimum:quality_eval.metrics.recall_at_k"]
-        self.assertEqual(check["failure_type"], "metric-regression")
-        self.assertEqual(report["failure_types"], ["metric-regression"])
+        self.assertEqual(check["failure_type"], "quality-regression")
+        self.assertEqual(report["failure_types"], ["quality-regression"])
 
-    def test_gate_marks_dependency_unavailable_separately_from_metric_regression(self) -> None:
+    def test_gate_marks_dependency_unavailable_separately_from_quality_regression(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         reports = _passing_reports_for_policy(policy)
         reports["quality_eval"] = {
@@ -551,12 +430,29 @@ class ReleaseGateTests(unittest.TestCase):
             "dependency-unavailable",
         )
         self.assertNotIn(
-            "metric-regression",
+            "quality-regression",
             {
                 item["failure_type"]
                 for item in report["failed_checks"]
                 if item["name"].startswith("metric_")
             },
+        )
+
+    def test_gate_marks_missing_required_suite_as_gate_error(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports.pop("quality_eval")
+
+        report = evaluate_gate(policy, reports)
+
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(
+            failed_checks["suite_case_count:quality_eval"]["failure_type"],
+            "gate-error",
+        )
+        self.assertEqual(
+            failed_checks["metric_available:quality_eval.metrics.recall_at_k"]["failure_type"],
+            "gate-error",
         )
 
     def test_gate_reports_non_numeric_quality_metric_as_failed_check(self) -> None:
@@ -585,23 +481,8 @@ class ReleaseGateTests(unittest.TestCase):
             {item["name"] for item in report["failed_checks"]},
         )
 
-    def test_main_enables_quality_eval_from_environment(self) -> None:
+    def test_main_rejects_retired_include_quality_eval_flag(self) -> None:
         with (
-            patch.dict(os.environ, {INCLUDE_QUALITY_EVAL_ENV: "true"}, clear=True),
-            patch.object(sys, "argv", ["release_gate.py", "--json"]),
-            patch(
-                "scripts.release_gate.run_release_gate",
-                return_value={"passed": True},
-            ) as run,
-        ):
-            exit_code = main()
-
-        self.assertEqual(exit_code, 0)
-        self.assertTrue(run.call_args.kwargs["include_quality_eval"])
-
-    def test_main_cli_flag_enables_quality_eval(self) -> None:
-        with (
-            patch.dict(os.environ, {}, clear=True),
             patch.object(
                 sys,
                 "argv",
@@ -611,17 +492,6 @@ class ReleaseGateTests(unittest.TestCase):
                 "scripts.release_gate.run_release_gate",
                 return_value={"passed": True},
             ) as run,
-        ):
-            exit_code = main()
-
-        self.assertEqual(exit_code, 0)
-        self.assertTrue(run.call_args.kwargs["include_quality_eval"])
-
-    def test_main_rejects_invalid_quality_environment_value(self) -> None:
-        with (
-            patch.dict(os.environ, {INCLUDE_QUALITY_EVAL_ENV: "sometimes"}, clear=True),
-            patch.object(sys, "argv", ["release_gate.py", "--json"]),
-            patch("scripts.release_gate.run_release_gate") as run,
             self.assertRaises(SystemExit) as raised,
         ):
             main()
@@ -629,17 +499,42 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         run.assert_not_called()
 
-    def test_gate_summary_lists_included_optional_stages(self) -> None:
-        policy = activate_optional_stages(_legacy_optional_policy(), ["quality_eval"])
-        report = evaluate_gate(policy, _passing_reports_for_policy(policy))
-        report["included_optional_stages"] = ["quality_eval"]
+    def test_main_writes_json_and_passes_only_supported_paths(self) -> None:
+        report = {"passed": True}
+        stdout = io.StringIO()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["release_gate.py", "--policy", "policy.json", "--output-dir", "out", "--json"],
+            ),
+            patch("scripts.release_gate.run_release_gate", return_value=report) as run,
+            patch.object(sys, "stdout", stdout),
+        ):
+            exit_code = main()
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            _, summary_path = write_report(report, temp_dir)
-            summary = summary_path.read_text(encoding="utf-8")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), report)
+        run.assert_called_once_with(policy_path="policy.json", output_dir="out")
 
-        self.assertIn("optional_stages: quality_eval", summary)
-        self.assertIn("| quality_eval | 18 | 18 | 1.0000 |", summary)
+    def test_retired_compatibility_names_are_absent_from_gate_sources(self) -> None:
+        source_paths = [Path("scripts/release_gate.py"), *Path("scripts/offline_gate").glob("*.py")]
+
+        combined_source = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
+
+        for retired_name in (
+            "_environment_flag",
+            "_legacy_optional_policy",
+            "include-quality-eval",
+            "include_quality_eval",
+            "included_optional_stages",
+            "activate_optional_stages",
+            "INCLUDE_QUALITY_EVAL_ENV",
+            "optional_stages",
+            "scripts.release_policy",
+            "release_policy",
+        ):
+            self.assertNotIn(retired_name, combined_source)
 
     def test_gate_summary_lists_required_quality_metrics(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)

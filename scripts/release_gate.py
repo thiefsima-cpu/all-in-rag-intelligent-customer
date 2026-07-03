@@ -11,25 +11,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.release_policy import (
+from scripts.offline_gate import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_POLICY_PATH,
-    FAILURE_TYPE_DEPENDENCY_UNAVAILABLE,
-    FAILURE_TYPE_METRIC_REGRESSION,
-    FAILURE_TYPE_SUITE_ERROR,
-    FAILURE_TYPE_SUITE_REGRESSION,
-    INCLUDE_QUALITY_EVAL_ENV,
-    QUALITY_EVAL_STAGE,
-    SUITE_RUNNERS,
-    SuiteRunner,
-    _environment_flag,
-    _run_quality_eval,
-    activate_optional_stages,
-    evaluate_gate,
-    load_policy,
     run_release_gate,
-    run_suites,
-    write_report,
 )
 
 
@@ -41,26 +26,9 @@ def main() -> int:
     parser.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--json", action="store_true")
-    parser.add_argument(
-        "--include-quality-eval",
-        action="store_true",
-        help=(
-            "Compatibility flag for legacy policies that still define quality_eval "
-            "as an optional stage. The default policy requires quality_eval."
-        ),
-    )
     args = parser.parse_args()
 
-    try:
-        environment_requested = _environment_flag(INCLUDE_QUALITY_EVAL_ENV)
-    except ValueError as exc:
-        parser.error(str(exc))
-
-    report = run_release_gate(
-        policy_path=args.policy,
-        output_dir=args.output_dir,
-        include_quality_eval=args.include_quality_eval or environment_requested,
-    )
+    report = run_release_gate(policy_path=args.policy, output_dir=args.output_dir)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -86,29 +54,6 @@ def main() -> int:
         print(f"report={report['report_path']}")
         print(f"summary={report['summary_path']}")
     return 0 if report["passed"] else 1
-
-
-__all__ = [
-    "DEFAULT_OUTPUT_DIR",
-    "DEFAULT_POLICY_PATH",
-    "FAILURE_TYPE_DEPENDENCY_UNAVAILABLE",
-    "FAILURE_TYPE_METRIC_REGRESSION",
-    "FAILURE_TYPE_SUITE_ERROR",
-    "FAILURE_TYPE_SUITE_REGRESSION",
-    "INCLUDE_QUALITY_EVAL_ENV",
-    "QUALITY_EVAL_STAGE",
-    "SUITE_RUNNERS",
-    "SuiteRunner",
-    "_environment_flag",
-    "_run_quality_eval",
-    "activate_optional_stages",
-    "evaluate_gate",
-    "load_policy",
-    "main",
-    "run_release_gate",
-    "run_suites",
-    "write_report",
-]
 
 
 if __name__ == "__main__":
