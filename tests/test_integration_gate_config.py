@@ -69,7 +69,7 @@ def test_safe_target_identity_strips_sensitive_url_parts_and_token() -> None:
         "NEO4J_USER": "neo4j",
         "NEO4J_PASSWORD": "password",
         "NEO4J_DATABASE": "neo4j",
-        "MILVUS_HOST": "milvus.internal",
+        "MILVUS_HOST": "user:pass@milvus.internal/path?token=s",
         "MILVUS_PORT": "19530",
         "MILVUS_COLLECTION_NAME": "cooking_knowledge",
     }

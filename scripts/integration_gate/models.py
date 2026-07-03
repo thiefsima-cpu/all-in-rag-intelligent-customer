@@ -109,10 +109,18 @@ class IntegrationGateSettings:
 
     def safe_target_identity(self) -> dict[str, str]:
         return {
-            "api_host": urlsplit(self.api_url).hostname or "",
-            "neo4j_host": urlsplit(self.neo4j_uri).hostname or "",
-            "milvus_host": self.milvus_host,
+            "api_host": _safe_host_identity(self.api_url),
+            "neo4j_host": _safe_host_identity(self.neo4j_uri),
+            "milvus_host": _safe_host_identity(self.milvus_host),
         }
+
+
+def _safe_host_identity(value: str) -> str:
+    parsed_value = urlsplit(value)
+    if parsed_value.hostname:
+        return parsed_value.hostname
+
+    return urlsplit(f"//{value}").hostname or ""
 
 
 def _required_env(environment: Mapping[str, str], name: str) -> str:
