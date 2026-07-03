@@ -323,7 +323,7 @@ class ReleaseGateTests(unittest.TestCase):
         stage = {"suite": "quality_eval", "runner": runner}
 
         with patch(
-            "scripts.eval_queries.evaluate_offline_quality_queries",
+            "scripts.eval_reporting.evaluate_offline_quality_queries",
             return_value=eval_report,
         ) as evaluate:
             report = _run_quality_eval(stage)
@@ -343,7 +343,7 @@ class ReleaseGateTests(unittest.TestCase):
         suite_reports = _passing_reports_for_policy(policy)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
                 report = run_release_gate(
                     output_dir=temp_dir,
                     include_quality_eval=True,
@@ -363,7 +363,7 @@ class ReleaseGateTests(unittest.TestCase):
         suite_reports = _passing_reports_for_policy(policy)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
                 report = run_release_gate(output_dir=temp_dir)
 
         self.assertIn("quality_eval", run.call_args.args[0])
@@ -379,7 +379,7 @@ class ReleaseGateTests(unittest.TestCase):
         suite_reports = _passing_reports_for_policy(policy)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("scripts.release_gate.run_suites", return_value=suite_reports) as run:
+            with patch("scripts.release_policy.run_suites", return_value=suite_reports) as run:
                 report = run_release_gate(output_dir=temp_dir)
 
         suite_names = run.call_args.args[0]
@@ -441,7 +441,7 @@ class ReleaseGateTests(unittest.TestCase):
             policy_path = Path(temp_dir) / "release_gate.json"
             policy_path.write_text(json.dumps(policy), encoding="utf-8")
             with (
-                patch("scripts.release_gate.run_suites") as run,
+                patch("scripts.release_policy.run_suites") as run,
                 self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
             ):
                 run_release_gate(
@@ -459,7 +459,7 @@ class ReleaseGateTests(unittest.TestCase):
             policy_path = Path(temp_dir) / "release_gate.json"
             policy_path.write_text(json.dumps(policy), encoding="utf-8")
             with (
-                patch("scripts.release_gate.run_suites") as run,
+                patch("scripts.release_policy.run_suites") as run,
                 self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
             ):
                 run_release_gate(

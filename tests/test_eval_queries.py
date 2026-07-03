@@ -787,11 +787,11 @@ class EvalQueriesTests(unittest.TestCase):
         system = MagicMock()
 
         with (
-            patch("scripts.eval_queries.load_eval_cases", return_value=[case]),
-            patch("scripts.eval_queries.load_config", return_value=config) as load_config,
-            patch("scripts.eval_queries.AdvancedGraphRAGSystem", return_value=system),
-            patch("scripts.eval_queries.evaluate_case", return_value=item),
-            patch("scripts.eval_queries.calculate_eval_metrics", return_value=metrics),
+            patch("scripts.eval_reporting.load_eval_cases", return_value=[case]),
+            patch("scripts.eval_reporting.load_config", return_value=config) as load_config,
+            patch("scripts.eval_reporting.AdvancedGraphRAGSystem", return_value=system),
+            patch("scripts.eval_reporting.evaluate_case", return_value=item),
+            patch("scripts.eval_reporting.calculate_eval_metrics", return_value=metrics),
         ):
             report = evaluate_queries(
                 top_k=6,
@@ -865,7 +865,7 @@ class EvalQueriesTests(unittest.TestCase):
         )
 
     def test_offline_quality_queries_return_gate_metrics_without_runtime_services(self) -> None:
-        with patch("scripts.eval_queries.AdvancedGraphRAGSystem") as system:
+        with patch("scripts.eval_reporting.AdvancedGraphRAGSystem") as system:
             report = evaluate_offline_quality_queries(
                 top_k=6,
                 generate=True,
