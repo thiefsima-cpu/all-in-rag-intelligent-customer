@@ -176,6 +176,25 @@ def _require_string(
     return value.strip()
 
 
+def _require_optional_string(
+    value: object,
+    *,
+    corpus_path: Path,
+    index: int,
+    case_id: str | None,
+    field_name: str,
+) -> str | None:
+    if value is None:
+        return None
+    return _require_string(
+        value,
+        corpus_path=corpus_path,
+        index=index,
+        case_id=case_id,
+        field_name=field_name,
+    )
+
+
 def _require_string_tuple(
     value: object,
     *,
@@ -332,7 +351,7 @@ def _parse_expectation(
         ) from error
     return EvalExpectation(
         response_mode=response_mode,
-        strategy=_require_string(
+        strategy=_require_optional_string(
             payload["strategy"],
             corpus_path=corpus_path,
             index=index,
@@ -535,7 +554,7 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
         index=index,
         case_id=case_id,
     )
-    if offline_fixture.strategy != expectation.strategy:
+    if expectation.strategy is not None and offline_fixture.strategy != expectation.strategy:
         raise _validation_error(
             corpus_path,
             index,

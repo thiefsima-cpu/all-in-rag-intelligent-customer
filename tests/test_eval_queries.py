@@ -153,6 +153,15 @@ class StrictEvalCaseContractTests(unittest.TestCase):
         self.assertEqual(case.expectation.recipe_relevance, {"宫保鸡丁": 3.0})
         self.assertEqual(case.offline_fixture.evidence[0].recipe_name, "宫保鸡丁")
 
+    def test_strict_contract_allows_unspecified_expected_strategy(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expectation"]["strategy"] = None
+
+        case = _load_temporary_eval_payload([payload])[0]
+
+        self.assertIsNone(case.expectation.strategy)
+        self.assertEqual(case.offline_fixture.strategy, "hybrid_traditional")
+
     def test_strict_contract_rejects_legacy_expected_field(self) -> None:
         payload = _valid_strict_eval_payload()
         payload["expected_strategy"] = "hybrid_traditional"
