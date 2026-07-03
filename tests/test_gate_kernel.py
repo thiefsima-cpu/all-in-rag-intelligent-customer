@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import FrozenInstanceError, dataclass
+from fractions import Fraction
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import scripts.gates as gates
@@ -134,6 +136,22 @@ def test_numeric_threshold_check_accepts_finite_arbitrary_precision_integer() ->
     assert result.actual == actual
 
 
+def test_numeric_threshold_check_rejects_non_finite_numpy_real() -> None:
+    result = numeric_threshold_check("numpy-metric", np.float32(np.inf), maximum=1.0)
+
+    assert result.status is GateCheckStatus.FAILED
+    assert result.code == "METRIC_NOT_FINITE"
+
+
+def test_numeric_threshold_check_accepts_finite_arbitrary_precision_non_integral_real() -> None:
+    actual = Fraction(10**1000, 3)
+
+    result = numeric_threshold_check("huge-ratio", actual, minimum=actual, maximum=actual)
+
+    assert result.status is GateCheckStatus.PASSED
+    assert result.actual == actual
+
+
 def test_numeric_threshold_check_preserves_custom_failure_type() -> None:
     result = numeric_threshold_check(
         "quality",
@@ -175,6 +193,22 @@ def test_aggregate_checks_counts_explicit_failed_types_but_not_blocked_checks() 
         "dependency-unavailable": 1,
         "quality-regression": 2,
     }
+    assert list(evaluation.failure_type_counts) == [
+        "dependency-unavailable",
+        "quality-regression",
+    ]
+
+
+def test_aggregate_checks_with_all_passed_checks_passes_without_failures() -> None:
+    evaluation = aggregate_checks(
+        [
+            GateCheckResult.pass_check("database", code="READY"),
+            GateCheckResult.pass_check("quality", code="WITHIN_THRESHOLD"),
+        ]
+    )
+
+    assert evaluation.passed is True
+    assert evaluation.failure_type_counts == {}
 
 
 def test_aggregate_checks_with_only_blocked_check_has_no_failure_type() -> None:

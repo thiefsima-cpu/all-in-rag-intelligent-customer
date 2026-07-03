@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Iterable
-from numbers import Real
+from numbers import Integral, Real
 
 from .models import GateCheckResult, GateCheckStatus, GateEvaluation, GateFailureType
 
@@ -26,7 +26,14 @@ def numeric_threshold_check(
             actual=actual,
         )
 
-    if isinstance(actual, float) and not math.isfinite(actual):
+    actual_is_finite = True
+    if not isinstance(actual, Integral):
+        try:
+            actual_is_finite = math.isfinite(actual)
+        except OverflowError:
+            actual_is_finite = True
+
+    if not actual_is_finite:
         return GateCheckResult.fail_check(
             name,
             failure_type=failure_type,
