@@ -182,6 +182,9 @@ def _evaluate_quality_dimension_minimums(
     quality_metrics = dict((suite_reports.get("quality_eval") or {}).get("metrics") or {})
     raw_counts = quality_metrics.get("dimension_counts")
     dimension_counts = raw_counts if isinstance(raw_counts, dict) else {}
+    failure_type = (
+        _suite_failure_type(suite_reports, "quality_eval") or GateFailureType.QUALITY_REGRESSION
+    )
     for dimension, raw_minimum in sorted(dimension_minimums.items()):
         dimension_name = str(dimension)
         minimum = max(0, int(raw_minimum))
@@ -203,7 +206,7 @@ def _evaluate_quality_dimension_minimums(
             passed=passed,
             expected=f">={minimum}",
             actual=actual,
-            failure_type=GateFailureType.QUALITY_REGRESSION,
+            failure_type=failure_type,
         )
 
 
@@ -311,6 +314,9 @@ def evaluate_gate(
 
     route_report = suite_reports.get("route_semantics") or {}
     route_categories = dict(route_report.get("category_counts") or {})
+    route_failure_type = (
+        _suite_failure_type(suite_reports, "route_semantics") or GateFailureType.QUALITY_REGRESSION
+    )
     minimum_route_category_count = max(0, int(policy.get("minimum_route_category_count") or 0))
     _check(
         checks,
@@ -318,7 +324,7 @@ def evaluate_gate(
         passed=len(route_categories) >= minimum_route_category_count,
         expected=f">={minimum_route_category_count}",
         actual=len(route_categories),
-        failure_type=GateFailureType.QUALITY_REGRESSION,
+        failure_type=route_failure_type,
     )
     required_route_categories = {
         str(item) for item in (policy.get("required_route_categories") or []) if str(item).strip()
@@ -330,7 +336,7 @@ def evaluate_gate(
         passed=not missing_route_categories,
         expected=sorted(required_route_categories),
         actual={"present": sorted(route_categories), "missing": missing_route_categories},
-        failure_type=GateFailureType.QUALITY_REGRESSION,
+        failure_type=route_failure_type,
     )
     _evaluate_quality_dimension_minimums(checks, policy=policy, suite_reports=suite_reports)
     _evaluate_metric_thresholds(checks, policy=policy, suite_reports=suite_reports)

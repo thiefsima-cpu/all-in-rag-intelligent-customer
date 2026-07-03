@@ -438,6 +438,31 @@ class ReleaseGateTests(unittest.TestCase):
             },
         )
 
+    def test_quality_dimension_checks_preserve_quality_dependency_failure_type(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"] = {
+            "case_count": 0,
+            "passed_count": 0,
+            "results": [],
+            "failures": [],
+            "suite_error": "ServiceUnavailable: Unable to connect to Neo4j",
+            "failure_type": "dependency-unavailable",
+        }
+
+        report = evaluate_gate(policy, reports)
+
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        dimension_names = [
+            f"quality_dimension:{dimension}"
+            for dimension in policy["quality_dimension_minimum_cases"]
+        ]
+        self.assertTrue(dimension_names)
+        self.assertEqual(
+            {failed_checks[dimension_name]["failure_type"] for dimension_name in dimension_names},
+            {"dependency-unavailable"},
+        )
+
     def test_gate_marks_missing_required_suite_as_gate_error(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         reports = _passing_reports_for_policy(policy)
@@ -452,6 +477,10 @@ class ReleaseGateTests(unittest.TestCase):
         )
         self.assertEqual(
             failed_checks["metric_available:quality_eval.metrics.recall_at_k"]["failure_type"],
+            "gate-error",
+        )
+        self.assertEqual(
+            failed_checks["quality_dimension:no_evidence"]["failure_type"],
             "gate-error",
         )
 
@@ -592,6 +621,47 @@ class ReleaseGateTests(unittest.TestCase):
         failed_names = {item["name"] for item in report["failed_checks"]}
         self.assertIn("minimum_route_category_count", failed_names)
         self.assertIn("required_route_categories", failed_names)
+
+    def test_route_coverage_checks_preserve_missing_route_suite_failure_type(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports.pop("route_semantics")
+
+        report = evaluate_gate(policy, suite_reports)
+
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(
+            failed_checks["minimum_route_category_count"]["failure_type"],
+            "gate-error",
+        )
+        self.assertEqual(
+            failed_checks["required_route_categories"]["failure_type"],
+            "gate-error",
+        )
+
+    def test_route_coverage_checks_preserve_route_dependency_failure_type(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+        suite_reports["route_semantics"] = {
+            "case_count": 0,
+            "passed_count": 0,
+            "results": [],
+            "failures": [],
+            "suite_error": "ServiceUnavailable: Unable to connect to Neo4j",
+            "failure_type": "dependency-unavailable",
+        }
+
+        report = evaluate_gate(policy, suite_reports)
+
+        failed_checks = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(
+            failed_checks["minimum_route_category_count"]["failure_type"],
+            "dependency-unavailable",
+        )
+        self.assertEqual(
+            failed_checks["required_route_categories"]["failure_type"],
+            "dependency-unavailable",
+        )
 
     def test_gate_report_writes_json_and_markdown(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
