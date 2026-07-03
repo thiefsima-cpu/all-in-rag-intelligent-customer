@@ -322,6 +322,27 @@ def test_policy_runtime_defaults_are_typed_sections(tmp_path: Path) -> None:
     assert bundle.runtime_defaults.semantics.default_max_depth == 2
 
 
+def test_policy_loader_delegates_to_focused_section_parsers() -> None:
+    parser_dir = Path("rag_modules/query_policy/parsers")
+    parser_modules = {path.name for path in parser_dir.glob("*.py")}
+
+    assert {
+        "common.py",
+        "generation.py",
+        "graph.py",
+        "lexicon.py",
+        "relations.py",
+        "runtime_defaults.py",
+        "scoring.py",
+        "routing.py",
+    }.issubset(parser_modules)
+
+    loader_source = Path("rag_modules/query_policy/loader.py").read_text(encoding="utf-8")
+    assert len(loader_source.splitlines()) < 250
+    assert "RuntimeDefaultsPolicy(" not in loader_source
+    assert "GraphSubQuestionPolicy(" not in loader_source
+
+
 def test_policy_loader_rejects_missing_prompt_variable(tmp_path: Path) -> None:
     from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
 
