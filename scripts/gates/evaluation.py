@@ -26,7 +26,7 @@ def numeric_threshold_check(
             actual=actual,
         )
 
-    if not math.isfinite(actual):
+    if isinstance(actual, float) and not math.isfinite(actual):
         return GateCheckResult.fail_check(
             name,
             failure_type=failure_type,

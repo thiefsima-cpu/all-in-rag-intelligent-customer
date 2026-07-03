@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 from pathlib import Path
 
 import pytest
 
+import scripts.gates as gates
 from scripts.gates import (
     GateCheckResult,
     GateCheckStatus,
+    GateEvaluation,
     GateFailureType,
     aggregate_checks,
+    json_safe,
     numeric_threshold_check,
     write_json_report,
 )
@@ -122,6 +125,27 @@ def test_numeric_threshold_check_rejects_non_finite_values(actual: float) -> Non
     assert result.code == "METRIC_NOT_FINITE"
 
 
+def test_numeric_threshold_check_accepts_finite_arbitrary_precision_integer() -> None:
+    actual = 10**1000
+
+    result = numeric_threshold_check("huge-count", actual, minimum=actual, maximum=actual)
+
+    assert result.status is GateCheckStatus.PASSED
+    assert result.actual == actual
+
+
+def test_numeric_threshold_check_preserves_custom_failure_type() -> None:
+    result = numeric_threshold_check(
+        "quality",
+        0.5,
+        minimum=0.9,
+        failure_type=GateFailureType.QUALITY_REGRESSION,
+    )
+
+    assert result.status is GateCheckStatus.FAILED
+    assert result.failure_type is GateFailureType.QUALITY_REGRESSION
+
+
 def test_aggregate_checks_counts_explicit_failed_types_but_not_blocked_checks() -> None:
     checks = (
         GateCheckResult.pass_check("passing", code="OK"),
@@ -153,6 +177,58 @@ def test_aggregate_checks_counts_explicit_failed_types_but_not_blocked_checks() 
     }
 
 
+def test_aggregate_checks_with_only_blocked_check_has_no_failure_type() -> None:
+    evaluation = aggregate_checks([GateCheckResult.block_check("database", code="NOT_READY")])
+
+    assert evaluation.passed is False
+    assert evaluation.failure_type_counts == {}
+
+
+def test_gate_dataclasses_are_frozen() -> None:
+    check = GateCheckResult.pass_check("ready", code="OK")
+    evaluation = aggregate_checks([check])
+
+    with pytest.raises(FrozenInstanceError):
+        check.code = "CHANGED"
+    with pytest.raises(FrozenInstanceError):
+        evaluation.passed = False
+
+
+def test_gate_enum_values_and_public_exports_are_exact() -> None:
+    assert {status.name: status.value for status in GateCheckStatus} == {
+        "PASSED": "passed",
+        "FAILED": "failed",
+        "BLOCKED": "blocked",
+    }
+    assert {failure_type.name: failure_type.value for failure_type in GateFailureType} == {
+        "DEPENDENCY_UNAVAILABLE": "dependency-unavailable",
+        "CONTRACT_REGRESSION": "contract-regression",
+        "QUALITY_REGRESSION": "quality-regression",
+        "BUDGET_REGRESSION": "budget-regression",
+        "GATE_ERROR": "gate-error",
+    }
+    assert gates.__all__ == [
+        "aggregate_checks",
+        "numeric_threshold_check",
+        "GateCheckResult",
+        "GateCheckStatus",
+        "GateEvaluation",
+        "GateFailureType",
+        "json_safe",
+        "write_json_report",
+    ]
+    assert {name: getattr(gates, name) for name in gates.__all__} == {
+        "aggregate_checks": aggregate_checks,
+        "numeric_threshold_check": numeric_threshold_check,
+        "GateCheckResult": GateCheckResult,
+        "GateCheckStatus": GateCheckStatus,
+        "GateEvaluation": GateEvaluation,
+        "GateFailureType": GateFailureType,
+        "json_safe": json_safe,
+        "write_json_report": write_json_report,
+    }
+
+
 @dataclass(frozen=True)
 class NestedReport:
     status: GateCheckStatus
@@ -167,10 +243,12 @@ def test_write_json_report_recursively_serializes_without_mutating_input(tmp_pat
         ),
         "checks": [GateCheckResult.pass_check("ready", code="OK")],
         "statuses": {GateCheckStatus.PASSED, GateCheckStatus.FAILED},
+        "immutable_statuses": frozenset({GateCheckStatus.BLOCKED}),
     }
     original_nested = report["nested"]
     original_checks = list(report["checks"])
     original_statuses = set(report["statuses"])
+    original_immutable_statuses = report["immutable_statuses"]
     output_path = tmp_path / "reports" / "gate.json"
 
     returned_path = write_json_report(report, output_path)
@@ -183,7 +261,9 @@ def test_write_json_report_recursively_serializes_without_mutating_input(tmp_pat
     }
     assert payload["checks"][0]["status"] == "passed"
     assert set(payload["statuses"]) == {"passed", "failed"}
+    assert payload["immutable_statuses"] == ["blocked"]
     assert output_path.read_bytes().endswith(b"\n")
     assert report["nested"] is original_nested
     assert report["checks"] == original_checks
     assert report["statuses"] == original_statuses
+    assert report["immutable_statuses"] is original_immutable_statuses
