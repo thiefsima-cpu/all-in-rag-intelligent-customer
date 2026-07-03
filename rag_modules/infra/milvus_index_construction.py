@@ -1,4 +1,4 @@
-"""Compatibility export for the canonical Milvus infrastructure module."""
+"""Canonical Milvus index-construction facade."""
 
 from __future__ import annotations
 

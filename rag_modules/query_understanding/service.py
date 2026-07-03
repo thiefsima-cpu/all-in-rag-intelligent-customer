@@ -6,7 +6,7 @@ from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSetting
 from ..query_policy.models import QueryPolicyBundle
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..runtime_contracts import LLMClientPort
-from .planner_service import QueryPlanner
+from .planning import QueryPlanner
 
 QueryUnderstandingResult = QueryUnderstandingSnapshot
 

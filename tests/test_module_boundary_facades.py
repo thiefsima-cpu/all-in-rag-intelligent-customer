@@ -34,11 +34,11 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         self.assertIs(artifacts.write_documents, documents.write_documents)
         self.assertIs(artifacts.compute_index_signature, signatures.compute_index_signature)
 
-    def test_query_planner_facade_reexports_planning_service(self) -> None:
-        from rag_modules.query_understanding import planner_service
+    def test_query_understanding_package_reexports_planning_service(self) -> None:
+        import rag_modules.query_understanding as query_understanding
         from rag_modules.query_understanding.planning import QueryPlanner
 
-        self.assertIs(planner_service.QueryPlanner, QueryPlanner)
+        self.assertIs(query_understanding.QueryPlanner, QueryPlanner)
 
     def test_build_job_store_facade_reexports_build_job_components(self) -> None:
         from rag_modules.interfaces.api import build_job_store, build_jobs

@@ -47,6 +47,27 @@ it does not imply API version `2.0.0` or package version `1.0.0`.
 - Build/document artifacts: `rag_modules.build_pipeline.document_artifacts.*`
 - Infra adapters: `rag_modules.infra.*`
 
+## Canonical Internal Facades
+
+Thin package facades may remain when they are the documented import surface for
+their package. These are formal export surfaces, not compatibility shims, and
+their code comments should use canonical facade or export-surface language.
+Current examples include:
+
+- `rag_modules.interfaces.api.answer_models` for answer API DTOs.
+- `rag_modules.interfaces.api.build_job_store` for build-job persistence
+  components used by API services and tests.
+- `rag_modules.app.runtime_contracts` for application-layer runtime ports.
+- `rag_modules.routing.execution_strategies` for route execution strategies.
+- `rag_modules.infra.milvus_index_construction` for Milvus index construction.
+- `rag_modules.graph.data_preparation` for graph data-preparation imports.
+
+Old shim modules without a formal facade role are retired instead. The removed
+paths include `rag_modules.neo4j_pool`,
+`rag_modules.build_pipeline.graph_data_preparation`,
+`rag_modules.evidence_processing.core`, and
+`rag_modules.query_understanding.planner_service`.
+
 ## Legacy Bridge Status
 
 No legacy bridge remains registered in `public_surface_manifest.py`.
@@ -57,6 +78,7 @@ No legacy bridge remains registered in `public_surface_manifest.py`.
 | `rag_modules.intelligent_query_router` | `rag_modules.routing.RoutingWorkflowService` | retired in favor of canonical routing workflow imports | `0.2.0` |
 | `rag_modules.graph_data_preparation` | `rag_modules.graph.data_preparation` | retired in favor of canonical graph data-preparation imports | `0.2.0` |
 | `rag_modules.graph_indexing` | `rag_modules.graph.indexing` | retired in favor of canonical graph indexing imports | `0.2.0` |
+| `rag_modules.neo4j_pool` | `rag_modules.infra.neo4j.Neo4jConnectionManager` | root-level Neo4j pool export retired | `0.3.0` |
 | `rag_modules.configuration.settings` | `rag_modules.configuration`, `rag_modules.configuration.models`, `rag_modules.configuration.loader` | late-migration compatibility exports retired | `0.2.0` |
 | `rag_modules.configuration.section_loaders` | `rag_modules.configuration.sections` | late-migration compatibility exports retired | `0.2.0` |
 | `rag_modules.interfaces.api.models` | `rag_modules.interfaces.api.answer_models`, `rag_modules.interfaces.api.build_models`, `rag_modules.interfaces.api.diagnostics_models` | late-migration compatibility exports retired | `0.2.0` |
@@ -112,7 +134,10 @@ replacement policy.
   `BuildRuntimeFactory.build()` and `ServingRuntimeFactory.build()` directly;
   `rag_modules.app.composition.build_runtime_assembler`,
   `rag_modules.app.composition.serving_runtime_assembler`, and
-  `rag_modules.app.runtime` must not be recreated.
+  `rag_modules.app.runtime` must not be recreated. The old internal export
+  shims `rag_modules.build_pipeline.graph_data_preparation`,
+  `rag_modules.evidence_processing.core`, and
+  `rag_modules.query_understanding.planner_service` must not be recreated.
 - Retrieval providers must expose `provide_routing_workflow`. The legacy
   `provide_query_router` provider hook is not a supported fallback.
 - The internal app-layer query-understanding facade

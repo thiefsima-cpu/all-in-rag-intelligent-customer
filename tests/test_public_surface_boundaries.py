@@ -52,6 +52,7 @@ RETIRED_LEGACY_FACADE_MODULES = frozenset(
         "rag_modules.graph_data_preparation",
         "rag_modules.graph_indexing",
         "rag_modules.intelligent_query_router",
+        "rag_modules.neo4j_pool",
         "rag_modules.routing.intelligent_query_router",
         "rag_modules.retrieval.hybrid_facade",
     }
@@ -89,6 +90,13 @@ RETIRED_INTERNAL_COMPAT_SHELLS = {
     / "composition"
     / "serving_runtime_assembler.py",
     "rag_modules.app.runtime": RAG_MODULES_DIR / "app" / "runtime.py",
+    "rag_modules.build_pipeline.graph_data_preparation": RAG_MODULES_DIR
+    / "build_pipeline"
+    / "graph_data_preparation.py",
+    "rag_modules.evidence_processing.core": RAG_MODULES_DIR / "evidence_processing" / "core.py",
+    "rag_modules.query_understanding.planner_service": RAG_MODULES_DIR
+    / "query_understanding"
+    / "planner_service.py",
 }
 RETIRED_INTERNAL_COMPAT_NAMES = frozenset(
     {
@@ -113,6 +121,12 @@ RETIRED_PROVIDER_COMPONENTS_MODULES = frozenset(
         f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.runtime",
         f"{RETIRED_PROVIDER_COMPONENTS_PACKAGE}.services",
     }
+)
+MISLEADING_COMPAT_DOCSTRING_PATTERNS = (
+    re.compile(r"\bcompatibility\s+facade\b", re.IGNORECASE),
+    re.compile(r"\bcompatibility\s+re-exports?\b", re.IGNORECASE),
+    re.compile(r"\bcompatibility\s+exports?\b", re.IGNORECASE),
+    re.compile(r"\bexport\s+shim\b", re.IGNORECASE),
 )
 
 
@@ -1149,6 +1163,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             RAG_MODULES_DIR / "graph_data_preparation.py",
             RAG_MODULES_DIR / "graph_indexing.py",
             RAG_MODULES_DIR / "intelligent_query_router.py",
+            RAG_MODULES_DIR / "neo4j_pool.py",
             RAG_MODULES_DIR / "routing" / "intelligent_query_router.py",
             RAG_MODULES_DIR / "retrieval" / "hybrid_facade.py",
         }
@@ -1352,6 +1367,39 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
+    def test_internal_facade_docstrings_do_not_claim_compatibility_shims(self) -> None:
+        violations: list[str] = []
+
+        for path in RAG_MODULES_DIR.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+
+            docstrings: list[tuple[int, str]] = []
+            module_docstring = ast.get_docstring(tree, clean=False)
+            if module_docstring and tree.body:
+                docstrings.append((tree.body[0].lineno, module_docstring))
+
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                docstring = ast.get_docstring(node, clean=False)
+                if docstring:
+                    docstrings.append((node.lineno, docstring))
+
+            for lineno, docstring in docstrings:
+                if any(
+                    pattern.search(docstring) for pattern in MISLEADING_COMPAT_DOCSTRING_PATTERNS
+                ):
+                    summary = docstring.splitlines()[0]
+                    violations.append(f"{rel}:{lineno}: {summary}")
+
+        self.assertFalse(
+            violations,
+            "Found internal facade/export docstrings that still claim compatibility-shim status:\n"
+            + "\n".join(violations),
+        )
+
     def test_runtime_metadata_does_not_advertise_retired_facade_modules(self) -> None:
         violations: list[str] = []
 
@@ -1381,7 +1429,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             + "\n".join(violations),
         )
 
-    def test_refactored_compat_modules_are_thin_exports(self) -> None:
+    def test_canonical_facade_modules_are_thin_exports(self) -> None:
         expected_imports = {
             RAG_MODULES_DIR / "infra" / "milvus_index_construction.py": {
                 "rag_modules.infra.milvus",
@@ -1431,7 +1479,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
         self.assertFalse(
             violations,
-            "Found refactored compatibility modules with local logic:\n" + "\n".join(violations),
+            "Found canonical facade modules with local logic:\n" + "\n".join(violations),
         )
 
     def test_graph_database_driver_creation_stays_in_neo4j_infra_adapter(self) -> None:

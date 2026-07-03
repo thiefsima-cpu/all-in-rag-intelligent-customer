@@ -1,4 +1,4 @@
-"""Compatibility exports for route execution strategies."""
+"""Route execution strategy export surface."""
 
 from __future__ import annotations
 

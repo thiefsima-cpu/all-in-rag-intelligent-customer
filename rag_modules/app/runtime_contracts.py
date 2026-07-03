@@ -1,4 +1,4 @@
-"""Compatibility re-exports for runtime collaborator contracts."""
+"""Application-layer runtime collaborator port exports."""
 
 from __future__ import annotations
 

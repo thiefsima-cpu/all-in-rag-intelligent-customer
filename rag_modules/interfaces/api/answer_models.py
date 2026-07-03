@@ -1,4 +1,4 @@
-"""Compatibility re-exports for answer API DTOs."""
+"""Answer API DTO export surface."""
 
 from __future__ import annotations
 

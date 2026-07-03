@@ -188,7 +188,7 @@ class ServingBootstrapper(_ComposedBootstrapperFacade[ServingBootstrapperInvocat
 
 
 class GraphRAGBootstrapper(_ComposedBootstrapperFacade[GraphBootstrapperInvocationAdapter]):
-    """Compatibility facade that exposes split bootstrappers under one surface."""
+    """Public bootstrapper facade that exposes split bootstrappers under one surface."""
 
     bootstrap_service: SystemRuntimeBootstrapService
     build_bootstrapper: BuildBootstrapper

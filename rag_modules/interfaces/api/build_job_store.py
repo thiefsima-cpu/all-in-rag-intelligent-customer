@@ -1,4 +1,4 @@
-"""Compatibility facade for persistent asynchronous build-job state."""
+"""Build-job persistence export surface for API services."""
 
 from __future__ import annotations
 

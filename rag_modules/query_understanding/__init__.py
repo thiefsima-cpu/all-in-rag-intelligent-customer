@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 
 _LAZY_EXPORTS = {
-    "QueryPlanner": ".planner_service",
+    "QueryPlanner": ".planning",
     "build_query_semantic_score_breakdown": ".scoring",
     "clean_entity_phrase": ".features",
     "contains_any": ".registry",
