@@ -21,7 +21,9 @@ from scripts.eval_queries import (
     OfflineEvalFixture,
     OfflineEvidenceFixture,
     build_eval_report,
+    calculate_eval_metrics,
     evaluate_case,
+    evaluate_offline_quality_case,
     evaluate_offline_quality_queries,
     evaluate_queries,
     load_eval_cases,
@@ -515,6 +517,136 @@ class EvalObservationScoringTests(unittest.TestCase):
         self.assertIn("unexpected_evidence", result["failures"])
         self.assertIn("response_mode_mismatch", result["failures"])
         self.assertFalse(result["evaluation"]["response_mode_passed"])
+
+
+class OfflineEvalObservationTests(unittest.TestCase):
+    def test_offline_no_evidence_case_preserves_empty_evidence(self) -> None:
+        case = _eval_case(
+            EvalResponseMode.NO_EVIDENCE,
+            dimensions=("no_evidence",),
+            recipe_names=(),
+            answer_terms=("insufficient evidence",),
+            recipe_relevance={},
+            fixture_answer="Current recipe has insufficient evidence.",
+            fixture_evidence=(),
+        )
+
+        item = evaluate_offline_quality_case(case, index=0, top_k=6, generate=True)
+
+        self.assertTrue(item["passed"])
+        self.assertEqual(item["retrieval"]["doc_count"], 0)
+        self.assertEqual(item["retrieval"]["recipe_names"], [])
+        self.assertEqual(item["evaluation"]["actual_response_mode"], "no_evidence")
+        self.assertIsNone(item["grounding"]["faithfulness"])
+
+    def test_calculate_eval_metrics_reports_response_mode_outcome_metrics(self) -> None:
+        grounded = score_eval_observation(
+            _eval_case(
+                EvalResponseMode.GROUNDED_ANSWER,
+                case_id="grounded-pass",
+                dimensions=("single_recipe",),
+                answer_terms=("gongbao chicken", "peanuts"),
+            ),
+            _eval_observation(),
+            top_k=6,
+            generate=True,
+        )
+        no_evidence = score_eval_observation(
+            _eval_case(
+                EvalResponseMode.NO_EVIDENCE,
+                case_id="no-evidence-pass",
+                dimensions=("no_evidence", "colloquial_zh"),
+                recipe_names=(),
+                answer_terms=("insufficient evidence",),
+                recipe_relevance={},
+                fixture_answer="Current recipe has insufficient evidence.",
+                fixture_evidence=(),
+            ),
+            _eval_observation(
+                answer="Current recipe has insufficient evidence.",
+                documents=(),
+            ),
+            top_k=6,
+            generate=True,
+        )
+        clarification = score_eval_observation(
+            _eval_case(
+                EvalResponseMode.CLARIFICATION,
+                case_id="clarification-pass",
+                dimensions=("ambiguity",),
+                recipe_names=(),
+                answer_terms=("Please clarify",),
+                recipe_relevance={},
+                fixture_answer="Please clarify which dish you mean.",
+                fixture_evidence=(),
+            ),
+            _eval_observation(answer="Please clarify which dish you mean.", documents=()),
+            top_k=6,
+            generate=True,
+        )
+        conflict = score_eval_observation(
+            _eval_case(
+                EvalResponseMode.CONSTRAINT_CONFLICT,
+                case_id="conflict-pass",
+                dimensions=("constraint_conflict",),
+                recipe_names=(),
+                answer_terms=("conflict", "relax"),
+                recipe_relevance={},
+                fixture_answer="These constraints conflict; please relax one condition.",
+                fixture_evidence=(),
+            ),
+            _eval_observation(
+                answer="These constraints conflict; please relax one condition.",
+                documents=(),
+            ),
+            top_k=6,
+            generate=True,
+        )
+        failed_grounded = score_eval_observation(
+            _eval_case(
+                EvalResponseMode.GROUNDED_ANSWER,
+                case_id="grounded-fail",
+                dimensions=("colloquial_zh",),
+                recipe_names=("mapo tofu",),
+                answer_terms=("required term",),
+                recipe_relevance={"mapo tofu": 3.0},
+            ),
+            _eval_observation(
+                answer="Unsupported answer.",
+                documents=(
+                    EvidenceDocument(
+                        content="irrelevant content",
+                        recipe_name="wrong dish",
+                        doc_id="wrong-doc",
+                        score=0.5,
+                        source="test",
+                    ),
+                ),
+            ),
+            top_k=6,
+            generate=True,
+        )
+
+        metrics = calculate_eval_metrics(
+            [grounded, no_evidence, clarification, conflict, failed_grounded]
+        )
+
+        self.assertEqual(metrics["response_mode_accuracy"], 0.8)
+        self.assertEqual(metrics["abstention_accuracy"], 1.0)
+        self.assertEqual(
+            metrics["response_mode_counts"],
+            {
+                "clarification": 1,
+                "constraint_conflict": 1,
+                "grounded_answer": 2,
+                "no_evidence": 1,
+            },
+        )
+        self.assertEqual(metrics["dimension_counts"]["colloquial_zh"], 2)
+        self.assertEqual(metrics["recall_at_k"], 0.5)
+        self.assertEqual(metrics["mrr"], 0.5)
+        self.assertEqual(metrics["ndcg_at_k"], 0.5)
+        self.assertEqual(metrics["citation_accuracy"], 1.0)
 
 
 class _FakeResponse:

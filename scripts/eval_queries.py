@@ -14,6 +14,7 @@ import math
 import os
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -31,15 +32,6 @@ from rag_modules.retrieval_observability import summarize_documents
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "curated_eval_corpus.json"
-)
-_GRAPH_QUALITY_CATEGORIES = frozenset(
-    {
-        "complex_relation",
-        "semantic_flavor",
-        "subgraph",
-        "multi_hop_relation",
-        "path_finding",
-    }
 )
 
 
@@ -1176,6 +1168,27 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     if total == 0:
         return {}
     passed = sum(1 for item in results if item["passed"])
+    response_mode_cases = [
+        item for item in results if item.get("evaluation", {}).get("expected_response_mode")
+    ]
+    abstention_cases = [
+        item
+        for item in response_mode_cases
+        if item.get("evaluation", {}).get("expected_response_mode")
+        != EvalResponseMode.GROUNDED_ANSWER.value
+    ]
+    grounded_response_mode_cases = [
+        item
+        for item in response_mode_cases
+        if item.get("evaluation", {}).get("expected_response_mode")
+        == EvalResponseMode.GROUNDED_ANSWER.value
+    ]
+    response_mode_counts = Counter(
+        item["evaluation"]["expected_response_mode"] for item in response_mode_cases
+    )
+    dimension_counts = Counter(
+        dimension for item in results for dimension in item.get("dimensions", [])
+    )
     strategy_cases = [
         item for item in results if item.get("evaluation", {}).get("expected_strategy")
     ]
@@ -1215,27 +1228,27 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     latencies = [item.get("runtime", {}).get("latency_ms", 0.0) for item in results]
     recall_values = [
         item.get("retrieval", {}).get("recall_at_k")
-        for item in results
+        for item in grounded_response_mode_cases
         if item.get("retrieval", {}).get("recall_at_k") is not None
     ]
     reciprocal_ranks = [
         item.get("retrieval", {}).get("reciprocal_rank")
-        for item in results
+        for item in grounded_response_mode_cases
         if item.get("retrieval", {}).get("reciprocal_rank") is not None
     ]
     ndcg_values = [
         item.get("retrieval", {}).get("ndcg_at_k")
-        for item in results
+        for item in grounded_response_mode_cases
         if item.get("retrieval", {}).get("ndcg_at_k") is not None
     ]
     faithfulness_values = [
         item.get("grounding", {}).get("faithfulness")
-        for item in results
+        for item in grounded_response_mode_cases
         if item.get("grounding", {}).get("faithfulness") is not None
     ]
     citation_accuracy_values = [
         item.get("grounding", {}).get("citation_accuracy")
-        for item in results
+        for item in grounded_response_mode_cases
         if item.get("grounding", {}).get("citation_accuracy") is not None
     ]
     total_prompt_tokens = sum(
@@ -1313,6 +1326,26 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     return {
         "case_count": total,
         "pass_rate": passed / total,
+        "response_mode_accuracy": (
+            sum(
+                bool(item.get("evaluation", {}).get("response_mode_passed"))
+                for item in response_mode_cases
+            )
+            / len(response_mode_cases)
+            if response_mode_cases
+            else None
+        ),
+        "abstention_accuracy": (
+            sum(
+                bool(item.get("evaluation", {}).get("response_mode_passed"))
+                for item in abstention_cases
+            )
+            / len(abstention_cases)
+            if abstention_cases
+            else None
+        ),
+        "response_mode_counts": dict(sorted(response_mode_counts.items())),
+        "dimension_counts": dict(sorted(dimension_counts.items())),
         "strategy_accuracy": strategy_passed / len(strategy_cases) if strategy_cases else None,
         "recipe_hit_rate": recipe_passed / len(recipe_cases) if recipe_cases else None,
         "graph_evidence_coverage": graph_covered / total,
@@ -1351,144 +1384,49 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
     }
 
 
-def _offline_quality_strategy(case: EvalCase) -> str:
-    if case.expected_strategy:
-        return str(case.expected_strategy)
-    if case.category in _GRAPH_QUALITY_CATEGORIES:
-        return "graph_rag"
-    return "hybrid_traditional"
-
-
-def _offline_quality_recipe_names(case: EvalCase, *, index: int) -> list[str]:
-    names = list(case.expected_recipe_names)
-    for name, grade in case.expected_recipe_relevance.items():
-        if grade > 0 and name not in names:
-            names.append(name)
-    if names:
-        return names
-    return [f"offline_quality_case_{index + 1}"]
-
-
-def _offline_quality_terms(case: EvalCase, recipe_names: list[str]) -> list[str]:
-    terms = [
-        *case.expected_answer_terms,
-        *recipe_names,
-        case.category,
-    ]
-    return [term for term in terms if str(term).strip()]
-
-
-def _offline_quality_documents(
+def build_offline_eval_observation(
     case: EvalCase,
     *,
     index: int,
-    top_k: int,
-) -> list[EvidenceDocument]:
-    strategy = _offline_quality_strategy(case)
-    recipe_names = _offline_quality_recipe_names(case, index=index)
-    terms = _offline_quality_terms(case, recipe_names)
-    graph_case = strategy == "graph_rag" or case.category in _GRAPH_QUALITY_CATEGORIES
-    documents: list[EvidenceDocument] = []
-    for rank, recipe_name in enumerate(recipe_names[: max(1, top_k)], start=1):
-        content = (
-            f"offline quality support {index + 1}-{rank}: "
-            f"{case.query} {' '.join(terms)} "
-            "依据 菜谱证据 关系 图谱"
-        )
-        documents.append(
-            EvidenceDocument(
-                content=content,
-                recipe_name=recipe_name,
-                node_id=f"offline-quality-{index + 1}-{rank}",
-                doc_id=f"offline-quality-doc-{index + 1}-{rank}",
-                score=max(0.1, 1.0 - (rank - 1) * 0.05),
-                source="offline_quality",
-                evidence_type="graph" if graph_case else "text",
-                matched_terms=terms,
-                graph_evidence=(
-                    {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": recipe_name}]}
-                    if graph_case
-                    else {}
-                ),
-                evidence_units=[
-                    {
-                        "claim": content,
-                        "is_graph_evidence": graph_case,
-                    }
-                ],
-                route_strategy=strategy,
-            )
-        )
-    return documents
-
-
-def _offline_quality_answer(
-    case: EvalCase,
-    *,
-    documents: list[EvidenceDocument],
-) -> str:
-    terms = _offline_quality_terms(case, _doc_recipe_names(documents))
-    content_terms = " ".join(terms) or case.query
-    return f"依据 菜谱证据 #1，关系 图谱 {content_terms} {documents[0].content}"
-
-
-def evaluate_offline_quality_case(
-    case: EvalCase,
-    *,
-    index: int,
-    top_k: int,
     generate: bool,
-) -> dict[str, Any]:
-    strategy = _offline_quality_strategy(case)
-    documents = _offline_quality_documents(case, index=index, top_k=top_k)
-    answer = _offline_quality_answer(case, documents=documents) if generate else ""
-    recipe_names = _doc_recipe_names(documents)
-    ranked_recipe_names = _ranked_doc_recipe_names(documents)
-    expected_recipe_names = list(case.expected_recipe_names) or [
-        name for name, grade in case.expected_recipe_relevance.items() if float(grade or 0.0) > 0
-    ]
-    missing_names = [expected for expected in expected_recipe_names if expected not in recipe_names]
-    answer_missing_terms = (
-        [term for term in case.expected_answer_terms if term not in answer] if generate else []
-    )
-    strategy_failed = case.expected_strategy is not None and strategy != case.expected_strategy
-    answer_failed = bool(generate and case.expected_answer_terms and answer_missing_terms)
-
-    failures: list[str] = []
-    if strategy_failed:
-        failures.append(f"expected_strategy={case.expected_strategy} actual_strategy={strategy}")
-    if missing_names:
-        failures.append(f"missing_recipe_names={missing_names}")
-    if answer_failed:
-        failures.append(f"missing_answer_terms={answer_missing_terms}")
-    if not documents:
-        failures.append("no_evidence")
-
-    relevance = case.expected_recipe_relevance or {name: 1.0 for name in case.expected_recipe_names}
-    grounding = (
-        grounding_metrics(answer, documents)
-        if generate
-        else {
-            "claim_count": 0,
-            "supported_claim_count": 0,
-            "faithfulness": None,
-            "citation_count": 0,
-            "valid_citation_count": 0,
-            "citation_accuracy": None,
-            "citation_coverage": None,
-        }
+) -> EvalObservation:
+    documents = tuple(
+        EvidenceDocument(
+            content=fixture.content,
+            recipe_name=fixture.recipe_name,
+            node_id=f"offline-quality-{case.case_id}-{rank}",
+            doc_id=f"offline-quality-{case.case_id}-{rank}",
+            score=fixture.score,
+            source="offline_quality",
+            evidence_type=fixture.evidence_type,
+            matched_terms=list(case.expectation.answer_terms),
+            graph_evidence=(
+                {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": fixture.recipe_name}]}
+                if fixture.evidence_type == "graph"
+                else {}
+            ),
+            evidence_units=[
+                {
+                    "claim": fixture.content,
+                    "is_graph_evidence": fixture.evidence_type == "graph",
+                }
+            ],
+            route_strategy=case.offline_fixture.strategy,
+        )
+        for rank, fixture in enumerate(case.offline_fixture.evidence, start=1)
     )
     latency_ms = 10.0 + float(index)
     plan = {
         "query": case.query,
-        "strategy": strategy,
+        "strategy": case.offline_fixture.strategy,
         "used_cache": False,
         "validation_errors": [],
     }
+    answer = case.offline_fixture.answer if generate else ""
     response_payload = {
         "summary": {
             "answer": answer,
-            "strategy": strategy,
+            "strategy": case.offline_fixture.strategy,
             "latency_ms": latency_ms,
             "doc_count": len(documents),
             "has_evidence": bool(documents),
@@ -1499,7 +1437,7 @@ def evaluate_offline_quality_case(
         "grounding": {
             "retrieval_outcome": {
                 "query": case.query,
-                "strategy": strategy,
+                "strategy": case.offline_fixture.strategy,
                 "doc_count": len(documents),
                 "evidence_documents": [document.to_dict() for document in documents],
                 "degradation_summary": {
@@ -1513,7 +1451,7 @@ def evaluate_offline_quality_case(
         },
         "diagnostics": {
             "analysis": {
-                "recommended_strategy": strategy,
+                "recommended_strategy": case.offline_fixture.strategy,
             },
             "diagnostics": {
                 "retrieval_degraded": False,
@@ -1523,7 +1461,7 @@ def evaluate_offline_quality_case(
         },
         "traces": {
             "route_trace": {
-                "strategy": strategy,
+                "strategy": case.offline_fixture.strategy,
                 "fallbacks": [],
                 "diagnostics": {
                     "used_fallback": False,
@@ -1537,60 +1475,47 @@ def evaluate_offline_quality_case(
                 "mode": "offline_quality",
                 "fallback_used": False,
                 "estimated_cost_usd": 0.0,
+                "token_usage_source": "offline_quality",
             },
-            "trace_event": {"strategy": strategy},
+            "trace_event": {"strategy": case.offline_fixture.strategy},
         },
     }
-
-    return {
-        "query": case.query,
-        "category": case.category,
-        "passed": not failures,
-        "failures": failures,
-        "evaluation": {
-            "strategy": strategy,
-            "expected_strategy": case.expected_strategy,
-            "expected_recipe_names": expected_recipe_names,
-            "expected_recipe_relevance": dict(case.expected_recipe_relevance),
-            "expected_answer_terms": list(case.expected_answer_terms),
-            "answer_checked": bool(generate),
-            "answer_passed": (not answer_failed) if generate else None,
-            "answer_missing_terms": answer_missing_terms,
-            "answer_preview": answer[:300] if answer else "",
+    return EvalObservation(
+        strategy=case.offline_fixture.strategy,
+        answer=answer,
+        documents=documents,
+        latency_ms=latency_ms,
+        plan=plan,
+        contracts={
+            "answer_response": response_payload if generate else {},
+            "route_resolution": {},
         },
-        "retrieval": {
-            "recipe_names": recipe_names,
-            "ranked_recipe_names": ranked_recipe_names,
-            "missing_recipe_names": missing_names,
-            "doc_count": len(documents),
-            "evidence": _doc_evidence_summary(documents),
-            **retrieval_metrics(ranked_recipe_names, relevance, k=top_k),
-        },
-        "grounding": grounding,
-        "cost": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "estimated_cost_usd": 0.0,
-            "token_usage_source": "offline_quality",
-        },
-        "resilience": {
+        resilience={
             "fallback_used": False,
             "fallback_reasons": [],
             "retrieval_degraded": False,
             "degraded_sources": [],
             "degraded_candidates": [],
         },
-        "runtime": {
-            "latency_ms": latency_ms,
-            "plan_used_cache": plan["used_cache"],
-            "plan_validation_errors": plan["validation_errors"],
+        cost={
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "token_usage_source": "offline_quality",
         },
-        "contracts": {
-            "answer_response": response_payload if generate else {},
-            "route_resolution": {},
-        },
-    }
+    )
+
+
+def evaluate_offline_quality_case(
+    case: EvalCase,
+    *,
+    index: int,
+    top_k: int,
+    generate: bool,
+) -> dict[str, Any]:
+    observation = build_offline_eval_observation(case, index=index, generate=generate)
+    return score_eval_observation(case, observation, top_k=top_k, generate=generate)
 
 
 def evaluate_offline_quality_queries(
