@@ -8,7 +8,7 @@
     "generation_prompts",
     "quality_eval"
   ],
-  "minimum_total_cases": 48,
+  "minimum_total_cases": 57,
   "minimum_overall_pass_rate": 1.0,
   "suite_minimum_cases": {
     "route_semantics": 24,
@@ -16,7 +16,7 @@
     "answer_pipeline_real_route": 3,
     "generation_plans": 3,
     "generation_prompts": 6,
-    "quality_eval": 9
+    "quality_eval": 18
   },
   "suite_minimum_pass_rate": {
     "route_semantics": 1.0,
@@ -27,6 +27,14 @@
     "quality_eval": 1.0
   },
   "minimum_route_category_count": 9,
+  "quality_dimension_minimum_cases": {
+    "no_evidence": 2,
+    "ambiguity": 2,
+    "multi_hop": 2,
+    "constraint_conflict": 2,
+    "long_query": 2,
+    "colloquial_zh": 2
+  },
   "required_route_categories": [
     "single_recipe",
     "recommendation",
@@ -48,6 +56,8 @@
     "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
     "quality_eval.metrics.faithfulness": {"minimum": 0.8},
     "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+    "quality_eval.metrics.response_mode_accuracy": {"minimum": 1.0},
+    "quality_eval.metrics.abstention_accuracy": {"minimum": 1.0},
     "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
     "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
     "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},

@@ -1,8 +1,8 @@
 # Offline Evaluation Release Gate
 
-The release gate runs deterministic offline smoke suites and the curated
-quality evaluation. The quality suite is part of the default release policy and
-uses offline fixtures; it does not require model, Milvus, or Neo4j services.
+The release gate runs deterministic offline smoke suites and the curated quality
+evaluation. The quality suite is part of the default release policy and uses
+offline fixtures; it does not require model, Milvus, or Neo4j services.
 
 ## Run
 
@@ -20,70 +20,76 @@ The final local gate stops at the first failing step and runs:
 - `python -m pytest -q`
 - `python scripts/release_gate.py`
 
-Run the release gate before packaging, tagging, or deploying:
+Run the standalone release gate before packaging, tagging, or deploying:
 
 ```powershell
 python scripts/release_gate.py
 ```
 
-The standalone release-gate command exits with code `0` only when every
-required suite and coverage threshold passes. It writes:
+It exits with code `0` only when every required suite and coverage threshold
+passes. Reports are written to:
 
 - `eval/reports/release_gate/report.json`
 - `eval/reports/release_gate/summary.md`
 
 Dependency outages still prevent a PASS, but the report keeps them distinct
-from quality regressions. `report.json` exposes top-level `failure_types` and
-each failed check includes `failure_type`; `summary.md` mirrors the same labels.
-Use `dependency-unavailable` for external service outages such as Neo4j or
-Milvus connection failures, and `metric-regression` for numeric threshold
-misses.
-
-The legacy `--include-quality-eval` flag and
-`RELEASE_GATE_INCLUDE_QUALITY_EVAL=true` environment variable remain accepted
-for custom policies that still model `quality_eval` as an optional stage. They
-are not needed for the default policy.
+from quality regressions through `failure_type`.
 
 ## Gate Policy
 
 Thresholds live in `eval/release_gate.json`. The default policy requires:
 
 - all six suites, including `quality_eval`, to be available;
-- 48 or more total cases;
+- 57 or more total cases;
 - 100% overall and per-suite pass rate;
 - at least 24 route-semantics cases;
-- all 9 required route categories.
+- all 9 required route categories;
+- at least 18 quality-eval cases.
 
-The `answer_pipeline_real_route` suite also exposes contract pass rates for
-plan, request, trace, graph, evidence, and offline-planner behavior. The
-release policy requires each contract metric to remain `1.0`, so a route can no
-longer pass the gate by preserving only the expected strategy and answer text.
+The `quality_eval` policy also requires at least two cases for each required
+quality dimension:
 
-The route corpus covers direct recipe lookup, recommendation, time and
-exclusion constraints, classification, multi-hop reasoning, path finding,
-subgraph retrieval, clustering, and combined retrieval.
+- `no_evidence`
+- `ambiguity`
+- `multi_hop`
+- `constraint_conflict`
+- `long_query`
+- `colloquial_zh`
 
-## Quality Stage Policy
+The gate checks these counts from `quality_eval.metrics.dimension_counts`, not
+from corpus size alone.
 
-The default policy requires `quality_eval`. It uses the `eval_quality` profile
-metadata with `top_k=6` and answer generation enabled, then evaluates
-deterministic offline evidence and answers derived from the curated corpus. The
-gate requires:
+## Quality Corpus Contract
 
-- at least 9 quality cases;
-- a 100% quality-suite pass rate;
-- Recall@K, faithfulness, and citation accuracy of at least `0.8`;
-- fallback rate no greater than `0.0`;
-- retrieval degradation rate no greater than `0.0`;
-- P95 latency no greater than `2000 ms`;
-- estimated total cost no greater than `$1.00`.
+The curated quality corpus uses a strict nested schema. The old flat
+`expected_*` fields are not accepted.
+
+Each row has:
+
+- root fields: `id`, `query`, `category`, `dimensions`, `expectation`,
+  `offline_fixture`;
+- `expectation.response_mode`: one of `grounded_answer`, `no_evidence`,
+  `clarification`, or `constraint_conflict`;
+- `expectation.strategy`: a strategy string or `null`;
+- `expectation.recipe_names`, `answer_terms`, and `recipe_relevance`;
+- `offline_fixture.strategy`, `answer`, and compact `evidence` rows.
+
+Grounded cases must contain fixture evidence and every positively expected
+recipe must appear in the fixture evidence. Abstention cases (`no_evidence`,
+`clarification`, and `constraint_conflict`) must have no evidence and no recipe
+expectations. A successful abstention is a primary expected outcome, not a
+fallback.
 
 ## Quality Metrics
 
-`scripts/eval_queries.py` now reports:
+`scripts/eval_queries.py` reports:
 
-- Recall@K, MRR, and nDCG@K from expected recipe relevance;
-- deterministic lexical faithfulness and citation accuracy;
+- Recall@K, MRR, and nDCG@K for grounded-answer cases with relevance labels;
+- deterministic lexical faithfulness and citation accuracy for grounded-answer
+  cases;
+- `response_mode_accuracy` across all quality cases;
+- `abstention_accuracy` across abstention cases only;
+- `response_mode_counts` and `dimension_counts`;
 - fallback case count, fallback rate, and fallback reasons;
 - retrieval degraded case count, degradation rate, degraded sources, and source
   counts;
@@ -91,43 +97,32 @@ gate requires:
 - prompt, completion, and total tokens;
 - estimated USD cost from configured model prices.
 
-Use `expected_recipe_relevance` for graded relevance:
+Retrieval and grounding averages are grounded-only. Abstention rows keep those
+metrics as `None` and do not dilute grounded-answer quality signals.
 
-```json
-{
-  "expected_recipe_relevance": {
-    "recipe-a": 3,
-    "recipe-b": 1
-  }
-}
-```
+The default gate requires:
+
+- `quality_eval.metrics.recall_at_k >= 0.8`;
+- `quality_eval.metrics.faithfulness >= 0.8`;
+- `quality_eval.metrics.citation_accuracy >= 0.8`;
+- `quality_eval.metrics.response_mode_accuracy >= 1.0`;
+- `quality_eval.metrics.abstention_accuracy >= 1.0`;
+- `quality_eval.metrics.fallback_rate <= 0.0`;
+- `quality_eval.metrics.retrieval_degradation_rate <= 0.0`;
+- `quality_eval.metrics.p95_latency_ms <= 2000`;
+- `quality_eval.metrics.estimated_cost_usd <= 1.0`.
 
 Faithfulness is an offline lexical-support heuristic, not an LLM judge. It is
-stable enough for regression checks and can be replaced by a model-backed
+stable enough for regression checks and can later be replaced by a model-backed
 judge without changing the report contract.
-
-Release policies may gate any suite metric with `metric_thresholds`:
-
-```json
-{
-  "metric_thresholds": {
-    "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
-    "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
-    "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
-    "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
-    "quality_eval.metrics.p95_latency_ms": {"maximum": 2000},
-    "quality_eval.metrics.estimated_cost_usd": {"maximum": 1.0}
-  }
-}
-```
 
 ## Updating Goldens
 
 1. Add or change a case under `tests/fixtures/`.
-2. Run the focused smoke script and inspect its structured failures.
-3. Run `python scripts/release_gate.py`.
-4. Raise minimum case, quality case, or category thresholds when coverage
-   expands.
+2. Keep the strict nested schema; do not reintroduce flat `expected_*` fields.
+3. Run `python -m pytest tests/test_eval_queries.py -q`.
+4. Run `python scripts/release_gate.py`.
+5. Raise minimum case, dimension, or metric thresholds when coverage expands.
 
 Do not lower a threshold merely to make a regression pass. Any intentional
 behavior change should update the corpus expectation and be reviewed with the

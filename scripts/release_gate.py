@@ -507,6 +507,47 @@ def _evaluate_metric_thresholds(
             )
 
 
+def _evaluate_quality_dimension_minimums(
+    checks: list[dict[str, Any]],
+    *,
+    policy: dict[str, Any],
+    suite_reports: dict[str, dict[str, Any]],
+) -> None:
+    dimension_minimums = dict(policy.get("quality_dimension_minimum_cases") or {})
+    if not dimension_minimums:
+        return
+    quality_metrics = dict((suite_reports.get("quality_eval") or {}).get("metrics") or {})
+    raw_counts = quality_metrics.get("dimension_counts")
+    dimension_counts = raw_counts if isinstance(raw_counts, dict) else {}
+    for dimension, raw_minimum in sorted(dimension_minimums.items()):
+        dimension_name = str(dimension)
+        minimum = max(0, int(raw_minimum))
+        raw_actual = dimension_counts.get(dimension_name)
+        actual: int | float | None
+        passed = False
+        if raw_actual is None or isinstance(raw_actual, bool):
+            actual = None
+        else:
+            try:
+                numeric_actual = float(raw_actual)
+            except (TypeError, ValueError):
+                actual = None
+            else:
+                if math.isfinite(numeric_actual):
+                    actual = int(numeric_actual) if numeric_actual.is_integer() else numeric_actual
+                    passed = numeric_actual >= 0 and numeric_actual >= minimum
+                else:
+                    actual = None
+        _check(
+            checks,
+            name=f"quality_dimension:{dimension_name}",
+            passed=passed,
+            expected=f">={minimum}",
+            actual=actual,
+            failure_type=FAILURE_TYPE_SUITE_REGRESSION,
+        )
+
+
 def _failure_type_counts(failed_checks: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for check in failed_checks:
@@ -639,6 +680,11 @@ def evaluate_gate(
         },
         failure_type=FAILURE_TYPE_SUITE_REGRESSION,
     )
+    _evaluate_quality_dimension_minimums(
+        checks,
+        policy=policy,
+        suite_reports=suite_reports,
+    )
     _evaluate_metric_thresholds(
         checks,
         policy=policy,
@@ -730,6 +776,10 @@ def write_report(
                 "## Quality Metrics",
                 "",
                 f"- citation_accuracy: {_summary_metric_value(quality_metrics.get('citation_accuracy'))}",
+                "- response_mode_accuracy: "
+                f"{_summary_metric_value(quality_metrics.get('response_mode_accuracy'))}",
+                "- abstention_accuracy: "
+                f"{_summary_metric_value(quality_metrics.get('abstention_accuracy'))}",
                 f"- fallback_rate: {_summary_metric_value(quality_metrics.get('fallback_rate'))}",
                 "- retrieval_degradation_rate: "
                 f"{_summary_metric_value(quality_metrics.get('retrieval_degradation_rate'))}",

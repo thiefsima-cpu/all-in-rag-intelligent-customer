@@ -53,11 +53,27 @@ def _real_route_suite_report(case_count: int, metric_value: float = 1.0) -> dict
 
 def _quality_metrics() -> dict:
     return {
-        "case_count": 9,
+        "case_count": 18,
         "pass_rate": 1.0,
         "recall_at_k": 0.8,
         "faithfulness": 0.8,
         "citation_accuracy": 0.8,
+        "response_mode_accuracy": 1.0,
+        "abstention_accuracy": 1.0,
+        "response_mode_counts": {
+            "clarification": 2,
+            "constraint_conflict": 2,
+            "grounded_answer": 12,
+            "no_evidence": 2,
+        },
+        "dimension_counts": {
+            "ambiguity": 2,
+            "colloquial_zh": 4,
+            "constraint_conflict": 2,
+            "long_query": 4,
+            "multi_hop": 3,
+            "no_evidence": 2,
+        },
         "fallback_rate": 0.0,
         "fallback_case_count": 0,
         "fallback_reasons": {},
@@ -72,10 +88,10 @@ def _quality_metrics() -> dict:
 
 def _quality_suite_report() -> dict:
     return {
-        "case_count": 9,
-        "passed_count": 9,
+        "case_count": 18,
+        "passed_count": 18,
         "metrics": _quality_metrics(),
-        "results": [{"query": str(index), "passed": True} for index in range(9)],
+        "results": [{"query": str(index), "passed": True} for index in range(18)],
         "failures": [],
     }
 
@@ -110,12 +126,14 @@ def _legacy_optional_policy() -> dict:
         "quality_eval": {
             "suite": "quality_eval",
             "runner": {"profile": "eval_quality", "top_k": 6, "generate": True},
-            "suite_minimum_cases": 9,
+            "suite_minimum_cases": 18,
             "suite_minimum_pass_rate": 1.0,
             "metric_thresholds": {
                 "quality_eval.metrics.recall_at_k": {"minimum": 0.8},
                 "quality_eval.metrics.faithfulness": {"minimum": 0.8},
                 "quality_eval.metrics.citation_accuracy": {"minimum": 0.8},
+                "quality_eval.metrics.response_mode_accuracy": {"minimum": 1.0},
+                "quality_eval.metrics.abstention_accuracy": {"minimum": 1.0},
                 "quality_eval.metrics.fallback_rate": {"maximum": 0.0},
                 "quality_eval.metrics.retrieval_degradation_rate": {"maximum": 0.0},
                 "quality_eval.metrics.p95_latency_ms": {"maximum": 2000.0},
@@ -171,7 +189,7 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertEqual(policy, original)
         self.assertEqual(active["required_suites"][-1], "quality_eval")
-        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 9)
+        self.assertEqual(active["suite_minimum_cases"]["quality_eval"], 18)
         self.assertEqual(active["suite_minimum_pass_rate"]["quality_eval"], 1.0)
         self.assertEqual(
             active["metric_thresholds"]["quality_eval.metrics.recall_at_k"],
@@ -228,8 +246,8 @@ class ReleaseGateTests(unittest.TestCase):
         report = evaluate_gate(policy, _passing_reports_for_policy(policy))
 
         self.assertTrue(report["passed"])
-        self.assertEqual(report["metrics"]["case_count"], 48)
-        self.assertEqual(report["metrics"]["passed_count"], 48)
+        self.assertEqual(report["metrics"]["case_count"], 57)
+        self.assertEqual(report["metrics"]["passed_count"], 57)
         self.assertEqual(report["metrics"]["route_category_count"], 9)
         self.assertFalse(report["failed_checks"])
 
@@ -255,12 +273,31 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertIn("quality_eval", policy["required_suites"])
         self.assertNotIn("optional_stages", policy)
-        self.assertEqual(policy["minimum_total_cases"], 48)
-        self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 9)
+        self.assertEqual(policy["minimum_total_cases"], 57)
+        self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 18)
         self.assertEqual(policy["suite_minimum_pass_rate"]["quality_eval"], 1.0)
+        self.assertEqual(
+            policy["quality_dimension_minimum_cases"],
+            {
+                "ambiguity": 2,
+                "colloquial_zh": 2,
+                "constraint_conflict": 2,
+                "long_query": 2,
+                "multi_hop": 2,
+                "no_evidence": 2,
+            },
+        )
         self.assertEqual(
             policy["suite_runners"]["quality_eval"],
             {"profile": "eval_quality", "top_k": 6, "generate": True},
+        )
+        self.assertEqual(
+            policy["metric_thresholds"]["quality_eval.metrics.response_mode_accuracy"],
+            {"minimum": 1.0},
+        )
+        self.assertEqual(
+            policy["metric_thresholds"]["quality_eval.metrics.abstention_accuracy"],
+            {"minimum": 1.0},
         )
         self.assertEqual(
             policy["metric_thresholds"]["quality_eval.metrics.citation_accuracy"],
@@ -278,7 +315,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_quality_runner_normalizes_structured_eval_report(self) -> None:
         eval_report = {
             "metrics": _quality_metrics(),
-            "results": [{"query": str(index), "passed": True} for index in range(9)],
+            "results": [{"query": str(index), "passed": True} for index in range(18)],
             "failures": [],
             "profile": {"name": "eval_quality"},
         }
@@ -296,8 +333,8 @@ class ReleaseGateTests(unittest.TestCase):
             generate=True,
             profile="eval_quality",
         )
-        self.assertEqual(report["case_count"], 9)
-        self.assertEqual(report["passed_count"], 9)
+        self.assertEqual(report["case_count"], 18)
+        self.assertEqual(report["passed_count"], 18)
         self.assertEqual(report["metrics"]["recall_at_k"], 0.8)
         self.assertEqual(report["profile"], {"name": "eval_quality"})
 
@@ -318,7 +355,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["included_optional_stages"], [])
         self.assertTrue(report["quality_eval_required"])
         self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertEqual(report["metrics"]["case_count"], 57)
         self.assertTrue(report["passed"])
 
     def test_run_release_gate_default_does_not_mark_quality_optional(self) -> None:
@@ -333,7 +370,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("quality_eval", run.call_args.kwargs["runners"])
         self.assertEqual(report["included_optional_stages"], [])
         self.assertTrue(report["quality_eval_required"])
-        self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertEqual(report["metrics"]["case_count"], 57)
         self.assertEqual(report["query_policy"]["policy_version"], "c9-default-policy-v1")
         self.assertEqual(report["query_policy"]["prompt_version"], "c9-default-prompts-v1")
 
@@ -351,7 +388,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(report["included_optional_stages"], [])
         self.assertTrue(report["quality_eval_required"])
         self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 48)
+        self.assertEqual(report["metrics"]["case_count"], 57)
         self.assertTrue(report["passed"])
 
     def test_quality_runner_failure_becomes_failed_suite_report(self) -> None:
@@ -441,6 +478,8 @@ class ReleaseGateTests(unittest.TestCase):
             "recall_at_k": 0.79,
             "faithfulness": 0.79,
             "citation_accuracy": 0.79,
+            "response_mode_accuracy": 0.99,
+            "abstention_accuracy": 0.99,
             "fallback_rate": 0.01,
             "retrieval_degradation_rate": 0.01,
             "p95_latency_ms": 2000.1,
@@ -455,6 +494,18 @@ class ReleaseGateTests(unittest.TestCase):
                 self.assertTrue(
                     any(metric_name in check["name"] for check in report["failed_checks"])
                 )
+
+    def test_gate_fails_when_quality_dimension_coverage_regresses(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"]["metrics"]["dimension_counts"]["no_evidence"] = 1
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        failed = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(failed["quality_dimension:no_evidence"]["expected"], ">=2")
+        self.assertEqual(failed["quality_dimension:no_evidence"]["actual"], 1)
 
     def test_gate_marks_quality_threshold_failure_as_metric_regression(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -588,7 +639,7 @@ class ReleaseGateTests(unittest.TestCase):
             summary = summary_path.read_text(encoding="utf-8")
 
         self.assertIn("optional_stages: quality_eval", summary)
-        self.assertIn("| quality_eval | 9 | 9 | 1.0000 |", summary)
+        self.assertIn("| quality_eval | 18 | 18 | 1.0000 |", summary)
 
     def test_gate_summary_lists_required_quality_metrics(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -603,6 +654,8 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("policy_version: c9-default-policy-v1", summary)
         self.assertIn("prompt_version: c9-default-prompts-v1", summary)
         self.assertIn("citation_accuracy: 0.8000", summary)
+        self.assertIn("response_mode_accuracy: 1.0000", summary)
+        self.assertIn("abstention_accuracy: 1.0000", summary)
         self.assertIn("fallback_rate: 0.0000", summary)
         self.assertIn("retrieval_degradation_rate: 0.0000", summary)
         self.assertIn("degraded_sources: none", summary)
