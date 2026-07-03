@@ -249,7 +249,7 @@
     "dimensions": ["no_evidence", "long_query"],
     "expectation": {
       "response_mode": "no_evidence",
-      "strategy": "hybrid_traditional",
+      "strategy": null,
       "recipe_names": [],
       "answer_terms": ["证据不足"],
       "recipe_relevance": {}
@@ -364,13 +364,13 @@
     "dimensions": ["long_query", "constrained_recommendation"],
     "expectation": {
       "response_mode": "grounded_answer",
-      "strategy": "hybrid_traditional",
+      "strategy": "combined",
       "recipe_names": [],
       "answer_terms": ["少油", "不辣", "三十分钟"],
       "recipe_relevance": {}
     },
     "offline_fixture": {
-      "strategy": "hybrid_traditional",
+      "strategy": "combined",
       "answer": "依据菜谱证据 #1，可选少油、不辣、三十分钟内完成的一锅热菜，并避开豆腐和花生。",
       "evidence": [
         {

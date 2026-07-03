@@ -34,12 +34,13 @@ class CuratedRouteExpectationTests(unittest.TestCase):
         )
 
         for case in load_eval_cases():
-            if not case.expected_strategy:
+            expected_strategy = case.expectation.strategy
+            if not expected_strategy:
                 continue
             with self.subTest(query=case.query):
                 plan = planner.rule_based_plan(case.query)
-                self.assertEqual(plan.strategy, case.expected_strategy)
-                if case.expected_strategy == "graph_rag":
+                self.assertEqual(plan.strategy, expected_strategy)
+                if expected_strategy == "graph_rag":
                     self.assertGreaterEqual(plan.complexity, 0.7)
                     self.assertGreaterEqual(plan.relationship_intensity, 0.7)
 

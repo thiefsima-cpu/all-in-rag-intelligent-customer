@@ -77,6 +77,8 @@ class EvaluationMetricTests(unittest.TestCase):
                         "expected_strategy": "hybrid",
                         "strategy": "hybrid",
                         "expected_recipe_names": ["a"],
+                        "expected_response_mode": "grounded_answer",
+                        "response_mode_passed": True,
                         "answer_checked": True,
                         "answer_passed": True,
                         "answer_preview": "Evidence 1",
