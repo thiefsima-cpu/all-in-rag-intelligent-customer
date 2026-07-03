@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
-from typing import Any, Dict, List, cast
+from typing import cast
 
 from ...contracts import EvidenceDocument, RetrievalRequest
 from ...runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _metadata_dict(value: object) -> dict[str, object]:
-    return dict(value) if isinstance(value, dict) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _coerce_float(value: object, default: float = 0.0) -> float:
@@ -22,6 +22,12 @@ def _coerce_float(value: object, default: float = 0.0) -> float:
         return float(str(value))
     except (TypeError, ValueError):
         return default
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, Iterable) or isinstance(value, (str, bytes, bytearray)):
+        return []
+    return [str(item) for item in value if item]
 
 
 class VectorRetriever:
@@ -37,7 +43,7 @@ class VectorRetriever:
         self.driver = driver
         self.database = database
 
-    def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
+    def search(self, request: RetrievalRequest) -> list[EvidenceDocument]:
         control = request.control
         if control is not None:
             control.raise_if_cancelled()
@@ -65,7 +71,7 @@ class VectorRetriever:
                 node_ids.append(str(node_id))
         neighbor_map = self._batch_get_neighbors(request, node_ids) if node_ids else {}
 
-        enhanced: List[EvidenceDocument] = []
+        enhanced: list[EvidenceDocument] = []
         for result in vector_docs:
             content = str(result.get("text", "") or "")
             metadata = _metadata_dict(result.get("metadata"))
@@ -107,9 +113,9 @@ class VectorRetriever:
     def _batch_get_neighbors(
         self,
         request: RetrievalRequest,
-        node_ids: List[str],
+        node_ids: list[str],
         max_neighbors: int = 3,
-    ) -> Dict[str, List[str]]:
+    ) -> dict[str, list[str]]:
         if not self.driver or not node_ids:
             return {}
         control = request.control
@@ -128,9 +134,9 @@ class VectorRetriever:
                     {"node_ids": list(set(node_ids)), "max_n": max_neighbors},
                     timeout=control.remaining_seconds() if control is not None else None,
                 )
-                records = cast(Iterable[Mapping[str, Any]], result)
+                records = cast(Iterable[Mapping[str, object]], result)
                 return {
-                    str(record["nid"]): [str(name) for name in record["names"] if name]
+                    str(record.get("nid") or ""): _string_list(record.get("names"))
                     for record in records
                 }
         except Exception as exc:

@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List
 
-from ..contracts import RequestBudgetExceeded, RequestCancelled, RetrievalRequest
+from ..configuration.models import GraphRAGConfig
+from ..contracts import EvidenceDocument, RequestBudgetExceeded, RequestCancelled, RetrievalRequest
+from ..entity_linker import EntityLinker
 from ..infra.neo4j import create_neo4j_driver
 from ..runtime import GraphRetrievalSnapshot
 from ..runtime.error_models import graph_error_detail
+from ..runtime.json_types import JsonObject, coerce_json_object
+from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort
 from ..safe_logging import log_failure
+from .cache_stats import GraphCacheStatsStore
+from .cache_warmup import GraphCacheWarmupService
+from .evidence_orchestrator import GraphEvidenceOrchestrator
+from .query_executor import GraphQueryExecutor
+from .retrieval_runtime import GraphRetrievalRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +29,14 @@ class GraphRetrievalExecutor:
     def __init__(
         self,
         *,
-        config,
-        runtime,
-        orchestrator,
-        cache_warmup,
-        graph_cache_stats_store,
-        entity_linker,
-        graph_executor,
-        neo4j_manager=None,
+        config: GraphRAGConfig,
+        runtime: GraphRetrievalRuntime,
+        orchestrator: GraphEvidenceOrchestrator,
+        cache_warmup: GraphCacheWarmupService,
+        graph_cache_stats_store: GraphCacheStatsStore,
+        entity_linker: EntityLinker,
+        graph_executor: GraphQueryExecutor,
+        neo4j_manager: Neo4jManagerPort | None = None,
         database_name: str = "neo4j",
     ) -> None:
         self.config = config
@@ -42,11 +50,11 @@ class GraphRetrievalExecutor:
         self.neo4j_manager = neo4j_manager
         self.database_name = database_name
 
-        self.driver: Any | None = None
+        self.driver: Neo4jDriverPort | None = None
         self._owns_driver = False
-        self.entity_cache: Dict[str, dict] = {}
-        self.relation_cache: Dict[str, int] = {}
-        self.subgraph_cache: Dict[str, dict] = {}
+        self.entity_cache: dict[str, JsonObject] = {}
+        self.relation_cache: dict[str, int] = {}
+        self.subgraph_cache: dict[str, JsonObject] = {}
 
     def initialize(self) -> None:
         """Initialize graph retrieval dependencies and warm lightweight indexes."""
@@ -95,7 +103,10 @@ class GraphRetrievalExecutor:
                 self.driver,
                 database_name=self.database_name,
             )
-            self.entity_cache = dict(warmup.entity_cache or {})
+            self.entity_cache = {
+                str(key): coerce_json_object(value)
+                for key, value in dict(warmup.entity_cache or {}).items()
+            }
             self.relation_cache = dict(warmup.relation_cache or {})
             logger.info(
                 "Graph caches ready: %s entities, %s relation types",
@@ -111,7 +122,9 @@ class GraphRetrievalExecutor:
                 error=exc,
             )
 
-    def execute_with_trace(self, request: RetrievalRequest) -> tuple[List, GraphRetrievalSnapshot]:
+    def execute_with_trace(
+        self, request: RetrievalRequest
+    ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]:
         logger.info("Starting GraphRAG retrieval: top_k=%s", request.top_k)
         start_time = time.perf_counter()
         control = request.control

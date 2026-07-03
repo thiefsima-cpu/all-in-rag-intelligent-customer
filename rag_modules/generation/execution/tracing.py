@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...runtime import GenerationSnapshot, PolicySnapshot
 from ..models import GenerationDecision, GenerationMode
-from .contracts import _GenerationExecutionHost
+from .contracts import GenerationTokenUsage, _GenerationExecutionHost
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, (bool, int, float, str)):
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _token_usage_payload(value: object) -> GenerationTokenUsage:
+    payload = value if isinstance(value, Mapping) else {}
+    return {
+        "prompt_tokens": _non_negative_int(payload.get("prompt_tokens")),
+        "completion_tokens": _non_negative_int(payload.get("completion_tokens")),
+        "total_tokens": _non_negative_int(payload.get("total_tokens")),
+        "token_usage_source": str(payload.get("token_usage_source") or ""),
+    }
 
 
 class _GenerationTraceMixin(_GenerationExecutionHost):
@@ -58,18 +77,13 @@ class _GenerationTraceMixin(_GenerationExecutionHost):
         consume = getattr(self.client_adapter, "consume_retry_count", None)
         if not callable(consume):
             return 0
-        return max(0, int(consume() or 0))
+        return _non_negative_int(consume())
 
-    def _consume_token_usage(self) -> dict[str, Any]:
+    def _consume_token_usage(self) -> GenerationTokenUsage:
         consume = getattr(self.client_adapter, "consume_token_usage", None)
         if not callable(consume):
-            return {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-                "token_usage_source": "",
-            }
-        return dict(consume() or {})
+            return _token_usage_payload({})
+        return _token_usage_payload(consume())
 
     def _finalize_trace(self, trace: GenerationSnapshot) -> GenerationSnapshot:
         snapshot = self._snapshot_trace(trace)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol, TypeAlias
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts import RequestControl
@@ -11,6 +11,8 @@ from ..clients import GenerationClientAdapter
 from ..models import AnswerPlan, GenerationDecision, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder
+
+GenerationTokenUsage: TypeAlias = dict[str, int | str]
 
 
 class GenerationExecutionHost(Protocol):
@@ -53,7 +55,7 @@ class GenerationExecutionHost(Protocol):
 
     def _consume_retry_count(self) -> int: ...
 
-    def _consume_token_usage(self) -> dict[str, Any]: ...
+    def _consume_token_usage(self) -> GenerationTokenUsage: ...
 
     def _deadline(self, start_time: float) -> float: ...
 

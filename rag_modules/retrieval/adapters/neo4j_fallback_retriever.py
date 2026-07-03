@@ -3,14 +3,49 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
-from typing import Any, List, cast
+from collections.abc import Iterable
+from typing import TypedDict, cast
 
 from ...contracts import EvidenceDocument
 from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
+
+
+class _EntityRecord(TypedDict):
+    node_id: object
+    name: object
+    description: object
+    labels: object
+    score: object
+
+
+class _TopicRecord(TypedDict):
+    node_id: object
+    name: object
+    category: object
+    cuisine_type: object
+    difficulty: object
+    ingredients: list[str]
+    matched_keyword: object
+
+
+class _NameRecord(TypedDict):
+    name: object
+
+
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, Iterable) or isinstance(value, (str, bytes, bytearray)):
+        return []
+    return [str(item) for item in value if item]
 
 
 class Neo4jFallbackRetriever:
@@ -20,11 +55,11 @@ class Neo4jFallbackRetriever:
         self.driver = driver
         self.database = database
 
-    def entity_search(self, keywords: List[str], limit: int) -> List[EvidenceDocument]:
+    def entity_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
         if not keywords or limit <= 0 or self.driver is None:
             return []
 
-        results: List[EvidenceDocument] = []
+        results: list[EvidenceDocument] = []
         try:
             with self.driver.session(database=self.database) as session:
                 cypher_query = """
@@ -42,7 +77,7 @@ class Neo4jFallbackRetriever:
                 LIMIT $limit
                 """
                 records = cast(
-                    Iterable[Mapping[str, Any]],
+                    Iterable[_EntityRecord],
                     session.run(cypher_query, {"keywords": keywords, "limit": limit}),
                 )
                 for record in records:
@@ -57,14 +92,14 @@ class Neo4jFallbackRetriever:
                             node_id=str(record["node_id"]),
                             recipe_name=str(record["name"] or ""),
                             node_type="Recipe",
-                            score=float(record["score"]) * 0.7,
+                            score=_coerce_float(record.get("score")) * 0.7,
                             search_type="graph_entity_fallback",
                             search_method="neo4j_fallback",
                             retrieval_level="entity",
                             source="neo4j_fallback",
                             metadata={
                                 "name": record["name"],
-                                "labels": list(record["labels"] or []),
+                                "labels": _string_list(record.get("labels")),
                                 "source": "neo4j_fallback",
                             },
                         )
@@ -79,11 +114,11 @@ class Neo4jFallbackRetriever:
             )
         return results
 
-    def topic_search(self, keywords: List[str], limit: int) -> List[EvidenceDocument]:
+    def topic_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
         if not keywords or limit <= 0 or self.driver is None:
             return []
 
-        results: List[EvidenceDocument] = []
+        results: list[EvidenceDocument] = []
         try:
             with self.driver.session(database=self.database) as session:
                 cypher_query = """
@@ -107,7 +142,7 @@ class Neo4jFallbackRetriever:
                 LIMIT $limit
                 """
                 records = cast(
-                    Iterable[Mapping[str, Any]],
+                    Iterable[_TopicRecord],
                     session.run(cypher_query, {"keywords": keywords, "limit": limit}),
                 )
                 for record in records:
@@ -118,7 +153,8 @@ class Neo4jFallbackRetriever:
                         content_parts.append(f"菜系: {record['cuisine_type']}")
                     if record["difficulty"]:
                         content_parts.append(f"难度: {record['difficulty']}")
-                    if record["ingredients"]:
+                    ingredients = _string_list(record.get("ingredients"))
+                    if ingredients:
                         content_parts.append(f"主要食材: {', '.join(record['ingredients'][:3])}")
                     results.append(
                         EvidenceDocument(
@@ -152,7 +188,7 @@ class Neo4jFallbackRetriever:
             )
         return results
 
-    def node_neighbors(self, node_id: str, max_neighbors: int = 3) -> List[str]:
+    def node_neighbors(self, node_id: str, max_neighbors: int = 3) -> list[str]:
         if not node_id or self.driver is None:
             return []
         try:
@@ -163,7 +199,7 @@ class Neo4jFallbackRetriever:
                 LIMIT $limit
                 """
                 records = cast(
-                    Iterable[Mapping[str, Any]],
+                    Iterable[_NameRecord],
                     session.run(query, {"node_id": node_id, "limit": max_neighbors}),
                 )
                 return [str(record["name"]) for record in records if record["name"]]

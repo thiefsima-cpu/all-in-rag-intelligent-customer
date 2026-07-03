@@ -42,5 +42,5 @@ class _DirectCompletionMixin(_GenerationExecutionHost):
         )
 
     @staticmethod
-    def _response_text(response) -> str:
+    def _response_text(response: object) -> str:
         return GenerationClientAdapter.response_text(response)

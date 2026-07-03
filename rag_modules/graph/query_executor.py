@@ -5,7 +5,8 @@ Neo4j execution layer for GraphRAG retrieval.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterable, Mapping
+from typing import cast
 
 from ..contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class GraphQueryExecutor:
     """Execute graph retrieval plans and return raw records."""
 
-    def __init__(self, driver: Optional[Neo4jDriverPort], database: str = "neo4j"):
+    def __init__(self, driver: Neo4jDriverPort | None, database: str = "neo4j") -> None:
         self.driver = driver
         self.database = database
 
@@ -28,7 +29,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> List[Any]:
+    ) -> list[Mapping[str, object]]:
         if not self.driver:
             return []
         if control is not None:
@@ -76,7 +77,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> List[Any]:
+    ) -> list[Mapping[str, object]]:
         if not self.driver:
             return []
         if control is not None:
@@ -117,7 +118,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> List[Any]:
+    ) -> list[Mapping[str, object]]:
         if not self.driver:
             return []
         if control is not None:
@@ -160,7 +161,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> List[Any]:
+    ) -> list[Mapping[str, object]]:
         if not self.driver:
             return []
         if control is not None:
@@ -197,10 +198,13 @@ class GraphQueryExecutor:
         params["max_nodes"] = plan.max_nodes
         try:
             with driver.session(database=self.database) as session:
-                records = list(session.run(query, params, **self._run_kwargs(control)))
+                records = cast(
+                    Iterable[Mapping[str, object]],
+                    session.run(query, params, **self._run_kwargs(control)),
+                )
                 if control is not None:
                     control.raise_if_cancelled()
-                return records
+                return list(records)
         except (RequestCancelled, RequestBudgetExceeded):
             raise
         except Exception as exc:
@@ -228,7 +232,7 @@ class GraphQueryExecutor:
         """
 
     @staticmethod
-    def _params(plan: GraphRetrievalPlan) -> Dict[str, Any]:
+    def _params(plan: GraphRetrievalPlan) -> dict[str, object]:
         return {
             "source_node_ids": plan.source_node_ids,
             "source_terms": plan.source_terms,
@@ -243,19 +247,22 @@ class GraphQueryExecutor:
     def _run_path_query(
         self,
         query: str,
-        params: Dict[str, Any],
+        params: dict[str, object],
         *,
         control: RequestControl | None = None,
-    ) -> List[Any]:
+    ) -> list[Mapping[str, object]]:
         if self.driver is None:
             return []
         driver = self.driver
         try:
             with driver.session(database=self.database) as session:
-                records = list(session.run(query, params, **self._run_kwargs(control)))
+                records = cast(
+                    Iterable[Mapping[str, object]],
+                    session.run(query, params, **self._run_kwargs(control)),
+                )
                 if control is not None:
                     control.raise_if_cancelled()
-                return records
+                return list(records)
         except (RequestCancelled, RequestBudgetExceeded):
             raise
         except Exception as exc:
@@ -269,7 +276,7 @@ class GraphQueryExecutor:
             return []
 
     @staticmethod
-    def _run_kwargs(control: RequestControl | None) -> Dict[str, Any]:
+    def _run_kwargs(control: RequestControl | None) -> dict[str, object]:
         if control is None:
             return {}
         control.raise_if_cancelled()
