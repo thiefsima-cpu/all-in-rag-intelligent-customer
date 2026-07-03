@@ -211,12 +211,19 @@ def _require_nonnegative_number(
     case_id: str | None,
     field_name: str,
 ) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool):
         raise _validation_error(
             corpus_path,
             index,
             case_id,
             f"{field_name} must be a number, not a boolean",
+        )
+    if not isinstance(value, (int, float)):
+        raise _validation_error(
+            corpus_path,
+            index,
+            case_id,
+            f"{field_name} must be a number; got {type(value).__name__}",
         )
     try:
         number = float(value)
@@ -260,12 +267,27 @@ def _parse_recipe_relevance(
             case_id=case_id,
             field_name="expectation.recipe_relevance key",
         )
+        if name in parsed:
+            raise _validation_error(
+                corpus_path,
+                index,
+                case_id,
+                "expectation.recipe_relevance contains a normalized key collision: "
+                f"{recipe_name!r} normalizes to {name!r}",
+            )
         parsed[name] = _require_nonnegative_number(
             grade,
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
             field_name=f"expectation.recipe_relevance[{name!r}]",
+        )
+    if parsed and not any(grade > 0 for grade in parsed.values()):
+        raise _validation_error(
+            corpus_path,
+            index,
+            case_id,
+            "expectation.recipe_relevance must contain at least one positive grade",
         )
     return parsed
 
@@ -487,6 +509,13 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
         case_id=case_id,
         field_name="dimensions",
     )
+    if not dimensions:
+        raise _validation_error(
+            corpus_path,
+            index,
+            case_id,
+            "dimensions must be a non-empty list",
+        )
     if len(set(dimensions)) != len(dimensions):
         raise _validation_error(
             corpus_path,
@@ -544,7 +573,10 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
                 "grounded_answer offline_fixture must contain evidence",
             )
         fixture_recipe_names = {item.recipe_name for item in offline_fixture.evidence}
-        expected_recipe_names = set(expectation.recipe_names) | set(expectation.recipe_relevance)
+        positive_relevance_names = {
+            name for name, grade in expectation.recipe_relevance.items() if grade > 0
+        }
+        expected_recipe_names = set(expectation.recipe_names) | positive_relevance_names
         missing_recipe_names = sorted(expected_recipe_names - fixture_recipe_names)
         if missing_recipe_names:
             raise _validation_error(
@@ -576,10 +608,32 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
     )
 
 
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, Any]], *, corpus_path: Path
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError(f"Eval corpus at {corpus_path}: duplicate JSON object key {key!r}")
+        payload[key] = value
+    return payload
+
+
 def load_eval_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[EvalCase]:
     corpus_path = Path(path).resolve()
-    with corpus_path.open("r", encoding="utf-8") as file:
-        payload = json.load(file)
+    try:
+        with corpus_path.open("r", encoding="utf-8") as file:
+            payload = json.load(
+                file,
+                object_pairs_hook=lambda pairs: _reject_duplicate_json_keys(
+                    pairs, corpus_path=corpus_path
+                ),
+            )
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"Eval corpus at {corpus_path}: invalid JSON at line {error.lineno}, "
+            f"column {error.colno}: {error.msg}"
+        ) from error
     if not isinstance(payload, list):
         raise ValueError(f"Eval corpus at {corpus_path}, case[?]: corpus must be a JSON list")
     cases: list[EvalCase] = []

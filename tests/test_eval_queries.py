@@ -59,7 +59,91 @@ def _load_temporary_eval_payload(payload: object):
         return load_eval_cases(path)
 
 
+def _load_temporary_eval_text(payload: str):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "quality-eval.json"
+        path.write_text(payload, encoding="utf-8")
+        return load_eval_cases(path)
+
+
 class StrictEvalCaseContractTests(unittest.TestCase):
+    def test_review_rejects_empty_dimensions(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["dimensions"] = []
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*grounded-01.*dimensions.*non-empty",
+        ):
+            _load_temporary_eval_payload([payload])
+
+    def test_review_rejects_duplicate_json_keys_at_root_and_nested_levels(self) -> None:
+        encoded = json.dumps([_valid_strict_eval_payload()], ensure_ascii=False)
+        payloads = {
+            "root": encoded.replace('"query":', '"query": "duplicate", "query":', 1),
+            "nested": encoded.replace(
+                '"response_mode":',
+                '"response_mode": "no_evidence", "response_mode":',
+                1,
+            ),
+        }
+
+        for level, payload in payloads.items():
+            with (
+                self.subTest(level=level),
+                self.assertRaisesRegex(
+                    ValueError,
+                    r"quality-eval\.json.*duplicate JSON object key",
+                ),
+            ):
+                _load_temporary_eval_text(payload)
+
+    def test_review_json_decode_error_includes_corpus_path(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"quality-eval\.json.*invalid JSON"):
+            _load_temporary_eval_text("[")
+
+    def test_review_rejects_normalized_recipe_relevance_key_collisions(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expectation"]["recipe_names"] = ["recipe"]
+        payload["expectation"]["recipe_relevance"] = {"recipe": 3.0, " recipe ": 1.0}
+        payload["offline_fixture"]["evidence"][0]["recipe_name"] = "recipe"
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*grounded-01.*recipe_relevance.*collision",
+        ):
+            _load_temporary_eval_payload([payload])
+
+    def test_review_rejects_all_zero_recipe_relevance(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expectation"]["recipe_relevance"] = {"宫保鸡丁": 0.0}
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"quality-eval\.json.*case\[0\].*grounded-01.*recipe_relevance.*positive",
+        ):
+            _load_temporary_eval_payload([payload])
+
+    def test_review_allows_zero_grade_recipe_without_fixture_evidence(self) -> None:
+        payload = _valid_strict_eval_payload()
+        payload["expectation"]["recipe_relevance"]["鱼香肉丝"] = 0.0
+
+        case = _load_temporary_eval_payload([payload])[0]
+
+        self.assertEqual(case.expectation.recipe_relevance["鱼香肉丝"], 0.0)
+        self.assertEqual(len(case.offline_fixture.evidence), 1)
+
+    def test_review_distinguishes_boolean_and_wrong_numeric_types(self) -> None:
+        bool_score = _valid_strict_eval_payload()
+        bool_score["offline_fixture"]["evidence"][0]["score"] = True
+        string_relevance = _valid_strict_eval_payload()
+        string_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = "high"
+
+        with self.assertRaisesRegex(ValueError, r"score.*number, not a boolean"):
+            _load_temporary_eval_payload([bool_score])
+        with self.assertRaisesRegex(ValueError, r"recipe_relevance.*number.*got str"):
+            _load_temporary_eval_payload([string_relevance])
+
     def test_strict_contract_parses_nested_case(self) -> None:
         case = _load_temporary_eval_payload([_valid_strict_eval_payload()])[0]
 
