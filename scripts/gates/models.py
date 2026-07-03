@@ -23,8 +23,8 @@ class GateFailureType(StrEnum):
 class GateCheckResult:
     name: str
     status: GateCheckStatus
-    failure_type: GateFailureType | None
-    code: str
+    failure_type: GateFailureType | None = None
+    code: str = ""
     expected: Any = None
     actual: Any = None
     duration_ms: float = 0.0
@@ -38,7 +38,7 @@ class GateCheckResult:
         cls,
         name: str,
         *,
-        code: str,
+        code: str = "",
         expected: Any = None,
         actual: Any = None,
         duration_ms: float = 0.0,
@@ -98,6 +98,7 @@ class GateCheckResult:
         return {
             "name": self.name,
             "status": self.status.value,
+            "passed": self.passed,
             "failure_type": self.failure_type.value if self.failure_type is not None else None,
             "code": self.code,
             "expected": self.expected,

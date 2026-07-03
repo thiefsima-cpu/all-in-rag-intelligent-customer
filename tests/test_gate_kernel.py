@@ -32,6 +32,7 @@ from scripts.gates import (
             {
                 "name": "latency",
                 "status": "passed",
+                "passed": True,
                 "failure_type": None,
                 "code": "METRIC_WITHIN_THRESHOLD",
                 "expected": {"maximum": 10},
@@ -51,6 +52,7 @@ from scripts.gates import (
             {
                 "name": "quality",
                 "status": "failed",
+                "passed": False,
                 "failure_type": "quality-regression",
                 "code": "QUALITY_TOO_LOW",
                 "expected": 0.8,
@@ -65,6 +67,7 @@ from scripts.gates import (
             {
                 "name": "database",
                 "status": "blocked",
+                "passed": False,
                 "failure_type": None,
                 "code": "DATABASE_UNAVAILABLE",
                 "expected": None,
@@ -79,6 +82,31 @@ def test_gate_check_result_factories_produce_stable_payloads(
 ) -> None:
     assert result.to_dict() == expected
     assert result.passed is (result.status is GateCheckStatus.PASSED)
+
+
+def test_gate_check_result_defaults_match_public_contract() -> None:
+    result = GateCheckResult(name="default", status=GateCheckStatus.BLOCKED)
+
+    assert result.failure_type is None
+    assert result.code == ""
+    assert result.expected is None
+    assert result.actual is None
+    assert result.duration_ms == 0.0
+
+
+def test_pass_check_accepts_expected_and_actual_without_code() -> None:
+    result = GateCheckResult.pass_check("documents", expected=">=1", actual=12)
+
+    assert result.to_dict() == {
+        "name": "documents",
+        "status": "passed",
+        "passed": True,
+        "failure_type": None,
+        "code": "",
+        "expected": ">=1",
+        "actual": 12,
+        "duration_ms": 0.0,
+    }
 
 
 @pytest.mark.parametrize(
@@ -301,3 +329,64 @@ def test_write_json_report_recursively_serializes_without_mutating_input(tmp_pat
     assert report["checks"] == original_checks
     assert report["statuses"] == original_statuses
     assert report["immutable_statuses"] is original_immutable_statuses
+
+
+@pytest.mark.parametrize(
+    ("actual", "expected_actual"),
+    [
+        (np.float32(1.5), 1.5),
+        (np.int64(2), 2),
+        (Fraction(1, 2), 0.5),
+        (Fraction(10**1000, 3), str(Fraction(10**1000, 3))),
+    ],
+)
+def test_write_json_report_serializes_supported_numeric_gate_values_end_to_end(
+    tmp_path: Path, actual: object, expected_actual: object
+) -> None:
+    check = numeric_threshold_check("numeric", actual, minimum=0)
+    evaluation = aggregate_checks([check])
+    output_path = tmp_path / "numeric.json"
+
+    write_json_report(evaluation, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["passed"] is True
+    assert payload["checks"][0]["actual"] == expected_actual
+
+
+@pytest.mark.parametrize(
+    ("actual", "expected_actual"),
+    [(math.nan, "nan"), (math.inf, "inf"), (-math.inf, "-inf"), (np.float32(np.inf), "inf")],
+)
+def test_write_json_report_normalizes_non_finite_gate_values(
+    tmp_path: Path, actual: float, expected_actual: str
+) -> None:
+    check = numeric_threshold_check("numeric", actual, maximum=1)
+    output_path = tmp_path / "non-finite.json"
+
+    write_json_report(aggregate_checks([check]), output_path)
+
+    report_text = output_path.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+    assert payload["checks"][0]["code"] == "METRIC_NOT_FINITE"
+    assert payload["checks"][0]["actual"] == expected_actual
+    assert "NaN" not in report_text
+    assert "Infinity" not in report_text
+
+
+def test_json_safe_stringifies_mapping_keys() -> None:
+    source = {("scope", 1): {2: "value"}}
+
+    result = json_safe(source)
+
+    assert result == {"('scope', 1)": {"2": "value"}}
+    assert source == {("scope", 1): {2: "value"}}
+
+
+def test_json_safe_sorts_set_and_frozenset_output() -> None:
+    assert json_safe({100, -1, 2}) == [-1, 2, 100]
+    assert json_safe(frozenset({"quality", "budget", "contract"})) == [
+        "budget",
+        "contract",
+        "quality",
+    ]
