@@ -16,7 +16,7 @@ DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "integration_gate.json"
 
 
 class StrictPolicyModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
 
 
 class DependencyMinimums(StrictPolicyModel):
