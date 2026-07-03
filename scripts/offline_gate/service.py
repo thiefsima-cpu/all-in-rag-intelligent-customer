@@ -25,8 +25,9 @@ def run_release_gate(
     resolved_policy_path = Path(policy_path).resolve()
     policy = load_policy(policy_path)
     try:
+        metric_thresholds = policy["metric_thresholds"] if "metric_thresholds" in policy else {}
         validate_metric_threshold_rules(
-            policy.get("metric_thresholds") or {},
+            metric_thresholds,
             context="Release gate policy",
         )
         quality_settings = required_quality_stage(policy)

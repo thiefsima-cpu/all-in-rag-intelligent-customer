@@ -330,6 +330,28 @@ class ReleaseGateTests(unittest.TestCase):
 
         run.assert_not_called()
 
+    def test_run_release_gate_rejects_malformed_top_level_thresholds_before_suites(self) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        policy["metric_thresholds"] = []
+        suite_reports = _passing_reports_for_policy(load_policy(DEFAULT_POLICY_PATH))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            policy_path = Path(temp_dir) / "release_gate.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with (
+                patch(
+                    "scripts.offline_gate.service.run_suites",
+                    return_value=suite_reports,
+                ) as run,
+                self.assertRaisesRegex(ValueError, re.escape(str(policy_path.resolve()))),
+            ):
+                run_release_gate(
+                    policy_path=policy_path,
+                    output_dir=temp_dir,
+                )
+
+        run.assert_not_called()
+
     def test_run_release_gate_wraps_malformed_top_k_with_policy_path(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         policy["suite_runners"]["quality_eval"]["top_k"] = {"value": 6}
