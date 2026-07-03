@@ -45,8 +45,12 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
-from rag_modules.generation.execution.contracts import GenerationExecutionHost
+from rag_modules.generation.execution.contracts import (
+    GenerationAttemptResult,
+    GenerationTokenUsage,
+)
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
+from rag_modules.generation.execution.usage import GenerationUsageCollector
 from rag_modules.graph.retrieval_types import (
     GraphNodeSnapshot,
     GraphQuery,
@@ -257,8 +261,16 @@ def accept_grouped_views(
 def accept_execution_hosts(
     generation_engine: GenerationExecutionEngine,
     milvus_module: MilvusIndexConstructionModule,
-) -> tuple[GenerationExecutionHost, MilvusOperationHost, VectorIndexModulePort]:
+) -> tuple[GenerationExecutionEngine, MilvusOperationHost, VectorIndexModulePort]:
     return generation_engine, milvus_module, milvus_module
+
+
+def accept_generation_execution_contracts(
+    usage_collector: GenerationUsageCollector,
+) -> tuple[GenerationAttemptResult, GenerationTokenUsage, int]:
+    result = GenerationAttemptResult(answer="answer", request_retries=1)
+    usage = usage_collector.drain_token_usage()
+    return result, usage, usage_collector.drain_retry_count()
 
 
 def accept_runtime_mapping_payloads(

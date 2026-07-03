@@ -1,4 +1,4 @@
-"""Two-stage generation completion helpers."""
+"""Two-stage generation completion collaborator."""
 
 from __future__ import annotations
 
@@ -6,45 +6,75 @@ import inspect
 import logging
 import time
 
-from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
-from ...runtime import AnswerContext, GenerationSnapshot
-from ...runtime.error_models import generation_error_detail
+from ...runtime import AnswerContext
 from ...safe_logging import log_failure
-from ..clients import generation_failure_code
-from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
-from ..models import AnswerPlan
-from .contracts import _GenerationExecutionHost
+from ..models import AnswerPlan, GenerationSettings
+from ..planner import GenerationPlanner
+from .composer import GenerationComposer
+from .contracts import GenerationAttemptFailed, GenerationAttemptResult
+from .direct import DirectCompletionRunner
+from .fallbacks import GenerationFallbackHandler
+from .timeouts import GenerationExecutionDeadline
+from .usage import GenerationUsageCollector
 
 logger = logging.getLogger(__name__)
 
 
-class _TwoStageCompletionMixin(_GenerationExecutionHost):
-    def _generate_two_stage_with_fallback(
+class TwoStageCompletionRunner:
+    def __init__(
         self,
         *,
+        settings: GenerationSettings,
+        planner: GenerationPlanner,
+        composer: GenerationComposer,
+        direct_runner: DirectCompletionRunner,
+        fallback_handler: GenerationFallbackHandler,
+        usage_collector: GenerationUsageCollector,
+    ) -> None:
+        self._settings = settings
+        self._planner = planner
+        self._composer = composer
+        self._direct_runner = direct_runner
+        self._fallback_handler = fallback_handler
+        self._usage_collector = usage_collector
+
+    def run(
+        self,
         answer_context: AnswerContext,
-        package: AnswerEvidencePackage,
-        trace: GenerationSnapshot,
-        total_start: float,
-        deadline: float,
+        *,
+        deadline: GenerationExecutionDeadline,
         control: RequestControl | None = None,
-    ) -> tuple[str, GenerationSnapshot]:
+    ) -> GenerationAttemptResult:
+        plan_latency_ms = 0.0
+        compose_latency_ms = 0.0
+        request_retries = 0
         try:
-            answer, plan_latency_ms, compose_latency_ms, attempts_used = (
-                self._run_two_stage_completion(
-                    answer_context,
-                    deadline=deadline,
-                    control=control,
-                )
+            plan, plan_latency_ms, plan_retries = self.run_plan_stage(
+                answer_context,
+                deadline=deadline,
+                control=control,
             )
-            trace.status = "success"
-            trace.plan_latency_ms = plan_latency_ms
-            trace.compose_latency_ms = compose_latency_ms
-            trace.provider_latency_ms = plan_latency_ms + compose_latency_ms
-            trace.request_retries = max(0, attempts_used - 1)
-            trace.total_latency_ms = self._elapsed_ms(total_start)
-            return answer, self._snapshot_trace(trace)
+            request_retries += plan_retries
+            compose_start = time.perf_counter()
+            answer = self._composer.compose_from_context(
+                answer_context,
+                plan,
+                timeout_seconds=deadline.remaining_timeout(
+                    self._settings.timeout_seconds,
+                ),
+                control=control,
+            )
+            if control is not None:
+                control.raise_if_cancelled()
+            compose_latency_ms = deadline.elapsed_ms_since(compose_start)
+            request_retries += self._usage_collector.drain_retry_count()
+            return GenerationAttemptResult(
+                answer=answer,
+                plan_latency_ms=plan_latency_ms,
+                compose_latency_ms=compose_latency_ms,
+                request_retries=request_retries,
+            )
         except (RequestCancelled, RequestBudgetExceeded):
             raise
         except Exception as exc:
@@ -55,29 +85,25 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                 code="GENERATION_FAILED",
                 error=exc,
             )
-            trace.request_retries += self._consume_retry_count()
-            if not should_skip_model_fallback(
-                exc,
-                fallback_on_timeout=self.settings.fallback_on_timeout,
-            ):
+            request_retries += self._usage_collector.drain_retry_count()
+            if self._fallback_handler.should_attempt_model_fallback(exc):
                 try:
-                    answer, direct_latency_ms, attempts_used = self._run_direct_completion(
+                    direct_result = self._direct_runner.run(
                         answer_context,
                         deadline=deadline,
                         control=control,
                     )
-                    trace.status = "degraded"
-                    trace.fallback_used = True
-                    trace.failure_code = generation_failure_code(exc)
-                    trace.error = generation_error_detail(exc)
-                    trace.fallback_reason = "two_stage_to_direct_model"
-                    trace.direct_latency_ms = direct_latency_ms
-                    trace.provider_latency_ms = (
-                        trace.plan_latency_ms + trace.compose_latency_ms + direct_latency_ms
+                    return GenerationAttemptResult(
+                        answer=direct_result.answer,
+                        plan_latency_ms=plan_latency_ms,
+                        compose_latency_ms=compose_latency_ms,
+                        direct_latency_ms=direct_result.direct_latency_ms,
+                        request_retries=request_retries + direct_result.request_retries,
+                        status="degraded",
+                        fallback_used=True,
+                        fallback_reason="two_stage_to_direct_model",
+                        failure=exc,
                     )
-                    trace.request_retries += max(0, attempts_used - 1)
-                    trace.total_latency_ms = self._elapsed_ms(total_start)
-                    return answer, self._snapshot_trace(trace)
                 except (RequestCancelled, RequestBudgetExceeded):
                     raise
                 except Exception as fallback_exc:
@@ -88,91 +114,44 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
                         code="GENERATION_FAILED",
                         error=fallback_exc,
                     )
-                    trace.request_retries += self._consume_retry_count()
-                    exc = fallback_exc
+                    request_retries += self._usage_collector.drain_retry_count()
+                    raise GenerationAttemptFailed(
+                        fallback_exc,
+                        request_retries=request_retries,
+                    ) from fallback_exc
 
-            return self._build_fallback_answer(
-                package=package,
-                error=exc,
-                trace=trace,
-                total_start=total_start,
-            )
+            raise GenerationAttemptFailed(exc, request_retries=request_retries) from exc
 
-    def _run_two_stage_completion(
+    def run_plan_stage(
         self,
         answer_context: AnswerContext,
         *,
-        deadline: float,
+        deadline: GenerationExecutionDeadline,
         control: RequestControl | None = None,
-    ) -> tuple[str, float, float, int]:
+    ) -> tuple[AnswerPlan, float, int]:
         if control is not None:
             control.raise_if_cancelled()
         plan_start = time.perf_counter()
-        plan = self._build_answer_plan(
-            answer_context,
-            deadline=deadline,
-            control=control,
-        )
+        plan = self._call_planner(answer_context, deadline=deadline, control=control)
         if control is not None:
             control.raise_if_cancelled()
-        plan_latency_ms = self._elapsed_ms(plan_start)
-        retries_used = self._consume_retry_count()
-
-        compose_start = time.perf_counter()
-        answer = self.compose_from_context(
-            answer_context,
+        return (
             plan,
-            timeout_seconds=self._remaining_timeout(
-                deadline,
-                self.settings.timeout_seconds,
-            ),
-            control=control,
+            deadline.elapsed_ms_since(plan_start),
+            self._usage_collector.drain_retry_count(),
         )
-        if control is not None:
-            control.raise_if_cancelled()
-        compose_latency_ms = self._elapsed_ms(compose_start)
-        retries_used += self._consume_retry_count()
-        return answer, plan_latency_ms, compose_latency_ms, retries_used + 1
 
-    def _build_fallback_answer(
-        self,
-        *,
-        package: AnswerEvidencePackage,
-        error: Exception,
-        trace: GenerationSnapshot,
-        total_start: float,
-    ) -> tuple[str, GenerationSnapshot]:
-        answer = build_evidence_only_fallback_answer(
-            package=package,
-            error=error,
-            max_items=max(1, len(package.items)),
-        )
-        trace.status = "degraded"
-        trace.fallback_used = True
-        trace.failure_code = generation_failure_code(error)
-        trace.error = generation_error_detail(error)
-        trace.fallback_reason = trace.failure_code
-        trace.total_latency_ms = self._elapsed_ms(total_start)
-        trace.provider_latency_ms = max(
-            trace.provider_latency_ms,
-            trace.total_latency_ms,
-        )
-        return answer, self._snapshot_trace(trace)
-
-    def _build_answer_plan(
+    def _call_planner(
         self,
         answer_context: AnswerContext,
         *,
-        deadline: float,
+        deadline: GenerationExecutionDeadline,
         control: RequestControl | None = None,
     ) -> AnswerPlan:
-        if control is not None:
-            control.raise_if_cancelled()
-        build_plan = self.planner.build_answer_plan_from_context
+        build_plan = self._planner.build_answer_plan_from_context
         parameters = inspect.signature(build_plan).parameters
-        timeout_seconds = self._remaining_timeout(
-            deadline,
-            self.settings.timeout_seconds,
+        timeout_seconds = deadline.remaining_timeout(
+            self._settings.timeout_seconds,
         )
         accepts_timeout = "timeout_seconds" in parameters
         accepts_control = "control" in parameters
@@ -187,3 +166,6 @@ class _TwoStageCompletionMixin(_GenerationExecutionHost):
         if accepts_control:
             return build_plan(answer_context, control=control)
         return build_plan(answer_context)
+
+
+__all__ = ["TwoStageCompletionRunner"]

@@ -112,9 +112,13 @@ class _FakeClientAdapter:
         self,
         completions: list[object] | None = None,
         stream_responses: list[object] | None = None,
+        token_usage: list[dict[str, int | str]] | None = None,
+        retry_counts: list[int] | None = None,
     ) -> None:
         self.completions = list(completions or [])
         self.stream_responses = list(stream_responses or [])
+        self.token_usage = list(token_usage or [])
+        self.retry_counts = list(retry_counts or [])
         self.prompts: list[str] = []
         self.stream_prompts: list[str] = []
         self.timeouts: list[float] = []
@@ -142,6 +146,16 @@ class _FakeClientAdapter:
             raise next_result
         return iter(next_result)
 
+    def consume_retry_count(self) -> int:
+        if not self.retry_counts:
+            return 0
+        return max(0, int(self.retry_counts.pop(0) or 0))
+
+    def consume_token_usage(self) -> dict[str, int | str]:
+        if not self.token_usage:
+            return {}
+        return self.token_usage.pop(0)
+
 
 class GenerationExecutionEngineTests(unittest.TestCase):
     def test_generation_execution_package_exports_canonical_engine(self) -> None:
@@ -153,6 +167,89 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         )
 
         self.assertIs(PackageEngine, CanonicalEngine)
+
+    def test_generation_execution_engine_uses_explicit_collaborators(self) -> None:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False),
+            client_adapter=_FakeClientAdapter([_FakeResponse("answer")]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        self.assertEqual(GenerationExecutionEngine.__mro__, (GenerationExecutionEngine, object))
+        self.assertTrue(hasattr(engine, "_timeout_budget"))
+        self.assertTrue(hasattr(engine, "_usage_collector"))
+        self.assertTrue(hasattr(engine, "_trace_recorder"))
+        self.assertTrue(hasattr(engine, "_fallback_handler"))
+        self.assertTrue(hasattr(engine, "_direct_runner"))
+        self.assertTrue(hasattr(engine, "_two_stage_runner"))
+        self.assertTrue(hasattr(engine, "_streaming_runner"))
+
+    def test_generation_trace_finalization_uses_request_scoped_usage_collector(self) -> None:
+        client = _FakeClientAdapter(
+            [_FakeResponse("answer")],
+            token_usage=[
+                {
+                    "prompt_tokens": 90,
+                    "completion_tokens": 90,
+                    "total_tokens": 180,
+                    "token_usage_source": "stale",
+                },
+                {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 5,
+                    "total_tokens": 12,
+                    "token_usage_source": "fixture",
+                },
+            ],
+        )
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(
+                enable_two_stage=False,
+                input_cost_per_million_tokens=2.0,
+                output_cost_per_million_tokens=4.0,
+            ),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="usage question",
+            package=self._build_package(),
+        )
+
+        self.assertEqual(trace.prompt_tokens, 7)
+        self.assertEqual(trace.completion_tokens, 5)
+        self.assertEqual(trace.total_tokens, 12)
+        self.assertEqual(trace.token_usage_source, "fixture")
+        self.assertEqual(trace.estimated_cost_usd, 0.000034)
+
+    def test_generation_usage_collector_normalizes_client_state(self) -> None:
+        from rag_modules.generation.execution.usage import GenerationUsageCollector
+
+        client = _FakeClientAdapter(
+            token_usage=[
+                {
+                    "prompt_tokens": "8",
+                    "completion_tokens": "3",
+                    "total_tokens": "11",
+                    "token_usage_source": "fixture",
+                },
+            ],
+            retry_counts=[2],
+        )
+        collector = GenerationUsageCollector(client)
+
+        self.assertEqual(collector.drain_retry_count(), 2)
+        usage = collector.drain_token_usage()
+
+        self.assertEqual(usage.prompt_tokens, 8)
+        self.assertEqual(usage.completion_tokens, 3)
+        self.assertEqual(usage.total_tokens, 11)
+        self.assertEqual(usage.token_usage_source, "fixture")
 
     def test_generation_settings_normalizes_planner_mode_to_enum(self) -> None:
         settings = GenerationSettings(planner_mode="hybrid")
