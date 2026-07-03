@@ -63,6 +63,7 @@ class PersistentBuildJobRegistry:
         job_type: str,
         message: str,
         idempotency_key: str = "",
+        retry_of_job_id: str = "",
     ) -> tuple[bool, dict[str, Any] | None, _InterprocessFileLock | None]:
         return self.repository.create_or_active(
             job_id=job_id,
@@ -70,6 +71,7 @@ class PersistentBuildJobRegistry:
             job_type=job_type,
             message=message,
             idempotency_key=idempotency_key,
+            retry_of_job_id=retry_of_job_id,
         )
 
     def list(self) -> list[dict[str, Any]]:
@@ -86,6 +88,12 @@ class PersistentBuildJobRegistry:
 
     def mark_running(self, job_id: str, *, message: str) -> None:
         self.repository.mark_running(job_id, message=message)
+
+    def mark_cancel_requested(self, job_id: str, *, message: str) -> None:
+        self.repository.mark_cancel_requested(job_id, message=message)
+
+    def mark_cancelled(self, job_id: str, *, result: dict[str, Any]) -> None:
+        self.repository.mark_cancelled(job_id, result=result)
 
     def mark_succeeded(self, job_id: str, *, result: dict[str, Any]) -> None:
         self.repository.mark_succeeded(job_id, result=result)

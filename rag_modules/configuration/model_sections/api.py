@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -21,6 +21,8 @@ class ApiSettings(ConfigSection):
     answer_acquire_timeout_seconds: float = Field(default=0.25, ge=0.0)
     stream_executor_max_workers: int = Field(default=4, ge=1)
     stream_queue_max_size: int = Field(default=64, ge=1)
+    build_job_runner_backend: Literal["in_process"] = "in_process"
+    build_job_runner_max_workers: int = Field(default=1, ge=1)
     build_job_retention_limit: int = Field(default=100, ge=1)
     build_job_list_default_limit: int = Field(default=50, ge=1)
     build_job_list_max_limit: int = Field(default=100, ge=1)

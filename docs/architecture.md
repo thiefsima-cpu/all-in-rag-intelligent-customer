@@ -207,9 +207,9 @@ Primary code paths:
 
 ## Build Workflow State Machine
 
-The persisted build-job statuses are `queued`, `running`, `succeeded`, and
-`failed`. The other states below describe HTTP submission outcomes or internal
-work inside a running job.
+The persisted build-job statuses are `queued`, `running`, `cancel_requested`,
+`succeeded`, `failed`, and `cancelled`. The other states below describe HTTP
+submission outcomes or internal work inside a running job.
 
 ```mermaid
 stateDiagram-v2
@@ -221,9 +221,12 @@ stateDiagram-v2
   Submitted --> Conflict: active build job or flight lock
   Submitted --> Queued: create job record and acquire flight lock
 
-  Queued --> Running: executor starts _run_build_job
+  Queued --> Running: BuildJobTask starts
+  Queued --> Cancelled: runner cancels queued future
   Queued --> Failed: restart recovery when flight lock is gone
   Running --> Failed: restart recovery when flight lock is gone
+  Running --> CancelRequested: POST /v1/jobs/{job_id}/cancel
+  CancelRequested --> Cancelled: progress checkpoint observes control
 
   state Running {
     [*] --> MarkRunning
@@ -259,25 +262,32 @@ stateDiagram-v2
 
   Running --> Succeeded: mark_succeeded with diagnostics and stats
   Running --> Failed: exception, rollback/discard vector build, mark_failed
+  Failed --> RetrySubmitted: POST /v1/jobs/{job_id}/retry
+  Cancelled --> RetrySubmitted: POST /v1/jobs/{job_id}/retry
+  RetrySubmitted --> Queued: create new job with retry_of_job_id
 
   Replayed --> [*]: return original job payload
   InvalidRequest --> [*]: 400 INVALID_REQUEST
   Conflict --> [*]: 409 BUILD_JOB_CONFLICT
   Succeeded --> [*]
   Failed --> [*]
+  Cancelled --> [*]
 ```
 
 Primary code paths:
 
 - `rag_modules/interfaces/api/routes.py` registers the canonical
-  `/v1/jobs/build` and `/v1/jobs/rebuild` build routes; unversioned HTTP
-  aliases are retired.
-- `rag_modules/interfaces/api/services/build.py` owns submission locks,
-  idempotency validation, executor submission, `_run_build_job`, and job result
-  snapshots.
+  submit, cancel, retry, list, and detail routes; unversioned HTTP aliases are
+  retired.
+- `rag_modules/interfaces/api/services/build.py` is the thin HTTP-facing
+  orchestration boundary. It resolves request IDs, maps runner exceptions to
+  API errors, and supplies runtime hooks.
+- `rag_modules/interfaces/api/build_jobs/runner.py` owns submission,
+  cancellation, retry creation, progress events, executor backend lifecycle,
+  future/control tracking, and `BuildJobTask` execution.
 - `rag_modules/interfaces/api/build_jobs/repository.py` owns durable job
-  records, idempotency indexes, retention, recovery, pagination, and corruption
-  warnings.
+  records, retry links, cancellation states, idempotency indexes, retention,
+  recovery, pagination, and corruption warnings.
 - `rag_modules/app/composition/build_runtime_lifecycle_service.py` executes
   build/rebuild and refreshes serving runtime state from a completed build.
 - `rag_modules/build_pipeline/knowledge_base_workflow.py` owns artifact reuse,

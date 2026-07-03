@@ -100,6 +100,8 @@ class ConfigurationDefaultTests(unittest.TestCase):
     def test_default_build_job_history_limits_are_bounded(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
 
+        self.assertEqual(config.api.build_job_runner_backend, "in_process")
+        self.assertEqual(config.api.build_job_runner_max_workers, 1)
         self.assertEqual(config.api.build_job_retention_limit, 100)
         self.assertEqual(config.api.build_job_list_default_limit, 50)
         self.assertEqual(config.api.build_job_list_max_limit, 100)

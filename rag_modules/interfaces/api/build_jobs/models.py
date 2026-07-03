@@ -19,6 +19,8 @@ _SAFE_BUILD_LOGS = frozenset(
         "Build progress updated.",
         "Build failed.",
         "Build interrupted by service restart.",
+        "Build cancellation requested.",
+        "Build cancelled.",
     }
 )
 _SAFE_BUILD_PROGRESS_MESSAGES = {
@@ -129,6 +131,7 @@ class BuildJobRecord:
     logs: list[str] = field(default_factory=list)
     result: dict | None = None
     idempotency_key_hash: str = ""
+    retry_of_job_id: str = ""
 
     def to_dict(self, *, include_internal: bool = False) -> dict:
         payload = {
@@ -143,6 +146,7 @@ class BuildJobRecord:
             "error": copy.deepcopy(self.error),
             "logs": [_safe_build_log(item) for item in self.logs],
             "result": copy.deepcopy(self.result),
+            "retry_of_job_id": self.retry_of_job_id,
         }
         if include_internal and self.idempotency_key_hash:
             payload["idempotency_key_hash"] = self.idempotency_key_hash
@@ -172,6 +176,7 @@ class BuildJobRecord:
                 else None
             ),
             idempotency_key_hash=str(payload.get("idempotency_key_hash") or ""),
+            retry_of_job_id=str(payload.get("retry_of_job_id") or ""),
         )
 
 

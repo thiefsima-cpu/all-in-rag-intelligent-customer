@@ -299,6 +299,43 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         return build_build_job_response(api_service.get_build_job(job_id))
 
     @app.post(
+        f"{API_PREFIX}/jobs/{{job_id}}/cancel",
+        response_model=BuildJobResponseModel,
+        status_code=202,
+        summary="Cancel a build job",
+        description="Requests cooperative cancellation of a queued or running build job.",
+        responses={
+            404: {"description": "Build job was not found."},
+            409: {"description": "Build job cannot be cancelled from its current state."},
+        },
+    )
+    def cancel_build_job(
+        job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
+    ) -> BuildJobResponseModel:
+        return build_build_job_response(api_service.cancel_build_job(job_id))
+
+    @app.post(
+        f"{API_PREFIX}/jobs/{{job_id}}/retry",
+        response_model=BuildJobResponseModel,
+        status_code=202,
+        summary="Retry a build job",
+        description="Queues a new build job linked to a failed or cancelled job.",
+        responses={
+            404: {"description": "Build job was not found."},
+            409: {"description": "Build job cannot be retried from its current state."},
+        },
+    )
+    def retry_build_job(
+        job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
+    ) -> BuildJobResponseModel:
+        return build_build_job_response(
+            api_service.retry_build_job(
+                job_id,
+                request_id=current_request_id(),
+            )
+        )
+
+    @app.post(
         f"{API_PREFIX}/jobs/build",
         response_model=BuildJobResponseModel,
         status_code=202,

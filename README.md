@@ -155,12 +155,25 @@ $job = Invoke-RestMethod -Method Post http://localhost:8001/v1/jobs/build
 Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 ```
 
-### Build job retries and history
+### Build job control and history
 
 Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build` and
 `/v1/jobs/rebuild`. Reusing the same key for the same operation returns the
 original job. Reusing a key for a different operation returns
 `409 BUILD_JOB_CONFLICT`.
+
+Queued or running jobs can be cancelled cooperatively:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  "http://localhost:8001/v1/jobs/$($job.job.job_id)/cancel"
+```
+
+Running jobs first enter `cancel_requested` and become `cancelled` when the
+build workflow reaches its next progress checkpoint. Failed or cancelled jobs
+can be retried with `POST /v1/jobs/{job_id}/retry`. Retry creates a new job and
+records the original identifier in `retry_of_job_id`; the original history is
+not rewritten.
 
 `GET /v1/jobs` returns a bounded page:
 
@@ -174,6 +187,10 @@ to `API_BUILD_JOB_RETENTION_LIMIT`; active jobs are never pruned. If local job
 storage contains a corrupted record, `/v1/diagnostics` reports safe
 `build_job_store.warning_count` and stable warning codes without exposing raw
 file contents.
+
+The default execution backend is configured with
+`API_BUILD_JOB_RUNNER_BACKEND=in_process`. Local executor concurrency is
+controlled by `API_BUILD_JOB_RUNNER_MAX_WORKERS`, which defaults to `1`.
 
 `/v1/answers` returns `409 Conflict` until the build API has produced a ready
 artifact manifest, cached documents, and a Milvus vector collection.

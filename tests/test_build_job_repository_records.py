@@ -16,6 +16,53 @@ def _now() -> str:
 
 
 class BuildJobRepositoryRecordTests(unittest.TestCase):
+    def test_repository_persists_retry_parent_and_cancel_states(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = BuildJobRepository(
+                str(Path(temp_dir) / "build_jobs.json"),
+                now=_now,
+                settings=BuildJobRepositorySettings(),
+            )
+            created, job, build_lock = repository.create_or_active(
+                job_id="a" * 32,
+                request_id="request-a",
+                job_type="build",
+                message="Knowledge base build retry job queued.",
+                idempotency_key="",
+                retry_of_job_id="9" * 32,
+            )
+            try:
+                self.assertTrue(created)
+                self.assertEqual(job["retry_of_job_id"], "9" * 32)
+
+                repository.mark_running(job["job_id"], message="Knowledge base build started.")
+                repository.mark_cancel_requested(
+                    job["job_id"],
+                    message="Knowledge base build cancellation requested.",
+                )
+
+                active = repository.active()
+                self.assertIsNotNone(active)
+                assert active is not None
+                self.assertEqual(active["job_id"], job["job_id"])
+                self.assertEqual(active["status"], "cancel_requested")
+
+                repository.mark_cancelled(
+                    job["job_id"],
+                    result={"message": "Knowledge base build cancelled."},
+                )
+
+                cancelled = repository.get(job["job_id"])
+                self.assertIsNotNone(cancelled)
+                assert cancelled is not None
+                self.assertEqual(cancelled["status"], "cancelled")
+                self.assertEqual(cancelled["retry_of_job_id"], "9" * 32)
+                self.assertEqual(cancelled["result"]["message"], "Knowledge base build cancelled.")
+                self.assertIsNone(repository.active())
+            finally:
+                if build_lock is not None:
+                    build_lock.release()
+
     def test_corrupt_job_file_is_skipped_and_reported_safely(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
