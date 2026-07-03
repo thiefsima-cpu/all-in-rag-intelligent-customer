@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .diagnostics_runtime_models import StartupDiagnostics
 
 
-def startup_diagnostics_lines(diagnostics: object, *, title: Optional[str] = None) -> list[str]:
+def startup_diagnostics_lines(
+    diagnostics: StartupDiagnostics,
+    *,
+    title: Optional[str] = None,
+) -> list[str]:
     heading = title or f"{diagnostics.mode.capitalize()} startup diagnostics"
     lines = [
         heading,
