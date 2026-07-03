@@ -6,13 +6,15 @@ from typing import Any, Mapping, Self
 
 from pydantic import Field
 
-from rag_modules.query_policy import get_query_policy
+from rag_modules.query_policy.models import (
+    PlannerRuntimeDefaultsPolicy,
+    QuerySemanticRuntimeDefaultsPolicy,
+)
 
 from .base import ConfigSection
 
-_QUERY_POLICY = get_query_policy()
-_PLANNER_DEFAULTS = _QUERY_POLICY.runtime_defaults.planner
-_SEMANTIC_DEFAULTS = _QUERY_POLICY.runtime_defaults.semantics
+_PLANNER_DEFAULTS = PlannerRuntimeDefaultsPolicy()
+_SEMANTIC_DEFAULTS = QuerySemanticRuntimeDefaultsPolicy()
 
 
 class QueryPolicySelectorSettings(ConfigSection):

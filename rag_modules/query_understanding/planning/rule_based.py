@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...contracts import QueryPlan, QueryPlannerMode, QuerySemanticRuntimeSettings
 from ...domain.shared.query_constraints import QueryConstraints
+from ...query_policy.models import QueryPolicyBundle
 from ...runtime import SearchStrategy
 from ..features import fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
@@ -16,20 +17,34 @@ class RuleBasedPlanner:
         self,
         settings: QuerySemanticRuntimeSettings,
         calibrator: QueryPlanCalibrator,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.settings = settings
         self.calibrator = calibrator
+        self.policy_bundle = policy_bundle
 
     def plan(self, query: str) -> QueryPlan:
-        profile = infer_query_semantic_profile(query, settings=self.settings)
+        profile = infer_query_semantic_profile(
+            query,
+            settings=self.settings,
+            policy_bundle=self.policy_bundle,
+        )
         constraints = QueryConstraints.from_dict(profile.constraints)
         complexity = max(
             profile.complexity,
-            estimate_query_complexity(query, settings=self.settings),
+            estimate_query_complexity(
+                query,
+                settings=self.settings,
+                policy_bundle=self.policy_bundle,
+            ),
         )
         relationship_intensity = max(
             profile.relationship_intensity,
-            estimate_relationship_intensity(query, settings=self.settings),
+            estimate_relationship_intensity(
+                query,
+                settings=self.settings,
+                policy_bundle=self.policy_bundle,
+            ),
         )
 
         strategy = self.calibrator.resolve_strategy(
@@ -83,6 +98,7 @@ class RuleBasedPlanner:
                 profile.query_type_value,
                 relationship_intensity,
                 settings=self.settings,
+                policy_bundle=self.policy_bundle,
             ),
             constraints=constraints,
             needs_recipe_recommendation=profile.needs_recipe_recommendation,

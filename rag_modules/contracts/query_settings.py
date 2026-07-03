@@ -5,12 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from ..query_policy import get_query_policy
+from ..query_policy.models import PlannerRuntimeDefaultsPolicy, QuerySemanticRuntimeDefaultsPolicy
 from ._common import bounded_float, coerce_int
 
-_POLICY_BUNDLE = get_query_policy()
-_PLANNER_DEFAULTS = _POLICY_BUNDLE.runtime_defaults.planner
-_SEMANTIC_DEFAULTS = _POLICY_BUNDLE.runtime_defaults.semantics
+_PLANNER_DEFAULTS = PlannerRuntimeDefaultsPolicy()
+_SEMANTIC_DEFAULTS = QuerySemanticRuntimeDefaultsPolicy()
 
 
 @dataclass

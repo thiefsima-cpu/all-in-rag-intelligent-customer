@@ -154,7 +154,7 @@ class QueryConstraintExtractor:
         self.semantic_settings = semantic_settings
 
     def extract(self, query: str) -> QueryConstraints:
-        from ...query_understanding import infer_query_semantic_profile
+        from ...query_understanding.graph_intent import infer_query_semantic_profile
 
         profile = infer_query_semantic_profile(
             query,

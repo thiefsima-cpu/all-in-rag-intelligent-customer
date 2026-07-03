@@ -8,14 +8,9 @@ from typing import Any, Dict, Iterable, List
 
 from ..domain.shared.query_constraints import QueryConstraints
 from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
-from ..query_policy import get_query_policy
 from .query_settings import QuerySemanticRuntimeSettings
 
-_POLICY = get_query_policy()
-_VALID_STRATEGIES = set(_POLICY.graph_routing_strategies)
-_SCHEMA_RELATION_TYPES = tuple(
-    dict.fromkeys([*_POLICY.graph_relation_types, *SEMANTIC_RELATION_TYPES])
-)
+_SCHEMA_RELATION_TYPES = SEMANTIC_RELATION_TYPES
 
 
 def _dedupe_preserve_order(values: Iterable[Any]) -> List[str]:
@@ -318,8 +313,10 @@ class QueryPlan:
         data: Dict[str, Any],
         *,
         semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        schema_relation_types: Iterable[str] | None = None,
     ) -> "QueryPlan":
         semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
+        allowed_relation_types = tuple(schema_relation_types or _SCHEMA_RELATION_TYPES)
         semantic_profile = data.get("semantic_profile")
         resolved_profile = (
             semantic_profile
@@ -394,7 +391,7 @@ class QueryPlan:
             for relation in (
                 _as_list(data.get("relation_types")) or list(resolved_profile.relation_types)
             )
-            if relation in _SCHEMA_RELATION_TYPES
+            if relation in allowed_relation_types
         ]
 
         return cls(

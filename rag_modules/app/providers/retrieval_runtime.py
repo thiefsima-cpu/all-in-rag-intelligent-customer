@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
 from ...graph.retrieval import GraphRAGRetrieval
+from ...query_policy.models import QueryPolicyBundle
 from ...query_understanding.service import QueryUnderstandingService
 from ...retrieval import HybridRetrievalService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile, RetrievalRuntimeProfileFactory
@@ -29,7 +30,10 @@ class _DefaultRetrievalRuntimeProvider:
     def provide_retrieval_runtime_profile(
         self,
         config: GraphRAGConfig,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> RetrievalRuntimeProfile:
+        del policy_bundle
         return self.profile_factory.build(config)
 
     def provide_query_understanding_service(
@@ -38,12 +42,14 @@ class _DefaultRetrievalRuntimeProvider:
         config: GraphRAGConfig,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> QueryUnderstandingService:
         return QueryUnderstandingService(
             llm_client=llm_client,
             config=config,
             planner_settings=retrieval_profile.planner,
             semantic_settings=retrieval_profile.semantics,
+            policy_bundle=policy_bundle,
         )
 
     def provide_traditional_retrieval(
@@ -55,7 +61,9 @@ class _DefaultRetrievalRuntimeProvider:
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> HybridRetrievalService:
+        del policy_bundle
         return HybridRetrievalService(
             config=config,
             milvus_module=milvus_module,
@@ -72,12 +80,14 @@ class _DefaultRetrievalRuntimeProvider:
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRAGRetrieval:
         return GraphRAGRetrieval(
             config=config,
             llm_client=llm_client,
             neo4j_manager=neo4j_manager,
             retrieval_profile=retrieval_profile,
+            policy_bundle=policy_bundle,
         )
 
     def provide_routing_workflow(
@@ -89,6 +99,7 @@ class _DefaultRetrievalRuntimeProvider:
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> RoutingWorkflowProtocol:
         return RoutingWorkflowService(
             traditional_retrieval=traditional_retrieval,
@@ -97,6 +108,7 @@ class _DefaultRetrievalRuntimeProvider:
             config=config,
             retrieval_profile=retrieval_profile,
             query_understanding_service=query_understanding_service,
+            policy_bundle=policy_bundle,
         )
 
 

@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RequestControl
 from ..domain.shared.query_constraints import QueryConstraints
+from ..query_policy.models import QueryPolicyBundle
 from ..query_understanding.service import QueryUnderstandingService
 from ..retrieval.post_processor import RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
@@ -42,18 +43,21 @@ class RoutingWorkflowService:
         post_processor: Optional[RetrievalPostProcessor] = None,
         route_stats: Optional[RouteStatisticsTracker] = None,
         search_orchestrator: Optional[RouteSearchOrchestrator] = None,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.traditional_retrieval = traditional_retrieval
         self.graph_rag_retrieval = graph_rag_retrieval
         self.llm_client = llm_client
         self.config = config
         self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)
+        self.policy_bundle = policy_bundle
         if query_understanding_service is None:
             query_understanding_service = QueryUnderstandingService(
                 llm_client=llm_client,
                 config=config,
                 planner_settings=self.retrieval_profile.planner,
                 semantic_settings=self.retrieval_profile.semantics,
+                policy_bundle=policy_bundle,
             )
         self.query_understanding_service = query_understanding_service
         self.query_planner = self.query_understanding_service.query_planner
@@ -101,7 +105,11 @@ class RoutingWorkflowService:
             float(getattr(self.config.generation, "generation_latency_budget_seconds", 30.0)),
             scope="route",
         )
-        trace = RouteTraceRecorder(query=query, requested_top_k=top_k)
+        trace = RouteTraceRecorder(
+            query=query,
+            requested_top_k=top_k,
+            policy_bundle=self.policy_bundle,
+        )
 
         understanding, execution_request = self._build_execution_request(
             query=query,

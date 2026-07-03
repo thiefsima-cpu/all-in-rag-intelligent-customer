@@ -5,6 +5,7 @@ from __future__ import annotations
 from ...configuration.models import GraphRAGConfig
 from ...generation.service import GenerationWorkflowService
 from ...observability.tracing_sinks import QueryTraceSinkFactory
+from ...query_policy.models import QueryPolicyBundle
 from ...retrieval.runtime_profile import RetrievalRuntimeProfileFactory
 from .build_pipeline import _DefaultBuildPipelineProvider
 from .contracts import (
@@ -43,8 +44,16 @@ class DefaultRuntimeProvider:
         self.services = services or _DefaultApplicationServiceProvider()
         self._generation = _DefaultGenerationProvider()
 
-    def provide_generation_module(self, config: GraphRAGConfig) -> GenerationWorkflowService:
-        return self._generation.provide_generation_module(config)
+    def provide_generation_module(
+        self,
+        config: GraphRAGConfig,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> GenerationWorkflowService:
+        return self._generation.provide_generation_module(
+            config,
+            policy_bundle=policy_bundle,
+        )
 
     @property
     def provider(self) -> "DefaultRuntimeProvider":

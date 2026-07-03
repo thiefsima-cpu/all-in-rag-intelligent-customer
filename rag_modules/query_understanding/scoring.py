@@ -5,41 +5,59 @@ from __future__ import annotations
 from typing import Sequence
 
 from ..contracts import QuerySemanticRuntimeSettings, QuerySemanticScoreBreakdown
-from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from .features import infer_graph_query_type
 from .registry import (
-    CONSTRAINT_MARKERS,
-    FAST_RULE_MARKERS,
-    RELATION_MARKERS,
-    STRUCTURAL_REASONING_MARKERS,
+    QueryUnderstandingRegistry,
     marker_hits,
     normalize_query_text,
+    query_registry,
 )
+
+
+def _active_registry(
+    *,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> QueryUnderstandingRegistry:
+    return registry or query_registry(policy_bundle)
 
 
 def build_query_semantic_score_breakdown(
     query: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
     constraint_hits: Sequence[str] | None = None,
     structural_hits: Sequence[str] | None = None,
     fast_rule_hits: Sequence[str] | None = None,
 ) -> QuerySemanticScoreBreakdown:
     settings = settings or QuerySemanticRuntimeSettings()
-    policy = get_query_policy().scoring
+    active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
+    policy = active_registry.policy.scoring
     normalized = normalize_query_text(query)
-    relation_hits = list(relation_hits or marker_hits(normalized, RELATION_MARKERS))
-    constraint_hits = list(constraint_hits or marker_hits(normalized, CONSTRAINT_MARKERS))
-    structural_hits = list(structural_hits or marker_hits(normalized, STRUCTURAL_REASONING_MARKERS))
-    fast_rule_hits = list(fast_rule_hits or marker_hits(normalized, FAST_RULE_MARKERS))
+    relation_hits = list(relation_hits or marker_hits(normalized, active_registry.relation_markers))
+    constraint_hits = list(
+        constraint_hits or marker_hits(normalized, active_registry.constraint_markers)
+    )
+    structural_hits = list(
+        structural_hits or marker_hits(normalized, active_registry.structural_reasoning_markers)
+    )
+    fast_rule_hits = list(
+        fast_rule_hits or marker_hits(normalized, active_registry.fast_rule_markers)
+    )
 
     relation_hit_count = len(relation_hits)
     constraint_hit_count = len(constraint_hits)
     structural_hit_count = len(structural_hits)
     fast_rule_hit_count = len(fast_rule_hits)
 
-    reference_hits = max(1.0, len(RELATION_MARKERS) * settings.relation_intensity_reference_ratio)
+    reference_hits = max(
+        1.0,
+        len(active_registry.relation_markers) * settings.relation_intensity_reference_ratio,
+    )
     lexical_relationship_intensity = min(
         1.0,
         (relation_hit_count + structural_hit_count * policy.structural_relationship_factor)
@@ -92,11 +110,15 @@ def estimate_relationship_intensity(
     query: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
 ) -> float:
     return build_query_semantic_score_breakdown(
         query,
         settings=settings,
+        policy_bundle=policy_bundle,
+        registry=registry,
         relation_hits=relation_hits,
     ).relationship_intensity
 
@@ -105,6 +127,8 @@ def estimate_query_complexity(
     query: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
     constraint_hits: Sequence[str] | None = None,
     structural_hits: Sequence[str] | None = None,
@@ -112,6 +136,8 @@ def estimate_query_complexity(
     return build_query_semantic_score_breakdown(
         query,
         settings=settings,
+        policy_bundle=policy_bundle,
+        registry=registry,
         relation_hits=relation_hits,
         constraint_hits=constraint_hits,
         structural_hits=structural_hits,
@@ -122,18 +148,24 @@ def should_use_fast_rule_plan(
     query: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
     fast_rule_hits: Sequence[str] | None = None,
 ) -> bool:
     _ = settings or QuerySemanticRuntimeSettings()
+    active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     if not query:
         return True
     normalized = normalize_query_text(query)
-    query_type = infer_graph_query_type(normalized)
+    query_type = infer_graph_query_type(normalized, registry=active_registry)
     if query_type in {"path_finding", "subgraph", "clustering"}:
         return True
-    if query_type == "multi_hop" and marker_hits(normalized, STRUCTURAL_REASONING_MARKERS):
+    if query_type == "multi_hop" and marker_hits(
+        normalized,
+        active_registry.structural_reasoning_markers,
+    ):
         return True
-    return bool(fast_rule_hits or marker_hits(normalized, FAST_RULE_MARKERS))
+    return bool(fast_rule_hits or marker_hits(normalized, active_registry.fast_rule_markers))
 
 
 __all__ = [

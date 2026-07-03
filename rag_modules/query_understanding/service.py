@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings, RequestControl
+from ..query_policy.models import QueryPolicyBundle
 from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..runtime_contracts import LLMClientPort
 from .planner_service import QueryPlanner
@@ -20,6 +21,7 @@ class QueryUnderstandingService:
         config,
         planner_settings: QueryPlannerRuntimeSettings | None = None,
         semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.config = config
         self.llm_client = llm_client
@@ -31,6 +33,7 @@ class QueryUnderstandingService:
             llm_client,
             settings=self.planner_settings,
             semantic_settings=self.semantic_settings,
+            policy_bundle=policy_bundle,
         )
 
     def understand(

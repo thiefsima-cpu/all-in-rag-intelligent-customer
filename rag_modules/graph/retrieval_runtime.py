@@ -8,6 +8,7 @@ import time
 
 from ..contracts import RetrievalRequest
 from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
 from ..runtime.error_models import ensure_runtime_error_detail
 from ..runtime.json_types import JsonObject
@@ -18,8 +19,17 @@ from .retrieval_types import GraphQuery
 class GraphRetrievalRuntime:
     """Own request normalization and graph trace bookkeeping."""
 
-    def __init__(self, query_factory: GraphQueryFactory):
+    def __init__(
+        self,
+        query_factory: GraphQueryFactory,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ):
         self.query_factory = query_factory
+        resolved_policy = policy_bundle or getattr(query_factory, "policy_bundle", None)
+        if resolved_policy is None:
+            resolved_policy = get_query_policy()
+        self.policy_bundle: QueryPolicyBundle = resolved_policy
 
     def build_request(
         self,
@@ -38,12 +48,11 @@ class GraphRetrievalRuntime:
         evidence_goals = self.query_factory.decompose_graph_question(request.query, graph_query)
         return graph_query, evidence_goals
 
-    @staticmethod
-    def _policy_snapshot() -> PolicySnapshot:
-        return PolicySnapshot.from_metadata(get_query_policy().metadata)
+    def _policy_snapshot(self) -> PolicySnapshot:
+        return PolicySnapshot.from_metadata(self.policy_bundle.metadata)
 
-    @staticmethod
     def start_trace(
+        self,
         query: str,
         *,
         requested_top_k: int = 0,
@@ -53,12 +62,12 @@ class GraphRetrievalRuntime:
             query=query,
             strategy="graph_rag",
             requested_top_k=requested_top_k,
-            policy=GraphRetrievalRuntime._policy_snapshot(),
+            policy=self._policy_snapshot(),
             retrieval_request=retrieval_request,
         )
 
-    @staticmethod
     def populate_trace_context(
+        self,
         trace: GraphRetrievalSnapshot,
         *,
         graph_query: GraphQuery,
@@ -70,7 +79,7 @@ class GraphRetrievalRuntime:
         trace.relation_types = list(graph_query.relation_types or [])
         trace.sub_questions = list(evidence_goals or [])
         if not trace.policy.is_recorded():
-            trace.policy = GraphRetrievalRuntime._policy_snapshot()
+            trace.policy = self._policy_snapshot()
 
     @staticmethod
     def finalize_trace(

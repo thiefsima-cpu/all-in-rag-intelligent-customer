@@ -18,8 +18,11 @@ from ...contracts import (
     RequestControl,
 )
 from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
+from ...query_policy import get_query_policy
+from ...query_policy.models import QueryPolicyBundle
 from ...runtime_contracts import LLMClientPort
 from ...safe_logging import log_failure
+from ..registry import QueryUnderstandingRegistry, query_registry
 from ..scoring import should_use_fast_rule_plan
 from .cache import QueryPlannerCache
 from .calibration import QueryPlanCalibrator
@@ -39,8 +42,11 @@ class QueryPlanner:
         fast_rule_planning: bool | None = None,
         settings: QueryPlannerRuntimeSettings | None = None,
         semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        policy_bundle: QueryPolicyBundle | None = None,
     ):
         self.llm_client = llm_client
+        self.policy_bundle = policy_bundle or get_query_policy()
+        self.registry: QueryUnderstandingRegistry = query_registry(self.policy_bundle)
         if settings is None:
             settings = QueryPlannerRuntimeSettings(
                 model_name=model_name or "qwen3.7-plus",
@@ -51,8 +57,15 @@ class QueryPlanner:
         self.settings = settings
         self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
         self._plan_cache = QueryPlannerCache()
-        self._calibrator = QueryPlanCalibrator(self.semantic_settings)
-        self._rule_planner = RuleBasedPlanner(self.semantic_settings, self._calibrator)
+        self._calibrator = QueryPlanCalibrator(
+            self.semantic_settings,
+            policy_bundle=self.policy_bundle,
+        )
+        self._rule_planner = RuleBasedPlanner(
+            self.semantic_settings,
+            self._calibrator,
+            policy_bundle=self.policy_bundle,
+        )
 
     def plan(self, query: str, *, control: RequestControl | None = None) -> QueryPlan:
         if control is not None:
@@ -121,6 +134,7 @@ class QueryPlanner:
                 query,
                 loads_json_object(response_content),
                 semantic_settings=self.semantic_settings,
+                schema_relation_types=self.registry.graph_relation_types,
             )
             self._calibrate_plan(plan)
             plan.planner_mode = QueryPlannerMode.LLM
@@ -147,7 +161,11 @@ class QueryPlanner:
             return plan
 
     def _build_planning_prompt(self, query: str) -> str:
-        return build_planning_prompt(query)
+        return build_planning_prompt(
+            query,
+            policy_bundle=self.policy_bundle,
+            registry=self.registry,
+        )
 
     @staticmethod
     def _response_text(response: object) -> str:
@@ -170,7 +188,11 @@ class QueryPlanner:
         self._plan_cache.release_planning(cache_key, future)
 
     def _should_use_fast_rule_plan(self, query: str) -> bool:
-        return should_use_fast_rule_plan(query, settings=self.semantic_settings)
+        return should_use_fast_rule_plan(
+            query,
+            settings=self.semantic_settings,
+            registry=self.registry,
+        )
 
     def _has_meaningful_constraints(
         self,

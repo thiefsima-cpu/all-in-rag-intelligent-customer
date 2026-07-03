@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from ...query_policy import get_query_policy
+from ...query_policy.models import (
+    CandidateRuntimeDefaultsPolicy,
+    CandidateSourceRuntimeDefaultsPolicy,
+    PlannerRuntimeDefaultsPolicy,
+    PostProcessRuntimeDefaultsPolicy,
+    QuerySemanticRuntimeDefaultsPolicy,
+)
 
-_POLICY = get_query_policy()
-_PLANNER_DEFAULTS = _POLICY.runtime_defaults.planner
-_SEMANTIC_DEFAULTS = _POLICY.runtime_defaults.semantics
-_CANDIDATE_DEFAULTS = _POLICY.runtime_defaults.candidates
-_CANDIDATE_SOURCE_DEFAULTS = _POLICY.runtime_defaults.candidate_sources
-_POSTPROCESS_DEFAULTS = _POLICY.runtime_defaults.postprocess
+_PLANNER_DEFAULTS = PlannerRuntimeDefaultsPolicy()
+_SEMANTIC_DEFAULTS = QuerySemanticRuntimeDefaultsPolicy()
+_CANDIDATE_DEFAULTS = CandidateRuntimeDefaultsPolicy()
+_CANDIDATE_SOURCE_DEFAULTS = CandidateSourceRuntimeDefaultsPolicy()
+_POSTPROCESS_DEFAULTS = PostProcessRuntimeDefaultsPolicy()
 
 
 def _as_int(value: object, default: int, *, minimum: int = 0) -> int:

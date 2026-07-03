@@ -7,6 +7,7 @@ from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
 from ..entity_linker import EntityLinker
+from ..query_policy.models import QueryPolicyBundle
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime_contracts import LLMClientPort, Neo4jManagerPort
 from .cache_stats import GraphCacheStatsStore
@@ -51,6 +52,7 @@ class GraphRetrievalComponentFactory(Protocol):
         neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database_name: str,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents: ...
 
 
@@ -65,12 +67,14 @@ class DefaultGraphRetrievalComponentFactory:
         neo4j_manager: Neo4jManagerPort | None,
         retrieval_profile: RetrievalRuntimeProfile,
         database_name: str,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents:
         del llm_client
         query_factory = GraphQueryFactory(
             semantic_settings=retrieval_profile.semantics,
+            policy_bundle=policy_bundle,
         )
-        runtime = GraphRetrievalRuntime(query_factory)
+        runtime = GraphRetrievalRuntime(query_factory, policy_bundle=policy_bundle)
         entity_linker = EntityLinker(
             None,
             database=database_name,
@@ -82,7 +86,7 @@ class DefaultGraphRetrievalComponentFactory:
             evidence_builder=GraphEvidenceBuilder(),
             ranker=GraphDocumentRanker(config.graph),
         )
-        reasoning_strategy = GraphReasoningStrategy()
+        reasoning_strategy = GraphReasoningStrategy(policy_bundle=policy_bundle)
         orchestrator = GraphEvidenceOrchestrator(
             graph_plan_builder=graph_plan_builder,
             graph_executor=graph_executor,

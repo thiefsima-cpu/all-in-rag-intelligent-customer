@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from ..query_understanding import dedupe_preserve_order
+from ..query_understanding.registry import dedupe_preserve_order
 from .models import EntityKeyValue
 from .store import GraphIndexStore
 

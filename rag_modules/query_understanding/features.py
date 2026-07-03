@@ -7,36 +7,16 @@ import warnings
 from typing import Any, Dict, List, Sequence, Tuple
 
 from .registry import (
-    AMBIGUOUS_RECOMMENDATION_MARKERS,
-    CUISINE_STYLE_TERMS,
-    DIFFICULTY_TERMS,
-    ENTITY_PHRASE_MARKERS,
-    ENTITY_TARGET_MARKERS,
-    EXPLICIT_RECOMMENDATION_MARKERS,
-    FILTERING_MARKERS,
-    FLAVOR_TERMS,
-    GRAPH_GENERIC_TERMS,
-    GRAPH_RELATION_TYPES,
-    GRAPH_SOURCE_PREFIXES,
-    GRAPH_SOURCE_SUFFIXES,
-    HEALTH_TERMS,
-    INGREDIENT_CATEGORY_TERMS,
-    PATH_MARKERS,
-    POLICY,
-    QUERY_STOPWORDS,
-    RECOMMENDATION_MARKERS,
-    RELATION_MARKERS,
-    RELATION_QUERY_MARKERS,
-    SEMANTIC_NODE_TERMS,
-    STRUCTURAL_REASONING_MARKERS,
-    SUBGRAPH_MARKERS,
-    TECHNIQUE_TERMS,
-    TEXTURE_EFFECT_TERMS,
-    TIME_MARKERS,
+    QueryUnderstandingRegistry,
     contains_any,
     dedupe_preserve_order,
     normalize_query_text,
+    query_registry,
 )
+
+
+def _active_registry(registry: QueryUnderstandingRegistry | None) -> QueryUnderstandingRegistry:
+    return registry or query_registry()
 
 
 def remove_subsumed_tokens(tokens: Sequence[str]) -> List[str]:
@@ -53,89 +33,162 @@ def matched_terms(text: str, terms: Sequence[str]) -> List[str]:
     return [term for term in terms if term and term in text]
 
 
-def regex_group_matches(text: str, group_name: str) -> bool:
-    return any(re.search(pattern, text) for pattern in POLICY.lexicon.regex_group(group_name))
+def regex_group_matches(
+    text: str,
+    group_name: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> bool:
+    active_registry = _active_registry(registry)
+    return any(
+        re.search(pattern, text)
+        for pattern in active_registry.policy.lexicon.regex_group(group_name)
+    )
 
 
-def apply_cleanup_patterns(text: str, group_name: str) -> str:
+def apply_cleanup_patterns(
+    text: str,
+    group_name: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    active_registry = _active_registry(registry)
     value = text
-    for pattern in POLICY.lexicon.regex_group(group_name):
+    for pattern in active_registry.policy.lexicon.regex_group(group_name):
         value = re.sub(pattern, "", value)
     return value
 
 
-def has_recommendation_intent(query: str) -> bool:
-    if contains_any(query, EXPLICIT_RECOMMENDATION_MARKERS):
+def has_recommendation_intent(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> bool:
+    active_registry = _active_registry(registry)
+    if contains_any(query, active_registry.explicit_recommendation_markers):
         return True
-    if contains_any(query, STRUCTURAL_REASONING_MARKERS):
+    if contains_any(query, active_registry.structural_reasoning_markers):
         return False
-    if contains_any(query, AMBIGUOUS_RECOMMENDATION_MARKERS):
+    if contains_any(query, active_registry.ambiguous_recommendation_markers):
         return True
-    return regex_group_matches(query, "recommendation_patterns")
+    return regex_group_matches(query, "recommendation_patterns", registry=active_registry)
 
 
-def has_filtering_intent(query: str) -> bool:
-    if contains_any(query, FILTERING_MARKERS):
+def has_filtering_intent(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> bool:
+    active_registry = _active_registry(registry)
+    if contains_any(query, active_registry.filtering_markers):
         return True
     if any(
-        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_minutes_patterns")
+        re.search(pattern, query)
+        for pattern in active_registry.policy.lexicon.regex_group("time_minutes_patterns")
     ):
         return True
     if any(
-        re.search(pattern, query) for pattern in POLICY.lexicon.regex_group("time_hours_patterns")
+        re.search(pattern, query)
+        for pattern in active_registry.policy.lexicon.regex_group("time_hours_patterns")
     ):
         return True
-    return contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns"))
+    return contains_any(
+        query,
+        active_registry.policy.lexicon.regex_group("time_half_hour_patterns"),
+    )
 
 
-def clean_entity_phrase(text: str) -> str:
+def clean_entity_phrase(
+    text: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    active_registry = _active_registry(registry)
     value = normalize_query_text(text)
     if not value:
         return ""
-    value = apply_cleanup_patterns(value, "entity_cleanup_prefix_patterns")
-    value = apply_cleanup_patterns(value, "graph_context_suffix_patterns")
-    value = apply_cleanup_patterns(value, "entity_cleanup_suffix_patterns")
+    value = apply_cleanup_patterns(
+        value,
+        "entity_cleanup_prefix_patterns",
+        registry=active_registry,
+    )
+    value = apply_cleanup_patterns(
+        value,
+        "graph_context_suffix_patterns",
+        registry=active_registry,
+    )
+    value = apply_cleanup_patterns(
+        value,
+        "entity_cleanup_suffix_patterns",
+        registry=active_registry,
+    )
     value = re.sub(r"^[^\u4e00-\u9fffA-Za-z0-9]+", "", value)
     value = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+$", "", value)
     return value.strip()
 
 
-def is_stopword_like(text: str) -> bool:
-    return text in QUERY_STOPWORDS or text in GRAPH_GENERIC_TERMS
+def is_stopword_like(
+    text: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> bool:
+    active_registry = _active_registry(registry)
+    return text in active_registry.query_stopwords or text in active_registry.graph_generic_terms
 
 
-def looks_like_entity(text: str) -> bool:
+def looks_like_entity(
+    text: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> bool:
+    active_registry = _active_registry(registry)
     value = str(text or "").strip()
     if len(value) < 2 or len(value) > 24:
         return False
-    if is_stopword_like(value):
+    if is_stopword_like(value, registry=active_registry):
         return False
     if value.isdigit():
         return False
-    if value in RELATION_MARKERS or value in STRUCTURAL_REASONING_MARKERS:
+    if (
+        value in active_registry.relation_markers
+        or value in active_registry.structural_reasoning_markers
+    ):
         return False
     if (
-        contains_any(value, GRAPH_GENERIC_TERMS)
-        or contains_any(value, RECOMMENDATION_MARKERS)
-        or contains_any(value, FILTERING_MARKERS)
-        or contains_any(value, TIME_MARKERS)
-    ) and value not in SEMANTIC_NODE_TERMS:
+        contains_any(value, active_registry.graph_generic_terms)
+        or contains_any(value, active_registry.recommendation_markers)
+        or contains_any(value, active_registry.filtering_markers)
+        or contains_any(value, active_registry.time_markers)
+    ) and value not in active_registry.semantic_node_terms:
         return False
     return True
 
 
-def pairwise_entity_matches(query: str) -> List[Tuple[str, str]]:
+def pairwise_entity_matches(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[Tuple[str, str]]:
+    active_registry = _active_registry(registry)
     matches: List[Tuple[str, str]] = []
-    for pattern in POLICY.lexicon.regex_group("pairwise_entity_patterns"):
+    for pattern in active_registry.policy.lexicon.regex_group("pairwise_entity_patterns"):
         for left, right in re.findall(pattern, query):
-            left_text = clean_entity_phrase(left)
-            right_text = clean_entity_phrase(right)
-            if looks_like_entity(left_text) and looks_like_entity(right_text):
+            left_text = clean_entity_phrase(left, registry=active_registry)
+            right_text = clean_entity_phrase(right, registry=active_registry)
+            if looks_like_entity(left_text, registry=active_registry) and looks_like_entity(
+                right_text,
+                registry=active_registry,
+            ):
                 matches.append((left_text, right_text))
     return matches
 
 
-def extract_query_tokens(query: str) -> List[str]:
+def extract_query_tokens(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
     segmented_text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", normalized)
     try:
@@ -154,176 +207,247 @@ def extract_query_tokens(query: str) -> List[str]:
 
     matched = dedupe_preserve_order(
         [
-            *matched_terms(normalized, TEXTURE_EFFECT_TERMS),
-            *matched_terms(normalized, FLAVOR_TERMS),
-            *matched_terms(normalized, TECHNIQUE_TERMS),
-            *matched_terms(normalized, HEALTH_TERMS),
-            *matched_terms(normalized, CUISINE_STYLE_TERMS),
-            *matched_terms(normalized, INGREDIENT_CATEGORY_TERMS),
+            *matched_terms(normalized, active_registry.texture_effect_terms),
+            *matched_terms(normalized, active_registry.flavor_terms),
+            *matched_terms(normalized, active_registry.technique_terms),
+            *matched_terms(normalized, active_registry.health_terms),
+            *matched_terms(normalized, active_registry.cuisine_style_terms),
+            *matched_terms(normalized, active_registry.ingredient_category_terms),
         ]
     )
 
     cleaned: List[str] = []
     for token in [*raw_tokens, *matched]:
-        value = clean_entity_phrase(token)
+        value = clean_entity_phrase(token, registry=active_registry)
         if not value:
             continue
         if len(value) == 1 and not re.search(r"[A-Za-z0-9]", value):
             continue
-        if is_stopword_like(value):
+        if is_stopword_like(value, registry=active_registry):
             continue
         cleaned.append(value)
 
     return remove_subsumed_tokens(cleaned)
 
 
-def fallback_keywords(query: str) -> List[str]:
-    return extract_query_tokens(query)
+def fallback_keywords(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    return extract_query_tokens(query, registry=registry)
 
 
-def fallback_entity_phrases(query: str) -> List[str]:
+def fallback_entity_phrases(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
     if not normalized:
         return []
 
     phrases: List[str] = []
-    for left, right in pairwise_entity_matches(normalized):
+    for left, right in pairwise_entity_matches(normalized, registry=active_registry):
         phrases.extend([left, right])
 
-    for marker in ENTITY_PHRASE_MARKERS:
+    for marker in active_registry.entity_phrase_markers:
         if marker not in normalized:
             continue
         left, right = normalized.split(marker, 1)
-        left_text = clean_entity_phrase(left)
-        right_text = clean_entity_phrase(right)
-        if looks_like_entity(left_text):
+        left_text = clean_entity_phrase(left, registry=active_registry)
+        right_text = clean_entity_phrase(right, registry=active_registry)
+        if looks_like_entity(left_text, registry=active_registry):
             phrases.append(left_text)
-        if marker in ENTITY_TARGET_MARKERS and looks_like_entity(right_text):
+        if marker in active_registry.entity_target_markers and looks_like_entity(
+            right_text,
+            registry=active_registry,
+        ):
             phrases.append(right_text)
 
-    phrases.extend(matched_terms(normalized, TEXTURE_EFFECT_TERMS))
-    phrases.extend(matched_terms(normalized, FLAVOR_TERMS))
+    phrases.extend(matched_terms(normalized, active_registry.texture_effect_terms))
+    phrases.extend(matched_terms(normalized, active_registry.flavor_terms))
     return dedupe_preserve_order(phrases)
 
 
-def extract_entity_candidates(query: str) -> List[str]:
+def extract_entity_candidates(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
     candidates = dedupe_preserve_order(
         [
-            *fallback_entity_phrases(normalized),
-            *extract_query_tokens(normalized),
-            *matched_terms(normalized, TEXTURE_EFFECT_TERMS),
-            *matched_terms(normalized, FLAVOR_TERMS),
+            *fallback_entity_phrases(normalized, registry=active_registry),
+            *extract_query_tokens(normalized, registry=active_registry),
+            *matched_terms(normalized, active_registry.texture_effect_terms),
+            *matched_terms(normalized, active_registry.flavor_terms),
         ]
     )
     filtered: List[str] = []
     for candidate in candidates:
-        if candidate in GRAPH_GENERIC_TERMS:
+        if candidate in active_registry.graph_generic_terms:
             continue
-        if candidate in STRUCTURAL_REASONING_MARKERS:
+        if candidate in active_registry.structural_reasoning_markers:
             continue
-        if looks_like_entity(candidate):
+        if looks_like_entity(candidate, registry=active_registry):
             filtered.append(candidate)
-    return normalize_graph_sources(filtered)
+    return normalize_graph_sources(filtered, registry=active_registry)
 
 
-def normalize_graph_sources(values: Sequence[str]) -> List[str]:
+def normalize_graph_sources(
+    values: Sequence[str],
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     normalized: List[str] = []
     for value in values or []:
         text = str(value or "").strip()
         if not text:
             continue
-        for prefix in GRAPH_SOURCE_PREFIXES:
+        for prefix in active_registry.graph_source_prefixes:
             if text.startswith(prefix) and len(text) > len(prefix):
                 text = text[len(prefix) :]
-        for suffix in GRAPH_SOURCE_SUFFIXES:
+        for suffix in active_registry.graph_source_suffixes:
             if text.endswith(suffix) and len(text) > len(suffix):
                 text = text[: -len(suffix)]
-        text = clean_entity_phrase(text)
-        if not looks_like_entity(text):
+        text = clean_entity_phrase(text, registry=active_registry)
+        if not looks_like_entity(text, registry=active_registry):
             continue
         if text not in normalized:
             normalized.append(text)
     return remove_subsumed_tokens(normalized)
 
 
-def infer_graph_query_type(query: str) -> str:
+def infer_graph_query_type(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
     if not normalized:
         return "entity_relation"
-    if contains_any(normalized, PATH_MARKERS) or pairwise_entity_matches(normalized):
+    if contains_any(normalized, active_registry.path_markers) or pairwise_entity_matches(
+        normalized,
+        registry=active_registry,
+    ):
         return "path_finding"
-    if contains_any(normalized, SUBGRAPH_MARKERS):
+    if contains_any(normalized, active_registry.subgraph_markers):
         return "subgraph"
-    if contains_any(normalized, POLICY.lexicon.term_group("clustering_markers")):
+    if contains_any(normalized, active_registry.clustering_markers):
         return "clustering"
-    if contains_any(normalized, RELATION_MARKERS) or contains_any(
-        normalized, STRUCTURAL_REASONING_MARKERS
+    if contains_any(normalized, active_registry.relation_markers) or contains_any(
+        normalized, active_registry.structural_reasoning_markers
     ):
         return "multi_hop"
     return "entity_relation"
 
 
-def infer_relation_types(query: str) -> List[str]:
+def infer_relation_types(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
     relation_types: List[str] = []
-    for relation_type, markers in RELATION_QUERY_MARKERS.items():
-        if relation_type in GRAPH_RELATION_TYPES and contains_any(normalized, markers):
+    for relation_type, markers in active_registry.relation_query_markers.items():
+        if relation_type in active_registry.graph_relation_types and contains_any(
+            normalized,
+            markers,
+        ):
             relation_types.append(relation_type)
     return dedupe_preserve_order(relation_types)
 
 
-def extract_minutes(query: str) -> int | None:
-    for pattern in POLICY.lexicon.regex_group("time_minutes_patterns"):
+def extract_minutes(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> int | None:
+    active_registry = _active_registry(registry)
+    for pattern in active_registry.policy.lexicon.regex_group("time_minutes_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1))))
-    for pattern in POLICY.lexicon.regex_group("time_hours_patterns"):
+    for pattern in active_registry.policy.lexicon.regex_group("time_hours_patterns"):
         match = re.search(pattern, query)
         if match:
             return int(round(float(match.group(1)) * 60))
-    if contains_any(query, POLICY.lexicon.regex_group("time_half_hour_patterns")):
+    if contains_any(query, active_registry.policy.lexicon.regex_group("time_half_hour_patterns")):
         return 30
     return None
 
 
-def extract_style(query: str) -> str:
-    for style in CUISINE_STYLE_TERMS:
+def extract_style(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    active_registry = _active_registry(registry)
+    for style in active_registry.cuisine_style_terms:
         if style in query:
             return style
     return ""
 
 
-def extract_difficulty(query: str) -> str:
-    for difficulty in DIFFICULTY_TERMS:
+def extract_difficulty(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    active_registry = _active_registry(registry)
+    for difficulty in active_registry.difficulty_terms:
         if difficulty in query:
             return difficulty
     return ""
 
 
-def extract_excluded_terms(query: str) -> List[str]:
+def extract_excluded_terms(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> List[str]:
+    active_registry = _active_registry(registry)
     excluded: List[str] = []
-    for pattern in POLICY.lexicon.regex_group("excluded_term_patterns"):
+    for pattern in active_registry.policy.lexicon.regex_group("excluded_term_patterns"):
         for match in re.findall(pattern, query):
-            value = clean_entity_phrase(match)
-            if looks_like_entity(value):
+            value = clean_entity_phrase(match, registry=active_registry)
+            if looks_like_entity(value, registry=active_registry):
                 excluded.append(value)
     return dedupe_preserve_order(excluded)
 
 
-def infer_query_constraints(query: str) -> Dict[str, Any]:
+def infer_query_constraints(
+    query: str,
+    *,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> Dict[str, Any]:
+    active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
-    query_type = infer_graph_query_type(normalized)
-    recommendation_intent = has_recommendation_intent(normalized)
-    filtering_intent = has_filtering_intent(normalized)
+    query_type = infer_graph_query_type(normalized, registry=active_registry)
+    recommendation_intent = has_recommendation_intent(normalized, registry=active_registry)
+    filtering_intent = has_filtering_intent(normalized, registry=active_registry)
     selection_intent = recommendation_intent or filtering_intent
 
-    explicit_minutes = extract_minutes(normalized)
-    excluded_terms = extract_excluded_terms(normalized)
-    style = extract_style(normalized) if selection_intent else ""
-    difficulty = extract_difficulty(normalized) if selection_intent else ""
-    category_hits = matched_terms(normalized, INGREDIENT_CATEGORY_TERMS) if selection_intent else []
-    health_hits = matched_terms(normalized, HEALTH_TERMS) if selection_intent else []
+    explicit_minutes = extract_minutes(normalized, registry=active_registry)
+    excluded_terms = extract_excluded_terms(normalized, registry=active_registry)
+    style = extract_style(normalized, registry=active_registry) if selection_intent else ""
+    difficulty = (
+        extract_difficulty(normalized, registry=active_registry) if selection_intent else ""
+    )
+    category_hits = (
+        matched_terms(normalized, active_registry.ingredient_category_terms)
+        if selection_intent
+        else []
+    )
+    health_hits = (
+        matched_terms(normalized, active_registry.health_terms) if selection_intent else []
+    )
 
     if (
         query_type in {"path_finding", "multi_hop", "subgraph", "clustering"}

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET
 from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from ..runtime.json_types import JsonObject
 from .retrieval_types import GraphNodeSnapshot, KnowledgeSubgraph
 
@@ -45,8 +46,9 @@ class GraphReasoningOutcome:
 class GraphReasoningStrategy:
     """Produce compact reasoning chains from a knowledge subgraph."""
 
-    def __init__(self) -> None:
-        reasoning_policy = get_query_policy().graph.reasoning
+    def __init__(self, *, policy_bundle: QueryPolicyBundle | None = None) -> None:
+        self.policy_bundle = policy_bundle or get_query_policy()
+        reasoning_policy = self.policy_bundle.graph.reasoning
         self.causal_relation_types = set(reasoning_policy.causal_relation_types)
         self.compositional_relation_types = set(reasoning_policy.compositional_relation_types)
         self.comparison_markers = tuple(

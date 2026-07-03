@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Sequence, Tuple
 
 from ..contracts import QuerySemanticProfile, QuerySemanticRuntimeSettings
-from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from .features import (
     extract_entity_candidates,
     extract_query_tokens,
@@ -19,19 +19,21 @@ from .features import (
     pairwise_entity_matches,
 )
 from .registry import (
-    CONSTRAINT_MARKERS,
-    FAST_RULE_MARKERS,
-    GRAPH_GENERIC_TERMS,
-    QUERY_STOPWORDS,
-    RECOMMENDATION_MARKERS,
-    RELATION_MARKERS,
-    STRUCTURAL_REASONING_MARKERS,
-    TEXTURE_EFFECT_TERMS,
+    QueryUnderstandingRegistry,
     dedupe_preserve_order,
     marker_hits,
     normalize_query_text,
+    query_registry,
 )
 from .scoring import build_query_semantic_score_breakdown
+
+
+def _active_registry(
+    *,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> QueryUnderstandingRegistry:
+    return registry or query_registry(policy_bundle)
 
 
 def infer_graph_max_depth(
@@ -39,9 +41,11 @@ def infer_graph_max_depth(
     relationship_intensity: float = 0.0,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
 ) -> int:
     settings = settings or QuerySemanticRuntimeSettings()
-    graph_policy = get_query_policy().graph
+    graph_policy = _active_registry(policy_bundle=policy_bundle, registry=registry).policy.graph
     depth_map = graph_policy.max_depth
     base_key = str(query_type or "default")
     if base_key not in depth_map:
@@ -63,9 +67,11 @@ def infer_graph_max_nodes(
     query_type: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
 ) -> int:
     _ = settings or QuerySemanticRuntimeSettings()
-    graph_policy = get_query_policy().graph
+    graph_policy = _active_registry(policy_bundle=policy_bundle, registry=registry).policy.graph
     max_nodes_map = graph_policy.max_nodes
     policy_key = str(query_type or "default")
     if policy_key not in max_nodes_map:
@@ -79,22 +85,30 @@ def split_graph_entities(
     candidates: Sequence[str],
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
 ) -> Tuple[List[str], List[str]]:
     settings = settings or QuerySemanticRuntimeSettings()
+    active_registry = _active_registry(registry=registry)
     normalized = normalize_query_text(query)
-    source_entities = normalize_graph_sources(list(candidates[: settings.source_entity_limit]))
+    source_entities = normalize_graph_sources(
+        list(candidates[: settings.source_entity_limit]),
+        registry=active_registry,
+    )
     target_entities: List[str] = []
 
-    pair_matches = pairwise_entity_matches(normalized)
+    pair_matches = pairwise_entity_matches(normalized, registry=active_registry)
     if pair_matches and query_type in {"path_finding", "multi_hop"}:
-        source_entities = normalize_graph_sources([pair_matches[0][0]])
-        target_entities = normalize_graph_sources([pair_matches[0][1]])
+        source_entities = normalize_graph_sources([pair_matches[0][0]], registry=active_registry)
+        target_entities = normalize_graph_sources([pair_matches[0][1]], registry=active_registry)
     elif query_type == "path_finding" and len(candidates) >= 2:
-        source_entities = normalize_graph_sources([candidates[0]])
-        target_entities = normalize_graph_sources([candidates[1]])
+        source_entities = normalize_graph_sources([candidates[0]], registry=active_registry)
+        target_entities = normalize_graph_sources([candidates[1]], registry=active_registry)
 
     if query_type == "path_finding" and not target_entities:
-        target_entities = normalize_graph_sources(matched_terms(normalized, TEXTURE_EFFECT_TERMS))
+        target_entities = normalize_graph_sources(
+            matched_terms(normalized, active_registry.texture_effect_terms),
+            registry=active_registry,
+        )
 
     if not source_entities and normalized:
         source_entities = [
@@ -108,15 +122,18 @@ def infer_query_semantic_profile(
     query: str,
     *,
     settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
 ) -> QuerySemanticProfile:
     settings = settings or QuerySemanticRuntimeSettings()
+    active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     original_query = str(query or "").strip()
     normalized = normalize_query_text(original_query)
 
-    query_type = infer_graph_query_type(normalized)
-    relation_types = infer_relation_types(normalized)
-    phrase_candidates = fallback_entity_phrases(normalized)
-    keyword_candidates = extract_entity_candidates(normalized)
+    query_type = infer_graph_query_type(normalized, registry=active_registry)
+    relation_types = infer_relation_types(normalized, registry=active_registry)
+    phrase_candidates = fallback_entity_phrases(normalized, registry=active_registry)
+    keyword_candidates = extract_entity_candidates(normalized, registry=active_registry)
     combined_candidates = dedupe_preserve_order([*phrase_candidates, *keyword_candidates])
 
     source_entities, target_entities = split_graph_entities(
@@ -124,6 +141,7 @@ def infer_query_semantic_profile(
         query_type,
         combined_candidates,
         settings=settings,
+        registry=active_registry,
     )
 
     entity_keyword_seed = dedupe_preserve_order(
@@ -134,20 +152,21 @@ def infer_query_semantic_profile(
         ]
     )
     entity_keywords = normalize_graph_sources(
-        entity_keyword_seed[: settings.semantic_profile_entity_keyword_limit]
+        entity_keyword_seed[: settings.semantic_profile_entity_keyword_limit],
+        registry=active_registry,
     )
 
-    semantic_tokens = extract_query_tokens(normalized)
+    semantic_tokens = extract_query_tokens(normalized, registry=active_registry)
     topic_pool = [
         token
         for token in semantic_tokens
         if token not in entity_keywords
         and token not in source_entities
         and token not in target_entities
-        and token not in QUERY_STOPWORDS
-        and token not in GRAPH_GENERIC_TERMS
-        and token not in RELATION_MARKERS
-        and token not in STRUCTURAL_REASONING_MARKERS
+        and token not in active_registry.query_stopwords
+        and token not in active_registry.graph_generic_terms
+        and token not in active_registry.relation_markers
+        and token not in active_registry.structural_reasoning_markers
     ]
     topic_start = settings.semantic_profile_topic_keyword_start
     topic_limit = settings.semantic_profile_topic_keyword_limit
@@ -155,10 +174,12 @@ def infer_query_semantic_profile(
         topic_pool[topic_start : topic_start + topic_limit] or topic_pool[:topic_limit]
     )
 
-    constraints = infer_query_constraints(normalized)
-    recommendation_intent = has_recommendation_intent(normalized)
+    constraints = infer_query_constraints(normalized, registry=active_registry)
+    recommendation_intent = has_recommendation_intent(normalized, registry=active_registry)
     recommendation_hits = (
-        marker_hits(normalized, RECOMMENDATION_MARKERS) if recommendation_intent else []
+        marker_hits(normalized, active_registry.recommendation_markers)
+        if recommendation_intent
+        else []
     )
     needs_recipe_recommendation = bool(
         constraints.get("needs_recipe_recommendation") or recommendation_intent
@@ -166,14 +187,15 @@ def infer_query_semantic_profile(
     if needs_recipe_recommendation:
         constraints["needs_recipe_recommendation"] = True
 
-    relation_hits = marker_hits(normalized, RELATION_MARKERS)
-    constraint_hits = marker_hits(normalized, CONSTRAINT_MARKERS)
-    structural_hits = marker_hits(normalized, STRUCTURAL_REASONING_MARKERS)
-    fast_rule_hits = marker_hits(normalized, FAST_RULE_MARKERS)
+    relation_hits = marker_hits(normalized, active_registry.relation_markers)
+    constraint_hits = marker_hits(normalized, active_registry.constraint_markers)
+    structural_hits = marker_hits(normalized, active_registry.structural_reasoning_markers)
+    fast_rule_hits = marker_hits(normalized, active_registry.fast_rule_markers)
 
     score_breakdown = build_query_semantic_score_breakdown(
         normalized,
         settings=settings,
+        registry=active_registry,
         relation_hits=relation_hits,
         constraint_hits=constraint_hits,
         structural_hits=structural_hits,

@@ -11,6 +11,7 @@ from .models import (
     PromptTemplates,
     QueryPolicyBundle,
 )
+from .selector import resolve_query_policy_bundle
 
 __all__ = [
     "PolicyLoadError",
@@ -20,4 +21,5 @@ __all__ = [
     "default_policy_bundle_path",
     "get_query_policy",
     "load_policy_bundle",
+    "resolve_query_policy_bundle",
 ]

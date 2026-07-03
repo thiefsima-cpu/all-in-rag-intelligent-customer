@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import DefaultDict, Dict, Iterable, List
 
-from ..query_understanding import dedupe_preserve_order
+from ..query_understanding.registry import dedupe_preserve_order
 from .models import EntityKeyValue, RelationKeyValue
 
 

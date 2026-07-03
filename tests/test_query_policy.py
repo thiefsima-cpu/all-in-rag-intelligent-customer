@@ -282,9 +282,9 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertNotIn("_RELATION_TYPE_HINTS", relation_index_source)
         self.assertNotIn('{"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"}', prompting_source)
         self.assertNotIn("causal_relation_types = {", reasoning_source)
-        self.assertIn("POLICY.lexicon.term_group", registry_source)
-        self.assertIn("POLICY.lexicon.regex_group", features_source)
-        self.assertIn("policy = get_query_policy()", prompting_source)
+        self.assertIn("policy.lexicon.term_group", registry_source)
+        self.assertIn("active_registry.policy.lexicon.regex_group", features_source)
+        self.assertIn("policy_bundle: QueryPolicyBundle | None = None", prompting_source)
         self.assertIn("policy.prompts.query_planner", prompting_source)
 
 

@@ -12,10 +12,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ..contracts import GraphQueryType, QuerySemanticRuntimeSettings
-from ..query_understanding import (
-    infer_graph_max_depth,
-    infer_query_semantic_profile,
-)
+from ..query_policy.models import QueryPolicyBundle
+from ..query_understanding.graph_intent import infer_graph_max_depth, infer_query_semantic_profile
+from ..query_understanding.registry import QueryUnderstandingRegistry
 
 
 @dataclass
@@ -58,8 +57,15 @@ def infer_graph_query_intent(
     query: str,
     *,
     semantic_settings: QuerySemanticRuntimeSettings | None = None,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
 ) -> GraphQueryIntent:
-    profile = infer_query_semantic_profile(query, settings=semantic_settings)
+    profile = infer_query_semantic_profile(
+        query,
+        settings=semantic_settings,
+        policy_bundle=policy_bundle,
+        registry=registry,
+    )
     return GraphQueryIntent(
         query_type=profile.query_type,
         source_entities=profile.source_entities,
@@ -69,6 +75,8 @@ def infer_graph_query_intent(
             profile.query_type_value,
             profile.relationship_intensity,
             settings=semantic_settings,
+            policy_bundle=policy_bundle,
+            registry=registry,
         ),
         constraints=profile.constraints,
     )

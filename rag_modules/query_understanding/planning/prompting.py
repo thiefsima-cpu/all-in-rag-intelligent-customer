@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 from ...query_policy import get_query_policy
-from ..registry import GRAPH_QUERY_TYPES, GRAPH_RELATION_TYPES
+from ...query_policy.models import QueryPolicyBundle
+from ..registry import QueryUnderstandingRegistry, query_registry
 
 
-def build_planning_prompt(query: str) -> str:
-    policy = get_query_policy()
-    graph_query_types_text = "\n".join(f"- {item}" for item in GRAPH_QUERY_TYPES)
-    relation_types_text = "\n".join(f"- {item}" for item in GRAPH_RELATION_TYPES)
+def build_planning_prompt(
+    query: str,
+    *,
+    policy_bundle: QueryPolicyBundle | None = None,
+    registry: QueryUnderstandingRegistry | None = None,
+) -> str:
+    policy = policy_bundle or get_query_policy()
+    active_registry = registry or query_registry(policy)
+    graph_query_types_text = "\n".join(f"- {item}" for item in active_registry.graph_query_types)
+    relation_types_text = "\n".join(f"- {item}" for item in active_registry.graph_relation_types)
     excluded_relation_types = set(policy.relations.preferred_relation_excluded_types)
     preferred_relation_types_text = "\n".join(
-        f"- {item}" for item in GRAPH_RELATION_TYPES if item not in excluded_relation_types
+        f"- {item}"
+        for item in active_registry.graph_relation_types
+        if item not in excluded_relation_types
     )
     return policy.prompts.query_planner.format(
         graph_query_types_text=graph_query_types_text,

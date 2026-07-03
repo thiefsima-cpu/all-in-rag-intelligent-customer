@@ -8,11 +8,9 @@ import logging
 from typing import List, Tuple
 
 from ..contracts import QuerySemanticRuntimeSettings
-from ..query_understanding import (
-    infer_query_semantic_profile,
-    normalize_graph_sources,
-    relation_index_terms,
-)
+from ..query_understanding.features import normalize_graph_sources
+from ..query_understanding.graph_intent import infer_query_semantic_profile
+from ..query_understanding.registry import relation_index_terms
 
 logger = logging.getLogger(__name__)
 

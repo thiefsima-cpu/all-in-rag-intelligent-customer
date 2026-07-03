@@ -8,13 +8,18 @@ from typing import Any, Dict, List
 
 from ..contracts import QueryPlan, QuerySemanticRuntimeSettings
 from ..query_policy import get_query_policy
-from ..query_policy.models import GraphSubQuestionCondition, GraphSubQuestionPolicy
-from ..query_understanding import (
-    estimate_query_complexity,
+from ..query_policy.models import (
+    GraphSubQuestionCondition,
+    GraphSubQuestionPolicy,
+    QueryPolicyBundle,
+)
+from ..query_understanding.graph_intent import (
     infer_graph_max_depth,
     infer_graph_max_nodes,
     infer_query_semantic_profile,
 )
+from ..query_understanding.registry import QueryUnderstandingRegistry, query_registry
+from ..query_understanding.scoring import estimate_query_complexity
 from .query_intent import GraphQueryIntent, infer_graph_query_intent
 from .retrieval_types import GraphQuery, QueryType
 
@@ -28,13 +33,25 @@ def _coerce_constraints(value: Any) -> Dict[str, Any]:
 class GraphQueryFactory:
     """Build executable graph query objects from plans and heuristic intent."""
 
-    def __init__(self, *, semantic_settings: QuerySemanticRuntimeSettings | None = None):
+    def __init__(
+        self,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ):
         self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
-        self.graph_policy = get_query_policy().graph
+        self.policy_bundle = policy_bundle or get_query_policy()
+        self.registry: QueryUnderstandingRegistry = query_registry(self.policy_bundle)
+        self.graph_policy = self.policy_bundle.graph
 
     def understand_graph_query(self, query: str) -> GraphQuery:
         return self.graph_query_from_intent(
-            infer_graph_query_intent(query, semantic_settings=self.semantic_settings),
+            infer_graph_query_intent(
+                query,
+                semantic_settings=self.semantic_settings,
+                policy_bundle=self.policy_bundle,
+                registry=self.registry,
+            ),
             query,
         )
 
@@ -57,12 +74,22 @@ class GraphQueryFactory:
                 min(
                     int(
                         plan.max_depth
-                        or infer_graph_max_depth(query_type.value, settings=self.semantic_settings)
+                        or infer_graph_max_depth(
+                            query_type.value,
+                            settings=self.semantic_settings,
+                            policy_bundle=self.policy_bundle,
+                            registry=self.registry,
+                        )
                     ),
                     self.semantic_settings.graph_query_max_depth_cap,
                 ),
             ),
-            max_nodes=infer_graph_max_nodes(query_type.value, settings=self.semantic_settings),
+            max_nodes=infer_graph_max_nodes(
+                query_type.value,
+                settings=self.semantic_settings,
+                policy_bundle=self.policy_bundle,
+                registry=self.registry,
+            ),
             constraints=_coerce_constraints(plan.constraints),
         )
 
@@ -88,12 +115,22 @@ class GraphQueryFactory:
                 min(
                     int(
                         intent.max_depth
-                        or infer_graph_max_depth(query_type.value, settings=self.semantic_settings)
+                        or infer_graph_max_depth(
+                            query_type.value,
+                            settings=self.semantic_settings,
+                            policy_bundle=self.policy_bundle,
+                            registry=self.registry,
+                        )
                     ),
                     self.semantic_settings.graph_query_max_depth_cap,
                 ),
             ),
-            max_nodes=infer_graph_max_nodes(query_type.value, settings=self.semantic_settings),
+            max_nodes=infer_graph_max_nodes(
+                query_type.value,
+                settings=self.semantic_settings,
+                policy_bundle=self.policy_bundle,
+                registry=self.registry,
+            ),
             constraints=_coerce_constraints(intent.constraints),
         )
 
@@ -155,10 +192,20 @@ class GraphQueryFactory:
         return query_plans
 
     def analyze_query_complexity(self, query: str) -> float:
-        return estimate_query_complexity(query, settings=self.semantic_settings)
+        return estimate_query_complexity(
+            query,
+            settings=self.semantic_settings,
+            policy_bundle=self.policy_bundle,
+            registry=self.registry,
+        )
 
     def decompose_graph_question(self, query: str, graph_query: GraphQuery) -> List[str]:
-        profile = infer_query_semantic_profile(query, settings=self.semantic_settings)
+        profile = infer_query_semantic_profile(
+            query,
+            settings=self.semantic_settings,
+            policy_bundle=self.policy_bundle,
+            registry=self.registry,
+        )
         entities = list(
             dict.fromkeys((graph_query.source_entities or []) + (graph_query.target_entities or []))
         )

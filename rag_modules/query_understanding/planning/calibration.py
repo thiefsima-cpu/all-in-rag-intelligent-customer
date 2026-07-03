@@ -10,6 +10,7 @@ from ...contracts import (
 )
 from ...domain.shared.query_constraints import QueryConstraints
 from ...query_policy import get_query_policy
+from ...query_policy.models import QueryPolicyBundle
 from ...runtime import SearchStrategy
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
@@ -43,9 +44,15 @@ def _graph_query_type_enum(
 
 
 class QueryPlanCalibrator:
-    def __init__(self, settings: QuerySemanticRuntimeSettings) -> None:
+    def __init__(
+        self,
+        settings: QuerySemanticRuntimeSettings,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
         self.settings = settings
-        self.policy = get_query_policy().routing
+        self.policy_bundle = policy_bundle or get_query_policy()
+        self.policy = self.policy_bundle.routing
 
     def has_meaningful_constraints(
         self,
@@ -146,7 +153,11 @@ class QueryPlanCalibrator:
 
     def calibrate(self, plan: QueryPlan) -> None:
         query = plan.query or ""
-        profile = infer_query_semantic_profile(query, settings=self.settings)
+        profile = infer_query_semantic_profile(
+            query,
+            settings=self.settings,
+            policy_bundle=self.policy_bundle,
+        )
         plan.semantic_profile = profile
 
         plan.complexity = max(plan.complexity, profile.complexity)
@@ -228,6 +239,7 @@ class QueryPlanCalibrator:
                         plan.graph_query_type_value,
                         plan.relationship_intensity,
                         settings=self.settings,
+                        policy_bundle=self.policy_bundle,
                     )
                 ),
                 self.settings.graph_query_max_depth_cap,

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
 from ..runtime import PolicySnapshot, RouteSnapshot, RouteStageSnapshot, RuntimeErrorDetail
 from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
@@ -14,11 +15,18 @@ from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 class RouteTraceRecorder:
     """Own RouteSnapshot construction, stage recording, and diagnostics refresh."""
 
-    def __init__(self, *, query: str, requested_top_k: int) -> None:
+    def __init__(
+        self,
+        *,
+        query: str,
+        requested_top_k: int,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
+        self.policy_bundle = policy_bundle or get_query_policy()
         self.snapshot = RouteSnapshot(
             query=query,
             requested_top_k=requested_top_k,
-            policy=PolicySnapshot.from_metadata(get_query_policy().metadata),
+            policy=PolicySnapshot.from_metadata(self.policy_bundle.metadata),
         )
 
     def record_plan(self, plan: QueryPlan, *, start_time: float) -> None:

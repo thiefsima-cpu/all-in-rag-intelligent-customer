@@ -12,6 +12,7 @@ from ...configuration.models import GraphRAGConfig
 from ...generation.service import GenerationWorkflowService
 from ...graph.retrieval import GraphRAGRetrieval
 from ...observability.tracing_sinks import QueryTraceSink
+from ...query_policy.models import QueryPolicyBundle
 from ...query_understanding.service import QueryUnderstandingService
 from ...retrieval import HybridRetrievalService
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
@@ -119,6 +120,8 @@ class RetrievalRuntimeProvider(Protocol):
     def provide_retrieval_runtime_profile(
         self,
         config: GraphRAGConfig,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> RetrievalRuntimeProfile: ...
 
     def provide_query_understanding_service(
@@ -127,6 +130,7 @@ class RetrievalRuntimeProvider(Protocol):
         config: GraphRAGConfig,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> QueryUnderstandingService: ...
 
     def provide_traditional_retrieval(
@@ -138,6 +142,7 @@ class RetrievalRuntimeProvider(Protocol):
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> HybridRetrievalService: ...
 
     def provide_graph_rag_retrieval(
@@ -147,6 +152,7 @@ class RetrievalRuntimeProvider(Protocol):
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRAGRetrieval: ...
 
     def provide_routing_workflow(
@@ -158,6 +164,7 @@ class RetrievalRuntimeProvider(Protocol):
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         query_understanding_service: QueryUnderstandingService,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> RoutingWorkflowProtocol: ...
 
 
@@ -218,7 +225,12 @@ class RuntimeComponentProvider(Protocol):
     retrieval_runtime: RetrievalRuntimeProvider
     services: ApplicationServiceProvider
 
-    def provide_generation_module(self, config: GraphRAGConfig) -> GenerationWorkflowService: ...
+    def provide_generation_module(
+        self,
+        config: GraphRAGConfig,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> GenerationWorkflowService: ...
 
 
 __all__ = [

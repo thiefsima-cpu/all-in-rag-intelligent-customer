@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..query_policy.models import QueryPolicyBundle
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..runtime import GraphRetrievalSnapshot
 from ..runtime_contracts import Neo4jManagerPort
@@ -25,11 +26,13 @@ class GraphRAGRetrieval:
         neo4j_manager: Neo4jManagerPort | None = None,
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
         component_factory: Optional[GraphRetrievalComponentFactory] = None,
+        policy_bundle: QueryPolicyBundle | None = None,
     ):
         self.config = config
         self.llm_client = llm_client
         self.neo4j_manager = neo4j_manager
         self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)
+        self.policy_bundle = policy_bundle
         self.component_factory = component_factory or DefaultGraphRetrievalComponentFactory()
         self._components = self.component_factory.build(
             config=config,
@@ -37,6 +40,7 @@ class GraphRAGRetrieval:
             neo4j_manager=neo4j_manager,
             retrieval_profile=self.retrieval_profile,
             database_name=config.storage.neo4j_database,
+            policy_bundle=policy_bundle,
         )
         self._executor = self._components.executor
 
