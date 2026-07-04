@@ -1,5 +1,7 @@
 # Root Shared Module Convergence Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move the remaining shared root modules into canonical packages without changing runtime behavior.

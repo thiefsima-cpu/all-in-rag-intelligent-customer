@@ -1,5 +1,7 @@
 # Domain Contract Purification Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move `RecipeConstraintMatcher` and all LangChain `Document` constraint-matching behavior out of `domain/shared` and into the retrieval evidence layer without compatibility aliases.

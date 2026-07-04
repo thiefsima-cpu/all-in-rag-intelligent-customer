@@ -1,5 +1,9 @@
 # Compatibility Layer Retirement Implementation Plan
 
+Status: superseded
+
+Note: This active-compatibility policy was overtaken by later closure work; current public-surface docs state that no active compatibility layers remain.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make active compatibility layers declare, expose, test, and document their retirement versions without changing runtime behavior.

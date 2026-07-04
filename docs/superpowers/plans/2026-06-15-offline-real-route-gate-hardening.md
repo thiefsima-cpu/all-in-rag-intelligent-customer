@@ -1,5 +1,7 @@
 # Offline Real-Route Gate Hardening Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Harden the offline real-route release gate so it fails on broken plan, request, trace, graph, evidence, or offline-planner contracts.

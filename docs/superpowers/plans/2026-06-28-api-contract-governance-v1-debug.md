@@ -1,5 +1,7 @@
 # API Contract Governance V1 Debug Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add canonical `/v1` API routes, keep complete traces behind explicit `/v1/debug/*` answer routes, and make public `/v1` answer responses omit full traces by default.

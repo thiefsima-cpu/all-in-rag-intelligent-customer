@@ -1,5 +1,7 @@
 # Runtime, Trace, and Answer API DTO Convergence Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Keep stable answer runtime and trace objects typed until they are explicitly mapped into the FastAPI response schema, without changing public JSON.

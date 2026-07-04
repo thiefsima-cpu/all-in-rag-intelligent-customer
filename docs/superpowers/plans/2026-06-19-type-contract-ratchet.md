@@ -1,5 +1,7 @@
 # Type Contract Ratchet Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create the first strict mypy island around runtime state, provider contracts, and retrieval/generation ports.

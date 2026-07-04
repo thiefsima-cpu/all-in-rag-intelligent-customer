@@ -1,5 +1,7 @@
 # Policy Versioning Governance Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace scattered prompt, routing, scoring, relation, graph-question, trace, and eval policy with one validated, versioned policy bundle.

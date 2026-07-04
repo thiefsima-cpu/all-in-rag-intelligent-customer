@@ -1,5 +1,9 @@
 # Opt-in Quality Evaluation Release Gate Implementation Plan
 
+Status: superseded
+
+Note: The optional quality stage was replaced by the required offline quality suite and the separate real-dependency integration gate.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Keep the default release gate as the existing deterministic smoke check while allowing the configured quality evaluation to join it through one CLI flag or environment variable.

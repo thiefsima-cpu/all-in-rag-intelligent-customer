@@ -1,5 +1,7 @@
 # Retrieval Candidate Source Resilience Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make hybrid retrieval candidate generation tolerate per-source failures with independent circuit breakers, degraded trace details, and same-query fallback source skipping.

@@ -1,5 +1,7 @@
 # Error and Privacy Hardening Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every HTTP and SSE failure a stable error code and request ID while preventing raw exceptions, queries, tokenized content, and secrets from entering public responses, build-job state, telemetry, or logs.

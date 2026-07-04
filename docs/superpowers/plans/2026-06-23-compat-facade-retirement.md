@@ -1,5 +1,7 @@
 # Compatibility Facade Retirement Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the remaining compatibility facade identities so internal runtime assembly uses canonical workflow/service boundaries only.

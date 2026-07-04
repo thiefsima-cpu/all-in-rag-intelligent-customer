@@ -1,5 +1,7 @@
 # API Security Policy Config Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make docs, OpenAPI, and metrics exposure configurable with enterprise-safe production defaults and explicit development opt-in.

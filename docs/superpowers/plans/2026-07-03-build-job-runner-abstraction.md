@@ -1,5 +1,7 @@
 # Build Job Runner Abstraction Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move build-job submission, cancellation, retry, progress events, and executor backend ownership out of `GraphRAGBuildApiService` into a real `BuildJobRunner` boundary.

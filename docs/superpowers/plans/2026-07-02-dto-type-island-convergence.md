@@ -1,5 +1,7 @@
 # DTO Type Island Convergence Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace stable internal `Any` and `dict[str, Any]` payloads in runtime diagnostics, query policy, graph DTOs, and build-pipeline graph preparation with explicit DTOs and expand the strict type ratchet.

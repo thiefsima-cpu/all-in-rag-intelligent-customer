@@ -1,5 +1,7 @@
 # Runtime Error Semantics Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace runtime fallback and exception strings with stable typed error details across provider, retrieval, routing, and generation traces.

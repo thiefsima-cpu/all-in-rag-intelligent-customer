@@ -1,5 +1,7 @@
 # Build Job Repository Module Split Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Split the directory-backed build-job repository into focused record store, idempotency index, and recovery/retention modules without changing public behavior.
