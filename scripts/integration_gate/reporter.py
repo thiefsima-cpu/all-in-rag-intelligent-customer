@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,12 @@ _CHECK_FIELDS = (
     "expected",
     "actual",
     "duration_ms",
+)
+_REDACTED = "[redacted]"
+_STABLE_LABEL_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_SENSITIVE_TEXT_RE = re.compile(
+    r"password|secret|token|bearer|authorization|exception|response\s+body|https?://|\?",
+    re.IGNORECASE,
 )
 
 
@@ -91,7 +98,7 @@ def _safe_check(check: GateCheckResult) -> dict[str, Any]:
 def _safe_case_result(result: LiveCaseRunResult) -> dict[str, Any]:
     observation = result.observation
     return {
-        "case_id": result.case_id,
+        "case_id": _json_allowlisted_value(result.case_id),
         "executed": True,
         "has_observation": observation is not None,
         "evidence_count": observation.evidence_count if observation is not None else 0,
@@ -101,22 +108,40 @@ def _safe_case_result(result: LiveCaseRunResult) -> dict[str, Any]:
             observation.estimated_cost_usd if observation is not None else 0.0,
             6,
         ),
-        "check_codes": [check.code for check in result.checks if check.code],
+        "check_codes": [
+            _json_allowlisted_value(check.code) for check in result.checks if check.code
+        ],
     }
 
 
 def _json_allowlisted_value(value: Any) -> Any:
     safe_value = json_safe(value)
-    if safe_value is None or isinstance(safe_value, str | int | float | bool):
+    if safe_value is None or isinstance(safe_value, int | float | bool):
         return safe_value
+
+    if isinstance(safe_value, str):
+        return _safe_string_value(safe_value)
 
     if isinstance(safe_value, list):
         return [_json_allowlisted_value(item) for item in safe_value]
 
     if isinstance(safe_value, dict):
-        return {str(key): _json_allowlisted_value(item) for key, item in safe_value.items()}
+        return {
+            _safe_string_value(str(key)): _json_allowlisted_value(item)
+            for key, item in safe_value.items()
+        }
 
     return None
+
+
+def _safe_string_value(value: str) -> str:
+    if _SENSITIVE_TEXT_RE.search(value):
+        return _REDACTED
+
+    if _STABLE_LABEL_RE.fullmatch(value):
+        return value
+
+    return _REDACTED
 
 
 def _render_markdown_summary(report: dict[str, Any]) -> str:
@@ -174,6 +199,35 @@ def _render_markdown_summary(report: dict[str, Any]) -> str:
             )
     else:
         lines.append("| none |  |  |  |")
+
+    lines.extend(
+        [
+            "",
+            "## Cases",
+            "",
+            (
+                "| case_id | executed | has_observation | evidence_count | latency_ms | "
+                "total_tokens | estimated_cost_usd | check_codes |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    cases = [case for case in report.get("cases", []) if isinstance(case, dict)]
+    if cases:
+        for case in cases:
+            lines.append(
+                "| "
+                f"{_markdown_cell(case.get('case_id'))} | "
+                f"{_markdown_cell(case.get('executed'))} | "
+                f"{_markdown_cell(case.get('has_observation'))} | "
+                f"{_markdown_cell(case.get('evidence_count'))} | "
+                f"{_markdown_cell(case.get('latency_ms'))} | "
+                f"{_markdown_cell(case.get('total_tokens'))} | "
+                f"{_markdown_cell(case.get('estimated_cost_usd'))} | "
+                f"{_markdown_cell(case.get('check_codes'))} |"
+            )
+    else:
+        lines.append("| none |  |  |  |  |  |  |  |")
 
     lines.append("")
     return "\n".join(lines)

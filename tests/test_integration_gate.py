@@ -242,8 +242,16 @@ def test_report_json_and_markdown_use_safe_allowlisted_fields(tmp_path: Path) ->
                     f"case.{case.case_id}.request",
                     failure_type=GateFailureType.DEPENDENCY_UNAVAILABLE,
                     code="SERVING_API_REQUEST_FAILED",
-                    expected=True,
-                    actual=False,
+                    expected={
+                        "stable_policy": "CASE_OK",
+                        "secret_hint": "password raw-secret-token",
+                        "auth_header": "Bearer abc",
+                    },
+                    actual={
+                        "status": False,
+                        "url": "https://host/secret/path?token=x",
+                        "errors": ["RuntimeError('response body')", "raw exception details"],
+                    },
                 ),
             ),
         )
@@ -272,16 +280,62 @@ def test_report_json_and_markdown_use_safe_allowlisted_fields(tmp_path: Path) ->
     } <= set(report)
     assert "vector_recipe_lookup" in combined
     assert "SERVING_API_REQUEST_FAILED" in combined
+    assert "CASE_OK" in combined
     assert "宫保鸡丁怎么做？" not in combined
     assert "花生和辣椒之间是什么关系？" not in combined
     assert "推荐一道清淡豆腐菜" not in combined
     assert "password" not in combined.lower()
+    assert "secret" not in combined.lower()
     assert "Bearer" not in combined
     assert "raw-secret-token" not in combined
     assert "/secret/path" not in combined
     assert "query-token" not in combined
+    assert "https://host" not in combined
+    assert "token=x" not in combined
+    assert "Bearer abc" not in combined
     assert "raw exception" not in combined.lower()
+    assert "exception" not in combined.lower()
+    assert "RuntimeError" not in combined
     assert "response body" not in combined.lower()
+
+
+def test_passing_report_markdown_cases_section_lists_case_ids_and_codes(tmp_path: Path) -> None:
+    policy_path = _write_policy(tmp_path)
+
+    def case_runner(**kwargs: object) -> LiveCaseRunResult:
+        case = kwargs["case"]
+        assert isinstance(case, LiveCasePolicy)
+        return LiveCaseRunResult(
+            case_id=case.case_id,
+            observation=_observation(case),
+            checks=(
+                GateCheckResult.pass_check(
+                    f"case.{case.case_id}.request",
+                    code="CASE_OK",
+                    expected="case.request",
+                    actual="case.request",
+                ),
+            ),
+        )
+
+    output_dir = tmp_path / "reports"
+    run_integration_gate(
+        policy_path=policy_path,
+        output_dir=output_dir,
+        environ=_required_environ(),
+        probe_runner=lambda **_kwargs: _passing_probe_checks(),
+        case_runner=case_runner,
+    )
+
+    summary_text = (output_dir / "summary.md").read_text(encoding="utf-8")
+
+    assert "## Cases" in summary_text
+    assert (
+        "| case_id | executed | has_observation | evidence_count | latency_ms | "
+        "total_tokens | estimated_cost_usd | check_codes |"
+    ) in summary_text
+    assert "vector_recipe_lookup" in summary_text
+    assert "CASE_OK" in summary_text
 
 
 @pytest.mark.parametrize(("report", "expected"), [({"passed": True}, 0), ({"passed": False}, 1)])
