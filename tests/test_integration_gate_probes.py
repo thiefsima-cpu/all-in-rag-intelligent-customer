@@ -260,7 +260,7 @@ def test_dependency_probes_return_counts_and_readiness_without_secrets() -> None
     assert neo4j.closed is True
 
 
-def test_neo4j_probe_uses_configured_query_database_and_auth() -> None:
+def test_neo4j_probe_uses_repository_driver_factory_contract_and_query_database() -> None:
     captured: dict[str, object] = {}
     neo4j = FakeNeo4jDriver(recipe_count=12)
 
@@ -273,8 +273,8 @@ def test_neo4j_probe_uses_configured_query_database_and_auth() -> None:
 
     assert results[0].passed
     assert captured == {
-        "args": ("bolt://neo4j.local:7687",),
-        "kwargs": {"auth": ("neo4j", "password")},
+        "args": ("bolt://neo4j.local:7687", "neo4j", "password"),
+        "kwargs": {},
     }
     assert neo4j.session_databases == ["neo4j"]
     assert neo4j.queries == ["MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_count"]

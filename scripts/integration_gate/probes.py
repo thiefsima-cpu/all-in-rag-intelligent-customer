@@ -7,9 +7,9 @@ from time import perf_counter
 from typing import Any, Protocol
 
 import requests
-from neo4j import GraphDatabase
 from pymilvus import MilvusClient
 
+from rag_modules.infra.neo4j import create_neo4j_driver
 from scripts.gates import GateCheckResult, GateFailureType
 
 from .models import IntegrationGatePolicy, IntegrationGateSettings
@@ -18,7 +18,7 @@ _RECIPE_COUNT_QUERY = "MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_coun
 
 
 class Neo4jDriverFactory(Protocol):
-    def __call__(self, uri: str, *, auth: tuple[str, str]) -> Any: ...
+    def __call__(self, uri: str, user: str, password: str) -> Any: ...
 
 
 class MilvusClientFactory(Protocol):
@@ -29,7 +29,7 @@ def run_dependency_probes(
     *,
     settings: IntegrationGateSettings,
     policy: IntegrationGatePolicy,
-    neo4j_driver_factory: Neo4jDriverFactory = GraphDatabase.driver,
+    neo4j_driver_factory: Neo4jDriverFactory = create_neo4j_driver,
     milvus_client_factory: MilvusClientFactory = MilvusClient,
     http_session: requests.Session | None = None,
 ) -> tuple[GateCheckResult, ...]:
@@ -70,7 +70,8 @@ def probe_neo4j(
     try:
         driver = driver_factory(
             settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password),
+            settings.neo4j_user,
+            settings.neo4j_password,
         )
         try:
             session_context = driver.session(database=settings.neo4j_database)
