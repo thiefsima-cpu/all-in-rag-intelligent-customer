@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Protocol
 
 from ...kernel.json_types import JsonObject, coerce_json_object
 from .. import EvidenceDocument
 from .errors import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
 from .routing import RouteSnapshot
+
+
+class _CandidateSetView(Protocol):
+    @property
+    def stats(self) -> Mapping[str, int]: ...
+
+    @property
+    def degraded_details(self) -> Sequence[Mapping[str, object]]: ...
 
 
 def _coerce_evidence_documents(
@@ -149,13 +157,13 @@ class HybridRetrievalOutcome:
         cls,
         *,
         documents: List[EvidenceDocument],
-        candidates: Any,
+        candidates: _CandidateSetView,
         metadata: Dict[str, Any] | None = None,
     ) -> "HybridRetrievalOutcome":
         return cls(
             documents=list(documents or []),
-            candidate_counts=dict(candidates.stats or {}),
-            degraded_candidates=candidates.degraded_details,
+            candidate_counts=dict(candidates.stats),
+            degraded_candidates=[dict(item) for item in candidates.degraded_details],
             metadata=dict(metadata or {}),
         )
 

@@ -21,15 +21,16 @@ from rag_modules.contracts import (
     QuerySemanticRuntimeSettings,
     RetrievalRequest,
 )
+from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
+from rag_modules.contracts.runtime.workflows import QueryUnderstandingSnapshot
 from rag_modules.query_understanding import QueryPlanner
-from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.retrieval.runtime_profile import (
     RetrievalCandidateSizingSettings,
     RetrievalPostProcessSettings,
     RetrievalRuntimeProfile,
 )
 from rag_modules.routing import RoutingWorkflowService
-from rag_modules.runtime import GraphRetrievalSnapshot, QueryUnderstandingSnapshot
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule,
     build_tracer,

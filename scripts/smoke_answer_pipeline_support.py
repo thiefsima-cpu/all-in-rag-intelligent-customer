@@ -7,6 +7,8 @@ from typing import Iterable
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts.runtime.generation import GenerationSnapshot
+from rag_modules.contracts.runtime.workflows import AnswerContext
 from rag_modules.generation import (
     GenerationExecutionEngine,
     GenerationPlanner,
@@ -15,7 +17,6 @@ from rag_modules.generation import (
 )
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import QueryTraceSink
-from rag_modules.runtime import AnswerContext, GenerationSnapshot
 
 
 class CaptureSink(QueryTraceSink):

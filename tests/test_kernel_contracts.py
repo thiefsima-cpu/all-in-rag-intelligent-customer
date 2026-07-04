@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ast
+import inspect
+import tomllib
 from pathlib import Path
+from typing import Any, get_type_hints
 
 from rag_modules.contracts.graph import GraphQuery
 from rag_modules.contracts.runtime.analysis import QueryAnalysis
@@ -12,6 +15,7 @@ from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.contracts.runtime.workflows import RouteResolution
 from rag_modules.kernel.artifacts import (
     ArtifactManifest,
+    ArtifactStage,
     DocumentArtifactResult,
     DocumentArtifactSignatures,
     DocumentArtifactStats,
@@ -20,6 +24,18 @@ from rag_modules.kernel.documents import TextDocument
 from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.kernel.routing import RouteStatistics, SearchStrategy
 from rag_modules.retrieval import candidate_generator
+
+EXPECTED_KERNEL_EXPORTS = {
+    "ArtifactManifest",
+    "ArtifactStage",
+    "CandidateSourceDegradationStrategy",
+    "DocumentArtifactResult",
+    "DocumentArtifactSignatures",
+    "DocumentArtifactStats",
+    "RouteStatistics",
+    "SearchStrategy",
+    "TextDocument",
+}
 
 
 def test_shared_types_have_canonical_module_ownership() -> None:
@@ -42,6 +58,46 @@ def test_shared_types_have_canonical_module_ownership() -> None:
     }
 
     assert {value: value.__module__ for value in expected_modules} == expected_modules
+
+
+def test_kernel_package_exports_only_canonical_kernel_types() -> None:
+    import rag_modules.kernel as kernel
+
+    assert set(kernel.__all__) == EXPECTED_KERNEL_EXPORTS
+    assert {name: getattr(kernel, name) for name in kernel.__all__} == {
+        "ArtifactManifest": ArtifactManifest,
+        "ArtifactStage": ArtifactStage,
+        "CandidateSourceDegradationStrategy": CandidateSourceDegradationStrategy,
+        "DocumentArtifactResult": DocumentArtifactResult,
+        "DocumentArtifactSignatures": DocumentArtifactSignatures,
+        "DocumentArtifactStats": DocumentArtifactStats,
+        "RouteStatistics": RouteStatistics,
+        "SearchStrategy": SearchStrategy,
+        "TextDocument": TextDocument,
+    }
+
+
+def test_hybrid_outcome_candidate_set_contract_is_structural_and_typed() -> None:
+    candidates_annotation = get_type_hints(HybridRetrievalOutcome.from_candidate_set)["candidates"]
+
+    assert candidates_annotation is not Any
+    assert getattr(candidates_annotation, "_is_protocol", False)
+    assert isinstance(inspect.getattr_static(candidates_annotation, "stats"), property)
+    assert isinstance(inspect.getattr_static(candidates_annotation, "degraded_details"), property)
+
+
+def test_canonical_kernel_and_runtime_contract_modules_use_strict_mypy() -> None:
+    pyproject_path = Path(__file__).parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    strict_modules = {
+        module
+        for override in config["tool"]["mypy"]["overrides"]
+        if override.get("disallow_untyped_defs")
+        for module in override["module"]
+    }
+
+    assert "rag_modules.kernel.*" in strict_modules
+    assert "rag_modules.contracts.runtime.*" in strict_modules
 
 
 def test_candidate_generator_does_not_export_kernel_strategy_names() -> None:
@@ -74,7 +130,9 @@ def test_kernel_has_no_subsystem_imports() -> None:
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if node.level:
+                if node.level == 1:
+                    names = []
+                elif node.level:
                     names = [module.split(".", 1)[0]] if module else []
                 else:
                     names = [module]

@@ -221,6 +221,22 @@ hybrid_retrieval: HybridRetrievalPort = _HybridRetrieval()
 graph_retrieval: GraphRAGRetrievalPort = _GraphRetrieval()
 
 
+class _CandidateSetView:
+    @property
+    def stats(self) -> Mapping[str, int]:
+        return {"vector": 1}
+
+    @property
+    def degraded_details(self) -> Sequence[Mapping[str, object]]:
+        return ({"source": "bm25"},)
+
+
+hybrid_outcome_from_candidate_view = HybridRetrievalOutcome.from_candidate_set(
+    documents=[],
+    candidates=_CandidateSetView(),
+)
+
+
 def accept_runtime_ports(
     graph_manager: Neo4jManagerPort,
     data_module: GraphDataModulePort,
