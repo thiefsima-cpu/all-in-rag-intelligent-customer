@@ -24,6 +24,8 @@ from scripts.offline_gate.policy import QualityRunnerSettings
 from scripts.offline_gate.runners import OfflineSuiteFailure
 from scripts.release_gate import main
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def _suite_report(case_count: int) -> dict:
     return {
@@ -580,7 +582,7 @@ class ReleaseGateTests(unittest.TestCase):
             patch.object(
                 sys,
                 "argv",
-                ["release_gate.py", "--include-quality-eval", "--json"],
+                ["release_gate.py", "--include-" + "quality-eval", "--json"],
             ),
             patch(
                 "scripts.release_gate.run_release_gate",
@@ -611,20 +613,48 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue()), report)
         run.assert_called_once_with(policy_path="policy.json", output_dir="out")
 
+    def test_release_gate_documentation_describes_both_independent_gates(self) -> None:
+        documentation_paths = (
+            ROOT / "README.md",
+            ROOT / "docs" / "offline_evaluation_release_gate.md",
+            ROOT / "docs" / "real_dependency_integration_gate.md",
+        )
+        combined_documentation = "\n".join(
+            path.read_text(encoding="utf-8") for path in documentation_paths
+        )
+
+        self.assertIn("graph-rag-release-gate", combined_documentation)
+        self.assertIn("graph-rag-integration-gate", combined_documentation)
+        self.assertIn("python scripts/release_gate.py", combined_documentation)
+        self.assertIn("does not start or stop", combined_documentation)
+        self.assertIn("LLM_INPUT_COST_PER_MILLION_TOKENS", combined_documentation)
+        self.assertIn("LLM_OUTPUT_COST_PER_MILLION_TOKENS", combined_documentation)
+        self.assertIn("post-execution gate", combined_documentation)
+        self.assertIn("cannot prevent charges already incurred", combined_documentation)
+        self.assertIn(
+            "Exit `2` can occur before report artifacts are created",
+            combined_documentation,
+        )
+        self.assertNotIn("include-" + "quality-eval", combined_documentation)
+        self.assertNotIn("RELEASE_GATE_" + "INCLUDE_QUALITY_EVAL", combined_documentation)
+
     def test_retired_compatibility_names_are_absent_from_gate_sources(self) -> None:
-        source_paths = [Path("scripts/release_gate.py"), *Path("scripts/offline_gate").glob("*.py")]
+        source_paths = [
+            ROOT / "scripts" / "release_gate.py",
+            *(ROOT / "scripts" / "offline_gate").glob("*.py"),
+        ]
 
         combined_source = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
 
         for retired_name in (
             "_environment_flag",
             "_legacy_optional_policy",
-            "include-quality-eval",
-            "include_quality_eval",
-            "included_optional_stages",
-            "activate_optional_stages",
-            "INCLUDE_QUALITY_EVAL_ENV",
-            "optional_stages",
+            "include-" + "quality-eval",
+            "include_" + "quality_eval",
+            "included_optional_" + "stages",
+            "activate_optional_" + "stages",
+            "INCLUDE_" + "QUALITY_EVAL_ENV",
+            "optional_" + "stages",
             "scripts.release_policy",
             "release_policy",
         ):

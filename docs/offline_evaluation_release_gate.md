@@ -1,8 +1,8 @@
 # Offline Evaluation Release Gate
 
-The release gate runs deterministic offline smoke suites and the curated quality
-evaluation. The quality suite is part of the default release policy and uses
-offline fixtures; it does not require model, Milvus, or Neo4j services.
+The release gate runs deterministic offline smoke suites and the curated
+`quality_eval` suite. `quality_eval` is always required and uses offline
+fixtures; this gate does not require a model provider, Milvus, or Neo4j.
 
 ## Run
 
@@ -23,7 +23,7 @@ The final local gate stops at the first failing step and runs:
 Run the standalone release gate before packaging, tagging, or deploying:
 
 ```powershell
-python scripts/release_gate.py
+graph-rag-release-gate
 ```
 
 It exits with code `0` only when every required suite and coverage threshold
@@ -37,7 +37,7 @@ from quality regressions through `failure_type`.
 
 ## Gate Policy
 
-Thresholds live in `eval/release_gate.json`. The default policy requires:
+Thresholds live in `eval/release_gate.json`. The release policy requires:
 
 - all six suites, including `quality_eval`, to be available;
 - 57 or more total cases;
@@ -121,7 +121,7 @@ judge without changing the report contract.
 1. Add or change a case under `tests/fixtures/`.
 2. Keep the strict nested schema; do not reintroduce flat `expected_*` fields.
 3. Run `python -m pytest tests/test_eval_queries.py -q`.
-4. Run `python scripts/release_gate.py`.
+4. Run `graph-rag-release-gate`.
 5. Raise minimum case, dimension, or metric thresholds when coverage expands.
 
 Do not lower a threshold merely to make a regression pass. Any intentional
