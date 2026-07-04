@@ -4,11 +4,11 @@ import unittest
 
 from rag_modules.contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.retrieval.candidate_generator import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
     CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
-    CandidateSourceDegradationStrategy,
     RetrievalCandidateGenerator,
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec

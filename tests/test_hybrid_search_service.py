@@ -7,11 +7,11 @@ from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.contracts.runtime.errors import retrieval_error_detail
+from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.retrieval.candidate_generator import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     CandidateSet,
     CandidateSourceDegradation,
-    CandidateSourceDegradationStrategy,
     CandidateSourceResult,
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec, VectorCandidateSource

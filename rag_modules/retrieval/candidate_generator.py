@@ -17,8 +17,10 @@ from ..contracts.runtime.errors import (
 )
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
 from ..kernel.retrieval import (
-    CandidateSourceDegradationStrategy,
-    candidate_source_degradation_strategy,
+    CandidateSourceDegradationStrategy as _CandidateSourceDegradationStrategy,
+)
+from ..kernel.retrieval import (
+    candidate_source_degradation_strategy as _candidate_source_degradation_strategy,
 )
 from ..safe_logging import log_failure
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
@@ -121,14 +123,14 @@ class RetrievalCandidateGenerator:
         sources: Sequence[RetrievalCandidateSource],
         source_failure_threshold: int = 1,
         source_recovery_timeout_seconds: float = 30.0,
-        source_degradation_strategy: CandidateSourceDegradationStrategy | str = (
-            CandidateSourceDegradationStrategy.CONTINUE
+        source_degradation_strategy: _CandidateSourceDegradationStrategy | str = (
+            _CandidateSourceDegradationStrategy.CONTINUE
         ),
     ):
         self.sources = tuple(sources)
         self.source_failure_threshold = max(1, int(source_failure_threshold))
         self.source_recovery_timeout_seconds = max(0.1, float(source_recovery_timeout_seconds))
-        self.source_degradation_strategy = candidate_source_degradation_strategy(
+        self.source_degradation_strategy = _candidate_source_degradation_strategy(
             source_degradation_strategy
         )
         self._source_breakers = {
@@ -249,7 +251,7 @@ class RetrievalCandidateGenerator:
         return documents, None
 
     def _should_raise_degradation(self) -> bool:
-        return self.source_degradation_strategy is CandidateSourceDegradationStrategy.FAIL_FAST
+        return self.source_degradation_strategy is _CandidateSourceDegradationStrategy.FAIL_FAST
 
     @staticmethod
     def _degradation(

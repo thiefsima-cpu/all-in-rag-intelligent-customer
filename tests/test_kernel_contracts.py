@@ -19,6 +19,7 @@ from rag_modules.kernel.artifacts import (
 from rag_modules.kernel.documents import TextDocument
 from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.kernel.routing import RouteStatistics, SearchStrategy
+from rag_modules.retrieval import candidate_generator
 
 
 def test_shared_types_have_canonical_module_ownership() -> None:
@@ -41,6 +42,11 @@ def test_shared_types_have_canonical_module_ownership() -> None:
     }
 
     assert {value: value.__module__ for value in expected_modules} == expected_modules
+
+
+def test_candidate_generator_does_not_export_kernel_strategy_names() -> None:
+    assert "CandidateSourceDegradationStrategy" not in candidate_generator.__dict__
+    assert "candidate_source_degradation_strategy" not in candidate_generator.__dict__
 
 
 def test_kernel_has_no_subsystem_imports() -> None:

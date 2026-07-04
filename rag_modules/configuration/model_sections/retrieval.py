@@ -6,7 +6,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from ...retrieval.candidate_generator import CandidateSourceDegradationStrategy
+from ...kernel.retrieval import CandidateSourceDegradationStrategy
 from .base import ConfigSection
 
 
