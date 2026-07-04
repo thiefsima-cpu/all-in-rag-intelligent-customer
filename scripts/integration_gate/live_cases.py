@@ -21,6 +21,22 @@ from .models import (
     LiveCaseRunResult,
 )
 
+_REQUIRED_PAYLOAD_FIELDS = frozenset({"summary", "grounding", "diagnostics", "traces"})
+_REQUIRED_SUMMARY_FIELDS = frozenset(
+    {"strategy", "latency_ms", "fallback_used", "estimated_cost_usd"}
+)
+_REQUIRED_GROUNDING_FIELDS = frozenset({"evidence_documents"})
+_REQUIRED_DIAGNOSTICS_FIELDS = frozenset({"diagnostics"})
+_REQUIRED_QUERY_DIAGNOSTIC_FIELDS = frozenset({"retrieval_degraded"})
+_REQUIRED_TRACE_FIELDS = frozenset({"route_trace", "generation_trace"})
+_REQUIRED_ROUTE_TRACE_FIELDS = frozenset({"strategy", "stages", "fallbacks", "diagnostics"})
+_REQUIRED_ROUTE_DIAGNOSTIC_FIELDS = frozenset(
+    {"used_fallback", "fallback_count", "retrieval_degraded"}
+)
+_REQUIRED_GENERATION_TRACE_FIELDS = frozenset(
+    {"total_tokens", "estimated_cost_usd", "fallback_used"}
+)
+
 
 class RequestIdFactory(Protocol):
     def __call__(self) -> object: ...
@@ -126,6 +142,20 @@ def run_live_case(
             ),
         )
 
+    if not _has_required_debug_response_contract(response_model):
+        return LiveCaseRunResult(
+            case_id=case.case_id,
+            observation=None,
+            checks=(
+                _request_failed_check(
+                    case.case_id,
+                    code="API_RESPONSE_CONTRACT_INVALID",
+                    failure_type=GateFailureType.CONTRACT_REGRESSION,
+                    start_time=start_time,
+                ),
+            ),
+        )
+
     observation = normalize_live_case_observation(case, response_model)
     return LiveCaseRunResult(
         case_id=case.case_id,
@@ -160,6 +190,36 @@ def _post_debug_answer(
     )
     response.raise_for_status()
     return response.json()
+
+
+def _has_required_debug_response_contract(response: AnswerResponseModel) -> bool:
+    payload = response.response
+    traces = payload.traces
+    route_trace = traces.route_trace
+    generation_trace = traces.generation_trace
+
+    return (
+        _fields_were_explicitly_set(payload, _REQUIRED_PAYLOAD_FIELDS)
+        and _fields_were_explicitly_set(payload.summary, _REQUIRED_SUMMARY_FIELDS)
+        and _fields_were_explicitly_set(payload.grounding, _REQUIRED_GROUNDING_FIELDS)
+        and _fields_were_explicitly_set(payload.diagnostics, _REQUIRED_DIAGNOSTICS_FIELDS)
+        and _fields_were_explicitly_set(
+            payload.diagnostics.diagnostics,
+            _REQUIRED_QUERY_DIAGNOSTIC_FIELDS,
+        )
+        and _fields_were_explicitly_set(traces, _REQUIRED_TRACE_FIELDS)
+        and _fields_were_explicitly_set(route_trace, _REQUIRED_ROUTE_TRACE_FIELDS)
+        and _fields_were_explicitly_set(
+            route_trace.diagnostics,
+            _REQUIRED_ROUTE_DIAGNOSTIC_FIELDS,
+        )
+        and _fields_were_explicitly_set(generation_trace, _REQUIRED_GENERATION_TRACE_FIELDS)
+    )
+
+
+def _fields_were_explicitly_set(model: object, required_fields: frozenset[str]) -> bool:
+    fields_set = getattr(model, "model_fields_set", frozenset())
+    return required_fields <= fields_set
 
 
 def _request_failed_check(

@@ -437,6 +437,24 @@ def test_missing_required_source_is_quality_regression() -> None:
     assert "REQUIRED_SOURCE_MISSING" in failed_codes(checks)
 
 
+def test_missing_required_source_failure_redacts_unexpected_source_values() -> None:
+    case = build_case(required_sources=["vector", "graph_rag"])
+    observation = build_observation(
+        sources=frozenset({"vector", "Bearer secret-token leaked source"})
+    )
+
+    checks = evaluate_live_case(case, observation)
+
+    source_check = checks_by_name(checks)["case.combined_constrained_recommendation.sources"]
+    assert source_check.code == "REQUIRED_SOURCE_MISSING"
+    assert source_check.actual == {
+        "present_required": ["vector"],
+        "missing": ["graph_rag"],
+        "unexpected_count": 1,
+    }
+    assert_no_forbidden_failure_details(source_check.to_dict())
+
+
 def test_unexpected_strategy_is_contract_regression() -> None:
     case = build_case(allowed_strategies=["combined"])
     observation = build_observation(strategy="graph_rag")
@@ -446,6 +464,18 @@ def test_unexpected_strategy_is_contract_regression() -> None:
     strategy_check = checks_by_name(checks)["case.combined_constrained_recommendation.strategy"]
     assert strategy_check.code == "STRATEGY_MISMATCH"
     assert strategy_check.failure_type is GateFailureType.CONTRACT_REGRESSION
+
+
+def test_unexpected_strategy_failure_redacts_unknown_strategy_values() -> None:
+    case = build_case(allowed_strategies=["combined"])
+    observation = build_observation(strategy="Bearer secret-token leaked strategy")
+
+    checks = evaluate_live_case(case, observation)
+
+    strategy_check = checks_by_name(checks)["case.combined_constrained_recommendation.strategy"]
+    assert strategy_check.code == "STRATEGY_MISMATCH"
+    assert strategy_check.actual == "unexpected"
+    assert_no_forbidden_failure_details(strategy_check.to_dict())
 
 
 def test_zero_generation_tokens_when_generation_is_required_is_contract_regression() -> None:
@@ -459,6 +489,29 @@ def test_zero_generation_tokens_when_generation_is_required_is_contract_regressi
     ]
     assert model_usage_check.code == "MODEL_USAGE_NOT_PROVEN"
     assert model_usage_check.failure_type is GateFailureType.CONTRACT_REGRESSION
+
+
+def test_missing_debug_trace_contract_returns_single_contract_failure_without_payload() -> None:
+    case = build_case()
+    payload = answer_payload()
+    payload["response"]["summary"]["answer"] = "Bearer secret-token leaked answer"
+    payload["response"]["traces"] = {}
+    http = FakeHttpSession(payload)
+
+    result = run_live_case(
+        settings=build_settings(),
+        policy=build_policy(cases=[case]),
+        case=case,
+        http_session=http,
+        request_id_factory=lambda: "fixed-request-id",
+    )
+
+    assert result.observation is None
+    assert len(result.checks) == 1
+    failure = result.checks[0]
+    assert failure.code == "API_RESPONSE_CONTRACT_INVALID"
+    assert failure.failure_type is GateFailureType.CONTRACT_REGRESSION
+    assert_no_forbidden_failure_details(failure.to_dict())
 
 
 @pytest.mark.parametrize(
@@ -602,3 +655,7 @@ def test_aggregate_metrics_fail_closed_when_no_observations_are_available() -> N
     assert by_name["metrics.fallback_rate"].code == "METRIC_ABOVE_MAXIMUM"
     assert by_name["metrics.retrieval_degradation_rate"].actual == 1.0
     assert by_name["metrics.retrieval_degradation_rate"].code == "METRIC_ABOVE_MAXIMUM"
+    assert by_name["metrics.p95_latency_ms"].code == "INSUFFICIENT_LIVE_OBSERVATIONS"
+    assert by_name["metrics.p95_latency_ms"].failure_type is GateFailureType.GATE_ERROR
+    assert by_name["metrics.estimated_cost_usd"].code == "INSUFFICIENT_LIVE_OBSERVATIONS"
+    assert by_name["metrics.estimated_cost_usd"].failure_type is GateFailureType.GATE_ERROR

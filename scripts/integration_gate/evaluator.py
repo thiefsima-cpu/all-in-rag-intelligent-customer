@@ -9,6 +9,15 @@ from scripts.gates import GateCheckResult, GateFailureType, numeric_threshold_ch
 
 from .models import IntegrationGatePolicy, LiveCaseObservation, LiveCasePolicy
 
+_SAFE_STRATEGY_LABELS = frozenset(
+    {
+        "traditional",
+        "hybrid_traditional",
+        "graph_rag",
+        "combined",
+    }
+)
+
 
 def evaluate_live_case(
     case: LiveCasePolicy,
@@ -56,6 +65,26 @@ def evaluate_integration_metrics(
         percentile=0.95,
     )
     total_estimated_cost_usd = sum(observation.estimated_cost_usd for observation in observations)
+    p95_latency_check = (
+        _insufficient_live_observations_check("metrics.p95_latency_ms")
+        if observation_count == 0
+        else numeric_threshold_check(
+            "metrics.p95_latency_ms",
+            p95_latency_ms,
+            maximum=policy.thresholds.maximum_p95_latency_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        )
+    )
+    estimated_cost_check = (
+        _insufficient_live_observations_check("metrics.estimated_cost_usd")
+        if observation_count == 0
+        else numeric_threshold_check(
+            "metrics.estimated_cost_usd",
+            total_estimated_cost_usd,
+            maximum=policy.thresholds.maximum_estimated_cost_usd,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        )
+    )
 
     return (
         _global_source_coverage_check(
@@ -84,18 +113,8 @@ def evaluate_integration_metrics(
             maximum=policy.thresholds.maximum_retrieval_degradation_rate,
             failure_type=GateFailureType.QUALITY_REGRESSION,
         ),
-        numeric_threshold_check(
-            "metrics.p95_latency_ms",
-            p95_latency_ms,
-            maximum=policy.thresholds.maximum_p95_latency_ms,
-            failure_type=GateFailureType.BUDGET_REGRESSION,
-        ),
-        numeric_threshold_check(
-            "metrics.estimated_cost_usd",
-            total_estimated_cost_usd,
-            maximum=policy.thresholds.maximum_estimated_cost_usd,
-            failure_type=GateFailureType.BUDGET_REGRESSION,
-        ),
+        p95_latency_check,
+        estimated_cost_check,
     )
 
 
@@ -106,19 +125,20 @@ def _strategy_check(
 ) -> GateCheckResult:
     expected = tuple(case.allowed_strategies)
     actual = observation.strategy
+    safe_actual = _safe_strategy_label(case, actual)
     if actual in case.allowed_strategies:
         return GateCheckResult.pass_check(
             name,
             code="STRATEGY_OK",
             expected=expected,
-            actual=actual,
+            actual=safe_actual,
         )
     return GateCheckResult.fail_check(
         name,
         failure_type=GateFailureType.CONTRACT_REGRESSION,
         code="STRATEGY_MISMATCH",
         expected=expected,
-        actual=actual,
+        actual=safe_actual,
     )
 
 
@@ -129,7 +149,11 @@ def _sources_check(
 ) -> GateCheckResult:
     required_sources = frozenset(case.required_sources)
     missing_sources = sorted(required_sources - observation.sources)
-    actual_sources = sorted(observation.sources)
+    actual_sources = _safe_source_summary(
+        required_sources=required_sources,
+        observed_sources=observation.sources,
+        missing_sources=missing_sources,
+    )
     if not missing_sources:
         return GateCheckResult.pass_check(
             name,
@@ -274,6 +298,36 @@ def _global_source_coverage_check(
         code=failure_code,
         expected=True,
         actual=False,
+    )
+
+
+def _safe_strategy_label(case: LiveCasePolicy, actual: str) -> str:
+    safe_labels = frozenset(case.allowed_strategies) | _SAFE_STRATEGY_LABELS
+    if actual in safe_labels:
+        return actual
+    return "unexpected"
+
+
+def _safe_source_summary(
+    *,
+    required_sources: frozenset[str],
+    observed_sources: frozenset[str],
+    missing_sources: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "present_required": sorted(required_sources & observed_sources),
+        "missing": list(missing_sources),
+        "unexpected_count": len(observed_sources - required_sources),
+    }
+
+
+def _insufficient_live_observations_check(name: str) -> GateCheckResult:
+    return GateCheckResult.fail_check(
+        name,
+        failure_type=GateFailureType.GATE_ERROR,
+        code="INSUFFICIENT_LIVE_OBSERVATIONS",
+        expected={"minimum_observations": 1},
+        actual={"observation_count": 0},
     )
 
 
