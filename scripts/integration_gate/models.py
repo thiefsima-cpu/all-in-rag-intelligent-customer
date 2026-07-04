@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from scripts.gates import GateCheckResult
+from scripts.gates import GateCheckResult, GateCheckStatus
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "integration_gate.json"
@@ -150,3 +150,12 @@ class LiveCaseRunResult:
     case_id: str
     observation: LiveCaseObservation | None
     checks: tuple[GateCheckResult, ...]
+
+
+@dataclass(frozen=True)
+class IntegrationCaseSummary:
+    case_id: str
+    executed: bool
+    status: GateCheckStatus
+    observation: LiveCaseObservation | None
+    check_codes: tuple[str, ...]

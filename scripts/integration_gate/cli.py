@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from scripts.gates import json_safe
 
@@ -36,11 +37,22 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    except Exception:
+        payload = {
+            "passed": False,
+            "failure_type": "gate-error",
+            "code": "INTEGRATION_GATE_EXECUTION_FAILED",
+        }
+        print(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False),
+            file=sys.stderr,
+        )
+        return 2
 
     if args.emit_json:
         print(json.dumps(json_safe(report), ensure_ascii=False, sort_keys=True, allow_nan=False))
     else:
-        _print_text_summary(report)
+        _print_text_summary(report, output_dir=args.output_dir)
 
     return 0 if report.get("passed") is True else 1
 
@@ -52,7 +64,7 @@ def _configure_utf8_stdio() -> None:
             reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
-def _print_text_summary(report: dict[str, object]) -> None:
+def _print_text_summary(report: dict[str, object], *, output_dir: object) -> None:
     status = "passed" if report.get("passed") is True else "failed"
     print(f"Integration gate {status}.")
 
@@ -61,9 +73,9 @@ def _print_text_summary(report: dict[str, object]) -> None:
         report_path = artifacts.get("report_json")
         summary_path = artifacts.get("summary_md")
         if report_path:
-            print(f"Report: {report_path}")
+            print(f"Report: {Path(output_dir) / str(report_path)}")
         if summary_path:
-            print(f"Summary: {summary_path}")
+            print(f"Summary: {Path(output_dir) / str(summary_path)}")
 
 
 if __name__ == "__main__":

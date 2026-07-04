@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import tomllib
 import unittest
 from pathlib import Path
@@ -56,6 +58,20 @@ class EntrypointTests(unittest.TestCase):
             pyproject["project"]["scripts"]["graph-rag-integration-gate"],
             "scripts.integration_gate.cli:main",
         )
+
+    def test_integration_gate_module_help_exposes_command_arguments(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.integration_gate", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--policy", completed.stdout)
+        self.assertIn("--output-dir", completed.stdout)
+        self.assertIn("--json", completed.stdout)
 
 
 if __name__ == "__main__":
