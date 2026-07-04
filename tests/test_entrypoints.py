@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -47,6 +48,14 @@ class EntrypointTests(unittest.TestCase):
             exit_code = main_build_service.main()
 
         self.assertEqual(exit_code, 1)
+
+    def test_integration_gate_console_script_is_registered(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            pyproject["project"]["scripts"]["graph-rag-integration-gate"],
+            "scripts.integration_gate.cli:main",
+        )
 
 
 if __name__ == "__main__":
