@@ -85,13 +85,13 @@ def _policy_model() -> IntegrationGatePolicy:
 
 def _required_environ() -> dict[str, str]:
     return {
-        "INTEGRATION_GATE_API_URL": "https://api_user:api_pass@api.example.com:8443/secret/path?token=query-token",
-        "INTEGRATION_GATE_API_TOKEN": "Bearer raw-secret-token",
-        "NEO4J_URI": "bolt://neo4j_user:neo4j_pass@graph.internal:7687/db?password=hidden",
+        "INTEGRATION_GATE_API_URL": "https://api.example.com:8443",
+        "INTEGRATION_GATE_API_TOKEN": "raw-secret-token",
+        "NEO4J_URI": "bolt://graph.internal:7687",
         "NEO4J_USER": "neo4j",
         "NEO4J_PASSWORD": "password-from-env",
         "NEO4J_DATABASE": "neo4j",
-        "MILVUS_HOST": "user:pass@milvus.internal/path?token=milvus-token",
+        "MILVUS_HOST": "milvus.internal",
         "MILVUS_PORT": "19530",
         "MILVUS_COLLECTION_NAME": "cooking_knowledge",
     }
