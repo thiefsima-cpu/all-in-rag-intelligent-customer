@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from scripts.gates import GateCheckResult
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = ROOT_DIR / "eval" / "integration_gate.json"
 
@@ -128,3 +130,23 @@ def _required_env(environment: Mapping[str, str], name: str) -> str:
     if value is None or not value.strip():
         raise ValueError(f"Missing required integration gate environment variable: {name}")
     return value.strip()
+
+
+@dataclass(frozen=True)
+class LiveCaseObservation:
+    case_id: str
+    strategy: str
+    sources: frozenset[str]
+    evidence_count: int
+    fallback_used: bool
+    retrieval_degraded: bool
+    latency_ms: float
+    total_tokens: int
+    estimated_cost_usd: float
+
+
+@dataclass(frozen=True)
+class LiveCaseRunResult:
+    case_id: str
+    observation: LiveCaseObservation | None
+    checks: tuple[GateCheckResult, ...]
