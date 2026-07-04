@@ -33,6 +33,7 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
     def test_operational_scripts_import_canonical_contracts(self) -> None:
         importlib.import_module("scripts.smoke_answer_pipeline_real_route")
         importlib.import_module("scripts.pressure_api_service")
+        importlib.import_module("scripts.migrate_semantic_schema")
 
     def test_query_understanding_package_reexports_planning_service(self) -> None:
         import rag_modules.query_understanding as query_understanding
