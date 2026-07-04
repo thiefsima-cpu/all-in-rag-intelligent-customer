@@ -7,7 +7,7 @@ from contextlib import nullcontext
 from typing import List
 
 from ...contracts import EvidenceDocument, RequestControl
-from ...runtime import (
+from ...contracts.runtime import (
     AnswerContext,
     GenerationMode,
     GenerationSnapshot,

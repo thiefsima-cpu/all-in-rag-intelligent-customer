@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
 from ...contracts import EvidenceDocument, RequestControl
-from ...runtime import (
+from ...contracts.runtime import (
     AnswerContext,
     GenerationSnapshot,
     GraphRetrievalSnapshot,
@@ -18,7 +18,7 @@ from ...runtime import (
     RouteSnapshot,
     RuntimeErrorDetail,
 )
-from ...runtime.json_types import JsonObject
+from ...kernel.json_types import JsonObject
 
 MessageCallback = Optional[Callable[[str], None]]
 ChunkCallback = Optional[Callable[[str], None]]

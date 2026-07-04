@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from ...kernel.artifacts import DocumentArtifactSignatures
 from ...runtime.artifacts import (
     compute_document_signature,
     compute_embedding_signature,
     compute_graph_signature,
     compute_index_signature,
 )
-from .models import DocumentArtifactSignatures
 from .settings import DocumentArtifactSettings
 
 

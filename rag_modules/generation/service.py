@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import RequestControl
-from ..runtime import AnswerContext, GenerationSnapshot
+from ..contracts.runtime import AnswerContext, GenerationSnapshot
 from .context_factory import GenerationContextFactory
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt
 from .module_builder import (

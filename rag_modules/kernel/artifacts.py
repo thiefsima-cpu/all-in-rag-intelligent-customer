@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, List, Mapping
 
-from ...domain.shared.semantic_schema import SEMANTIC_SCHEMA_VERSION
-from .json import json_safe
+from .documents import TextDocument
+from .semantic_schema import SEMANTIC_SCHEMA_VERSION
 
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "graph-rag-artifact-manifest-v2"
 
@@ -168,7 +168,7 @@ class ArtifactManifest:
             "vector_rows": self.vector_rows,
             "cache_hit": self.cache_hit,
             "last_error": self.last_error,
-            "build_metadata": json_safe(self.build_metadata),
+            "build_metadata": _json_safe(self.build_metadata),
         }
 
     def evolve(self, **changes: Any) -> "ArtifactManifest":
@@ -244,6 +244,41 @@ class ArtifactManifest:
         )
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+@dataclass(slots=True)
+class DocumentArtifactResult:
+    documents: List[TextDocument]
+    chunks: List[TextDocument]
+    manifest: ArtifactManifest
+    cache_hit: bool
+
+
+@dataclass(slots=True)
+class DocumentArtifactSignatures:
+    graph_signature: str
+    document_signature: str
+    embedding_signature: str
+    index_signature: str
+
+
+@dataclass(slots=True)
+class DocumentArtifactStats:
+    total_recipes: int
+    total_ingredients: int
+    total_cooking_steps: int
+    total_documents: int
+    total_chunks: int
+
+
 __all__ = [
     "ARTIFACT_HEALTH_FAILED",
     "ARTIFACT_HEALTH_IN_PROGRESS",
@@ -264,6 +299,9 @@ __all__ = [
     "ARTIFACT_STAGE_STALE",
     "ArtifactManifest",
     "ArtifactStage",
+    "DocumentArtifactResult",
+    "DocumentArtifactSignatures",
+    "DocumentArtifactStats",
     "artifact_health",
     "utc_now_iso",
 ]

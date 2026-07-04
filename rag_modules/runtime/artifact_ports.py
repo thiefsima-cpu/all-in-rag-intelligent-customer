@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
-from .artifacts import ArtifactManifest
-from .json_types import JsonObject
+from ..kernel.artifacts import ArtifactManifest
+from ..kernel.json_types import JsonObject
 
 if TYPE_CHECKING:
-    from ..build_pipeline.document_artifacts.models import DocumentArtifactResult
+    from ..kernel.artifacts import DocumentArtifactResult
+    from ..kernel.documents import TextDocument
     from ..runtime_contracts import GraphDataModulePort, VectorIndexModulePort
-    from ..text_document import TextDocument
 
 
 class ArtifactManifestStorePort(Protocol):

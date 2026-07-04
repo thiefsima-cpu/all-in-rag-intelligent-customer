@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..contracts import RetrievalRequest
+from ..contracts.runtime import HybridRetrievalOutcome
 from ..fusion import FusionRanker
 from .adapters import ConstraintRetriever
 from .candidate_generator import RetrievalCandidateGenerator
@@ -12,7 +13,6 @@ from .candidate_sources import (
     DefaultHybridCandidateSourceFactory,
     HybridCandidateSourceFactory,
 )
-from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_profile import RetrievalRuntimeProfile
 
 logger = logging.getLogger(__name__)

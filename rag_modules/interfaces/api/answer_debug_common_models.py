@@ -5,8 +5,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...contracts import EvidenceDocument
-from ...runtime import ModelSuiteSnapshot, PolicySnapshot, QueryAnalysis, QueryDiagnostics
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...contracts.runtime import ModelSuiteSnapshot, PolicySnapshot, QueryAnalysis, QueryDiagnostics
+from ...kernel.json_types import JsonObject, coerce_json_object
 from .answer_mappers import public_degraded_candidates, semantic_profile_payload
 
 

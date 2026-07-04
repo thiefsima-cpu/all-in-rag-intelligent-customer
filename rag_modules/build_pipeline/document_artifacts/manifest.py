@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+from ...kernel.artifacts import ArtifactManifest, DocumentArtifactSignatures, DocumentArtifactStats
 from ...runtime.artifact_ports import ArtifactManifestStorePort
-from ...runtime.artifacts import ArtifactManifest
-from .models import DocumentArtifactSignatures, DocumentArtifactStats
 from .settings import DocumentArtifactSettings
 
 

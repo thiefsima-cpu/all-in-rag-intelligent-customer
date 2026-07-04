@@ -8,8 +8,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from ..contracts import EvidenceDocument, ensure_evidence_documents
-from ..retrieval_observability import summarize_documents
-from ..runtime import (
+from ..contracts.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
     GenerationSnapshot,
@@ -24,8 +23,9 @@ from ..runtime import (
     RuntimeErrorDetail,
     analysis_strategy_name,
 )
-from ..runtime.error_models import ensure_runtime_error_detail
-from ..runtime.json_types import JsonObject, JsonValue, coerce_json_object
+from ..contracts.runtime.errors import ensure_runtime_error_detail
+from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
+from ..retrieval_observability import summarize_documents
 from ..runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,

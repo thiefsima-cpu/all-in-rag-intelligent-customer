@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..candidate_generator import (
+from ...kernel.retrieval import (
     CandidateSourceDegradationStrategy,
-    _normalize_source_degradation_strategy,
+    candidate_source_degradation_strategy,
 )
 from .shared import _CANDIDATE_SOURCE_DEFAULTS, _as_int
 
@@ -31,7 +31,7 @@ def _normalize_degradation_strategy(value: object) -> CandidateSourceDegradation
     default = str(_CANDIDATE_SOURCE_DEFAULTS.degradation_strategy).strip().lower()
     candidate = value if isinstance(value, (CandidateSourceDegradationStrategy, str)) else default
     try:
-        return _normalize_source_degradation_strategy(candidate or default)
+        return candidate_source_degradation_strategy(candidate or default)
     except ValueError:
         supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
         raise ValueError(

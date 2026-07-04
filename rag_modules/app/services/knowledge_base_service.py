@@ -7,8 +7,8 @@ from typing import Any, Callable, Optional
 from ...build_pipeline.contracts import DocumentArtifactBuilderPort, SemanticGraphSchemaSyncPort
 from ...build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from ...configuration.models import GraphRAGConfig
+from ...kernel.artifacts import ArtifactManifest
 from ...runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
-from ...runtime.artifacts import ArtifactManifest
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 
 ProgressCallback = Optional[Callable[[str], None]]

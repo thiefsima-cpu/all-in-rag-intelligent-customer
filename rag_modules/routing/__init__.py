@@ -7,7 +7,6 @@ from importlib import import_module
 _EXPORTS = {
     "RouteExecutionRequest": ".search_orchestrator",
     "RouteSearchOrchestrator": ".search_orchestrator",
-    "RouteStatisticsTracker": ".statistics",
     "RouteTraceRecorder": ".trace_recorder",
     "RoutingWorkflowProtocol": ".contracts",
     "RoutingWorkflowService": ".workflow_service",
@@ -16,7 +15,6 @@ _EXPORTS = {
 __all__ = [
     "RouteExecutionRequest",
     "RouteSearchOrchestrator",
-    "RouteStatisticsTracker",
     "RouteTraceRecorder",
     "RoutingWorkflowProtocol",
     "RoutingWorkflowService",

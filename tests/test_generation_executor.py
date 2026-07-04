@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.contracts import RequestControl
+from rag_modules.contracts.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis
 from rag_modules.generation import (
     AnswerPlan,
     GenerationDecision,
@@ -19,8 +20,8 @@ from rag_modules.generation import (
     decide_generation_mode,
 )
 from rag_modules.generation.clients import GenerationLatencyBudgetExceeded
+from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_policy import get_query_policy
-from rag_modules.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis, SearchStrategy
 
 
 class _FakePromptBuilder:

@@ -11,12 +11,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List
 
-from ..domain.shared.semantic_schema import (
+from ..kernel.documents import TextDocument
+from ..kernel.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
     SEMANTIC_SCHEMA_VERSION,
 )
-from ..text_document import TextDocument
 from .neo4j import Neo4jConnectionManager, create_neo4j_driver
 
 logger = logging.getLogger(__name__)

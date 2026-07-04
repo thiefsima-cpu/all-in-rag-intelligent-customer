@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval_cache import (
     HYBRID_CACHE_SCHEMA_VERSION,
     RetrievalCacheStore,
 )
-from rag_modules.text_document import TextDocument
 
 
 class RetrievalCacheStoreTests(unittest.TestCase):

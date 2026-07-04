@@ -9,9 +9,8 @@ if TYPE_CHECKING:
     from .build_pipeline.graph_preparation.models import GraphLoadCounts
     from .build_pipeline.graph_preparation.statistics import GraphPreparationStats
     from .contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
-    from .graph.retrieval_types import GraphQuery
-    from .retrieval.hybrid_outcome import HybridRetrievalOutcome
-    from .runtime import (
+    from .contracts.graph import GraphQuery
+    from .contracts.runtime import (
         AnswerContext,
         GenerationSnapshot,
         GraphRetrievalSnapshot,
@@ -20,8 +19,9 @@ if TYPE_CHECKING:
         RouteSnapshot,
         RuntimeErrorDetail,
     )
-    from .runtime.json_types import JsonObject, JsonValue
-    from .text_document import TextDocument
+    from .contracts.runtime.retrieval import HybridRetrievalOutcome
+    from .kernel.documents import TextDocument
+    from .kernel.json_types import JsonObject, JsonValue
 else:
     JsonObject = dict[str, object]
     JsonValue = object

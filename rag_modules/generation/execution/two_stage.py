@@ -7,7 +7,7 @@ import logging
 import time
 
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
-from ...runtime import AnswerContext
+from ...contracts.runtime import AnswerContext
 from ...safe_logging import log_failure
 from ..models import AnswerPlan, GenerationSettings
 from ..planner import GenerationPlanner

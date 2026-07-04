@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
 
-from ..runtime.generation_models import (
+from ..contracts.runtime.generation import (
     GenerationMode,
     generation_mode_value,
     normalize_generation_mode,

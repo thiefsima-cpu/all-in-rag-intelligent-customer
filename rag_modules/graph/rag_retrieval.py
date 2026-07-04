@@ -5,15 +5,16 @@ from __future__ import annotations
 from typing import Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..contracts.graph import GraphQuery
+from ..contracts.runtime import GraphRetrievalSnapshot
 from ..query_policy.models import QueryPolicyBundle
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime import GraphRetrievalSnapshot
 from ..runtime_contracts import Neo4jManagerPort
 from .retrieval_components import (
     DefaultGraphRetrievalComponentFactory,
     GraphRetrievalComponentFactory,
 )
-from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
+from .retrieval_types import GraphPath, KnowledgeSubgraph, QueryType
 
 
 class GraphRAGRetrieval:
@@ -63,7 +64,6 @@ class GraphRAGRetrieval:
 __all__ = [
     "GraphRAGRetrieval",
     "GraphPath",
-    "GraphQuery",
     "KnowledgeSubgraph",
     "QueryType",
 ]

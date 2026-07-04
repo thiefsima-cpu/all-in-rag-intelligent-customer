@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...contracts import RequestControl
-from ...runtime import AnswerContext
+from ...contracts.runtime import AnswerContext
 from ..clients import GenerationClientAdapter
 from ..models import AnswerPlan, GenerationSettings
 from ..prompt_builder import GenerationPromptBuilder

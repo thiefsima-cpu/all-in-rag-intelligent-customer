@@ -19,7 +19,6 @@ _EXPORTS: Dict[str, str] = {
     "GraphNode": ".data_preparation",
     "GraphPath": ".retrieval_types",
     "GraphPlanBuilder": ".retrieval_plan",
-    "GraphQuery": ".retrieval_types",
     "GraphQueryExecutor": ".query_executor",
     "GraphQueryFactory": ".query_resolution",
     "GraphQueryIntent": ".query_intent",

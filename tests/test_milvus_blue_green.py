@@ -6,16 +6,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rag_modules.build_pipeline.contracts import SemanticGraphSchemaSyncResult
-from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.milvus_index_construction import MilvusIndexConstructionModule
-from rag_modules.runtime.artifacts import (
+from rag_modules.kernel.artifacts import (
     ARTIFACT_STAGE_MANIFEST_UNREADABLE,
     ArtifactManifest,
-    ArtifactManifestStore,
+    DocumentArtifactResult,
 )
-from rag_modules.text_document import TextDocument
+from rag_modules.kernel.documents import TextDocument
+from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
 class _FakeMilvusClient:

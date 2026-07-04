@@ -4,9 +4,11 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.contracts import EvidenceDocument, QueryPlan, RequestControl
-from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.contracts.runtime import QueryAnalysis
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
+from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
-from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
 from rag_modules.routing import (
     RouteExecutionRequest,
     RouteSearchOrchestrator,
@@ -16,7 +18,6 @@ from rag_modules.routing.execution_strategies import (
     RouteExecutionOutcome,
     RouteExecutionStageResult,
 )
-from rag_modules.runtime import QueryAnalysis, SearchStrategy
 
 
 class _FakeTraditionalRetrieval:

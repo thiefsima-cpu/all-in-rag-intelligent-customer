@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from ...domain.shared.query_constraints import QueryConstraints, parse_minutes
-from ...text_document import TextDocument
+from ...contracts.query_constraints import QueryConstraints, parse_minutes
+from ...kernel.documents import TextDocument
 
 
 class RecipeConstraintMatcher:

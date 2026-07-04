@@ -13,8 +13,10 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
-from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.contracts.runtime import QueryAnalysis
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
+from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.routing.execution_strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
@@ -22,7 +24,6 @@ from rag_modules.routing.execution_strategies import (
     RouteRetrievalServices,
     build_route_retrieval_request,
 )
-from rag_modules.runtime import QueryAnalysis, SearchStrategy
 
 
 class _FakeTraditionalRetrieval:

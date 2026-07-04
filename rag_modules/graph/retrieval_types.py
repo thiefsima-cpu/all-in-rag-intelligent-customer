@@ -8,20 +8,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from ..contracts import GraphQueryType
-from ..runtime.json_types import JsonObject, coerce_json_object
+from ..kernel.json_types import JsonObject, coerce_json_object
 
 QueryType = GraphQueryType
-
-
-@dataclass
-class GraphQuery:
-    query_type: QueryType
-    source_entities: list[str] = field(default_factory=list)
-    target_entities: list[str] = field(default_factory=list)
-    relation_types: list[str] = field(default_factory=list)
-    max_depth: int = 2
-    max_nodes: int = 50
-    constraints: JsonObject = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)

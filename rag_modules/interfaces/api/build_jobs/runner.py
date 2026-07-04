@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from ....app.application_protocol import GraphRAGApplication
 from ....contracts import RequestCancelled, RequestControl
-from ....runtime.json_types import JsonObject, coerce_json_object
+from ....kernel.json_types import JsonObject, coerce_json_object
 from .locks import _InterprocessFileLock
 from .models import BuildJobListPage, format_build_progress_log
 from .registry import PersistentBuildJobRegistry

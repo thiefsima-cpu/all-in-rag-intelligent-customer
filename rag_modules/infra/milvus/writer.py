@@ -6,8 +6,8 @@ import logging
 import time
 from typing import List, Optional
 
+from ...kernel.documents import TextDocument
 from ...safe_logging import log_failure
-from ...text_document import TextDocument
 from .contracts import MilvusOperationHost
 
 logger = logging.getLogger(__name__)

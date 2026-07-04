@@ -12,12 +12,12 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
-from rag_modules.runtime import (
+from rag_modules.contracts.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )
-from rag_modules.runtime.retrieval_models import RetrievalOutcome
-from rag_modules.runtime.workflow_models import AnswerContext
+from rag_modules.contracts.runtime.retrieval import RetrievalOutcome
+from rag_modules.contracts.runtime.workflows import AnswerContext
 
 
 def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None:

@@ -9,7 +9,7 @@ import queue
 import threading
 from typing import Protocol
 
-from ..runtime import QueryTraceEvent
+from ..contracts.runtime import QueryTraceEvent
 from ..safe_logging import log_failure
 from ..trace_privacy import TraceSanitizer
 

@@ -11,7 +11,7 @@ from typing import Optional
 from ....app.application_protocol import GraphRAGApplication
 from ....app.assembly import create_application_system
 from ....configuration.models import GraphRAGConfig
-from ....runtime.json_types import JsonObject, coerce_json_object
+from ....kernel.json_types import JsonObject, coerce_json_object
 
 _API_LOCKS_ATTR = "__graph_rag_api_service_locks__"
 _API_LOCKS_CREATION_LOCK = threading.Lock()

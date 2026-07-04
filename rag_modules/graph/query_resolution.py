@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ..contracts import QueryPlan, QuerySemanticRuntimeSettings
+from ..contracts.graph import GraphQuery
 from ..query_policy import get_query_policy
 from ..query_policy.models import (
     GraphSubQuestionCondition,
@@ -21,7 +22,7 @@ from ..query_understanding.graph_intent import (
 from ..query_understanding.registry import QueryUnderstandingRegistry, query_registry
 from ..query_understanding.scoring import estimate_query_complexity
 from .query_intent import GraphQueryIntent, infer_graph_query_intent
-from .retrieval_types import GraphQuery, QueryType
+from .retrieval_types import QueryType
 
 
 def _coerce_constraints(value: Any) -> Dict[str, Any]:

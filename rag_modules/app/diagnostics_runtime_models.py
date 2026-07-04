@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..runtime.json_types import JsonObject
+from ..kernel.json_types import JsonObject
 from .diagnostics_artifact_models import ArtifactManifestDiagnostics
 from .diagnostics_formatters import startup_diagnostics_lines
 from .diagnostics_stats_models import (

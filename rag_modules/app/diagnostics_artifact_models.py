@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..runtime.artifacts import ArtifactManifest, artifact_health
-from ..runtime.json_types import JsonObject, coerce_json_object
+from ..kernel.artifacts import ArtifactManifest, artifact_health
+from ..kernel.json_types import JsonObject, coerce_json_object
 from .diagnostics_payloads import extra_payload, put_if_present_or_meaningful
 
 

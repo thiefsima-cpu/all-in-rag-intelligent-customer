@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
+from ...kernel.artifacts import ArtifactManifest
 from ...query_policy import resolve_query_policy_bundle
-from ...runtime.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from .shared import (
     ProgressCallback,

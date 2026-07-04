@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import List
 
 from ..contracts import EvidenceDocument
-from ..runtime import GenerationSnapshot, QueryDiagnostics, RouteSnapshot, RuntimeErrorDetail
+from ..contracts.runtime import (
+    GenerationSnapshot,
+    QueryDiagnostics,
+    RouteSnapshot,
+    RuntimeErrorDetail,
+)
 
 
 class _TraceDiagnosticsMixin:

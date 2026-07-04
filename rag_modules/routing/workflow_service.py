@@ -7,22 +7,22 @@ import time
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RequestControl
-from ..domain.shared.query_constraints import QueryConstraints
-from ..query_policy.models import QueryPolicyBundle
-from ..query_understanding.service import QueryUnderstandingService
-from ..retrieval.post_processor import RetrievalPostProcessor
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime import (
+from ..contracts.query_constraints import QueryConstraints
+from ..contracts.runtime import (
     QueryAnalysis,
     QueryUnderstandingSnapshot,
     RetrievalOutcome,
     RouteResolution,
     RouteSnapshot,
 )
-from ..runtime.error_models import routing_error_detail
-from ..runtime.json_types import JsonObject
+from ..contracts.runtime.errors import routing_error_detail
+from ..kernel.json_types import JsonObject
+from ..kernel.routing import RouteStatistics
+from ..query_policy.models import QueryPolicyBundle
+from ..query_understanding.service import QueryUnderstandingService
+from ..retrieval.post_processor import RetrievalPostProcessor
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from .search_orchestrator import RouteExecutionRequest, RouteSearchOrchestrator
-from .statistics import RouteStatisticsTracker
 from .trace_recorder import RouteTraceRecorder
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class RoutingWorkflowService:
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
         query_understanding_service: Optional[QueryUnderstandingService] = None,
         post_processor: Optional[RetrievalPostProcessor] = None,
-        route_stats: Optional[RouteStatisticsTracker] = None,
+        route_stats: Optional[RouteStatistics] = None,
         search_orchestrator: Optional[RouteSearchOrchestrator] = None,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
@@ -65,7 +65,7 @@ class RoutingWorkflowService:
             config,
             settings=self.retrieval_profile.postprocess,
         )
-        self.route_stats = route_stats or RouteStatisticsTracker()
+        self.route_stats = route_stats or RouteStatistics()
         self.search_orchestrator = search_orchestrator or RouteSearchOrchestrator(
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,

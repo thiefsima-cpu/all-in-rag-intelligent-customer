@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 
 from ..contracts import EvidenceDocument
 from ..evidence_processing import extract_evidence_units
-from ..runtime.json_types import (
+from ..kernel.json_types import (
     JsonObject,
     coerce_json_float,
     coerce_json_int,

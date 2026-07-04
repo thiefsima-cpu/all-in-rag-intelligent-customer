@@ -1,15 +1,21 @@
-"""Routing statistics tracking."""
+"""Pure routing strategies and statistics."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
-from ..runtime import SearchStrategy
-from ..runtime.json_types import JsonObject
+from .json_types import JsonObject
+
+
+class SearchStrategy(str, Enum):
+    HYBRID_TRADITIONAL = "hybrid_traditional"
+    GRAPH_RAG = "graph_rag"
+    COMBINED = "combined"
 
 
 @dataclass
-class RouteStatisticsTracker:
+class RouteStatistics:
     """Track high-level routing distribution across strategies."""
 
     traditional_count: int = 0
@@ -45,3 +51,6 @@ class RouteStatisticsTracker:
             "graph_rag_ratio": self.graph_rag_count / total,
             "combined_ratio": self.combined_count / total,
         }
+
+
+__all__ = ["RouteStatistics", "SearchStrategy"]

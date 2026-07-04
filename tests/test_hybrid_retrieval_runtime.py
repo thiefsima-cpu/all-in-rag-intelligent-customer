@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
+from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
-from rag_modules.text_document import TextDocument
 
 
 class _StubVectorRetriever:

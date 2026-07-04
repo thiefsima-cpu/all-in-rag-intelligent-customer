@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from .json_types import JsonObject
+from ..kernel.json_types import JsonObject
 
 if TYPE_CHECKING:
     from ..routing.contracts import RoutingWorkflowProtocol

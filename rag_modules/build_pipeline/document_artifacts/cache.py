@@ -7,10 +7,13 @@ import logging
 import os
 from collections.abc import Mapping
 
-from ...runtime.artifact_ports import ArtifactManifestStorePort
-from ...runtime.artifacts import (
+from ...kernel.artifacts import (
     ARTIFACT_STAGE_DOCUMENTS_READY,
     ArtifactManifest,
+    DocumentArtifactResult,
+)
+from ...runtime.artifact_ports import ArtifactManifestStorePort
+from ...runtime.artifacts import (
     ArtifactManifestStore,
     compute_documents_digest,
     read_documents,
@@ -19,7 +22,6 @@ from ...runtime.artifacts import (
 from ...runtime_contracts import GraphDataModulePort
 from ...safe_logging import log_failure
 from .manifest import DocumentArtifactManifestAssembler
-from .models import DocumentArtifactResult
 from .settings import DocumentArtifactSettings
 from .signatures import DocumentArtifactSignatureCollector
 from .statistics import DocumentArtifactStatsCollector

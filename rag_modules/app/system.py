@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import RequestControl
-from ..runtime.artifacts import ArtifactManifest
+from ..kernel.artifacts import ArtifactManifest
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
     QuestionAnswerer,

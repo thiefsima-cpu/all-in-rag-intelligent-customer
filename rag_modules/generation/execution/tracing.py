@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import GenerationSnapshot, PolicySnapshot
-from ...runtime.error_models import generation_error_detail
+from ...contracts.runtime import GenerationSnapshot, PolicySnapshot
+from ...contracts.runtime.errors import generation_error_detail
 from ..clients import generation_failure_code
 from ..models import GenerationDecision, GenerationMode
 from ..prompt_builder import GenerationPromptBuilder

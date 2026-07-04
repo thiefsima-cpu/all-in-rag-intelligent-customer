@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Tuple
 
-from ...text_document import TextDocument
+from ...kernel.documents import TextDocument
 
 
 class RecipeDocumentChunker:

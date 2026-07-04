@@ -12,7 +12,6 @@ _EXPORTS: Dict[str, str] = {
     "GraphKVRetriever": ".adapters",
     "HybridIndexArtifacts": ".hybrid_index_service",
     "HybridIndexService": ".hybrid_index_service",
-    "HybridRetrievalOutcome": ".hybrid_outcome",
     "HybridRetrievalService": ".hybrid_service",
     "QueryKeywordExtractor": ".keyword_service",
     "RetrievalCandidateSizingSettings": ".runtime_profile",

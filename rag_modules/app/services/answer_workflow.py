@@ -7,7 +7,7 @@ import time
 
 from ...configuration.models import GraphRAGConfig
 from ...contracts import RequestControl
-from ...runtime.error_models import answer_error_detail
+from ...contracts.runtime.errors import answer_error_detail
 from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry, get_runtime_telemetry

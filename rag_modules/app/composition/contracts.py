@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Protocol
 
 from ...configuration.models import GraphRAGConfig
-from ...runtime.artifacts import ArtifactManifest
-from ...runtime.json_types import JsonObject
-from ...text_document import TextDocument
+from ...kernel.artifacts import ArtifactManifest
+from ...kernel.documents import TextDocument
+from ...kernel.json_types import JsonObject
 from ..diagnostics import StartupDiagnostics
 from ..runtime_contracts import (
     GraphDataModulePort,

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings, RequestControl
+from ..contracts.runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot
 from ..runtime_contracts import LLMClientPort
 from .planning import QueryPlanner
 

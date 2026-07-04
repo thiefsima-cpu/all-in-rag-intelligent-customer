@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from ..contracts import EvidenceDocument
-from ..text_document import TextDocument
+from ..kernel.documents import TextDocument
 
 
 class HybridParentDocumentService:

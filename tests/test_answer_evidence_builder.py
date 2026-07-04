@@ -4,7 +4,7 @@ import unittest
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.contracts import EvidenceDocument
-from rag_modules.text_document import TextDocument
+from rag_modules.kernel.documents import TextDocument
 
 
 class AnswerEvidenceBuilderTests(unittest.TestCase):

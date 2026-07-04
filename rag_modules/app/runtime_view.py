@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..configuration.models import GraphRAGConfig
-from ..runtime.artifacts import ArtifactManifest
+from ..kernel.artifacts import ArtifactManifest
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view_builder import SystemRuntimeViewBuilder
 from .runtime_views import (

@@ -13,10 +13,8 @@ from rag_modules.contracts import (
     QuerySemanticScoreBreakdown,
     RetrievalRequest,
 )
-from rag_modules.domain.shared.query_constraints import QueryConstraints
-from rag_modules.interfaces.api.answer_models import AnswerPayloadModel, PublicAnswerPayloadModel
-from rag_modules.retrieval.candidate_generator import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
-from rag_modules.runtime import (
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.contracts.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
     GenerationSnapshot,
@@ -33,8 +31,10 @@ from rag_modules.runtime import (
     RouteResolution,
     RouteSnapshot,
     RouteStageSnapshot,
-    SearchStrategy,
 )
+from rag_modules.interfaces.api.answer_models import AnswerPayloadModel, PublicAnswerPayloadModel
+from rag_modules.kernel.routing import SearchStrategy
+from rag_modules.retrieval.candidate_generator import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
 
 
 def test_answer_payload_maps_typed_response_without_to_dict() -> None:

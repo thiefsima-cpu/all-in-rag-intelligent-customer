@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Dict, List, Sequence, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
-from ..infra.resilience import CircuitBreaker, CircuitOpenError
-from ..runtime import RuntimeErrorDetail
-from ..runtime.error_models import (
+from ..contracts.runtime import RuntimeErrorDetail
+from ..contracts.runtime.errors import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     CANDIDATE_SOURCE_ERROR_DEGRADED,
     CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED,
     CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED,
     retrieval_error_detail,
+)
+from ..infra.resilience import CircuitBreaker, CircuitOpenError
+from ..kernel.retrieval import (
+    CandidateSourceDegradationStrategy,
+    candidate_source_degradation_strategy,
 )
 from ..safe_logging import log_failure
 from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
@@ -23,31 +26,6 @@ from .candidate_sources import CandidateSourceSpec, RetrievalCandidateSource
 logger = logging.getLogger(__name__)
 
 SKIP_CANDIDATE_SOURCES_METADATA_KEY = "skip_candidate_sources"
-
-
-class CandidateSourceDegradationStrategy(str, Enum):
-    CONTINUE = "continue"
-    FAIL_FAST = "fail_fast"
-
-
-SOURCE_DEGRADATION_STRATEGY_CONTINUE = CandidateSourceDegradationStrategy.CONTINUE.value
-SOURCE_DEGRADATION_STRATEGY_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_FAST.value
-SUPPORTED_SOURCE_DEGRADATION_STRATEGIES = {
-    strategy.value for strategy in CandidateSourceDegradationStrategy
-}
-
-
-def _normalize_source_degradation_strategy(
-    value: CandidateSourceDegradationStrategy | str,
-) -> CandidateSourceDegradationStrategy:
-    if isinstance(value, CandidateSourceDegradationStrategy):
-        return value
-    normalized = str(value or CandidateSourceDegradationStrategy.CONTINUE.value).strip().lower()
-    try:
-        return CandidateSourceDegradationStrategy(normalized)
-    except ValueError:
-        supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
-        raise ValueError(f"source_degradation_strategy must be one of: {supported}") from None
 
 
 @dataclass
@@ -150,7 +128,7 @@ class RetrievalCandidateGenerator:
         self.sources = tuple(sources)
         self.source_failure_threshold = max(1, int(source_failure_threshold))
         self.source_recovery_timeout_seconds = max(0.1, float(source_recovery_timeout_seconds))
-        self.source_degradation_strategy = _normalize_source_degradation_strategy(
+        self.source_degradation_strategy = candidate_source_degradation_strategy(
             source_degradation_strategy
         )
         self._source_breakers = {
@@ -315,7 +293,6 @@ __all__ = [
     "CANDIDATE_SOURCE_ERROR_REQUEST_SKIPPED",
     "CANDIDATE_SOURCE_ERROR_RETRIEVAL_FAILED",
     "CandidateSourceDegradation",
-    "CandidateSourceDegradationStrategy",
     "CandidateSourceResult",
     "RetrievalCandidateGenerator",
     "SKIP_CANDIDATE_SOURCES_METADATA_KEY",

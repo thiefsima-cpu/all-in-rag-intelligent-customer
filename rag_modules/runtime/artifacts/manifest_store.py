@@ -7,13 +7,13 @@ import logging
 import os
 from typing import Any, List, Mapping
 
-from ...safe_logging import log_failure
-from .json import write_json_atomic
-from .manifest import (
+from ...kernel.artifacts import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_STAGE_MANIFEST_UNREADABLE,
     ArtifactManifest,
 )
+from ...safe_logging import log_failure
+from .json import write_json_atomic
 
 MANIFEST_UNREADABLE_ERROR_CODE = "MANIFEST_UNREADABLE"
 logger = logging.getLogger(__name__)

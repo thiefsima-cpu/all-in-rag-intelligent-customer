@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 
+from ..kernel.artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest
 from ..runtime.artifact_adapters import DefaultRuntimeArtifactAccess
 from ..runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
-from ..runtime.artifacts import ARTIFACT_STAGE_REBUILDING, ArtifactManifest, ArtifactManifestStore
+from ..runtime.artifacts import ArtifactManifestStore
 from ..runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ..runtime.stats_ports import RuntimeStatsAccessPort
 from ..safe_logging import log_failure

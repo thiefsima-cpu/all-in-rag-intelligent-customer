@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts.query_constraints import QueryConstraints
+from ..contracts.runtime import HybridRetrievalOutcome
 from ..fusion import FusionRanker
+from ..kernel.documents import TextDocument
 from ..runtime_contracts import Neo4jManagerPort
-from ..text_document import TextDocument
 from .adapters import tokenize_chinese
 from .evidence import RecipeConstraintMatcher
 from .hybrid_components import (
@@ -18,7 +19,6 @@ from .hybrid_components import (
 )
 from .hybrid_executor import HybridRetrievalExecutor
 from .hybrid_index_service import HybridIndexArtifacts
-from .hybrid_outcome import HybridRetrievalOutcome
 from .runtime_adapter_factory import HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 

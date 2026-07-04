@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
+from rag_modules.contracts.runtime.errors import ensure_runtime_error_detail
+from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
 from rag_modules.graph.query_executor import GraphQueryExecutor
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
-from rag_modules.runtime.error_models import ensure_runtime_error_detail
-from rag_modules.runtime.graph_models import GraphRetrievalSnapshot
 
 
 class _FakeGraphRuntime:

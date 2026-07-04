@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
 from ...contracts import RequestControl
-from ...runtime import (
+from ...contracts.runtime import (
     AnswerContext,
     GenerationSnapshot,
     GraphRetrievalSnapshot,

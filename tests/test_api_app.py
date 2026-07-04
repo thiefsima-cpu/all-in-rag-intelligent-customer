@@ -22,6 +22,19 @@ from rag_modules.app.diagnostics import (
 from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts.runtime import (
+    AnswerContext,
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    QueryAnalysis,
+    QueryDiagnostics,
+    QueryTraceEvent,
+    RetrievalOutcome,
+    RetrievalTraceSnapshot,
+    RouteResolution,
+    RouteSnapshot,
+)
+from rag_modules.contracts.runtime.errors import answer_error_detail
 from rag_modules.interfaces.api import create_build_api_app, create_serving_api_app
 from rag_modules.interfaces.api.answer_models import (
     MAX_QUESTION_CHARS,
@@ -36,20 +49,7 @@ from rag_modules.interfaces.api.services import (
     GraphRAGServingApiService,
 )
 from rag_modules.interfaces.api.versioning import API_VERSION
-from rag_modules.runtime import (
-    AnswerContext,
-    GenerationSnapshot,
-    GraphRetrievalSnapshot,
-    QueryAnalysis,
-    QueryDiagnostics,
-    QueryTraceEvent,
-    RetrievalOutcome,
-    RetrievalTraceSnapshot,
-    RouteResolution,
-    RouteSnapshot,
-)
-from rag_modules.runtime.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
-from rag_modules.runtime.error_models import answer_error_detail
+from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 
 _API_TOKEN = "test-api-access-token"
 _API_CONFIG = build_test_config({"api": {"access_token": _API_TOKEN}})

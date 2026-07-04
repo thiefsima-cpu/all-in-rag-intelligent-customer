@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
+from ..kernel.artifacts import ArtifactManifest
 from ..runtime.artifact_ports import RuntimeArtifactAccessPort
-from ..runtime.artifacts import ArtifactManifest
 from ..runtime_contracts import VectorIndexModulePort
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ...kernel.artifacts import ArtifactManifest
 from ..artifact_ports import ArtifactManifestStorePort
-from .manifest import ArtifactManifest
 
 
 @dataclass(frozen=True, slots=True)

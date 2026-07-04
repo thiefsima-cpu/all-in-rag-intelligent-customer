@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.configuration.models import GraphRAGConfig
+from rag_modules.contracts.runtime import GenerationSnapshot
 from rag_modules.generation.models import AnswerPlan, GenerationSettings, RenderedPrompt
 from rag_modules.generation.service import GenerationWorkflowService
 from rag_modules.query_policy.models import (
@@ -17,7 +18,6 @@ from rag_modules.query_policy.models import (
     RoutingPolicy,
     ScoringPolicy,
 )
-from rag_modules.runtime import GenerationSnapshot
 
 
 class _Context:

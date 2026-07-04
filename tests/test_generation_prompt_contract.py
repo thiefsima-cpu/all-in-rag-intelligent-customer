@@ -3,13 +3,13 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.contracts.runtime import AnswerContext
 from rag_modules.generation import (
     AnswerPlan,
     GenerationPlanner,
     GenerationPromptBuilder,
     GenerationSettings,
 )
-from rag_modules.runtime import AnswerContext
 
 
 class GenerationPromptContractTests(unittest.TestCase):

@@ -11,12 +11,12 @@ from rag_modules.contracts import (
     QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
 )
+from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding import (
     QueryPlanner,
     infer_query_constraints,
     infer_query_semantic_profile,
 )
-from rag_modules.runtime import SearchStrategy
 
 
 class _DummyCompletions:

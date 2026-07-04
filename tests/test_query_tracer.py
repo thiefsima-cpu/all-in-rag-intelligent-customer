@@ -9,9 +9,7 @@ from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
-from rag_modules.observability.tracing import QueryTracer
-from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
-from rag_modules.runtime import (
+from rag_modules.contracts.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     PolicySnapshot,
@@ -19,7 +17,9 @@ from rag_modules.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )
-from rag_modules.runtime.error_models import answer_error_detail, routing_error_detail
+from rag_modules.contracts.runtime.errors import answer_error_detail, routing_error_detail
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
 
 
 class _CapturingSink:

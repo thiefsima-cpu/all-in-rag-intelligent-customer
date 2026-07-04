@@ -6,9 +6,9 @@ import json
 from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidencePackage
+from ..contracts.runtime import AnswerContext, PolicySnapshot
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime import AnswerContext, PolicySnapshot
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt
 
 

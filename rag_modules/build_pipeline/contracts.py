@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, Sequence
 
-from ..text_document import TextDocument
+from ..kernel.documents import TextDocument
 
 if TYPE_CHECKING:
-    from .document_artifacts.models import DocumentArtifactResult
+    from ..kernel.artifacts import DocumentArtifactResult
 
 
 class DocumentArtifactBuilderPort(Protocol):

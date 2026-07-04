@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from ...contracts import QueryPlan, QueryPlannerMode, QuerySemanticRuntimeSettings
-from ...domain.shared.query_constraints import QueryConstraints
+from ...contracts.query_constraints import QueryConstraints
+from ...kernel.routing import SearchStrategy
 from ...query_policy.models import QueryPolicyBundle
-from ...runtime import SearchStrategy
 from ..features import fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
 from ..scoring import estimate_query_complexity, estimate_relationship_intensity

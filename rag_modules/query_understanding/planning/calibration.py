@@ -8,10 +8,10 @@ from ...contracts import (
     QuerySemanticProfile,
     QuerySemanticRuntimeSettings,
 )
-from ...domain.shared.query_constraints import QueryConstraints
+from ...contracts.query_constraints import QueryConstraints
+from ...kernel.routing import SearchStrategy
 from ...query_policy import get_query_policy
 from ...query_policy.models import QueryPolicyBundle
-from ...runtime import SearchStrategy
 from ..features import fallback_entity_phrases, fallback_keywords, normalize_graph_sources
 from ..graph_intent import infer_graph_max_depth, infer_query_semantic_profile
 

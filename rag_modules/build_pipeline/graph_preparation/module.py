@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 
 from ...infra.neo4j import create_neo4j_driver
+from ...kernel.documents import TextDocument
 from ...runtime_contracts import Neo4jDriverPort
-from ...text_document import TextDocument
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
 from .loader import Neo4jGraphDataLoader

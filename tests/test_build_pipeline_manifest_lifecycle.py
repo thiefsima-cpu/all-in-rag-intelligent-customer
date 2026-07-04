@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.build_pipeline.manifest_lifecycle import KnowledgeBaseManifestLifecycle
-from rag_modules.runtime.artifacts import (
+from rag_modules.kernel.artifacts import (
     ARTIFACT_STAGE_BUILDING,
     ARTIFACT_STAGE_DOCUMENTS_READY,
     ARTIFACT_STAGE_FAILED,

@@ -7,13 +7,13 @@ from __future__ import annotations
 import time
 
 from ..contracts import RetrievalRequest
+from ..contracts.graph import GraphQuery
+from ..contracts.runtime import GraphRetrievalSnapshot, PolicySnapshot
+from ..contracts.runtime.errors import ensure_runtime_error_detail
+from ..kernel.json_types import JsonObject
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime import GraphRetrievalSnapshot, PolicySnapshot
-from ..runtime.error_models import ensure_runtime_error_detail
-from ..runtime.json_types import JsonObject
 from .query_resolution import GraphQueryFactory
-from .retrieval_types import GraphQuery
 
 
 class GraphRetrievalRuntime:

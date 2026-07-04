@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.domain.shared.query_constraints import QueryConstraints
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.evidence import RecipeConstraintMatcher
-from rag_modules.text_document import TextDocument
 
 
 class RecipeConstraintMatcherTests(unittest.TestCase):

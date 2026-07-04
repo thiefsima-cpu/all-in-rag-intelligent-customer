@@ -6,7 +6,7 @@ import logging
 from collections.abc import Mapping
 
 from ...contracts import RetrievalRequest
-from ...runtime.json_types import JsonObject, JsonValue
+from ...kernel.json_types import JsonObject, JsonValue
 from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 

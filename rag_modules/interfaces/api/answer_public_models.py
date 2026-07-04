@@ -13,7 +13,7 @@ from ...app.services.answer_models import (
     QuestionAnswerSummary,
 )
 from ...contracts import EvidenceDocument
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_json_object
 from .answer_mappers import public_answer_error
 
 if TYPE_CHECKING:

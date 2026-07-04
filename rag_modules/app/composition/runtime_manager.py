@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-from ...runtime.artifacts import ArtifactManifest
-from ...runtime.json_types import JsonObject
+from ...kernel.artifacts import ArtifactManifest
+from ...kernel.json_types import JsonObject
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService

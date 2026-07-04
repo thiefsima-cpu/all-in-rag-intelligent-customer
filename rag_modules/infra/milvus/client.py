@@ -8,7 +8,7 @@ from typing import Optional
 from pymilvus import MilvusClient
 
 from ...dashscope_clients import DashScopeEmbeddingClient
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_json_object
 from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 

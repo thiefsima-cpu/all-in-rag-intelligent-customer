@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument
-from ..runtime import (
+from ..contracts.runtime import (
     AnswerContext,
     GenerationSnapshot,
     GraphRetrievalSnapshot,
@@ -15,7 +15,7 @@ from ..runtime import (
     RouteSnapshot,
     RuntimeErrorDetail,
 )
-from ..runtime.json_types import JsonValue
+from ..kernel.json_types import JsonValue
 from ..trace_privacy import TraceSanitizer
 from .tracing_diagnostics import _TraceDiagnosticsMixin
 from .tracing_event_builder import _TraceEventBuilderMixin

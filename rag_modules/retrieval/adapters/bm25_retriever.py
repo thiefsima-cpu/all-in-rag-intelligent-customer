@@ -18,8 +18,8 @@ with warnings.catch_warnings():
 from rank_bm25 import BM25Okapi
 
 from ...contracts import EvidenceDocument
+from ...kernel.documents import TextDocument
 from ...safe_logging import log_failure
-from ...text_document import TextDocument
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...contracts import RetrievalRequest
-from ...runtime import (
+from ...contracts.runtime import (
     AnswerContext,
     GraphRetrievalSnapshot,
     GraphTraceEventSnapshot,
@@ -13,7 +13,7 @@ from ...runtime import (
     RetrievalOutcome,
     RouteResolution,
 )
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_json_object
 from .answer_debug_common_models import (
     EvidenceDocumentResponseModel,
     PolicySnapshotResponseModel,

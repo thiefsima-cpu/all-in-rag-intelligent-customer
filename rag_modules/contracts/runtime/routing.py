@@ -5,14 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from ..contracts import RetrievalRequest
-from .error_models import (
+from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from .. import RetrievalRequest
+from .errors import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     RuntimeErrorDetail,
     ensure_runtime_error_detail,
 )
-from .json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
-from .policy_models import PolicySnapshot
+from .policy import PolicySnapshot
 
 
 @dataclass

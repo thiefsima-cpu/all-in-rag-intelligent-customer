@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ..answer_evidence_builder import AnswerEvidencePackage
+from ..contracts.runtime import AnalysisInput, analysis_strategy_name, analysis_value
 from ..query_policy import get_query_policy
-from ..runtime import AnalysisInput, analysis_strategy_name, analysis_value
 from .models import GenerationDecision, GenerationMode, GenerationSettings
 
 

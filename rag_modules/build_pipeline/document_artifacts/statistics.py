@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ...runtime.json_types import coerce_json_object
-from .models import DocumentArtifactStats
+from ...kernel.artifacts import DocumentArtifactStats
+from ...kernel.json_types import coerce_json_object
 
 
 class DocumentArtifactStatsCollector:

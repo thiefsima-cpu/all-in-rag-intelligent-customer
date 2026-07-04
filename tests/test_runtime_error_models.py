@@ -3,17 +3,17 @@ from __future__ import annotations
 import json
 import unittest
 
-from rag_modules.generation.clients.errors import (
-    GenerationLatencyBudgetExceeded,
-    GenerationProviderResponseError,
-)
-from rag_modules.runtime import RuntimeErrorDetail
-from rag_modules.runtime.error_models import (
+from rag_modules.contracts.runtime import RuntimeErrorDetail
+from rag_modules.contracts.runtime.errors import (
     answer_error_detail,
     generation_error_detail,
     retrieval_error_detail,
     routing_error_detail,
     runtime_error_detail,
+)
+from rag_modules.generation.clients.errors import (
+    GenerationLatencyBudgetExceeded,
+    GenerationProviderResponseError,
 )
 
 

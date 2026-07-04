@@ -9,7 +9,7 @@ from rag_modules.app.composition.bootstrapper_composer import (
     BuildBootstrapperComposer,
 )
 from rag_modules.app.composition.build_runtime_factory import BuildRuntimeFactory
-from rag_modules.runtime.artifacts import ArtifactManifest
+from rag_modules.kernel.artifacts import ArtifactManifest
 
 
 class _FakeKnowledgeBaseService:

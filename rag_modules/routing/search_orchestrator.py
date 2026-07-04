@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts.query_constraints import QueryConstraints
+from ..contracts.runtime import QueryAnalysis
+from ..kernel.json_types import JsonObject
+from ..kernel.routing import SearchStrategy
 from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime import QueryAnalysis, SearchStrategy
-from ..runtime.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
 from ..safe_logging import log_failure
 from .strategies import (

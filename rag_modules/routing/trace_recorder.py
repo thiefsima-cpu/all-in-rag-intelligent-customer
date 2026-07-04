@@ -6,9 +6,14 @@ import time
 from typing import Any, Dict, List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..contracts.runtime import (
+    PolicySnapshot,
+    RouteSnapshot,
+    RouteStageSnapshot,
+    RuntimeErrorDetail,
+)
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime import PolicySnapshot, RouteSnapshot, RouteStageSnapshot, RuntimeErrorDetail
 from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
 

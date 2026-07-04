@@ -7,10 +7,10 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 
 from ...domain.shared.semantic_schema import infer_recipe_semantics
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...kernel.documents import TextDocument
+from ...kernel.json_types import JsonObject, coerce_json_object
 from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
-from ...text_document import TextDocument
 from .models import GraphNode, PreparedIngredientInput, PreparedStepInput
 
 logger = logging.getLogger(__name__)

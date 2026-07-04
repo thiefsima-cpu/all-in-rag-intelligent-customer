@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 from ..configuration.models import GraphRAGConfig
 from ..graph.retrieval import GraphRAGRetrieval
+from ..kernel.artifacts import ArtifactManifest
 from ..retrieval import HybridRetrievalService
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..routing import RoutingWorkflowProtocol
-from ..runtime.artifacts import ArtifactManifest
 from .runtime_contracts import (
     GraphDataModulePort,
     Neo4jManagerPort,

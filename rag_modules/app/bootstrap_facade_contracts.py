@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
-from ..runtime.artifacts import ArtifactManifest
-from ..text_document import TextDocument
+from ..kernel.artifacts import ArtifactManifest
+from ..kernel.documents import TextDocument
 from .composition.contracts import (
     BuildRuntimeExecutorProtocol,
     BuildRuntimeFactoryProtocol,

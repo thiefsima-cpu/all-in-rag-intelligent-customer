@@ -756,7 +756,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
 
     def test_recipe_constraint_matcher_is_not_imported_from_domain_shared(self) -> None:
         violations: list[str] = []
-        old_matcher_import = "rag_modules.domain.shared.query_constraints.RecipeConstraintMatcher"
+        old_matcher_import = "rag_modules.contracts.query_constraints.RecipeConstraintMatcher"
 
         for base_dir in (RAG_MODULES_DIR, ROOT / "scripts", ROOT / "tests"):
             for path in base_dir.rglob("*.py"):
@@ -1569,7 +1569,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom)
         }
-        self.assertNotIn("rag_modules.runtime.workflow_models", imports)
+        self.assertNotIn("rag_modules.contracts.runtime.workflows", imports)
 
     def test_internal_and_script_routing_use_route_resolution_contract(self) -> None:
         violations: list[str] = []

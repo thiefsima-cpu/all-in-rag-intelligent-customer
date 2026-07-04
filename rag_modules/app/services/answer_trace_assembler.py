@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...runtime import (
+from ...contracts.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     QueryTraceEvent,

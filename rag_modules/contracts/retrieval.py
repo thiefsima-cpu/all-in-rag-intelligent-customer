@@ -16,7 +16,7 @@ from typing import (
     cast,
 )
 
-from ..domain.shared.query_constraints import QueryConstraints
+from ..contracts.query_constraints import QueryConstraints
 from ._common import coerce_float, coerce_str
 from .query import QueryPlan
 

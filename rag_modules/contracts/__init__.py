@@ -6,7 +6,6 @@ from .query import (
     QueryPlannerMode,
     QuerySemanticProfile,
     QuerySemanticScoreBreakdown,
-    SearchStrategy,
 )
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .request_control import (
@@ -39,6 +38,5 @@ __all__ = [
     "RequestControlError",
     "RetrievalRequest",
     "control_trace_details",
-    "SearchStrategy",
     "ensure_evidence_documents",
 ]

@@ -21,7 +21,7 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         )
 
     def test_runtime_artifacts_package_reexports_responsibility_modules(self) -> None:
-        from rag_modules.runtime import artifacts
+        from rag_modules.contracts.runtime import artifacts
         from rag_modules.runtime.artifacts import (
             documents,
             manifest,

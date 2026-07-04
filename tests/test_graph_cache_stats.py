@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 from rag_modules.graph.cache import GraphCacheStats, GraphCacheStatsStore
 from rag_modules.graph.cache_stats import GraphCacheEntityStats
-from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
+from rag_modules.kernel.artifacts import ArtifactManifest
+from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
 class GraphCacheStatsTests(unittest.TestCase):

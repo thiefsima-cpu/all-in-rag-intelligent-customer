@@ -15,8 +15,7 @@ from rag_modules.app.services.answer_result_factory import QuestionAnswerResultF
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
-from rag_modules.observability.tracing import QueryTracer
-from rag_modules.runtime import (
+from rag_modules.contracts.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     QueryAnalysis,
@@ -27,9 +26,10 @@ from rag_modules.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
     RuntimeErrorDetail,
-    SearchStrategy,
 )
-from rag_modules.runtime.error_models import routing_error_detail
+from rag_modules.contracts.runtime.errors import routing_error_detail
+from rag_modules.kernel.routing import SearchStrategy
+from rag_modules.observability.tracing import QueryTracer
 
 
 def _build_resolution(

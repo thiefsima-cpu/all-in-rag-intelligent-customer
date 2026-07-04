@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..configuration.models import GraphRAGConfig
-from ..runtime.artifacts import ArtifactManifest
+from ..kernel.artifacts import ArtifactManifest
 from .bootstrap_facade_support import (
     BuildBootstrapperInvocationAdapter,
     GraphBootstrapperInvocationAdapter,

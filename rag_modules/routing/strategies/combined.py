@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from typing import Any, List, Literal, Sequence, TypeAlias, cast
 
 from ...contracts import EvidenceDocument, RequestControl
-from ...retrieval.hybrid_outcome import HybridRetrievalOutcome
-from ...runtime import SearchStrategy
-from ...runtime.json_types import coerce_json_object
+from ...contracts.runtime.retrieval import HybridRetrievalOutcome
+from ...kernel.json_types import coerce_json_object
+from ...kernel.routing import SearchStrategy
 from .base import (
     RouteExecutionOutcome,
     RouteExecutionRequestPort,

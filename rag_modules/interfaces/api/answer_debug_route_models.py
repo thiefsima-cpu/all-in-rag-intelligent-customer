@@ -7,8 +7,8 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...contracts import RetrievalRequest
-from ...runtime import RouteDiagnostics, RouteSnapshot, RouteStageSnapshot
-from ...runtime.json_types import JsonObject
+from ...contracts.runtime import RouteDiagnostics, RouteSnapshot, RouteStageSnapshot
+from ...kernel.json_types import JsonObject
 from .answer_debug_common_models import PolicySnapshotResponseModel
 from .answer_mappers import (
     public_answer_error,

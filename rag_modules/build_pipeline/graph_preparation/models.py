@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ...runtime.json_types import JsonObject
+from ...kernel.json_types import JsonObject
 
 
 @dataclass(slots=True)

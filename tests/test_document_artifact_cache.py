@@ -12,7 +12,7 @@ from rag_modules.build_pipeline.document_artifacts import (
 )
 from rag_modules.build_pipeline.document_artifacts.statistics import DocumentArtifactStatsCollector
 from rag_modules.build_pipeline.graph_preparation.statistics import GraphPreparationStats
-from rag_modules.text_document import TextDocument
+from rag_modules.kernel.documents import TextDocument
 
 
 class StubDataModule:

@@ -6,7 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
-from ..contracts import QuerySemanticProfile, SearchStrategy
+from ...kernel.routing import SearchStrategy
+from .. import QuerySemanticProfile
 
 
 @dataclass

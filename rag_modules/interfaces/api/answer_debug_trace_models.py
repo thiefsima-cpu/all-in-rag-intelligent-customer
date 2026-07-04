@@ -6,13 +6,13 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...runtime import (
+from ...contracts.runtime import (
     AnswerTraceSnapshot,
     GenerationSnapshot,
     QueryTraceEvent,
     RetrievalTraceSnapshot,
 )
-from ...runtime.json_types import JsonObject, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_json_object
 from .answer_debug_common_models import (
     ModelSuiteSnapshotResponseModel,
     PolicySnapshotResponseModel,

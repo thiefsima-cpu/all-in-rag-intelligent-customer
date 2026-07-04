@@ -6,8 +6,8 @@ from typing import Literal
 
 from ..answer_evidence_builder import AnswerEvidencePackage
 from ..contracts import RequestControl
-from ..runtime import AnalysisInput, AnswerContext, analysis_strategy_name
-from ..runtime.json_types import JsonObject
+from ..contracts.runtime import AnalysisInput, AnswerContext, analysis_strategy_name
+from ..kernel.json_types import JsonObject
 from .clients import GenerationClientAdapter
 from .models import AnswerPlan, GenerationPlannerMode, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder

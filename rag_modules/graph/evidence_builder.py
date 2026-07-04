@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Protocol, Sequence
 
 from ..contracts import EvidenceDocument
-from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
-from ..runtime.json_types import JsonObject, coerce_json_object
+from ..kernel.json_types import JsonObject, coerce_json_object
+from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from .retrieval_types import GraphNodeSnapshot, GraphRelationshipSnapshot
 
 

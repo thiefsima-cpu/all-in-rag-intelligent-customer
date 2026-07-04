@@ -8,10 +8,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..kernel.documents import TextDocument
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
 from ..safe_logging import log_failure
-from ..text_document import TextDocument
 from .adapters import BM25Retriever
 from .evidence import RecipeConstraintMatcher
 

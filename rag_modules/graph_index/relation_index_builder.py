@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
+from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES
 from ..query_policy import get_query_policy
 from ..query_understanding.registry import dedupe_preserve_order, relation_index_terms
 from .models import EntityKeyValue, RelationKeyValue

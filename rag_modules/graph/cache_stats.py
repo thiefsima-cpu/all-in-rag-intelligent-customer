@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from ..kernel.json_types import JsonObject, coerce_json_int, coerce_json_object
 from ..runtime.artifacts import ArtifactManifestStore
-from ..runtime.json_types import JsonObject, coerce_json_int, coerce_json_object
 
 GRAPH_CACHE_STATS_SCHEMA_VERSION = "graph-cache-stats-v1"
 

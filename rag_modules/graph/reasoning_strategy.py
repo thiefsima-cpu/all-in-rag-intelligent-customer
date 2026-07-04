@@ -11,10 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from ..domain.shared.semantic_schema import SEMANTIC_NODE_LABELS_SET
+from ..kernel.json_types import JsonObject
+from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime.json_types import JsonObject
 from .retrieval_types import GraphNodeSnapshot, KnowledgeSubgraph
 
 

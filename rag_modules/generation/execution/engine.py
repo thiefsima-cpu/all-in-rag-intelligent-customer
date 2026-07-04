@@ -7,14 +7,14 @@ from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
-from ...runtime import (
+from ...contracts.runtime import (
     AnalysisInput,
     AnswerContext,
     GenerationSnapshot,
     RetrievalOutcome,
     ensure_optional_query_analysis,
 )
-from ...runtime.json_types import coerce_json_object
+from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode

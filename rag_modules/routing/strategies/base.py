@@ -7,10 +7,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Protocol
 
 from ...contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
-from ...domain.shared.query_constraints import QueryConstraints
+from ...contracts.query_constraints import QueryConstraints
+from ...contracts.runtime import QueryAnalysis
+from ...kernel.json_types import JsonObject, coerce_json_object, coerce_json_value
+from ...kernel.routing import SearchStrategy
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
-from ...runtime import QueryAnalysis, SearchStrategy
-from ...runtime.json_types import JsonObject, coerce_json_object, coerce_json_value
 from ...runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
 
 

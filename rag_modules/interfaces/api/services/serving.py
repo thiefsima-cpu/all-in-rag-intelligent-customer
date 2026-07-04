@@ -8,9 +8,9 @@ from ....app.application_protocol import GraphRAGApplication
 from ....app.services.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
 from ....contracts import RequestControl
+from ....kernel.json_types import JsonObject
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
-from ....runtime.json_types import JsonObject
 from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService

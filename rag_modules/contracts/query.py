@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Iterable, List
 
-from ..domain.shared.query_constraints import QueryConstraints
-from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
+from ..kernel.routing import SearchStrategy
+from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
+from .query_constraints import QueryConstraints
 from .query_settings import QuerySemanticRuntimeSettings
 
 _SCHEMA_RELATION_TYPES = SEMANTIC_RELATION_TYPES
@@ -49,12 +50,6 @@ def _clamp_int(value: Any, default: int = 2, minimum: int = 1, maximum: int = 32
     except (TypeError, ValueError):
         number = default
     return max(minimum, min(maximum, number))
-
-
-class SearchStrategy(str, Enum):
-    HYBRID_TRADITIONAL = "hybrid_traditional"
-    GRAPH_RAG = "graph_rag"
-    COMBINED = "combined"
 
 
 class GraphQueryType(str, Enum):
@@ -458,5 +453,4 @@ __all__ = [
     "QueryPlannerMode",
     "QuerySemanticProfile",
     "QuerySemanticScoreBreakdown",
-    "SearchStrategy",
 ]

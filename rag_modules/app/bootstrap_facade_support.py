@@ -7,8 +7,8 @@ from dataclasses import fields, is_dataclass
 from typing import Generic, TypeVar, cast
 
 from ..configuration.models import GraphRAGConfig
-from ..runtime.artifacts import ArtifactManifest
-from ..text_document import TextDocument
+from ..kernel.artifacts import ArtifactManifest
+from ..kernel.documents import TextDocument
 from .bootstrap_facade_contracts import (
     BuildBootstrapperInvocationProtocol,
     GraphBootstrapperInvocationProtocol,

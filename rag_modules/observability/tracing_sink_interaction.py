@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from ..runtime import QueryTraceEvent
-from ..runtime.json_types import JsonObject, coerce_json_object
+from ..contracts.runtime import QueryTraceEvent
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..safe_logging import log_failure
 from .tracing_sinks import QueryTraceSink
 

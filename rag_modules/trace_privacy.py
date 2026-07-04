@@ -8,7 +8,7 @@ import secrets
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .runtime import QueryTraceEvent
+from .contracts.runtime import QueryTraceEvent
 
 _CONTENT_KEYS = frozenset(
     {

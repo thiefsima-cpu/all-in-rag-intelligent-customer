@@ -45,6 +45,15 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
+from rag_modules.contracts.graph import GraphQuery
+from rag_modules.contracts.runtime import (
+    GenerationSnapshot,
+    GraphRetrievalSnapshot,
+    QueryTraceEvent,
+    RetrievalOutcome,
+    RouteSnapshot,
+)
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.generation.execution.contracts import (
     GenerationAttemptResult,
     GenerationTokenUsage,
@@ -53,23 +62,14 @@ from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.generation.execution.usage import GenerationUsageCollector
 from rag_modules.graph.retrieval_types import (
     GraphNodeSnapshot,
-    GraphQuery,
     GraphRelationshipSnapshot,
 )
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
+from rag_modules.kernel.json_types import JsonObject
 from rag_modules.query_policy import get_query_policy
 from rag_modules.query_policy.models import GenerationDecisionPolicy, GraphSubQuestionPolicy
 from rag_modules.query_understanding.planning import QueryPlanCalibrator
-from rag_modules.retrieval.hybrid_outcome import HybridRetrievalOutcome
-from rag_modules.runtime import (
-    GenerationSnapshot,
-    GraphRetrievalSnapshot,
-    QueryTraceEvent,
-    RetrievalOutcome,
-    RouteSnapshot,
-)
-from rag_modules.runtime.json_types import JsonObject
 
 runtime_provider = create_default_runtime_provider()
 infrastructure_provider: InfrastructureProvider = runtime_provider.infrastructure

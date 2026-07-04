@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .generation_models import GenerationSnapshot
-from .graph_models import GraphRetrievalSnapshot
-from .route_models import RouteSnapshot
+from ..contracts.runtime import GenerationSnapshot, GraphRetrievalSnapshot, RouteSnapshot
 
 
 def clone_route_snapshot(value: Any = None) -> RouteSnapshot:

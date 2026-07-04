@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..runtime.artifact_ports import ArtifactManifestStorePort
-from ..runtime.artifacts import (
+from ..kernel.artifacts import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_STAGE_BUILDING,
     ARTIFACT_STAGE_FAILED,
@@ -13,6 +12,7 @@ from ..runtime.artifacts import (
     ArtifactManifest,
     utc_now_iso,
 )
+from ..runtime.artifact_ports import ArtifactManifestStorePort
 
 BUILD_FAILED_ERROR_CODE = "BUILD_FAILED"
 

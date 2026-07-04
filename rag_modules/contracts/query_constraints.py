@@ -5,12 +5,9 @@ Generic query constraint extraction helpers.
 from __future__ import annotations
 
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
-
-logger = logging.getLogger(__name__)
 
 
 def loads_json_object(text: str) -> Dict[str, Any]:
@@ -142,25 +139,4 @@ class QueryConstraints:
         }
 
 
-class QueryConstraintExtractor:
-    def __init__(
-        self,
-        llm_client,
-        model_name: str,
-        semantic_settings: Any | None = None,
-    ):
-        self.llm_client = llm_client
-        self.model_name = model_name
-        self.semantic_settings = semantic_settings
-
-    def extract(self, query: str) -> QueryConstraints:
-        from ...query_understanding.graph_intent import infer_query_semantic_profile
-
-        profile = infer_query_semantic_profile(
-            query,
-            settings=self.semantic_settings,
-        )
-        constraints = QueryConstraints.from_dict(profile.constraints)
-        has_constraints = constraints.has_constraints()
-        logger.info("Query constraints parsed: present=%s", has_constraints)
-        return constraints
+__all__ = ["QueryConstraints", "loads_json_object", "parse_minutes"]

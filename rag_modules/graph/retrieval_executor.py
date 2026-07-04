@@ -7,11 +7,11 @@ import time
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument, RequestBudgetExceeded, RequestCancelled, RetrievalRequest
+from ..contracts.runtime import GraphRetrievalSnapshot
+from ..contracts.runtime.errors import graph_error_detail
 from ..entity_linker import EntityLinker
 from ..infra.neo4j import create_neo4j_driver
-from ..runtime import GraphRetrievalSnapshot
-from ..runtime.error_models import graph_error_detail
-from ..runtime.json_types import JsonObject, coerce_json_object
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort
 from ..safe_logging import log_failure
 from .cache_stats import GraphCacheStatsStore

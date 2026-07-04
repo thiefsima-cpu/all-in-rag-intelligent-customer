@@ -7,9 +7,10 @@ from typing import Optional
 
 from ....app.application_protocol import GraphRAGApplication
 from ....configuration.models import GraphRAGConfig
-from ....runtime.artifacts import ARTIFACT_STAGE_FAILED, ArtifactManifestStore
+from ....kernel.artifacts import ARTIFACT_STAGE_FAILED
+from ....kernel.json_types import JsonObject
+from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry, ArtifactRegistrySnapshot
-from ....runtime.json_types import JsonObject
 from ..build_job_store import (
     BuildJobListPage,
     BuildJobRepositorySettings,

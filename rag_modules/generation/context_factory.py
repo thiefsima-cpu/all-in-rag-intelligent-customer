@@ -6,7 +6,7 @@ from typing import List
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
 from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
-from ..runtime import (
+from ..contracts.runtime import (
     AnalysisInput,
     AnswerContext,
     RetrievalOutcome,

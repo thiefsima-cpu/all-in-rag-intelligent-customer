@@ -5,14 +5,14 @@ from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.contracts import EvidenceDocument, QueryPlan
-from rag_modules.observability.tracing import QueryTracer
-from rag_modules.runtime import (
+from rag_modules.contracts.runtime import (
     AnswerContext,
     QueryUnderstandingSnapshot,
     RetrievalOutcome,
     RouteResolution,
-    SearchStrategy,
 )
+from rag_modules.kernel.routing import SearchStrategy
+from rag_modules.observability.tracing import QueryTracer
 
 
 class RuntimeWorkflowModelTests(unittest.TestCase):

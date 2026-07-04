@@ -5,8 +5,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..contracts import RequestControl
-from ..runtime import QueryAnalysis, QueryUnderstandingSnapshot, RouteResolution, RouteSnapshot
-from ..runtime.json_types import JsonObject
+from ..contracts.runtime import (
+    QueryAnalysis,
+    QueryUnderstandingSnapshot,
+    RouteResolution,
+    RouteSnapshot,
+)
+from ..kernel.json_types import JsonObject
 from ..runtime_contracts import GraphRAGRetrievalPort
 
 

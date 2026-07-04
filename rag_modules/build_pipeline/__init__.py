@@ -7,7 +7,6 @@ from .contracts import (
 )
 from .document_artifacts import (
     DocumentArtifactBuildService,
-    DocumentArtifactResult,
     DocumentIndexCache,
     build_or_load_documents,
 )
@@ -20,7 +19,6 @@ from .stats_presenter import KnowledgeBaseStatsPresenter
 __all__ = [
     "DocumentArtifactBuildService",
     "DocumentArtifactBuilderPort",
-    "DocumentArtifactResult",
     "DocumentIndexCache",
     "GraphDataPreparationModule",
     "GraphNode",

@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ...runtime.artifacts import ArtifactManifest, artifact_health
+from ...kernel.artifacts import ArtifactManifest, artifact_health
 from ...runtime.artifacts.registry import ArtifactRegistrySnapshot
 from .answer_models import (
     AnswerPayloadModel,

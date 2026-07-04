@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...runtime.error_models import generation_error_detail
+from ...contracts.runtime.errors import generation_error_detail
 
 
 class GenerationProviderResponseError(RuntimeError):

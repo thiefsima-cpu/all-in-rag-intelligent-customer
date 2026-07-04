@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .json_types import JsonObject, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_json_object
 
 ANSWER_FAILED = "ANSWER_FAILED"
 QUERY_PROCESSING_FAILED = "QUERY_PROCESSING_FAILED"

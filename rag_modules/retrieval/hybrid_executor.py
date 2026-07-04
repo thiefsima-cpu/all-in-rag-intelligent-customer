@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
-from ..text_document import TextDocument
+from ..contracts.runtime import HybridRetrievalOutcome
+from ..kernel.documents import TextDocument
 from .evidence import RecipeConstraintMatcher
-from .hybrid_outcome import HybridRetrievalOutcome
 from .keyword_service import QueryKeywordExtractor
 
 

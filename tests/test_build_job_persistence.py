@@ -15,7 +15,8 @@ from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
     GraphRAGBuildApiService,
 )
-from rag_modules.runtime.artifacts import ArtifactManifest, ArtifactManifestStore
+from rag_modules.kernel.artifacts import ArtifactManifest
+from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
 class _BuildSystem:

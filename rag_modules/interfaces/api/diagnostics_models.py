@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...runtime.json_types import JsonObject
+from ...kernel.json_types import JsonObject
 from .build_models import ArtifactManifestResponseModel
 
 

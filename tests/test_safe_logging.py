@@ -5,11 +5,11 @@ import logging
 import unittest
 from pathlib import Path
 
+from rag_modules.contracts.runtime import QueryTraceEvent
+from rag_modules.kernel.documents import TextDocument
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink
 from rag_modules.retrieval.adapters.bm25_retriever import BM25Retriever
-from rag_modules.runtime import QueryTraceEvent
 from rag_modules.safe_logging import log_failure
-from rag_modules.text_document import TextDocument
 
 _LOGGER_METHODS = {"debug", "info", "warning", "error", "exception", "critical"}
 _FORBIDDEN_NAMES = {

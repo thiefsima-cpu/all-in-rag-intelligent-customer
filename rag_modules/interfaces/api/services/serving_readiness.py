@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ....app.application_protocol import GraphRAGApplication
-from ....runtime.json_types import JsonObject
+from ....kernel.json_types import JsonObject
 from .errors import SystemNotReadyError
 
 

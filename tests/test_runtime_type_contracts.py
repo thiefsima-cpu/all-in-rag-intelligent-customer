@@ -11,8 +11,8 @@ from rag_modules.app.runtime_contracts import (
     VectorIndexModulePort,
 )
 from rag_modules.contracts import RetrievalRequest
-from rag_modules.runtime import QueryAnalysis, ensure_optional_query_analysis
-from rag_modules.text_document import TextDocument
+from rag_modules.contracts.runtime import QueryAnalysis, ensure_optional_query_analysis
+from rag_modules.kernel.documents import TextDocument
 
 
 class _GraphDataFake:

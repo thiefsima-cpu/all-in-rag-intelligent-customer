@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from ..contracts import EvidenceDocument, QueryPlan, QuerySemanticProfile
-from ..domain.shared.query_constraints import QueryConstraints
-from .analysis_models import QueryAnalysis, SearchStrategy, ensure_query_analysis
-from .json_types import JsonObject, coerce_json_object
-from .retrieval_models import RetrievalOutcome
+from ...kernel.json_types import JsonObject, coerce_json_object
+from ...kernel.routing import SearchStrategy
+from .. import EvidenceDocument, QueryPlan, QuerySemanticProfile
+from ..query_constraints import QueryConstraints
+from .analysis import QueryAnalysis, ensure_query_analysis
+from .retrieval import RetrievalOutcome
 
 
 def _search_strategy(value: SearchStrategy | str) -> SearchStrategy:

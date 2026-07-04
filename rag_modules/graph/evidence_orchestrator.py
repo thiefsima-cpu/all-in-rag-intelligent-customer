@@ -14,10 +14,11 @@ from ..contracts import (
     RequestControl,
     RetrievalRequest,
 )
+from ..contracts.graph import GraphQuery
 from ..safe_logging import log_failure
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan
-from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
+from .retrieval_types import GraphPath, KnowledgeSubgraph, QueryType
 
 logger = logging.getLogger(__name__)
 

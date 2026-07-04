@@ -17,7 +17,7 @@ from ...contracts import (
     RequestCancelled,
     RequestControl,
 )
-from ...domain.shared.query_constraints import QueryConstraints, loads_json_object
+from ...contracts.query_constraints import QueryConstraints, loads_json_object
 from ...query_policy import get_query_policy
 from ...query_policy.models import QueryPolicyBundle
 from ...runtime_contracts import LLMClientPort

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Sequence, Tuple
 
-from ..domain.shared.semantic_schema import SEMANTIC_RELATION_TYPES
+from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
 
