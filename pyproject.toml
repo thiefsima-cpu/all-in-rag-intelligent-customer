@@ -53,6 +53,7 @@ graph-rag-release-gate = "scripts.release_gate:main"
 graph-rag-local-gate = "scripts.local_gate:main"
 graph-rag-verify-env = "scripts.verify_environment:main"
 graph-rag-integration-gate = "scripts.integration_gate.cli:main"
+graph-rag-live-quality-gate = "scripts.live_quality_gate.cli:main"
 
 [tool.setuptools]
 include-package-data = true

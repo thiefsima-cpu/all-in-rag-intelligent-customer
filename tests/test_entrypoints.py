@@ -59,6 +59,14 @@ class EntrypointTests(unittest.TestCase):
             "scripts.integration_gate.cli:main",
         )
 
+    def test_live_quality_gate_console_script_is_registered(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            pyproject["project"]["scripts"]["graph-rag-live-quality-gate"],
+            "scripts.live_quality_gate.cli:main",
+        )
+
     def test_integration_gate_module_help_exposes_command_arguments(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "scripts.integration_gate", "--help"],
@@ -72,6 +80,21 @@ class EntrypointTests(unittest.TestCase):
         self.assertIn("--policy", completed.stdout)
         self.assertIn("--output-dir", completed.stdout)
         self.assertIn("--json", completed.stdout)
+
+    def test_live_quality_gate_module_help_exposes_command_arguments(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.live_quality_gate", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--policy", completed.stdout)
+        self.assertIn("--output-dir", completed.stdout)
+        self.assertIn("--json", completed.stdout)
+        self.assertIn("--deterministic-only", completed.stdout)
 
 
 if __name__ == "__main__":

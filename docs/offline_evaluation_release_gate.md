@@ -4,6 +4,11 @@ The release gate runs deterministic offline smoke suites and the curated
 `quality_eval` suite. `quality_eval` is always required and uses offline
 fixtures; this gate does not require a model provider, Milvus, or Neo4j.
 
+The offline gate is the deterministic contract regression layer. It complements,
+but does not replace, the live dependency participation gate
+(`graph-rag-integration-gate`) or the live AI quality proof gate
+(`graph-rag-live-quality-gate`).
+
 ## Run
 
 Run the final local gate before release handoff when you need engineering and

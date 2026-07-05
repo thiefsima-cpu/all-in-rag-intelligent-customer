@@ -59,6 +59,7 @@ graph-rag-api
 graph-rag-build-api
 graph-rag-release-gate
 graph-rag-integration-gate
+graph-rag-live-quality-gate
 graph-rag-local-gate
 graph-rag-pressure
 graph-rag-verify-env
@@ -98,6 +99,7 @@ python -m pre_commit run --all-files
 python scripts/check_encoding.py
 graph-rag-release-gate
 graph-rag-integration-gate --json
+graph-rag-live-quality-gate --json
 python scripts/pressure_api_service.py --json
 ```
 
@@ -106,14 +108,21 @@ It stops at the first failure while chaining `pre-commit run --all-files`,
 `python scripts/check_encoding.py`, `python -m pytest -q`, and
 `python scripts/release_gate.py`.
 
-Release validation has two independent layers. `graph-rag-release-gate` is the
-required, deterministic offline gate: it always runs the curated offline
-quality evaluation and does not need local Milvus, Neo4j, or model-provider
-services. `graph-rag-integration-gate` is an explicitly invoked gate for a
-prepared environment; it probes real dependencies and sends live generation
-requests. See
+Quality gates are split into three independent layers:
+
+- `graph-rag-release-gate`: deterministic contract regression, dependency-free.
+- `graph-rag-integration-gate`: live dependency participation for Neo4j,
+  Milvus, the serving API, and the serving model provider.
+- `graph-rag-live-quality-gate`: live AI quality proof with real retrieval,
+  real generation, deterministic ranking metrics, LLM judge scoring, manual
+  review samples, and slice metrics.
+
+The live gates are explicitly invoked against prepared environments. They are
+not part of default pytest, pre-commit, `scripts/local_gate.py`, or the offline
+release gate. See
 [docs/real_dependency_integration_gate.md](docs/real_dependency_integration_gate.md)
-for prerequisites, cost controls, reports, and CI scheduling.
+and [docs/live_quality_gate.md](docs/live_quality_gate.md) for prerequisites,
+cost controls, reports, and CI scheduling.
 
 ## Docker
 

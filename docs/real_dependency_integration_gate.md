@@ -5,6 +5,11 @@ for a prepared environment. It probes Neo4j, Milvus, and the serving API, then
 runs curated requests through the real model provider. It complements the
 deterministic offline release gate; it does not replace it.
 
+It is the live dependency participation layer. Use
+`graph-rag-live-quality-gate` separately when the release question is live AI
+quality proof: real retrieval, real generation, deterministic ranking metrics,
+an independent LLM judge, manual review samples, and slice metrics.
+
 ## Prerequisites
 
 Before running the gate:
@@ -111,4 +116,6 @@ Run this gate in a dedicated integration or pre-deployment job against a known,
 isolated environment. Serialize jobs that share the same dependency stack,
 apply CI timeouts, restrict credentials to that job, and avoid running it on
 every unit-test shard or untrusted pull request. Keep the deterministic
-`graph-rag-release-gate` as the required offline release check.
+`graph-rag-release-gate` as the required offline release check, and run
+`graph-rag-live-quality-gate` separately when a prepared environment must prove
+live AI quality.

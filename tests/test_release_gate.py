@@ -613,11 +613,12 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue()), report)
         run.assert_called_once_with(policy_path="policy.json", output_dir="out")
 
-    def test_release_gate_documentation_describes_both_independent_gates(self) -> None:
+    def test_quality_gate_documentation_describes_three_independent_layers(self) -> None:
         documentation_paths = (
             ROOT / "README.md",
             ROOT / "docs" / "offline_evaluation_release_gate.md",
             ROOT / "docs" / "real_dependency_integration_gate.md",
+            ROOT / "docs" / "live_quality_gate.md",
         )
         combined_documentation = "\n".join(
             path.read_text(encoding="utf-8") for path in documentation_paths
@@ -625,7 +626,11 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertIn("graph-rag-release-gate", combined_documentation)
         self.assertIn("graph-rag-integration-gate", combined_documentation)
+        self.assertIn("graph-rag-live-quality-gate", combined_documentation)
         self.assertIn("python scripts/release_gate.py", combined_documentation)
+        self.assertIn("deterministic contract regression", combined_documentation)
+        self.assertIn("live dependency participation", combined_documentation)
+        self.assertIn("live AI quality proof", combined_documentation)
         self.assertIn("does not start or stop", combined_documentation)
         self.assertIn("LLM_INPUT_COST_PER_MILLION_TOKENS", combined_documentation)
         self.assertIn("LLM_OUTPUT_COST_PER_MILLION_TOKENS", combined_documentation)
