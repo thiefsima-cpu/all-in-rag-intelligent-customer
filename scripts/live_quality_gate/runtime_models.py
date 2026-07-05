@@ -42,6 +42,24 @@ class LiveQualityCaseRunResult:
 
 
 @dataclass(frozen=True)
+class JudgeVerdict:
+    case_id: str
+    scores: Mapping[str, float]
+    passed: bool
+    rationale: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scores", MappingProxyType(dict(self.scores)))
+
+
+@dataclass(frozen=True)
+class JudgeRunResult:
+    case_id: str
+    verdict: JudgeVerdict | None
+    checks: tuple[GateCheckResult, ...]
+
+
+@dataclass(frozen=True)
 class DeterministicCaseResult:
     case_id: str
     query_type: str
