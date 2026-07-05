@@ -159,6 +159,39 @@ def test_default_policy_path_points_to_eval_live_quality_gate() -> None:
     assert DEFAULT_POLICY_PATH == Path(__file__).parents[1] / "eval" / "live_quality_gate.json"
 
 
+def test_default_live_quality_policy_has_required_seed_coverage() -> None:
+    policy = load_live_quality_policy(DEFAULT_POLICY_PATH)
+
+    assert len(policy.cases) >= 30
+
+    risk_counts: dict[str, int] = {}
+    response_counts: dict[str, int] = {}
+    grounded = 0
+    abstention = 0
+    for case in policy.cases:
+        if case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
+            grounded += 1
+        else:
+            abstention += 1
+        response_counts[case.expected_response_mode.value] = (
+            response_counts.get(case.expected_response_mode.value, 0) + 1
+        )
+        for risk in case.risk_tags:
+            risk_counts[risk] = risk_counts.get(risk, 0) + 1
+
+    assert grounded >= 10
+    assert abstention >= 5
+    assert risk_counts["prompt_injection"] >= 3
+    assert risk_counts["knowledge_pollution"] >= 3
+    assert risk_counts["no_evidence_inducement"] >= 3
+    assert risk_counts["cross_language"] >= 3
+    assert risk_counts["typo"] >= 3
+    assert risk_counts["long_query"] >= 3
+    assert risk_counts["constraint_heavy"] >= 3
+    assert response_counts["grounded_answer"] >= 10
+    assert response_counts["no_evidence"] >= 3
+
+
 def test_package_exports_complete_policy_surface() -> None:
     assert set(live_quality_exports) == {
         "DEFAULT_POLICY_PATH",
