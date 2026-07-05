@@ -124,6 +124,23 @@ release gate. See
 and [docs/live_quality_gate.md](docs/live_quality_gate.md) for prerequisites,
 cost controls, reports, and CI scheduling.
 
+## Enterprise Governance
+
+Organization-level enforcement lives in GitHub:
+
+- [CI](.github/workflows/ci.yml) runs Ruff, mypy, pytest with coverage, the
+  offline release gate, `pip-audit`, secret scanning, and SBOM generation.
+- [CODEOWNERS](.github/CODEOWNERS) assigns required reviewers for public API
+  contracts, quality corpus assets, and governance files when branch protection
+  enables code-owner review.
+- [SECURITY.md](SECURITY.md) describes vulnerability reporting and required
+  security gates.
+- [CHANGELOG.md](CHANGELOG.md) records release notes using the package version
+  from `pyproject.toml`.
+- [docs/release_process.md](docs/release_process.md) defines the release
+  checklist, required GitHub checks, coverage policy, SBOM retention, and
+  version bump flow.
+
 ## Docker
 
 The root `docker-compose.yml` now keeps infrastructure and the API surface

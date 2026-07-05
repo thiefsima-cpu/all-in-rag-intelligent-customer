@@ -1,0 +1,26 @@
+# Default repository owner. GitHub branch protection must enable
+# "Require review from Code Owners" for this file to be an enforcement point.
+* @thiefsima-cpu
+
+# Public API and compatibility contracts.
+/main.py @thiefsima-cpu
+/main_build_service.py @thiefsima-cpu
+/rag_modules/interfaces/api/ @thiefsima-cpu
+/rag_modules/contracts/ @thiefsima-cpu
+/rag_modules/public_surface_manifest.py @thiefsima-cpu
+/tests/test_public_api_manifest.py @thiefsima-cpu
+/tests/test_public_surface_boundaries.py @thiefsima-cpu
+
+# Quality policy, prompts, and evaluation corpus.
+/eval/ @thiefsima-cpu
+/tests/fixtures/ @thiefsima-cpu
+/rag_modules/query_policy/resources/ @thiefsima-cpu
+/docs/offline_evaluation_release_gate.md @thiefsima-cpu
+/docs/live_quality_gate.md @thiefsima-cpu
+
+# Governance and organization-level gates.
+/.github/ @thiefsima-cpu
+/.github/workflows/ @thiefsima-cpu
+/SECURITY.md @thiefsima-cpu
+/CHANGELOG.md @thiefsima-cpu
+/docs/release_process.md @thiefsima-cpu
