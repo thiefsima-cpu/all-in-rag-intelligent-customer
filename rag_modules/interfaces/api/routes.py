@@ -27,16 +27,17 @@ from .diagnostics_models import (
 )
 from .request_context import current_request_id
 from .response_builder import (
-    build_answer_response,
     build_artifact_registry_response,
     build_build_job_list_response,
     build_build_job_response,
     build_diagnostics_response,
-    build_json_response,
     build_operation_response,
-    build_public_answer_response,
-    build_sse_streaming_response,
     build_stats_response,
+)
+from .route_handlers import (
+    build_answer_http_response,
+    build_answer_stream_http_response,
+    build_readiness_response,
 )
 from .services import (
     GraphRAGBuildApiService,
@@ -57,6 +58,15 @@ _SSE_EXAMPLE = (
 
 
 def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService) -> None:
+    _register_serving_operational_routes(app, api_service)
+    _register_serving_answer_request_routes(app, api_service)
+    _register_serving_answer_stream_routes(app, api_service)
+
+
+def _register_serving_operational_routes(
+    app: FastAPI,
+    api_service: GraphRAGServingApiService,
+) -> None:
     @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
     def read_health() -> dict[str, Any]:
         return api_service.health()
@@ -71,11 +81,7 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         responses={503: {"description": "Serving runtime is not ready."}},
     )
     def read_readiness() -> JSONResponse:
-        payload = api_service.readiness()
-        return build_json_response(
-            status_code=200 if payload["status"] == "ok" else 503,
-            content=payload,
-        )
+        return build_readiness_response(api_service.readiness())
 
     @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
     def read_stats() -> StatsResponseModel:
@@ -104,6 +110,11 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
     def refresh_serving_runtime() -> OperationResponseModel:
         return build_operation_response(api_service.refresh_serving_runtime())
 
+
+def _register_serving_answer_request_routes(
+    app: FastAPI,
+    api_service: GraphRAGServingApiService,
+) -> None:
     @app.post(
         f"{API_PREFIX}/answers",
         response_model=PublicAnswerResponseModel,
@@ -120,23 +131,10 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
     def answer_question_v1(
         payload: AnswerRequestModel,
     ) -> PublicAnswerResponseModel | StreamingResponse:
-        payload_data = payload.model_dump()
-        if payload_data.get("stream", False):
-            request_id = current_request_id()
-            return build_sse_streaming_response(
-                api_service.stream_answer_question_events(
-                    question=payload.question,
-                    explain_routing=payload.explain_routing,
-                    request_id=request_id,
-                    include_traces=False,
-                )
-            )
-        return build_public_answer_response(
-            api_service.answer_question(
-                question=payload.question,
-                stream=False,
-                explain_routing=payload.explain_routing,
-            )
+        return build_answer_http_response(
+            api_service,
+            payload,
+            include_traces=False,
         )
 
     @app.post(
@@ -152,25 +150,17 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
     def debug_answer_question_v1(
         payload: AnswerRequestModel,
     ) -> AnswerResponseModel | StreamingResponse:
-        payload_data = payload.model_dump()
-        if payload_data.get("stream", False):
-            request_id = current_request_id()
-            return build_sse_streaming_response(
-                api_service.stream_answer_question_events(
-                    question=payload.question,
-                    explain_routing=payload.explain_routing,
-                    request_id=request_id,
-                    include_traces=True,
-                )
-            )
-        return build_answer_response(
-            api_service.answer_question(
-                question=payload.question,
-                stream=False,
-                explain_routing=payload.explain_routing,
-            )
+        return build_answer_http_response(
+            api_service,
+            payload,
+            include_traces=True,
         )
 
+
+def _register_serving_answer_stream_routes(
+    app: FastAPI,
+    api_service: GraphRAGServingApiService,
+) -> None:
     @app.post(
         f"{API_PREFIX}/answers/stream",
         summary="Stream public answer events over SSE",
@@ -192,14 +182,10 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
         },
     )
     def stream_answer_question_v1(payload: AnswerStreamRequestModel) -> StreamingResponse:
-        request_id = current_request_id()
-        return build_sse_streaming_response(
-            api_service.stream_answer_question_events(
-                question=payload.question,
-                explain_routing=payload.explain_routing,
-                request_id=request_id,
-                include_traces=False,
-            )
+        return build_answer_stream_http_response(
+            api_service,
+            payload,
+            include_traces=False,
         )
 
     @app.post(
@@ -222,18 +208,24 @@ def register_serving_routes(app: FastAPI, api_service: GraphRAGServingApiService
     def stream_debug_answer_question_v1(
         payload: AnswerStreamRequestModel,
     ) -> StreamingResponse:
-        request_id = current_request_id()
-        return build_sse_streaming_response(
-            api_service.stream_answer_question_events(
-                question=payload.question,
-                explain_routing=payload.explain_routing,
-                request_id=request_id,
-                include_traces=True,
-            )
+        return build_answer_stream_http_response(
+            api_service,
+            payload,
+            include_traces=True,
         )
 
 
 def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) -> None:
+    _register_build_operational_routes(app, api_service)
+    _register_build_read_routes(app, api_service)
+    _register_build_control_routes(app, api_service)
+    _register_build_submission_routes(app, api_service)
+
+
+def _register_build_operational_routes(
+    app: FastAPI,
+    api_service: GraphRAGBuildApiService,
+) -> None:
     @app.get(f"{API_PREFIX}/health", response_model=HealthResponseModel)
     def read_health() -> dict[str, Any]:
         return api_service.health()
@@ -248,11 +240,7 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
         responses={503: {"description": "Build runtime is not ready."}},
     )
     def read_readiness() -> JSONResponse:
-        payload = api_service.readiness()
-        return build_json_response(
-            status_code=200 if payload["status"] == "ok" else 503,
-            content=payload,
-        )
+        return build_readiness_response(api_service.readiness())
 
     @app.get(f"{API_PREFIX}/stats", response_model=StatsResponseModel)
     def read_stats() -> StatsResponseModel:
@@ -274,6 +262,11 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     def initialize_build_runtime() -> OperationResponseModel:
         return build_operation_response(api_service.initialize_build_runtime())
 
+
+def _register_build_read_routes(
+    app: FastAPI,
+    api_service: GraphRAGBuildApiService,
+) -> None:
     @app.get(f"{API_PREFIX}/jobs", response_model=BuildJobListResponseModel)
     def list_build_jobs(
         limit: int | None = Query(default=None, ge=1),
@@ -298,6 +291,11 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
     ) -> BuildJobResponseModel:
         return build_build_job_response(api_service.get_build_job(job_id))
 
+
+def _register_build_control_routes(
+    app: FastAPI,
+    api_service: GraphRAGBuildApiService,
+) -> None:
     @app.post(
         f"{API_PREFIX}/jobs/{{job_id}}/cancel",
         response_model=BuildJobResponseModel,
@@ -335,6 +333,11 @@ def register_build_routes(app: FastAPI, api_service: GraphRAGBuildApiService) ->
             )
         )
 
+
+def _register_build_submission_routes(
+    app: FastAPI,
+    api_service: GraphRAGBuildApiService,
+) -> None:
     @app.post(
         f"{API_PREFIX}/jobs/build",
         response_model=BuildJobResponseModel,

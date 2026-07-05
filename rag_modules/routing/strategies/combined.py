@@ -9,7 +9,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from typing import Any, List, Literal, Sequence, TypeAlias, cast
 
-from ...contracts import EvidenceDocument, RequestControl
+from ...contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from ...contracts.runtime.retrieval import HybridRetrievalOutcome
 from ...kernel.json_types import coerce_json_object
 from ...kernel.routing import SearchStrategy
@@ -53,6 +53,33 @@ class _GraphBranchResult:
 _BranchResult: TypeAlias = _TraditionalBranchResult | _GraphBranchResult
 
 
+@dataclass(frozen=True)
+class _CombinedRouteRun:
+    candidate_k: int
+    branch_timeout_seconds: float
+    traditional_request: RetrievalRequest
+    graph_request: RetrievalRequest
+    branch_controls: dict[_BranchName, RequestControl]
+
+
+@dataclass(frozen=True)
+class _BranchExecutionState:
+    results: dict[_BranchName, _BranchResult]
+    timed_out_branches: List[_BranchName]
+    cancel_observed_branches: List[_BranchName]
+
+
+@dataclass(frozen=True)
+class _CombinedBranchDocuments:
+    combined_docs: List[EvidenceDocument]
+    traditional_outcome: HybridRetrievalOutcome | None
+    graph_trace: object | None
+    traditional_docs: List[EvidenceDocument]
+    graph_docs: List[EvidenceDocument]
+    traditional_latency_ms: float | None
+    graph_latency_ms: float | None
+
+
 class CombinedRouteStrategy:
     """Combined graph and hybrid retrieval execution."""
 
@@ -83,6 +110,42 @@ class CombinedRouteStrategy:
         services: RouteRetrievalServices,
     ) -> RouteExecutionOutcome:
         start = time.perf_counter()
+        run = self._prepare_run(request, services=services)
+        branch_execution = self._execute_branches(run, services=services)
+        documents = self._combine_branch_documents(run, branch_execution, services=services)
+        details = _combined_stage_details(run, branch_execution, documents)
+
+        return RouteExecutionOutcome(
+            documents=list(documents.combined_docs),
+            fallbacks=_timeout_fallbacks(
+                timed_out_branches=branch_execution.timed_out_branches,
+                has_traditional_result=_has_branch_result(
+                    branch_execution,
+                    branch_name="traditional",
+                    result_type=_TraditionalBranchResult,
+                ),
+                has_graph_result=_has_branch_result(
+                    branch_execution,
+                    branch_name="graph",
+                    result_type=_GraphBranchResult,
+                ),
+            ),
+            stages=[
+                RouteExecutionStageResult(
+                    name="combined",
+                    documents=list(documents.combined_docs),
+                    latency_ms=_elapsed_ms(start),
+                    details=details,
+                )
+            ],
+        )
+
+    def _prepare_run(
+        self,
+        request: RouteExecutionRequestPort,
+        *,
+        services: RouteRetrievalServices,
+    ) -> _CombinedRouteRun:
         candidate_k = services.retrieval_profile.candidates.combined_candidate_k(request.top_k)
         branch_timeout_seconds = self._resolve_branch_timeout_seconds(request)
         route_control = request.retrieval_request.control
@@ -96,85 +159,68 @@ class CombinedRouteStrategy:
             timeout_seconds=branch_timeout_seconds,
             scope="combined.graph",
         )
-        traditional_request = build_route_retrieval_request(
-            query=request.query,
-            top_k=candidate_k,
+        return _CombinedRouteRun(
             candidate_k=candidate_k,
-            constraints=request.constraints,
-            query_plan=request.query_plan,
-            strategy=SearchStrategy.COMBINED.value,
-            control=traditional_control,
+            branch_timeout_seconds=branch_timeout_seconds,
+            traditional_request=_build_combined_retrieval_request(
+                request,
+                candidate_k=candidate_k,
+                control=traditional_control,
+            ),
+            graph_request=_build_combined_retrieval_request(
+                request,
+                candidate_k=candidate_k,
+                control=graph_control,
+            ),
+            branch_controls={
+                "traditional": traditional_control,
+                "graph": graph_control,
+            },
         )
-        graph_request = build_route_retrieval_request(
-            query=request.query,
-            top_k=candidate_k,
-            candidate_k=candidate_k,
-            constraints=request.constraints,
-            query_plan=request.query_plan,
-            strategy=SearchStrategy.COMBINED.value,
-            control=graph_control,
+
+    def _execute_branches(
+        self,
+        run: _CombinedRouteRun,
+        *,
+        services: RouteRetrievalServices,
+    ) -> _BranchExecutionState:
+        branch_futures = _submit_branch_futures(
+            self._resolve_executor(),
+            run,
+            services=services,
         )
-
-        def load_traditional() -> _BranchResult:
-            traditional_start = time.perf_counter()
-            outcome = services.traditional_retrieval.hybrid_evidence_search(traditional_request)
-            return _TraditionalBranchResult(
-                outcome=outcome,
-                latency_ms=_elapsed_ms(traditional_start),
-            )
-
-        def load_graph() -> _BranchResult:
-            graph_start = time.perf_counter()
-            docs, trace = services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
-                graph_request
-            )
-            return _GraphBranchResult(
-                documents=list(docs),
-                trace=trace,
-                latency_ms=_elapsed_ms(graph_start),
-            )
-
-        executor = self._resolve_executor()
-        traditional_future: Future[_BranchResult] = executor.submit(load_traditional)
-        graph_future: Future[_BranchResult] = executor.submit(load_graph)
-        branch_futures: dict[_BranchName, Future[_BranchResult]] = {
-            "traditional": traditional_future,
-            "graph": graph_future,
-        }
-        deadline = time.perf_counter() + branch_timeout_seconds
-        branch_results: dict[_BranchName, _BranchResult] = {}
-        timed_out_branches: List[_BranchName] = []
-        branch_controls: dict[_BranchName, RequestControl] = {
-            "traditional": traditional_control,
-            "graph": graph_control,
-        }
-
-        for branch_name, future in branch_futures.items():
-            try:
-                branch_results[branch_name] = future.result(
-                    timeout=_remaining_timeout_seconds(deadline)
-                )
-            except FutureTimeoutError:
-                timed_out_branches.append(branch_name)
-
-        for branch_name in list(timed_out_branches):
-            future = branch_futures[branch_name]
-            if not _future_done(future):
-                continue
-            branch_results[branch_name] = future.result(timeout=0)
-            timed_out_branches.remove(branch_name)
-
-        for branch_name in timed_out_branches:
-            branch_controls[branch_name].cancel("combined_branch_timeout")
-            _cancel_future(branch_futures[branch_name])
-
-        cancel_observed_branches = _observe_cancelled_branches(
+        branch_results, timed_out_branches = _await_branch_results(
             branch_futures,
+            timeout_seconds=run.branch_timeout_seconds,
+        )
+        _accept_ready_timed_out_branches(
+            branch_futures,
+            branch_results=branch_results,
             timed_out_branches=timed_out_branches,
         )
+        _cancel_timed_out_branches(
+            branch_futures,
+            branch_controls=run.branch_controls,
+            timed_out_branches=timed_out_branches,
+        )
+        return _BranchExecutionState(
+            results=branch_results,
+            timed_out_branches=timed_out_branches,
+            cancel_observed_branches=_observe_cancelled_branches(
+                branch_futures,
+                timed_out_branches=timed_out_branches,
+            ),
+        )
 
-        traditional_result = branch_results.get("traditional")
-        graph_result = branch_results.get("graph")
+    @staticmethod
+    def _combine_branch_documents(
+        run: _CombinedRouteRun,
+        branch_execution: _BranchExecutionState,
+        *,
+        services: RouteRetrievalServices,
+    ) -> _CombinedBranchDocuments:
+        traditional_result = branch_execution.results.get("traditional")
+        graph_result = branch_execution.results.get("graph")
         traditional_outcome = None
         traditional_latency_ms = None
         traditional_docs: List[EvidenceDocument] = []
@@ -190,54 +236,23 @@ class CombinedRouteStrategy:
             graph_trace = graph_result.trace
             graph_latency_ms = graph_result.latency_ms
             graph_docs = services.traditional_retrieval.enrich_to_parent_evidence_documents(
-                graph_request,
+                run.graph_request,
                 graph_result.documents,
-                top_n=candidate_k,
+                top_n=run.candidate_k,
             )
         combined_docs = interleave_route_documents(
             graph_docs,
             traditional_docs,
-            limit=candidate_k,
+            limit=run.candidate_k,
         )
-
-        details = coerce_json_object(
-            {
-                "candidate_k": candidate_k,
-                "traditional_doc_count": len(traditional_docs),
-                "graph_doc_count": len(graph_docs),
-                "traditional_latency_ms": traditional_latency_ms,
-                "graph_latency_ms": graph_latency_ms,
-                "parallel_execution": True,
-                "branch_timeout_seconds": branch_timeout_seconds,
-                "timed_out_branches": timed_out_branches,
-                "cancel_requested_branches": timed_out_branches,
-                "cancel_observed_branches": cancel_observed_branches,
-                "traditional_control": traditional_control.to_trace_details(),
-                "graph_control": graph_control.to_trace_details(),
-                "traditional_timed_out": "traditional" in timed_out_branches,
-                "graph_timed_out": "graph" in timed_out_branches,
-            }
-        )
-        if traditional_outcome is not None:
-            details.update(coerce_json_object(traditional_outcome.to_stage_details()))
-        if graph_trace:
-            details.update(_trace_stage_details(graph_trace))
-
-        return RouteExecutionOutcome(
-            documents=list(combined_docs),
-            fallbacks=_timeout_fallbacks(
-                timed_out_branches=timed_out_branches,
-                has_traditional_result=isinstance(traditional_result, _TraditionalBranchResult),
-                has_graph_result=isinstance(graph_result, _GraphBranchResult),
-            ),
-            stages=[
-                RouteExecutionStageResult(
-                    name="combined",
-                    documents=list(combined_docs),
-                    latency_ms=_elapsed_ms(start),
-                    details=details,
-                )
-            ],
+        return _CombinedBranchDocuments(
+            combined_docs=combined_docs,
+            traditional_outcome=traditional_outcome,
+            graph_trace=graph_trace,
+            traditional_docs=traditional_docs,
+            graph_docs=graph_docs,
+            traditional_latency_ms=traditional_latency_ms,
+            graph_latency_ms=graph_latency_ms,
         )
 
     def _resolve_executor(self) -> Executor:
@@ -276,6 +291,152 @@ class CombinedRouteStrategy:
             self._executor = None
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _build_combined_retrieval_request(
+    request: RouteExecutionRequestPort,
+    *,
+    candidate_k: int,
+    control: RequestControl,
+) -> RetrievalRequest:
+    return build_route_retrieval_request(
+        query=request.query,
+        top_k=candidate_k,
+        candidate_k=candidate_k,
+        constraints=request.constraints,
+        query_plan=request.query_plan,
+        strategy=SearchStrategy.COMBINED.value,
+        control=control,
+    )
+
+
+def _submit_branch_futures(
+    executor: Executor,
+    run: _CombinedRouteRun,
+    *,
+    services: RouteRetrievalServices,
+) -> dict[_BranchName, Future[_BranchResult]]:
+    return {
+        "traditional": executor.submit(
+            _load_traditional_branch,
+            services,
+            run.traditional_request,
+        ),
+        "graph": executor.submit(
+            _load_graph_branch,
+            services,
+            run.graph_request,
+        ),
+    }
+
+
+def _load_traditional_branch(
+    services: RouteRetrievalServices,
+    retrieval_request: RetrievalRequest,
+) -> _BranchResult:
+    traditional_start = time.perf_counter()
+    outcome = services.traditional_retrieval.hybrid_evidence_search(retrieval_request)
+    return _TraditionalBranchResult(
+        outcome=outcome,
+        latency_ms=_elapsed_ms(traditional_start),
+    )
+
+
+def _load_graph_branch(
+    services: RouteRetrievalServices,
+    retrieval_request: RetrievalRequest,
+) -> _BranchResult:
+    graph_start = time.perf_counter()
+    docs, trace = services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(
+        retrieval_request
+    )
+    return _GraphBranchResult(
+        documents=list(docs),
+        trace=trace,
+        latency_ms=_elapsed_ms(graph_start),
+    )
+
+
+def _await_branch_results(
+    branch_futures: dict[_BranchName, Future[_BranchResult]],
+    *,
+    timeout_seconds: float,
+) -> tuple[dict[_BranchName, _BranchResult], List[_BranchName]]:
+    deadline = time.perf_counter() + timeout_seconds
+    branch_results: dict[_BranchName, _BranchResult] = {}
+    timed_out_branches: List[_BranchName] = []
+    for branch_name, future in branch_futures.items():
+        try:
+            branch_results[branch_name] = future.result(
+                timeout=_remaining_timeout_seconds(deadline)
+            )
+        except FutureTimeoutError:
+            timed_out_branches.append(branch_name)
+    return branch_results, timed_out_branches
+
+
+def _accept_ready_timed_out_branches(
+    branch_futures: dict[_BranchName, Future[_BranchResult]],
+    *,
+    branch_results: dict[_BranchName, _BranchResult],
+    timed_out_branches: List[_BranchName],
+) -> None:
+    for branch_name in list(timed_out_branches):
+        future = branch_futures[branch_name]
+        if not _future_done(future):
+            continue
+        branch_results[branch_name] = future.result(timeout=0)
+        timed_out_branches.remove(branch_name)
+
+
+def _cancel_timed_out_branches(
+    branch_futures: dict[_BranchName, Future[_BranchResult]],
+    *,
+    branch_controls: dict[_BranchName, RequestControl],
+    timed_out_branches: Sequence[_BranchName],
+) -> None:
+    for branch_name in timed_out_branches:
+        branch_controls[branch_name].cancel("combined_branch_timeout")
+        _cancel_future(branch_futures[branch_name])
+
+
+def _combined_stage_details(
+    run: _CombinedRouteRun,
+    branch_execution: _BranchExecutionState,
+    documents: _CombinedBranchDocuments,
+) -> dict[str, Any]:
+    details = coerce_json_object(
+        {
+            "candidate_k": run.candidate_k,
+            "traditional_doc_count": len(documents.traditional_docs),
+            "graph_doc_count": len(documents.graph_docs),
+            "traditional_latency_ms": documents.traditional_latency_ms,
+            "graph_latency_ms": documents.graph_latency_ms,
+            "parallel_execution": True,
+            "branch_timeout_seconds": run.branch_timeout_seconds,
+            "timed_out_branches": branch_execution.timed_out_branches,
+            "cancel_requested_branches": branch_execution.timed_out_branches,
+            "cancel_observed_branches": branch_execution.cancel_observed_branches,
+            "traditional_control": run.branch_controls["traditional"].to_trace_details(),
+            "graph_control": run.branch_controls["graph"].to_trace_details(),
+            "traditional_timed_out": "traditional" in branch_execution.timed_out_branches,
+            "graph_timed_out": "graph" in branch_execution.timed_out_branches,
+        }
+    )
+    if documents.traditional_outcome is not None:
+        details.update(coerce_json_object(documents.traditional_outcome.to_stage_details()))
+    if documents.graph_trace:
+        details.update(_trace_stage_details(documents.graph_trace))
+    return details
+
+
+def _has_branch_result(
+    branch_execution: _BranchExecutionState,
+    *,
+    branch_name: _BranchName,
+    result_type: type[Any],
+) -> bool:
+    return isinstance(branch_execution.results.get(branch_name), result_type)
 
 
 def _coerce_branch_timeout_seconds(value: object, *, default: float) -> float:
