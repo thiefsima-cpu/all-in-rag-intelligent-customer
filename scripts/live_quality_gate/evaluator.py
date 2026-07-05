@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from rag_modules.evaluation import percentile, retrieval_metrics
-from scripts.gates import GateCheckResult, GateFailureType
+from scripts.gates import GateCheckResult, GateFailureType, numeric_threshold_check
 
-from .models import LiveQualityCasePolicy, LiveQualityResponseMode
+from .models import LiveQualityCasePolicy, LiveQualityGatePolicy, LiveQualityResponseMode
 from .runtime_models import DeterministicCaseResult, LiveQualityObservation
 
 _EMPTY_RETRIEVAL_METRICS = {
@@ -123,6 +123,83 @@ def aggregate_live_quality_metrics(
         }
     )
     return summary
+
+
+def evaluate_policy_thresholds(
+    policy: LiveQualityGatePolicy,
+    metrics: Mapping[str, Any],
+) -> tuple[GateCheckResult, ...]:
+    checks = [
+        numeric_threshold_check(
+            "metrics.case_count",
+            metrics.get("case_count"),
+            minimum=policy.thresholds.minimum_case_count,
+            failure_type=GateFailureType.COVERAGE_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.pass_rate",
+            metrics.get("pass_rate"),
+            minimum=policy.thresholds.minimum_pass_rate,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.deterministic_pass_rate",
+            metrics.get("deterministic_pass_rate"),
+            minimum=policy.thresholds.minimum_deterministic_pass_rate,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.judge_pass_rate",
+            metrics.get("judge_pass_rate"),
+            minimum=policy.thresholds.minimum_judge_pass_rate,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.recall_at_k",
+            metrics.get("recall_at_k"),
+            minimum=policy.thresholds.minimum_recall_at_k,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.mrr",
+            metrics.get("mrr"),
+            minimum=policy.thresholds.minimum_mrr,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.ndcg_at_k",
+            metrics.get("ndcg_at_k"),
+            minimum=policy.thresholds.minimum_ndcg_at_k,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.fallback_rate",
+            metrics.get("fallback_rate"),
+            maximum=policy.thresholds.maximum_fallback_rate,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.retrieval_degradation_rate",
+            metrics.get("retrieval_degradation_rate"),
+            maximum=policy.thresholds.maximum_retrieval_degradation_rate,
+            failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.p95_latency_ms",
+            metrics.get("p95_latency_ms"),
+            maximum=policy.thresholds.maximum_p95_latency_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.estimated_cost_usd",
+            metrics.get("estimated_cost_usd"),
+            maximum=policy.thresholds.maximum_estimated_cost_usd,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        ),
+    ]
+    checks.extend(_required_slice_coverage_checks(policy, metrics))
+    checks.extend(_slice_threshold_checks(policy, metrics))
+    return tuple(checks)
 
 
 def _response_mode_passed(
@@ -269,3 +346,105 @@ def _average_judge_scores(results: Iterable[DeterministicCaseResult]) -> dict[st
         for score_name in totals
         if counts[score_name] > 0
     }
+
+
+def _required_slice_coverage_checks(
+    policy: LiveQualityGatePolicy,
+    metrics: Mapping[str, Any],
+) -> list[GateCheckResult]:
+    groups = {
+        "risk_tags": (policy.required_slice_coverage.risk_tags, metrics.get("by_risk_tag")),
+        "query_types": (
+            policy.required_slice_coverage.query_types,
+            metrics.get("by_query_type"),
+        ),
+        "cuisines": (policy.required_slice_coverage.cuisines, metrics.get("by_cuisine")),
+        "constraint_types": (
+            policy.required_slice_coverage.constraint_types,
+            metrics.get("by_constraint_type"),
+        ),
+        "response_modes": (
+            policy.required_slice_coverage.response_modes,
+            metrics.get("by_response_mode"),
+        ),
+    }
+    checks: list[GateCheckResult] = []
+    for group_name, (required, actual_group) in groups.items():
+        for label, minimum in required.items():
+            actual_count = _slice_metric(actual_group, label, "case_count", default=0)
+            name = f"coverage.{group_name}.{label}"
+            if actual_count >= minimum:
+                checks.append(
+                    GateCheckResult.pass_check(
+                        name,
+                        code="SLICE_COVERAGE_OK",
+                        expected={"minimum": minimum},
+                        actual=actual_count,
+                    )
+                )
+            else:
+                checks.append(
+                    GateCheckResult.fail_check(
+                        name,
+                        failure_type=GateFailureType.COVERAGE_REGRESSION,
+                        code="SLICE_COVERAGE_MISSING",
+                        expected={"minimum": minimum},
+                        actual=actual_count,
+                    )
+                )
+    return checks
+
+
+def _slice_threshold_checks(
+    policy: LiveQualityGatePolicy,
+    metrics: Mapping[str, Any],
+) -> list[GateCheckResult]:
+    groups = {
+        "risk_tags": (policy.slice_thresholds.risk_tags, metrics.get("by_risk_tag")),
+        "query_types": (policy.slice_thresholds.query_types, metrics.get("by_query_type")),
+        "cuisines": (policy.slice_thresholds.cuisines, metrics.get("by_cuisine")),
+        "constraint_types": (
+            policy.slice_thresholds.constraint_types,
+            metrics.get("by_constraint_type"),
+        ),
+        "response_modes": (
+            policy.slice_thresholds.response_modes,
+            metrics.get("by_response_mode"),
+        ),
+        "strategies": (policy.slice_thresholds.strategies, metrics.get("by_strategy")),
+    }
+    checks: list[GateCheckResult] = []
+    for group_name, (thresholds, actual_group) in groups.items():
+        for label, threshold in thresholds.items():
+            checks.append(
+                numeric_threshold_check(
+                    f"slice.{group_name}.{label}.case_count",
+                    _slice_metric(actual_group, label, "case_count", default=0),
+                    minimum=threshold.minimum_case_count,
+                    failure_type=GateFailureType.COVERAGE_REGRESSION,
+                )
+            )
+            checks.append(
+                numeric_threshold_check(
+                    f"slice.{group_name}.{label}.pass_rate",
+                    _slice_metric(actual_group, label, "pass_rate", default=0.0),
+                    minimum=threshold.minimum_pass_rate,
+                    failure_type=GateFailureType.QUALITY_REGRESSION,
+                )
+            )
+    return checks
+
+
+def _slice_metric(
+    group: object,
+    label: str,
+    metric_name: str,
+    *,
+    default: Any,
+) -> Any:
+    if not isinstance(group, Mapping):
+        return default
+    summary = group.get(label)
+    if not isinstance(summary, Mapping):
+        return default
+    return summary.get(metric_name, default)
