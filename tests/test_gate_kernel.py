@@ -271,9 +271,12 @@ def test_gate_enum_values_and_public_exports_are_exact() -> None:
         "BLOCKED": "blocked",
     }
     assert {failure_type.name: failure_type.value for failure_type in GateFailureType} == {
+        "CONFIGURATION_ERROR": "configuration-error",
         "DEPENDENCY_UNAVAILABLE": "dependency-unavailable",
+        "JUDGE_UNAVAILABLE": "judge-unavailable",
         "CONTRACT_REGRESSION": "contract-regression",
         "QUALITY_REGRESSION": "quality-regression",
+        "COVERAGE_REGRESSION": "coverage-regression",
         "BUDGET_REGRESSION": "budget-regression",
         "GATE_ERROR": "gate-error",
     }

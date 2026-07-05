@@ -12,9 +12,12 @@ class GateCheckStatus(StrEnum):
 
 
 class GateFailureType(StrEnum):
+    CONFIGURATION_ERROR = "configuration-error"
     DEPENDENCY_UNAVAILABLE = "dependency-unavailable"
+    JUDGE_UNAVAILABLE = "judge-unavailable"
     CONTRACT_REGRESSION = "contract-regression"
     QUALITY_REGRESSION = "quality-regression"
+    COVERAGE_REGRESSION = "coverage-regression"
     BUDGET_REGRESSION = "budget-regression"
     GATE_ERROR = "gate-error"
 
