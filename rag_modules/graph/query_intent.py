@@ -56,7 +56,7 @@ class GraphQueryIntent:
 def infer_graph_query_intent(
     query: str,
     *,
-    semantic_settings: QuerySemanticRuntimeSettings | None = None,
+    semantic_settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
 ) -> GraphQueryIntent:

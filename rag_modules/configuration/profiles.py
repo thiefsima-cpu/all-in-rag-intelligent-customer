@@ -9,7 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from .assembly import apply_overrides, build_config_from_domain_dict
+from ..query_policy.selector import (
+    resolve_query_policy_bundle_from_selector,
+    resolve_query_policy_selector,
+)
+from .assembly import build_config_from_resolved_overrides
 from .models import default_domain_payload
 
 
@@ -65,10 +69,11 @@ def _read_profile_file(path: Path) -> dict[str, Any]:
 
 
 def _validate_profile_payload(path: Path, payload: Mapping[str, Any]) -> None:
-    domain_payload = default_domain_payload()
-    apply_overrides(domain_payload, payload)
-    build_config_from_domain_dict(
-        domain_payload,
+    selector = resolve_query_policy_selector(default_domain_payload(), payload)
+    bundle = resolve_query_policy_bundle_from_selector(selector)
+    build_config_from_resolved_overrides(
+        payload,
+        bundle=bundle,
         source_kind="profile",
         source=str(path),
     )

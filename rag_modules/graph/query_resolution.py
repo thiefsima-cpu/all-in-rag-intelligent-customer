@@ -37,10 +37,10 @@ class GraphQueryFactory:
     def __init__(
         self,
         *,
-        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        semantic_settings: QuerySemanticRuntimeSettings,
         policy_bundle: QueryPolicyBundle | None = None,
     ):
-        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
+        self.semantic_settings = semantic_settings
         self.policy_bundle = policy_bundle or get_query_policy()
         self.registry: QueryUnderstandingRegistry = query_registry(self.policy_bundle)
         self.graph_policy = self.policy_bundle.graph
@@ -87,7 +87,6 @@ class GraphQueryFactory:
             ),
             max_nodes=infer_graph_max_nodes(
                 query_type.value,
-                settings=self.semantic_settings,
                 policy_bundle=self.policy_bundle,
                 registry=self.registry,
             ),
@@ -128,7 +127,6 @@ class GraphQueryFactory:
             ),
             max_nodes=infer_graph_max_nodes(
                 query_type.value,
-                settings=self.semantic_settings,
                 policy_bundle=self.policy_bundle,
                 registry=self.registry,
             ),

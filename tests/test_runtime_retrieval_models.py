@@ -5,6 +5,7 @@ import unittest
 
 import pytest
 
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     RequestBudgetExceeded,
@@ -121,20 +122,23 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         )
 
     def test_answer_context_round_trips_from_dict_payload(self) -> None:
-        context = AnswerContext(
-            question="为什么水煮肉片会麻辣鲜香？",
-            retrieval={
-                "query": "为什么水煮肉片会麻辣鲜香？",
-                "strategy": "graph_rag",
-                "evidence_documents": [
-                    {
-                        "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
-                        "recipe_name": "水煮肉片",
-                        "source": "graph_rag",
-                        "score": 0.95,
-                    }
-                ],
+        context = AnswerContext.from_dict(
+            {
+                "question": "为什么水煮肉片会麻辣鲜香？",
+                "retrieval": {
+                    "query": "为什么水煮肉片会麻辣鲜香？",
+                    "strategy": "graph_rag",
+                    "evidence_documents": [
+                        {
+                            "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
+                            "recipe_name": "水煮肉片",
+                            "source": "graph_rag",
+                            "score": 0.95,
+                        }
+                    ],
+                },
             },
+            semantic_settings=semantic_runtime_settings(build_test_config()),
         )
 
         self.assertEqual(len(context.evidence_documents), 1)

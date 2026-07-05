@@ -7,7 +7,11 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-from rag_modules.contracts import QueryPlannerRuntimeSettings
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
+)
 from rag_modules.query_understanding import QueryPlanner
 
 
@@ -38,12 +42,13 @@ class _BlockingLLMClient:
 class QueryPlannerConcurrencyTests(unittest.TestCase):
     def test_same_query_is_single_flight_and_returns_isolated_plans(self) -> None:
         client = _BlockingLLMClient()
+        config = build_test_config(
+            {"query_understanding": {"planner": {"cache_size": 8, "fast_rule_planning": False}}}
+        )
         planner = QueryPlanner(
             client,
-            settings=QueryPlannerRuntimeSettings(
-                cache_size=8,
-                fast_rule_planning=False,
-            ),
+            settings=planner_runtime_settings(config),
+            semantic_settings=semantic_runtime_settings(config),
         )
         planner.rule_based_plan("warm up tokenizer")
 

@@ -307,10 +307,9 @@ class QueryPlan:
         query: str,
         data: Dict[str, Any],
         *,
-        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        semantic_settings: QuerySemanticRuntimeSettings,
         schema_relation_types: Iterable[str] | None = None,
     ) -> "QueryPlan":
-        semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
         allowed_relation_types = tuple(schema_relation_types or _SCHEMA_RELATION_TYPES)
         semantic_profile = data.get("semantic_profile")
         resolved_profile = (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from ...contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
@@ -13,15 +13,11 @@ from .postprocess_settings import RetrievalPostProcessSettings
 
 @dataclass
 class RetrievalRuntimeProfile:
-    planner: QueryPlannerRuntimeSettings = field(default_factory=QueryPlannerRuntimeSettings)
-    semantics: QuerySemanticRuntimeSettings = field(default_factory=QuerySemanticRuntimeSettings)
-    candidates: RetrievalCandidateSizingSettings = field(
-        default_factory=RetrievalCandidateSizingSettings
-    )
-    candidate_sources: RetrievalCandidateSourceSettings = field(
-        default_factory=RetrievalCandidateSourceSettings
-    )
-    postprocess: RetrievalPostProcessSettings = field(default_factory=RetrievalPostProcessSettings)
+    planner: QueryPlannerRuntimeSettings
+    semantics: QuerySemanticRuntimeSettings
+    candidates: RetrievalCandidateSizingSettings
+    candidate_sources: RetrievalCandidateSourceSettings
+    postprocess: RetrievalPostProcessSettings
 
     @classmethod
     def from_config(cls, config) -> "RetrievalRuntimeProfile":

@@ -5,48 +5,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from ..query_policy.models import PlannerRuntimeDefaultsPolicy, QuerySemanticRuntimeDefaultsPolicy
-from ._common import bounded_float, coerce_int
-
-_PLANNER_DEFAULTS = PlannerRuntimeDefaultsPolicy()
-_SEMANTIC_DEFAULTS = QuerySemanticRuntimeDefaultsPolicy()
-
 
 @dataclass
 class QueryPlannerRuntimeSettings:
-    model_name: str = str(_PLANNER_DEFAULTS.model_name)
-    cache_size: int = int(_PLANNER_DEFAULTS.cache_size)
-    timeout_seconds: int = int(_PLANNER_DEFAULTS.timeout_seconds)
-    fast_rule_planning: bool = bool(_PLANNER_DEFAULTS.fast_rule_planning)
-    llm_temperature: float = float(_PLANNER_DEFAULTS.llm_temperature)
-    llm_max_tokens: int = int(_PLANNER_DEFAULTS.llm_max_tokens)
+    model_name: str
+    cache_size: int
+    timeout_seconds: int
+    fast_rule_planning: bool
+    llm_temperature: float
+    llm_max_tokens: int
 
     def __post_init__(self) -> None:
-        self.model_name = str(self.model_name or _PLANNER_DEFAULTS.model_name)
-        self.cache_size = coerce_int(self.cache_size, int(_PLANNER_DEFAULTS.cache_size))
-        self.timeout_seconds = coerce_int(
-            self.timeout_seconds,
-            int(_PLANNER_DEFAULTS.timeout_seconds),
-            minimum=1,
-        )
+        self.model_name = str(self.model_name)
+        self.cache_size = max(0, int(self.cache_size))
+        self.timeout_seconds = max(1, int(self.timeout_seconds))
         self.fast_rule_planning = bool(self.fast_rule_planning)
-        self.llm_temperature = bounded_float(
-            self.llm_temperature,
-            float(_PLANNER_DEFAULTS.llm_temperature),
-            maximum=2.0,
-        )
-        self.llm_max_tokens = coerce_int(
-            self.llm_max_tokens,
-            int(_PLANNER_DEFAULTS.llm_max_tokens),
-            minimum=128,
-        )
+        self.llm_temperature = max(0.0, min(2.0, float(self.llm_temperature)))
+        self.llm_max_tokens = max(128, int(self.llm_max_tokens))
 
     @classmethod
     def from_config(cls, config) -> "QueryPlannerRuntimeSettings":
         models = config.models
         planner = config.query_understanding.planner
         return cls(
-            model_name=models.llm_model or _PLANNER_DEFAULTS.model_name,
+            model_name=models.llm_model,
             cache_size=planner.cache_size,
             timeout_seconds=models.llm_timeout_seconds,
             fast_rule_planning=planner.fast_rule_planning,
@@ -67,117 +49,62 @@ class QueryPlannerRuntimeSettings:
 
 @dataclass
 class QuerySemanticRuntimeSettings:
-    relation_intensity_reference_ratio: float = float(
-        _SEMANTIC_DEFAULTS.relation_intensity_reference_ratio
-    )
-    complexity_relation_hit_weight: float = float(_SEMANTIC_DEFAULTS.complexity_relation_hit_weight)
-    complexity_constraint_hit_weight: float = float(
-        _SEMANTIC_DEFAULTS.complexity_constraint_hit_weight
-    )
-    complexity_structural_hit_weight: float = float(
-        _SEMANTIC_DEFAULTS.complexity_structural_hit_weight
-    )
-    complexity_length_weight: float = float(_SEMANTIC_DEFAULTS.complexity_length_weight)
-    complexity_length_norm_chars: int = int(_SEMANTIC_DEFAULTS.complexity_length_norm_chars)
-    reasoning_complexity_threshold: float = float(_SEMANTIC_DEFAULTS.reasoning_complexity_threshold)
-    reasoning_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.reasoning_relationship_threshold
-    )
-    high_relationship_routing_threshold: float = float(
-        _SEMANTIC_DEFAULTS.high_relationship_routing_threshold
-    )
-    relation_hit_intensity_boost_base: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_intensity_boost_base
-    )
-    relation_hit_intensity_boost_step: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_intensity_boost_step
-    )
-    relation_hit_complexity_boost_base: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_complexity_boost_base
-    )
-    relation_hit_complexity_boost_step: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_complexity_boost_step
-    )
-    source_entity_limit: int = int(_SEMANTIC_DEFAULTS.source_entity_limit)
-    entity_keyword_limit: int = int(_SEMANTIC_DEFAULTS.entity_keyword_limit)
-    semantic_profile_entity_keyword_limit: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_entity_keyword_limit
-    )
-    topic_keyword_limit: int = int(_SEMANTIC_DEFAULTS.topic_keyword_limit)
-    semantic_profile_topic_keyword_start: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_topic_keyword_start
-    )
-    semantic_profile_topic_keyword_limit: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_topic_keyword_limit
-    )
-    target_entity_limit: int = int(_SEMANTIC_DEFAULTS.target_entity_limit)
-    multi_hop_hint_entity_count: int = int(_SEMANTIC_DEFAULTS.multi_hop_hint_entity_count)
-    multi_hop_hint_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.multi_hop_hint_relationship_threshold
-    )
-    combined_strategy_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.combined_strategy_relationship_threshold
-    )
-    combined_strategy_complexity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.combined_strategy_complexity_threshold
-    )
-    source_entity_seed_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.source_entity_seed_relationship_threshold
-    )
-    source_entity_backfill_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.source_entity_backfill_relationship_threshold
-    )
-    rule_fallback_confidence: float = float(_SEMANTIC_DEFAULTS.rule_fallback_confidence)
-    entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.entity_relation_max_depth)
-    path_finding_max_depth: int = int(_SEMANTIC_DEFAULTS.path_finding_max_depth)
-    path_finding_high_intensity_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.path_finding_high_intensity_max_depth
-    )
-    path_finding_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.path_finding_high_intensity_threshold
-    )
-    subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.subgraph_max_depth)
-    subgraph_high_intensity_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.subgraph_high_intensity_max_depth
-    )
-    subgraph_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.subgraph_high_intensity_threshold
-    )
-    clustering_max_depth: int = int(_SEMANTIC_DEFAULTS.clustering_max_depth)
-    default_max_depth: int = int(_SEMANTIC_DEFAULTS.default_max_depth)
-    default_high_intensity_max_depth: int = int(_SEMANTIC_DEFAULTS.default_high_intensity_max_depth)
-    default_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.default_high_intensity_threshold
-    )
-    entity_relation_max_nodes: int = int(_SEMANTIC_DEFAULTS.entity_relation_max_nodes)
-    path_finding_max_nodes: int = int(_SEMANTIC_DEFAULTS.path_finding_max_nodes)
-    subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.subgraph_max_nodes)
-    clustering_max_nodes: int = int(_SEMANTIC_DEFAULTS.clustering_max_nodes)
-    default_max_nodes: int = int(_SEMANTIC_DEFAULTS.default_max_nodes)
-    graph_query_max_depth_cap: int = int(_SEMANTIC_DEFAULTS.graph_query_max_depth_cap)
-    graph_query_fallback_name_chars: int = int(_SEMANTIC_DEFAULTS.graph_query_fallback_name_chars)
-    adaptive_multi_hop_subgraph_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_multi_hop_subgraph_threshold
-    )
-    adaptive_subgraph_multi_hop_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_subgraph_multi_hop_threshold
-    )
-    adaptive_entity_relation_multi_hop_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_entity_relation_multi_hop_threshold
-    )
-    adaptive_subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.adaptive_subgraph_max_depth)
-    adaptive_subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.adaptive_subgraph_max_nodes)
-    adaptive_multi_hop_max_depth: int = int(_SEMANTIC_DEFAULTS.adaptive_multi_hop_max_depth)
-    adaptive_multi_hop_max_nodes: int = int(_SEMANTIC_DEFAULTS.adaptive_multi_hop_max_nodes)
-    adaptive_entity_relation_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.adaptive_entity_relation_max_depth
-    )
-    adaptive_entity_relation_max_nodes: int = int(
-        _SEMANTIC_DEFAULTS.adaptive_entity_relation_max_nodes
-    )
+    relation_intensity_reference_ratio: float
+    complexity_relation_hit_weight: float
+    complexity_constraint_hit_weight: float
+    complexity_structural_hit_weight: float
+    complexity_length_weight: float
+    complexity_length_norm_chars: int
+    reasoning_complexity_threshold: float
+    reasoning_relationship_threshold: float
+    high_relationship_routing_threshold: float
+    relation_hit_intensity_boost_base: float
+    relation_hit_intensity_boost_step: float
+    relation_hit_complexity_boost_base: float
+    relation_hit_complexity_boost_step: float
+    source_entity_limit: int
+    entity_keyword_limit: int
+    semantic_profile_entity_keyword_limit: int
+    topic_keyword_limit: int
+    semantic_profile_topic_keyword_start: int
+    semantic_profile_topic_keyword_limit: int
+    target_entity_limit: int
+    multi_hop_hint_entity_count: int
+    multi_hop_hint_relationship_threshold: float
+    combined_strategy_relationship_threshold: float
+    combined_strategy_complexity_threshold: float
+    source_entity_seed_relationship_threshold: float
+    source_entity_backfill_relationship_threshold: float
+    rule_fallback_confidence: float
+    entity_relation_max_depth: int
+    path_finding_max_depth: int
+    path_finding_high_intensity_max_depth: int
+    path_finding_high_intensity_threshold: float
+    subgraph_max_depth: int
+    subgraph_high_intensity_max_depth: int
+    subgraph_high_intensity_threshold: float
+    clustering_max_depth: int
+    default_max_depth: int
+    default_high_intensity_max_depth: int
+    default_high_intensity_threshold: float
+    entity_relation_max_nodes: int
+    path_finding_max_nodes: int
+    subgraph_max_nodes: int
+    clustering_max_nodes: int
+    default_max_nodes: int
+    graph_query_max_depth_cap: int
+    graph_query_fallback_name_chars: int
+    adaptive_multi_hop_subgraph_threshold: float
+    adaptive_subgraph_multi_hop_threshold: float
+    adaptive_entity_relation_multi_hop_threshold: float
+    adaptive_subgraph_max_depth: int
+    adaptive_subgraph_max_nodes: int
+    adaptive_multi_hop_max_depth: int
+    adaptive_multi_hop_max_nodes: int
+    adaptive_entity_relation_max_depth: int
+    adaptive_entity_relation_max_nodes: int
 
     def __post_init__(self) -> None:
-        defaults = _SEMANTIC_DEFAULTS
         for field_name in (
             "relation_intensity_reference_ratio",
             "reasoning_complexity_threshold",
@@ -201,10 +128,7 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                bounded_float(
-                    getattr(self, field_name),
-                    float(getattr(defaults, field_name)),
-                ),
+                max(0.0, min(1.0, float(getattr(self, field_name)))),
             )
         for field_name in (
             "complexity_relation_hit_weight",
@@ -217,11 +141,7 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                bounded_float(
-                    getattr(self, field_name),
-                    float(getattr(defaults, field_name)),
-                    maximum=5.0,
-                ),
+                max(0.0, min(5.0, float(getattr(self, field_name)))),
             )
         for field_name, minimum in (
             ("complexity_length_norm_chars", 1),
@@ -258,11 +178,7 @@ class QuerySemanticRuntimeSettings:
             setattr(
                 self,
                 field_name,
-                coerce_int(
-                    getattr(self, field_name),
-                    int(getattr(defaults, field_name)),
-                    minimum=minimum,
-                ),
+                max(minimum, int(getattr(self, field_name))),
             )
 
     @classmethod

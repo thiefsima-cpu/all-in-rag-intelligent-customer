@@ -3,13 +3,16 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
+)
 from rag_modules.contracts import (
     GraphQueryType,
     QueryPlan,
     QueryPlannerMode,
-    QueryPlannerRuntimeSettings,
     QuerySemanticProfile,
-    QuerySemanticRuntimeSettings,
 )
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding import (
@@ -41,10 +44,11 @@ class _FailingPlannerClient:
 
 class QuerySemanticsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.semantic_settings = QuerySemanticRuntimeSettings()
+        config = build_test_config()
+        self.semantic_settings = semantic_runtime_settings(config)
         self.planner = QueryPlanner(
             _DummyLLM(),
-            settings=QueryPlannerRuntimeSettings(fast_rule_planning=True),
+            settings=planner_runtime_settings(config),
             semantic_settings=self.semantic_settings,
         )
 
@@ -74,9 +78,12 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertLess(plan.relationship_intensity, 0.7)
 
     def test_planner_failure_uses_stable_fallback_reason(self) -> None:
+        config = build_test_config(
+            {"query_understanding": {"planner": {"fast_rule_planning": False}}}
+        )
         planner = QueryPlanner(
             _FailingPlannerClient(),
-            settings=QueryPlannerRuntimeSettings(fast_rule_planning=False),
+            settings=planner_runtime_settings(config),
             semantic_settings=self.semantic_settings,
         )
 
@@ -92,6 +99,7 @@ class QuerySemanticsTests(unittest.TestCase):
                 "planner_mode": "fast_rule",
                 "constraints": {"needs_recipe_recommendation": True},
             },
+            semantic_settings=self.semantic_settings,
         )
 
         self.assertIs(plan.strategy, SearchStrategy.COMBINED)
@@ -104,7 +112,14 @@ class QuerySemanticsTests(unittest.TestCase):
         from rag_modules.query_understanding.scoring import build_query_semantic_score_breakdown
 
         policy = get_query_policy()
-        settings = QuerySemanticRuntimeSettings(relation_intensity_reference_ratio=1.0)
+        config = build_test_config(
+            {
+                "query_understanding": {
+                    "semantics": {"scoring": {"relation_intensity_reference_ratio": 1.0}}
+                }
+            }
+        )
+        settings = semantic_runtime_settings(config)
 
         score = build_query_semantic_score_breakdown(
             "relationship",
@@ -132,6 +147,7 @@ class QuerySemanticsTests(unittest.TestCase):
         plan = QueryPlan.from_dict(
             "plain tofu",
             {"strategy": "combined", "graph_query_type": "entity_relation"},
+            semantic_settings=self.semantic_settings,
         )
         self.planner._calibrator.calibrate(plan)
 
@@ -154,6 +170,7 @@ class QuerySemanticsTests(unittest.TestCase):
                 "graph_query_type": "path_finding",
                 "semantic_profile": profile,
             },
+            semantic_settings=self.semantic_settings,
         )
 
         self.assertIs(profile.query_type, GraphQueryType.MULTI_HOP)
@@ -168,6 +185,7 @@ class QuerySemanticsTests(unittest.TestCase):
                 "graph_query_type": "typo",
                 "semantic_profile": {"query_type": "entity_relation"},
             },
+            semantic_settings=self.semantic_settings,
         )
 
         self.assertIs(plan.graph_query_type, GraphQueryType.ENTITY_RELATION)
@@ -182,6 +200,7 @@ class QuerySemanticsTests(unittest.TestCase):
                 "planner_mode": "llm",
                 "constraints": {"needs_recipe_recommendation": True},
             },
+            semantic_settings=self.semantic_settings,
         )
 
         self.assertIs(plan.strategy, SearchStrategy.COMBINED)

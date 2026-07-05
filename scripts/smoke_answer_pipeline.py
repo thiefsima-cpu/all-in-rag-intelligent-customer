@@ -13,8 +13,8 @@ from typing import Iterable, List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
-from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import EvidenceDocument, QueryPlan
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
+from rag_modules.contracts import EvidenceDocument, QueryPlan, QuerySemanticRuntimeSettings
 from rag_modules.runtime import (
     GraphRetrievalSnapshot,
     QueryAnalysis,
@@ -37,8 +37,15 @@ DEFAULT_CORPUS_PATH = (
 
 
 class _OfflineQueryRouter:
-    def __init__(self, *, case: "AnswerPipelineCase", top_k: int = 5) -> None:
+    def __init__(
+        self,
+        *,
+        case: "AnswerPipelineCase",
+        semantic_settings: QuerySemanticRuntimeSettings,
+        top_k: int = 5,
+    ) -> None:
         self.case = case
+        self.semantic_settings = semantic_settings
         self.top_k = top_k
         self.route_trace = build_route_snapshot(case, requested_top_k=top_k)
         self.graph_trace = build_graph_snapshot(case, requested_top_k=top_k)
@@ -72,7 +79,10 @@ class _OfflineQueryRouter:
             question,
             top_k,
             control=control,
-        ), RouteSnapshot.from_dict(self.route_trace.to_dict())
+        ), RouteSnapshot.from_dict(
+            self.route_trace.to_dict(),
+            semantic_settings=self.semantic_settings,
+        )
 
 
 @dataclass
@@ -233,10 +243,13 @@ def build_understanding_snapshot(case: AnswerPipelineCase):
 
 
 def evaluate_case(case: AnswerPipelineCase) -> dict:
-    router = _OfflineQueryRouter(case=case)
+    config = build_test_config({"retrieval": {"top_k": 5}})
+    router = _OfflineQueryRouter(
+        case=case,
+        semantic_settings=semantic_runtime_settings(config),
+    )
     generation_module = _OfflineGenerationModule([case.answer_text])
     tracer, sink = _build_tracer()
-    config = build_test_config({"retrieval": {"top_k": 5}})
     service = AnswerWorkflow(
         config=config,
         query_router=router,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..contracts import QuerySemanticRuntimeSettings
 from ..contracts.query_constraints import QueryConstraints
 from .graph_intent import infer_query_semantic_profile
 
@@ -16,7 +17,7 @@ class QueryConstraintExtractor:
         self,
         llm_client: Any,
         model_name: str,
-        semantic_settings: Any | None = None,
+        semantic_settings: QuerySemanticRuntimeSettings,
     ):
         self.llm_client = llm_client
         self.model_name = model_name

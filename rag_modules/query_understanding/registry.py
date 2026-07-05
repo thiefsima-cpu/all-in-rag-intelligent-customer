@@ -246,10 +246,6 @@ class _LazyPolicyBundle:
         return default_query_registry().policy.generation
 
     @property
-    def runtime_defaults(self):
-        return default_query_registry().policy.runtime_defaults
-
-    @property
     def prompts(self):
         return default_query_registry().policy.prompts
 

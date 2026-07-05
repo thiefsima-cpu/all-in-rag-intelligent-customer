@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ..configuration.models import GraphRAGConfig
-from ..contracts import EvidenceDocument
+from ..contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from ..contracts.runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -31,6 +31,7 @@ class QueryTracer(
     def __init__(self, config: GraphRAGConfig, sink: QueryTraceSink | None = None) -> None:
         self.config = config
         self.models = config.models
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(config)
         self.observability = config.observability
         self.enabled = bool(self.observability.enable_query_tracing)
         self.trace_path = str(self.observability.query_trace_path)
@@ -66,6 +67,9 @@ class QueryTracer(
             graph_trace,
             generation_trace,
         )
-        event = self.sanitizer.sanitize_event(event)
+        event = self.sanitizer.sanitize_event(
+            event,
+            semantic_settings=self.semantic_settings,
+        )
         self._write_event(event)
         return event

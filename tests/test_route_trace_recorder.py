@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     QueryPlan,
@@ -16,8 +17,15 @@ from rag_modules.routing.execution_strategies import (
 
 
 class RouteTraceRecorderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.semantic_settings = semantic_runtime_settings(build_test_config())
+
     def test_record_plan_and_stage_snapshot(self) -> None:
-        recorder = RouteTraceRecorder(query="why is fish-fragrant pork layered", requested_top_k=3)
+        recorder = RouteTraceRecorder(
+            query="why is fish-fragrant pork layered",
+            requested_top_k=3,
+            semantic_settings=self.semantic_settings,
+        )
         plan = QueryPlan(query="why is fish-fragrant pork layered")
         plan.strategy = "graph_rag"
         plan.used_cache = True
@@ -56,7 +64,11 @@ class RouteTraceRecorderTests(unittest.TestCase):
         self.assertEqual(snapshot.final_doc_count, 1)
 
     def test_record_execution_outcome_applies_fallbacks_and_latency_snapshots(self) -> None:
-        recorder = RouteTraceRecorder(query="recommend tofu dishes", requested_top_k=2)
+        recorder = RouteTraceRecorder(
+            query="recommend tofu dishes",
+            requested_top_k=2,
+            semantic_settings=self.semantic_settings,
+        )
         document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],
@@ -80,7 +92,11 @@ class RouteTraceRecorderTests(unittest.TestCase):
         self.assertEqual(clone.stages["hybrid_fallback"].details["candidate_k"], 3)
 
     def test_route_diagnostics_summarize_retrieval_degradation(self) -> None:
-        recorder = RouteTraceRecorder(query="recommend tofu dishes", requested_top_k=2)
+        recorder = RouteTraceRecorder(
+            query="recommend tofu dishes",
+            requested_top_k=2,
+            semantic_settings=self.semantic_settings,
+        )
         document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],

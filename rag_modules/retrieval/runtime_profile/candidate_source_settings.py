@@ -8,7 +8,7 @@ from ...kernel.retrieval import (
     CandidateSourceDegradationStrategy,
     candidate_source_degradation_strategy,
 )
-from .shared import _CANDIDATE_SOURCE_DEFAULTS, _as_int
+from .shared import _as_int
 
 CANDIDATE_SOURCE_DEGRADATION_CONTINUE = CandidateSourceDegradationStrategy.CONTINUE.value
 CANDIDATE_SOURCE_DEGRADATION_FAIL_FAST = CandidateSourceDegradationStrategy.FAIL_FAST.value
@@ -28,10 +28,9 @@ def _as_recovery_seconds(value: object, default: float) -> float:
 
 
 def _normalize_degradation_strategy(value: object) -> CandidateSourceDegradationStrategy:
-    default = str(_CANDIDATE_SOURCE_DEFAULTS.degradation_strategy).strip().lower()
-    candidate = value if isinstance(value, (CandidateSourceDegradationStrategy, str)) else default
+    candidate = value if isinstance(value, (CandidateSourceDegradationStrategy, str)) else ""
     try:
-        return candidate_source_degradation_strategy(candidate or default)
+        return candidate_source_degradation_strategy(candidate)
     except ValueError:
         supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
         raise ValueError(
@@ -41,21 +40,19 @@ def _normalize_degradation_strategy(value: object) -> CandidateSourceDegradation
 
 @dataclass
 class RetrievalCandidateSourceSettings:
-    failure_threshold: int = _CANDIDATE_SOURCE_DEFAULTS.failure_threshold
-    recovery_timeout_seconds: float = _CANDIDATE_SOURCE_DEFAULTS.recovery_timeout_seconds
-    degradation_strategy: CandidateSourceDegradationStrategy | str = str(
-        _CANDIDATE_SOURCE_DEFAULTS.degradation_strategy
-    )
+    failure_threshold: int
+    recovery_timeout_seconds: float
+    degradation_strategy: CandidateSourceDegradationStrategy | str
 
     def __post_init__(self) -> None:
         self.failure_threshold = _as_int(
             self.failure_threshold,
-            _CANDIDATE_SOURCE_DEFAULTS.failure_threshold,
+            1,
             minimum=1,
         )
         self.recovery_timeout_seconds = _as_recovery_seconds(
             self.recovery_timeout_seconds,
-            _CANDIDATE_SOURCE_DEFAULTS.recovery_timeout_seconds,
+            0.1,
         )
         self.degradation_strategy = _normalize_degradation_strategy(
             self.degradation_strategy,

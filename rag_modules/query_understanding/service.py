@@ -19,16 +19,14 @@ class QueryUnderstandingService:
         *,
         llm_client: LLMClientPort | None,
         config,
-        planner_settings: QueryPlannerRuntimeSettings | None = None,
-        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        planner_settings: QueryPlannerRuntimeSettings,
+        semantic_settings: QuerySemanticRuntimeSettings,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.config = config
         self.llm_client = llm_client
-        self.planner_settings = planner_settings or QueryPlannerRuntimeSettings.from_config(config)
-        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings.from_config(
-            config
-        )
+        self.planner_settings = planner_settings
+        self.semantic_settings = semantic_settings
         self.query_planner = QueryPlanner(
             llm_client,
             settings=self.planner_settings,

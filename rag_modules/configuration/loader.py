@@ -6,7 +6,15 @@ from typing import Any, Mapping
 
 from dotenv import load_dotenv
 
-from .assembly import apply_overrides, build_config_from_domain_dict
+from ..query_policy.selector import (
+    resolve_query_policy_bundle_from_selector,
+    resolve_query_policy_selector,
+)
+from .assembly import (
+    apply_overrides,
+    build_config_from_domain_dict,
+    policy_resolved_domain_payload,
+)
 from .env import EnvConfigSource, build_env_overrides, default_env_source
 from .models import GraphRAGConfig, default_domain_payload
 from .profiles import load_profile
@@ -23,6 +31,7 @@ def load_config(
     profile: str | None = None,
     profile_path: str | None = None,
     profiles_dir: str | None = None,
+    _overrides_source: str = "load_config",
 ) -> GraphRAGConfig:
     if source is None:
         load_dotenv()
@@ -30,7 +39,7 @@ def load_config(
     else:
         env_source = source
 
-    domain_payload = _default_domain_payload()
+    base_domain_payload = _default_domain_payload()
     resolved_profile = load_profile(
         profile=profile or env_source.get_first("GRAPH_RAG_PROFILE", "CONFIG_PROFILE"),
         profile_path=profile_path
@@ -44,6 +53,14 @@ def load_config(
             "CONFIG_PROFILES_DIR",
         ),
     )
+    selector = resolve_query_policy_selector(
+        base_domain_payload,
+        resolved_profile.overrides or {},
+        env_source,
+        overrides,
+    )
+    bundle = resolve_query_policy_bundle_from_selector(selector)
+    domain_payload = policy_resolved_domain_payload(bundle)
     if resolved_profile.overrides:
         apply_overrides(domain_payload, resolved_profile.overrides)
         build_config_from_domain_dict(
@@ -66,7 +83,7 @@ def load_config(
         build_config_from_domain_dict(
             domain_payload,
             source_kind="overrides",
-            source="load_config",
+            source=_overrides_source,
         )
 
     config = build_config_from_domain_dict(

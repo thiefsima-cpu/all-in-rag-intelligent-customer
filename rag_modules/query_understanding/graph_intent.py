@@ -40,11 +40,10 @@ def infer_graph_max_depth(
     query_type: str,
     relationship_intensity: float = 0.0,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
 ) -> int:
-    settings = settings or QuerySemanticRuntimeSettings()
     graph_policy = _active_registry(policy_bundle=policy_bundle, registry=registry).policy.graph
     depth_map = graph_policy.max_depth
     base_key = str(query_type or "default")
@@ -66,11 +65,9 @@ def infer_graph_max_depth(
 def infer_graph_max_nodes(
     query_type: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
 ) -> int:
-    _ = settings or QuerySemanticRuntimeSettings()
     graph_policy = _active_registry(policy_bundle=policy_bundle, registry=registry).policy.graph
     max_nodes_map = graph_policy.max_nodes
     policy_key = str(query_type or "default")
@@ -84,10 +81,9 @@ def split_graph_entities(
     query_type: str,
     candidates: Sequence[str],
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     registry: QueryUnderstandingRegistry | None = None,
 ) -> Tuple[List[str], List[str]]:
-    settings = settings or QuerySemanticRuntimeSettings()
     active_registry = _active_registry(registry=registry)
     normalized = normalize_query_text(query)
     source_entities = normalize_graph_sources(
@@ -121,11 +117,10 @@ def split_graph_entities(
 def infer_query_semantic_profile(
     query: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
 ) -> QuerySemanticProfile:
-    settings = settings or QuerySemanticRuntimeSettings()
     active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     original_query = str(query or "").strip()
     normalized = normalize_query_text(original_query)

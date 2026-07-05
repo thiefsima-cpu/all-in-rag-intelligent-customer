@@ -5,7 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    QuerySemanticRuntimeSettings,
+    RetrievalRequest,
+)
 from ..contracts.runtime import (
     PolicySnapshot,
     RouteSnapshot,
@@ -25,9 +30,11 @@ class RouteTraceRecorder:
         *,
         query: str,
         requested_top_k: int,
+        semantic_settings: QuerySemanticRuntimeSettings,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.policy_bundle = policy_bundle or get_query_policy()
+        self.semantic_settings = semantic_settings
         self.snapshot = RouteSnapshot(
             query=query,
             requested_top_k=requested_top_k,
@@ -118,7 +125,10 @@ class RouteTraceRecorder:
         return self.snapshot
 
     def clone_snapshot(self) -> RouteSnapshot:
-        return RouteSnapshot.from_dict(self.snapshot.to_dict())
+        return RouteSnapshot.from_dict(
+            self.snapshot.to_dict(),
+            semantic_settings=self.semantic_settings,
+        )
 
     def build_stage_snapshot(
         self,

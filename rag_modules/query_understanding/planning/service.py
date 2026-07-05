@@ -36,26 +36,16 @@ class QueryPlanner:
     def __init__(
         self,
         llm_client: LLMClientPort | None,
-        model_name: str | None = None,
-        cache_size: int | None = None,
-        timeout_seconds: int | None = None,
-        fast_rule_planning: bool | None = None,
-        settings: QueryPlannerRuntimeSettings | None = None,
-        semantic_settings: QuerySemanticRuntimeSettings | None = None,
+        *,
+        settings: QueryPlannerRuntimeSettings,
+        semantic_settings: QuerySemanticRuntimeSettings,
         policy_bundle: QueryPolicyBundle | None = None,
     ):
         self.llm_client = llm_client
         self.policy_bundle = policy_bundle or get_query_policy()
         self.registry: QueryUnderstandingRegistry = query_registry(self.policy_bundle)
-        if settings is None:
-            settings = QueryPlannerRuntimeSettings(
-                model_name=model_name or "qwen3.7-plus",
-                cache_size=128 if cache_size is None else cache_size,
-                timeout_seconds=20 if timeout_seconds is None else timeout_seconds,
-                fast_rule_planning=True if fast_rule_planning is None else fast_rule_planning,
-            )
         self.settings = settings
-        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
+        self.semantic_settings = semantic_settings
         self._plan_cache = QueryPlannerCache()
         self._calibrator = QueryPlanCalibrator(
             self.semantic_settings,
@@ -190,7 +180,6 @@ class QueryPlanner:
     def _should_use_fast_rule_plan(self, query: str) -> bool:
         return should_use_fast_rule_plan(
             query,
-            settings=self.semantic_settings,
             registry=self.registry,
         )
 

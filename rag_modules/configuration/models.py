@@ -26,7 +26,6 @@ from .model_sections import (
     RetrievalSettings,
     StorageSettings,
 )
-from .validation import raise_validation_error
 
 SECTION_TYPES: Dict[str, type[ConfigSection]] = {
     "storage": StorageSettings,
@@ -47,7 +46,7 @@ SECTION_FIELD_NAMES = {
 
 def default_domain_payload() -> Dict[str, Dict[str, Any]]:
     return {
-        section_name: section_type().to_dict()
+        section_name: section_type.model_construct().to_dict()
         for section_name, section_type in SECTION_TYPES.items()
     }
 
@@ -77,11 +76,9 @@ class GraphRAGConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
     storage: StorageSettings = Field(default_factory=StorageSettings)
-    models: ModelSettings = Field(default_factory=ModelSettings)
-    retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
-    query_understanding: QueryUnderstandingSettings = Field(
-        default_factory=QueryUnderstandingSettings
-    )
+    models: ModelSettings
+    retrieval: RetrievalSettings
+    query_understanding: QueryUnderstandingSettings
     generation: GenerationSettings = Field(default_factory=GenerationSettings)
     graph: GraphSettings = Field(default_factory=GraphSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
@@ -154,49 +151,45 @@ class GraphRAGConfig(BaseModel):
         return payload
 
     def with_overrides(self, overrides: Mapping[str, Any]) -> "GraphRAGConfig":
-        from .assembly import apply_overrides
-
         merged = self.to_domain_dict()
         _clear_storage_derived_paths_for_overrides(merged, overrides)
+        from .assembly import apply_overrides
+        from .env import EnvConfigSource
+        from .loader import load_config
+
         apply_overrides(merged, overrides)
-        try:
-            return self.__class__.model_validate(
-                {
-                    **merged,
-                    "profile_name": self.profile_name,
-                    "profile_path": self.profile_path,
-                    "profile_hash": self.profile_hash,
-                }
-            )
-        except ValidationError as exc:
-            raise_validation_error(
-                exc,
-                source_kind="overrides",
-                source="GraphRAGConfig.with_overrides",
-            )
+        config = load_config(
+            overrides=merged,
+            source=EnvConfigSource(environ={}),
+            _overrides_source="GraphRAGConfig.with_overrides",
+        )
+        config.profile_name = self.profile_name
+        config.profile_path = self.profile_path
+        config.profile_hash = self.profile_hash
+        return config
 
     @classmethod
     def from_dict(cls, config_dict: Mapping[str, Any]) -> "GraphRAGConfig":
         if isinstance(config_dict, cls):
             return config_dict
 
-        from .assembly import apply_overrides
-
         payload = dict(config_dict or {})
         profile_metadata = {
             key: str(payload.pop(key, ""))
             for key in ("profile_name", "profile_path", "profile_hash")
         }
-        merged = default_domain_payload()
-        apply_overrides(merged, payload)
-        try:
-            return cls.model_validate({**merged, **profile_metadata})
-        except ValidationError as exc:
-            raise_validation_error(
-                exc,
-                source_kind="overrides",
-                source="GraphRAGConfig.from_dict",
-            )
+        from .env import EnvConfigSource
+        from .loader import load_config
+
+        config = load_config(
+            overrides=payload,
+            source=EnvConfigSource(environ={}),
+            _overrides_source="GraphRAGConfig.from_dict",
+        )
+        config.profile_name = profile_metadata["profile_name"]
+        config.profile_path = profile_metadata["profile_path"]
+        config.profile_hash = profile_metadata["profile_hash"]
+        return config
 
 
 __all__ = [

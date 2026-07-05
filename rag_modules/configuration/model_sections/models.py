@@ -18,12 +18,12 @@ class ModelSettings(ConfigSection):
         "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     )
     embedding_model: str = "qwen3-vl-embedding"
-    llm_model: str = "qwen3.7-plus"
+    llm_model: str
     rerank_model: str = "qwen3-vl-rerank"
     embedding_dimension: int = Field(default=1024, ge=1)
     embedding_batch_size: int = 10
     enable_rerank: bool = True
-    llm_timeout_seconds: int = 20
+    llm_timeout_seconds: int
     embedding_timeout_seconds: int = 60
     rerank_timeout_seconds: int = 20
     http_pool_connections: int = Field(default=10, ge=1)

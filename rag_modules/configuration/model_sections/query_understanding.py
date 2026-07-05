@@ -6,15 +6,7 @@ from typing import Any, Mapping, Self
 
 from pydantic import Field
 
-from rag_modules.query_policy.models import (
-    PlannerRuntimeDefaultsPolicy,
-    QuerySemanticRuntimeDefaultsPolicy,
-)
-
 from .base import ConfigSection
-
-_PLANNER_DEFAULTS = PlannerRuntimeDefaultsPolicy()
-_SEMANTIC_DEFAULTS = QuerySemanticRuntimeDefaultsPolicy()
 
 
 class QueryPolicySelectorSettings(ConfigSection):
@@ -23,143 +15,87 @@ class QueryPolicySelectorSettings(ConfigSection):
 
 
 class QueryPlannerSettings(ConfigSection):
-    cache_size: int = int(_PLANNER_DEFAULTS.cache_size)
-    fast_rule_planning: bool = bool(_PLANNER_DEFAULTS.fast_rule_planning)
-    llm_temperature: float = float(_PLANNER_DEFAULTS.llm_temperature)
-    llm_max_tokens: int = int(_PLANNER_DEFAULTS.llm_max_tokens)
+    cache_size: int
+    fast_rule_planning: bool
+    llm_temperature: float
+    llm_max_tokens: int
 
 
 class QuerySemanticScoringSettings(ConfigSection):
-    relation_intensity_reference_ratio: float = float(
-        _SEMANTIC_DEFAULTS.relation_intensity_reference_ratio
-    )
-    complexity_relation_hit_weight: float = float(_SEMANTIC_DEFAULTS.complexity_relation_hit_weight)
-    complexity_constraint_hit_weight: float = float(
-        _SEMANTIC_DEFAULTS.complexity_constraint_hit_weight
-    )
-    complexity_structural_hit_weight: float = float(
-        _SEMANTIC_DEFAULTS.complexity_structural_hit_weight
-    )
-    complexity_length_weight: float = float(_SEMANTIC_DEFAULTS.complexity_length_weight)
-    complexity_length_norm_chars: int = int(_SEMANTIC_DEFAULTS.complexity_length_norm_chars)
-    reasoning_complexity_threshold: float = float(_SEMANTIC_DEFAULTS.reasoning_complexity_threshold)
-    reasoning_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.reasoning_relationship_threshold
-    )
-    relation_hit_intensity_boost_base: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_intensity_boost_base
-    )
-    relation_hit_intensity_boost_step: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_intensity_boost_step
-    )
-    relation_hit_complexity_boost_base: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_complexity_boost_base
-    )
-    relation_hit_complexity_boost_step: float = float(
-        _SEMANTIC_DEFAULTS.relation_hit_complexity_boost_step
-    )
+    relation_intensity_reference_ratio: float
+    complexity_relation_hit_weight: float
+    complexity_constraint_hit_weight: float
+    complexity_structural_hit_weight: float
+    complexity_length_weight: float
+    complexity_length_norm_chars: int
+    reasoning_complexity_threshold: float
+    reasoning_relationship_threshold: float
+    relation_hit_intensity_boost_base: float
+    relation_hit_intensity_boost_step: float
+    relation_hit_complexity_boost_base: float
+    relation_hit_complexity_boost_step: float
 
 
 class QuerySemanticExtractionSettings(ConfigSection):
-    source_entity_limit: int = int(_SEMANTIC_DEFAULTS.source_entity_limit)
-    entity_keyword_limit: int = int(_SEMANTIC_DEFAULTS.entity_keyword_limit)
-    semantic_profile_entity_keyword_limit: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_entity_keyword_limit
-    )
-    topic_keyword_limit: int = int(_SEMANTIC_DEFAULTS.topic_keyword_limit)
-    semantic_profile_topic_keyword_start: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_topic_keyword_start
-    )
-    semantic_profile_topic_keyword_limit: int = int(
-        _SEMANTIC_DEFAULTS.semantic_profile_topic_keyword_limit
-    )
-    target_entity_limit: int = int(_SEMANTIC_DEFAULTS.target_entity_limit)
+    source_entity_limit: int
+    entity_keyword_limit: int
+    semantic_profile_entity_keyword_limit: int
+    topic_keyword_limit: int
+    semantic_profile_topic_keyword_start: int
+    semantic_profile_topic_keyword_limit: int
+    target_entity_limit: int
 
 
 class QuerySemanticRoutingSettings(ConfigSection):
-    high_relationship_routing_threshold: float = float(
-        _SEMANTIC_DEFAULTS.high_relationship_routing_threshold
-    )
-    multi_hop_hint_entity_count: int = int(_SEMANTIC_DEFAULTS.multi_hop_hint_entity_count)
-    multi_hop_hint_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.multi_hop_hint_relationship_threshold
-    )
-    combined_strategy_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.combined_strategy_relationship_threshold
-    )
-    combined_strategy_complexity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.combined_strategy_complexity_threshold
-    )
-    source_entity_seed_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.source_entity_seed_relationship_threshold
-    )
-    source_entity_backfill_relationship_threshold: float = float(
-        _SEMANTIC_DEFAULTS.source_entity_backfill_relationship_threshold
-    )
-    rule_fallback_confidence: float = float(_SEMANTIC_DEFAULTS.rule_fallback_confidence)
+    high_relationship_routing_threshold: float
+    multi_hop_hint_entity_count: int
+    multi_hop_hint_relationship_threshold: float
+    combined_strategy_relationship_threshold: float
+    combined_strategy_complexity_threshold: float
+    source_entity_seed_relationship_threshold: float
+    source_entity_backfill_relationship_threshold: float
+    rule_fallback_confidence: float
 
 
 class QuerySemanticTraversalSettings(ConfigSection):
-    entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.entity_relation_max_depth)
-    path_finding_max_depth: int = int(_SEMANTIC_DEFAULTS.path_finding_max_depth)
-    path_finding_high_intensity_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.path_finding_high_intensity_max_depth
-    )
-    path_finding_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.path_finding_high_intensity_threshold
-    )
-    subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.subgraph_max_depth)
-    subgraph_high_intensity_max_depth: int = int(
-        _SEMANTIC_DEFAULTS.subgraph_high_intensity_max_depth
-    )
-    subgraph_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.subgraph_high_intensity_threshold
-    )
-    clustering_max_depth: int = int(_SEMANTIC_DEFAULTS.clustering_max_depth)
-    default_max_depth: int = int(_SEMANTIC_DEFAULTS.default_max_depth)
-    default_high_intensity_max_depth: int = int(_SEMANTIC_DEFAULTS.default_high_intensity_max_depth)
-    default_high_intensity_threshold: float = float(
-        _SEMANTIC_DEFAULTS.default_high_intensity_threshold
-    )
-    entity_relation_max_nodes: int = int(_SEMANTIC_DEFAULTS.entity_relation_max_nodes)
-    path_finding_max_nodes: int = int(_SEMANTIC_DEFAULTS.path_finding_max_nodes)
-    subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.subgraph_max_nodes)
-    clustering_max_nodes: int = int(_SEMANTIC_DEFAULTS.clustering_max_nodes)
-    default_max_nodes: int = int(_SEMANTIC_DEFAULTS.default_max_nodes)
-    graph_query_max_depth_cap: int = int(_SEMANTIC_DEFAULTS.graph_query_max_depth_cap)
-    graph_query_fallback_name_chars: int = int(_SEMANTIC_DEFAULTS.graph_query_fallback_name_chars)
+    entity_relation_max_depth: int
+    path_finding_max_depth: int
+    path_finding_high_intensity_max_depth: int
+    path_finding_high_intensity_threshold: float
+    subgraph_max_depth: int
+    subgraph_high_intensity_max_depth: int
+    subgraph_high_intensity_threshold: float
+    clustering_max_depth: int
+    default_max_depth: int
+    default_high_intensity_max_depth: int
+    default_high_intensity_threshold: float
+    entity_relation_max_nodes: int
+    path_finding_max_nodes: int
+    subgraph_max_nodes: int
+    clustering_max_nodes: int
+    default_max_nodes: int
+    graph_query_max_depth_cap: int
+    graph_query_fallback_name_chars: int
 
 
 class QuerySemanticAdaptiveTraversalSettings(ConfigSection):
-    multi_hop_subgraph_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_multi_hop_subgraph_threshold
-    )
-    subgraph_multi_hop_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_subgraph_multi_hop_threshold
-    )
-    entity_relation_multi_hop_threshold: float = float(
-        _SEMANTIC_DEFAULTS.adaptive_entity_relation_multi_hop_threshold
-    )
-    subgraph_max_depth: int = int(_SEMANTIC_DEFAULTS.adaptive_subgraph_max_depth)
-    subgraph_max_nodes: int = int(_SEMANTIC_DEFAULTS.adaptive_subgraph_max_nodes)
-    multi_hop_max_depth: int = int(_SEMANTIC_DEFAULTS.adaptive_multi_hop_max_depth)
-    multi_hop_max_nodes: int = int(_SEMANTIC_DEFAULTS.adaptive_multi_hop_max_nodes)
-    entity_relation_max_depth: int = int(_SEMANTIC_DEFAULTS.adaptive_entity_relation_max_depth)
-    entity_relation_max_nodes: int = int(_SEMANTIC_DEFAULTS.adaptive_entity_relation_max_nodes)
+    multi_hop_subgraph_threshold: float
+    subgraph_multi_hop_threshold: float
+    entity_relation_multi_hop_threshold: float
+    subgraph_max_depth: int
+    subgraph_max_nodes: int
+    multi_hop_max_depth: int
+    multi_hop_max_nodes: int
+    entity_relation_max_depth: int
+    entity_relation_max_nodes: int
 
 
 class QuerySemanticSettings(ConfigSection):
-    scoring: QuerySemanticScoringSettings = Field(default_factory=QuerySemanticScoringSettings)
-    extraction: QuerySemanticExtractionSettings = Field(
-        default_factory=QuerySemanticExtractionSettings
-    )
-    routing: QuerySemanticRoutingSettings = Field(default_factory=QuerySemanticRoutingSettings)
-    traversal: QuerySemanticTraversalSettings = Field(
-        default_factory=QuerySemanticTraversalSettings
-    )
-    adaptive_traversal: QuerySemanticAdaptiveTraversalSettings = Field(
-        default_factory=QuerySemanticAdaptiveTraversalSettings
-    )
+    scoring: QuerySemanticScoringSettings
+    extraction: QuerySemanticExtractionSettings
+    routing: QuerySemanticRoutingSettings
+    traversal: QuerySemanticTraversalSettings
+    adaptive_traversal: QuerySemanticAdaptiveTraversalSettings
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -168,8 +104,8 @@ class QuerySemanticSettings(ConfigSection):
 
 class QueryUnderstandingSettings(ConfigSection):
     policy: QueryPolicySelectorSettings = Field(default_factory=QueryPolicySelectorSettings)
-    planner: QueryPlannerSettings = Field(default_factory=QueryPlannerSettings)
-    semantics: QuerySemanticSettings = Field(default_factory=QuerySemanticSettings)
+    planner: QueryPlannerSettings
+    semantics: QuerySemanticSettings
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:

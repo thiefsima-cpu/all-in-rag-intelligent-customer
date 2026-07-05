@@ -7,6 +7,7 @@ import logging
 import os
 import queue
 import threading
+from copy import deepcopy
 from typing import Protocol
 
 from ..contracts.runtime import QueryTraceEvent
@@ -75,10 +76,10 @@ class JsonlQueryTraceSink:
         if self._closed:
             logger.debug("Ignoring query trace after JSONL sink closure.")
             return
-        event = self.sanitizer.sanitize_event(event)
+        payload = self.sanitizer.sanitize_value(event.to_dict())
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "a", encoding="utf-8") as file:
-            file.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
         self._written_events += 1
 
     def close(self) -> None:
@@ -155,7 +156,7 @@ class AsyncQueryTraceSink:
             if self._closed:
                 logger.debug("Ignoring query trace after sink closure.")
                 return
-        cloned_event = QueryTraceEvent.from_dict(event.to_dict())
+        cloned_event = deepcopy(event)
         try:
             self._queue.put_nowait(cloned_event)
         except queue.Full:

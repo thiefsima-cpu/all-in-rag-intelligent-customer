@@ -3,13 +3,14 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
 from rag_modules.retrieval.post_processor import (
     RetrievalPostProcessContext,
     RetrievalPostProcessor,
 )
-from rag_modules.retrieval.runtime_profile import RetrievalPostProcessSettings
+from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
 
 
 class _FakeEmbeddingClient:
@@ -71,6 +72,12 @@ class _MilvusModuleWithoutNetwork(MilvusIndexConstructionModule):
 
 
 class ModelClientPortTests(unittest.TestCase):
+    def setUp(self) -> None:
+        config = build_test_config(
+            {"models": {"enable_rerank": True, "rerank_model": "fake-reranker"}}
+        )
+        self.postprocess_settings = RetrievalRuntimeProfileFactory().build(config).postprocess
+
     def test_milvus_module_accepts_injected_embedding_port(self) -> None:
         embedding_client = _FakeEmbeddingClient()
 
@@ -85,10 +92,7 @@ class ModelClientPortTests(unittest.TestCase):
     def test_retrieval_post_processor_accepts_injected_rerank_port(self) -> None:
         rerank_client = _FakeRerankClient(order=[1, 0])
         processor = RetrievalPostProcessor(
-            settings=RetrievalPostProcessSettings(
-                enable_rerank=True,
-                rerank_model="fake-reranker",
-            ),
+            settings=self.postprocess_settings,
             rerank_client=rerank_client,
         )
         docs = [
@@ -115,10 +119,7 @@ class ModelClientPortTests(unittest.TestCase):
         control = RequestControl.for_timeout(4.0, scope="post_process")
         rerank_client = _FakeRerankClient(order=[0])
         processor = RetrievalPostProcessor(
-            settings=RetrievalPostProcessSettings(
-                enable_rerank=True,
-                rerank_model="fake-reranker",
-            ),
+            settings=self.postprocess_settings,
             rerank_client=rerank_client,
         )
 

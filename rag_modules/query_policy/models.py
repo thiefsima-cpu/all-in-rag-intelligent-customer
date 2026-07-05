@@ -261,6 +261,74 @@ class QuerySemanticRuntimeDefaultsPolicy:
     adaptive_entity_relation_max_depth: int = 2
     adaptive_entity_relation_max_nodes: int = 40
 
+    def to_config_dict(self) -> dict[str, dict[str, float | int]]:
+        return {
+            "scoring": {
+                "relation_intensity_reference_ratio": self.relation_intensity_reference_ratio,
+                "complexity_relation_hit_weight": self.complexity_relation_hit_weight,
+                "complexity_constraint_hit_weight": self.complexity_constraint_hit_weight,
+                "complexity_structural_hit_weight": self.complexity_structural_hit_weight,
+                "complexity_length_weight": self.complexity_length_weight,
+                "complexity_length_norm_chars": self.complexity_length_norm_chars,
+                "reasoning_complexity_threshold": self.reasoning_complexity_threshold,
+                "reasoning_relationship_threshold": self.reasoning_relationship_threshold,
+                "relation_hit_intensity_boost_base": self.relation_hit_intensity_boost_base,
+                "relation_hit_intensity_boost_step": self.relation_hit_intensity_boost_step,
+                "relation_hit_complexity_boost_base": self.relation_hit_complexity_boost_base,
+                "relation_hit_complexity_boost_step": self.relation_hit_complexity_boost_step,
+            },
+            "extraction": {
+                "source_entity_limit": self.source_entity_limit,
+                "entity_keyword_limit": self.entity_keyword_limit,
+                "semantic_profile_entity_keyword_limit": self.semantic_profile_entity_keyword_limit,
+                "topic_keyword_limit": self.topic_keyword_limit,
+                "semantic_profile_topic_keyword_start": self.semantic_profile_topic_keyword_start,
+                "semantic_profile_topic_keyword_limit": self.semantic_profile_topic_keyword_limit,
+                "target_entity_limit": self.target_entity_limit,
+            },
+            "routing": {
+                "high_relationship_routing_threshold": self.high_relationship_routing_threshold,
+                "multi_hop_hint_entity_count": self.multi_hop_hint_entity_count,
+                "multi_hop_hint_relationship_threshold": self.multi_hop_hint_relationship_threshold,
+                "combined_strategy_relationship_threshold": self.combined_strategy_relationship_threshold,
+                "combined_strategy_complexity_threshold": self.combined_strategy_complexity_threshold,
+                "source_entity_seed_relationship_threshold": self.source_entity_seed_relationship_threshold,
+                "source_entity_backfill_relationship_threshold": self.source_entity_backfill_relationship_threshold,
+                "rule_fallback_confidence": self.rule_fallback_confidence,
+            },
+            "traversal": {
+                "entity_relation_max_depth": self.entity_relation_max_depth,
+                "path_finding_max_depth": self.path_finding_max_depth,
+                "path_finding_high_intensity_max_depth": self.path_finding_high_intensity_max_depth,
+                "path_finding_high_intensity_threshold": self.path_finding_high_intensity_threshold,
+                "subgraph_max_depth": self.subgraph_max_depth,
+                "subgraph_high_intensity_max_depth": self.subgraph_high_intensity_max_depth,
+                "subgraph_high_intensity_threshold": self.subgraph_high_intensity_threshold,
+                "clustering_max_depth": self.clustering_max_depth,
+                "default_max_depth": self.default_max_depth,
+                "default_high_intensity_max_depth": self.default_high_intensity_max_depth,
+                "default_high_intensity_threshold": self.default_high_intensity_threshold,
+                "entity_relation_max_nodes": self.entity_relation_max_nodes,
+                "path_finding_max_nodes": self.path_finding_max_nodes,
+                "subgraph_max_nodes": self.subgraph_max_nodes,
+                "clustering_max_nodes": self.clustering_max_nodes,
+                "default_max_nodes": self.default_max_nodes,
+                "graph_query_max_depth_cap": self.graph_query_max_depth_cap,
+                "graph_query_fallback_name_chars": self.graph_query_fallback_name_chars,
+            },
+            "adaptive_traversal": {
+                "multi_hop_subgraph_threshold": self.adaptive_multi_hop_subgraph_threshold,
+                "subgraph_multi_hop_threshold": self.adaptive_subgraph_multi_hop_threshold,
+                "entity_relation_multi_hop_threshold": self.adaptive_entity_relation_multi_hop_threshold,
+                "subgraph_max_depth": self.adaptive_subgraph_max_depth,
+                "subgraph_max_nodes": self.adaptive_subgraph_max_nodes,
+                "multi_hop_max_depth": self.adaptive_multi_hop_max_depth,
+                "multi_hop_max_nodes": self.adaptive_multi_hop_max_nodes,
+                "entity_relation_max_depth": self.adaptive_entity_relation_max_depth,
+                "entity_relation_max_nodes": self.adaptive_entity_relation_max_nodes,
+            },
+        }
+
 
 @dataclass(frozen=True)
 class CandidateRuntimeDefaultsPolicy:

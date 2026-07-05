@@ -7,7 +7,11 @@ import uuid
 from collections.abc import Mapping
 from typing import Protocol
 
-from ..contracts import EvidenceDocument, ensure_evidence_documents
+from ..contracts import (
+    EvidenceDocument,
+    QuerySemanticRuntimeSettings,
+    ensure_evidence_documents,
+)
 from ..contracts.runtime import (
     AnswerContext,
     AnswerTraceSnapshot,
@@ -41,6 +45,7 @@ class _TraceModelSettings(Protocol):
 
 class _TraceEventBuilderHost(Protocol):
     models: _TraceModelSettings
+    semantic_settings: QuerySemanticRuntimeSettings
 
     def _build_diagnostics(
         self,
@@ -142,17 +147,23 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             return coerce_json_object(evidence_documents[0].metadata.get("query_plan"))
         return {}
 
-    @staticmethod
     def _normalize_route_snapshot(
+        self,
         route_trace: Mapping[str, JsonValue] | RouteSnapshot | None,
     ) -> RouteSnapshot:
-        return clone_route_snapshot(route_trace)
+        return clone_route_snapshot(
+            route_trace,
+            semantic_settings=self.semantic_settings,
+        )
 
-    @staticmethod
     def _normalize_graph_snapshot(
+        self,
         graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None,
     ) -> GraphRetrievalSnapshot:
-        return clone_graph_snapshot(graph_trace)
+        return clone_graph_snapshot(
+            graph_trace,
+            semantic_settings=self.semantic_settings,
+        )
 
     @staticmethod
     def _normalize_generation_snapshot(

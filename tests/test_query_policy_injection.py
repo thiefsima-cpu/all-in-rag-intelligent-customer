@@ -6,14 +6,21 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
-from rag_modules.configuration.testing import build_test_config
-from rag_modules.contracts import QueryPlannerRuntimeSettings, RetrievalRequest
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
+)
+from rag_modules.contracts import RetrievalRequest
 from rag_modules.graph.query_resolution import GraphQueryFactory
 from rag_modules.graph.retrieval_runtime import GraphRetrievalRuntime
 from rag_modules.query_policy.loader import load_policy_bundle
 from rag_modules.query_understanding.planning.service import QueryPlanner
 
 QUERY_UNDERSTANDING_PACKAGE = Path("rag_modules/query_understanding")
+CONFIGURATION_PACKAGE = Path("rag_modules/configuration")
+PRODUCTION_PACKAGE = Path("rag_modules")
+QUERY_SETTINGS_MODULE = Path("rag_modules/contracts/query_settings.py")
 
 
 def _policy_payload() -> dict:
@@ -257,9 +264,18 @@ def test_query_planner_uses_injected_policy_bundle_for_prompt(tmp_path: Path) ->
     load_policy_bundle.cache_clear()
     bundle = load_policy_bundle(tmp_path)
     llm_client = _PromptCapturingLLM()
+    config = build_test_config(
+        {
+            "query_understanding": {
+                "policy": {"bundle_path": str(tmp_path)},
+                "planner": {"fast_rule_planning": False},
+            }
+        }
+    )
     planner = QueryPlanner(
         llm_client,
-        settings=QueryPlannerRuntimeSettings(fast_rule_planning=False),
+        settings=planner_runtime_settings(config),
+        semantic_settings=semantic_runtime_settings(config),
         policy_bundle=bundle,
     )
 
@@ -275,7 +291,11 @@ def test_graph_retrieval_runtime_uses_injected_policy_snapshot(tmp_path: Path) -
     _write_policy_bundle(tmp_path)
     load_policy_bundle.cache_clear()
     bundle = load_policy_bundle(tmp_path)
-    query_factory = GraphQueryFactory(policy_bundle=bundle)
+    config = build_test_config({"query_understanding": {"policy": {"bundle_path": str(tmp_path)}}})
+    query_factory = GraphQueryFactory(
+        semantic_settings=semantic_runtime_settings(config),
+        policy_bundle=bundle,
+    )
     runtime = GraphRetrievalRuntime(query_factory, policy_bundle=bundle)
 
     trace = runtime.start_trace(
@@ -387,3 +407,100 @@ def test_query_understanding_registry_does_not_load_policy_at_import_time() -> N
 
     assert eager_policy_assignments == []
     assert package_eager_registry_imports == []
+
+
+def test_query_settings_contract_does_not_import_query_policy() -> None:
+    policy_imports = [
+        _node_location(path, node)
+        for path, node in _iter_package_nodes(QUERY_SETTINGS_MODULE, (ast.Import, ast.ImportFrom))
+        if (
+            isinstance(node, ast.Import)
+            and any("query_policy" in alias.name.split(".") for alias in node.names)
+        )
+        or (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and "query_policy" in node.module.split(".")
+        )
+    ]
+
+    assert policy_imports == []
+
+
+def test_production_does_not_construct_unresolved_query_runtime_settings() -> None:
+    settings_types = {
+        "QueryPlannerRuntimeSettings",
+        "QuerySemanticRuntimeSettings",
+    }
+    unresolved_constructors = [
+        _node_location(path, node)
+        for path, node in _iter_package_nodes(PRODUCTION_PACKAGE, (ast.Call,))
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id in settings_types
+            or isinstance(node.func, ast.Attribute)
+            and node.func.attr in settings_types
+        )
+        and not node.args
+        and not node.keywords
+    ]
+
+    assert unresolved_constructors == []
+
+
+def test_configuration_does_not_import_feature_implementations() -> None:
+    forbidden_imports = [
+        _node_location(path, node)
+        for path, node in _iter_package_nodes(CONFIGURATION_PACKAGE, (ast.Import, ast.ImportFrom))
+        if (
+            isinstance(node, ast.Import)
+            and any(
+                alias.name.startswith(("rag_modules.query_understanding", "rag_modules.retrieval"))
+                for alias in node.names
+            )
+        )
+        or (
+            isinstance(node, ast.ImportFrom)
+            and (node.module or "").startswith(
+                ("rag_modules.query_understanding", "rag_modules.retrieval")
+            )
+        )
+    ]
+
+    assert forbidden_imports == []
+
+
+def test_query_understanding_policy_facade_does_not_expose_runtime_defaults() -> None:
+    from rag_modules.query_understanding.registry import POLICY
+
+    assert not hasattr(POLICY, "runtime_defaults")
+
+
+def test_configuration_injects_policy_defaults_before_explicit_overrides() -> None:
+    config = build_test_config(
+        {
+            "query_understanding": {"planner": {"cache_size": 17}},
+            "retrieval": {"candidate_source_degradation_strategy": "fail_fast"},
+        }
+    )
+
+    assert config.query_understanding.planner.cache_size == 17
+    assert config.models.llm_timeout_seconds == 20
+    assert config.retrieval.candidate_source_degradation_strategy == "fail_fast"
+
+
+def test_explicit_policy_selector_controls_defaults_before_call_overrides(
+    tmp_path: Path,
+) -> None:
+    _write_policy_bundle(tmp_path)
+    load_policy_bundle.cache_clear()
+
+    config = build_test_config(
+        {
+            "query_understanding": {"policy": {"bundle_path": str(tmp_path)}},
+            "models": {"llm_timeout_seconds": 37},
+        }
+    )
+
+    assert config.models.llm_model == "test-policy-model"
+    assert config.models.llm_timeout_seconds == 37

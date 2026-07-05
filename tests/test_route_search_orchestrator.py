@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, QueryPlan, RequestControl
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.contracts.runtime import QueryAnalysis
@@ -84,6 +85,9 @@ class _ClosableStrategy(_StubStrategy):
 
 
 class RouteSearchOrchestratorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.semantic_settings = semantic_runtime_settings(build_test_config())
+
     def test_execute_delegates_to_strategy_registry_and_records_trace(self) -> None:
         strategy = _StubStrategy()
         orchestrator = RouteSearchOrchestrator(
@@ -107,7 +111,11 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             constraints=QueryConstraints(),
             query_plan=plan,
         )
-        trace = RouteTraceRecorder(query=request.query, requested_top_k=request.top_k)
+        trace = RouteTraceRecorder(
+            query=request.query,
+            requested_top_k=request.top_k,
+            semantic_settings=self.semantic_settings,
+        )
 
         docs = orchestrator.execute(request, trace=trace)
 
@@ -140,7 +148,11 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             constraints=QueryConstraints(),
             query_plan=plan,
         )
-        trace = RouteTraceRecorder(query=request.query, requested_top_k=request.top_k)
+        trace = RouteTraceRecorder(
+            query=request.query,
+            requested_top_k=request.top_k,
+            semantic_settings=self.semantic_settings,
+        )
 
         docs = orchestrator.execute_exception_fallback(
             request,
@@ -177,7 +189,11 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             constraints=QueryConstraints(),
             query_plan=plan,
         )
-        trace = RouteTraceRecorder(query=request.query, requested_top_k=request.top_k)
+        trace = RouteTraceRecorder(
+            query=request.query,
+            requested_top_k=request.top_k,
+            semantic_settings=self.semantic_settings,
+        )
         trace.record_execution_outcome(
             RouteExecutionOutcome(
                 stages=[
@@ -266,7 +282,11 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
         orchestrator.post_process(
             request,
             [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")],
-            trace=RouteTraceRecorder(query=request.query, requested_top_k=request.top_k),
+            trace=RouteTraceRecorder(
+                query=request.query,
+                requested_top_k=request.top_k,
+                semantic_settings=self.semantic_settings,
+            ),
         )
 
         self.assertIs(post_processor.contexts[0].control, control)

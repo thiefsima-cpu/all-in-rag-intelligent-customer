@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.contracts import (
-    QueryPlannerRuntimeSettings,
-    QuerySemanticRuntimeSettings,
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
 )
 from rag_modules.query_understanding import QueryPlanner
 from scripts.eval_queries import load_eval_cases
@@ -27,10 +28,11 @@ class _DummyLLM:
 
 class CuratedRouteExpectationTests(unittest.TestCase):
     def test_rule_based_planner_matches_curated_strategy_expectations(self) -> None:
+        config = build_test_config()
         planner = QueryPlanner(
             _DummyLLM(),
-            settings=QueryPlannerRuntimeSettings(fast_rule_planning=True),
-            semantic_settings=QuerySemanticRuntimeSettings(),
+            settings=planner_runtime_settings(config),
+            semantic_settings=semantic_runtime_settings(config),
         )
 
         for case in load_eval_cases():

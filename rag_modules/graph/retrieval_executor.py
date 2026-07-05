@@ -6,7 +6,13 @@ import logging
 import time
 
 from ..configuration.models import GraphRAGConfig
-from ..contracts import EvidenceDocument, RequestBudgetExceeded, RequestCancelled, RetrievalRequest
+from ..contracts import (
+    EvidenceDocument,
+    QuerySemanticRuntimeSettings,
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RetrievalRequest,
+)
 from ..contracts.runtime import GraphRetrievalSnapshot
 from ..contracts.runtime.errors import graph_error_detail
 from ..entity_linker import EntityLinker
@@ -41,6 +47,7 @@ class GraphRetrievalExecutor:
     ) -> None:
         self.config = config
         self.storage = config.storage
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(config)
         self.runtime = runtime
         self.orchestrator = orchestrator
         self.cache_warmup = cache_warmup
@@ -172,7 +179,10 @@ class GraphRetrievalExecutor:
                     start_time=start_time,
                     error=graph_error_detail(detail="neo4j_not_connected"),
                 )
-                return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
+                return [], GraphRetrievalSnapshot.from_dict(
+                    final_trace.to_dict(),
+                    semantic_settings=self.semantic_settings,
+                )
 
             if control is not None:
                 control.raise_if_cancelled()
@@ -212,7 +222,10 @@ class GraphRetrievalExecutor:
                 doc_count=len(final_results),
                 evidence_unit_count=execution.evidence_unit_count,
             )
-            return final_results, GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
+            return final_results, GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
         except (RequestCancelled, RequestBudgetExceeded) as exc:
             reason = str(exc)
             self.runtime.record_event(
@@ -226,7 +239,10 @@ class GraphRetrievalExecutor:
                 start_time=start_time,
                 error=graph_error_detail(detail=reason),
             )
-            return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
+            return [], GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
         except Exception as exc:
             log_failure(
                 logger,
@@ -246,7 +262,10 @@ class GraphRetrievalExecutor:
                 start_time=start_time,
                 error=graph_error_detail(exc),
             )
-            return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
+            return [], GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
 
     def close(self) -> None:
         if self._owns_driver and self.driver:

@@ -108,6 +108,7 @@ class RoutingWorkflowService:
         trace = RouteTraceRecorder(
             query=query,
             requested_top_k=top_k,
+            semantic_settings=self.retrieval_profile.semantics,
             policy_bundle=self.policy_bundle,
         )
 
@@ -141,7 +142,10 @@ class RoutingWorkflowService:
                 evidence_documents=evidence_documents,
                 route_trace=route_trace,
             )
-            return resolution, RouteSnapshot.from_dict(route_trace.to_dict())
+            return resolution, RouteSnapshot.from_dict(
+                route_trace.to_dict(),
+                semantic_settings=self.retrieval_profile.semantics,
+            )
         except Exception as exc:
             evidence_documents = self.search_orchestrator.execute_exception_fallback(
                 execution_request,
@@ -162,7 +166,10 @@ class RoutingWorkflowService:
                 route_trace=route_trace,
                 metadata={"error": error_detail.to_dict()},
             )
-            return resolution, RouteSnapshot.from_dict(route_trace.to_dict())
+            return resolution, RouteSnapshot.from_dict(
+                route_trace.to_dict(),
+                semantic_settings=self.retrieval_profile.semantics,
+            )
 
     def get_route_statistics(self) -> JsonObject:
         return self.route_stats.summary()
@@ -243,7 +250,10 @@ class RoutingWorkflowService:
             query=query,
             strategy=strategy,
             evidence_documents=list(evidence_documents or []),
-            route_trace=RouteSnapshot.from_dict(route_trace.to_dict()),
+            route_trace=RouteSnapshot.from_dict(
+                route_trace.to_dict(),
+                semantic_settings=self.retrieval_profile.semantics,
+            ),
             metadata={
                 "query_understanding": understanding.to_dict(),
                 "analysis": understanding.analysis.to_dict(),

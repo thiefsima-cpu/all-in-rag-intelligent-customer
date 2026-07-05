@@ -19,6 +19,7 @@ from typing import (
 from ..contracts.query_constraints import QueryConstraints
 from ._common import coerce_float, coerce_str
 from .query import QueryPlan
+from .query_settings import QuerySemanticRuntimeSettings
 
 if TYPE_CHECKING:
     from .request_control import RequestControl
@@ -304,7 +305,12 @@ class RetrievalRequest:
         self.metadata = dict(self.metadata or {})
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any] | None) -> "RetrievalRequest":
+    def from_dict(
+        cls,
+        data: Dict[str, Any] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RetrievalRequest":
         payload = dict(data or {})
         query = coerce_str(payload.get("query"))
         constraints_data = payload.get("constraints") or {}
@@ -318,7 +324,11 @@ class RetrievalRequest:
         if isinstance(query_plan_data, QueryPlan):
             query_plan = query_plan_data
         elif isinstance(query_plan_data, dict):
-            query_plan = QueryPlan.from_dict(query, query_plan_data)
+            query_plan = QueryPlan.from_dict(
+                query,
+                query_plan_data,
+                semantic_settings=semantic_settings,
+            )
         return cls(
             query=query,
             top_k=payload.get("top_k", 5),

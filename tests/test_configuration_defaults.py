@@ -10,6 +10,11 @@ from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
 from rag_modules.configuration.models import GraphRAGConfig
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
+)
 
 
 class ConfigurationDefaultTests(unittest.TestCase):
@@ -121,6 +126,38 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertIn("overrides", message)
         self.assertIn("GraphRAGConfig.from_dict", message)
         self.assertIn("must match", message)
+
+    def test_runtime_settings_are_derived_from_resolved_config(self) -> None:
+        config = build_test_config(
+            {
+                "models": {
+                    "llm_model": "resolved-planner-model",
+                    "llm_timeout_seconds": 37,
+                },
+                "query_understanding": {
+                    "planner": {"cache_size": 23},
+                    "semantics": {
+                        "scoring": {"reasoning_complexity_threshold": 0.83},
+                        "extraction": {"source_entity_limit": 7},
+                    },
+                },
+            }
+        )
+
+        planner = planner_runtime_settings(config)
+        semantics = semantic_runtime_settings(config)
+
+        self.assertEqual(planner.model_name, config.models.llm_model)
+        self.assertEqual(planner.timeout_seconds, config.models.llm_timeout_seconds)
+        self.assertEqual(planner.cache_size, config.query_understanding.planner.cache_size)
+        self.assertEqual(
+            semantics.reasoning_complexity_threshold,
+            config.query_understanding.semantics.scoring.reasoning_complexity_threshold,
+        )
+        self.assertEqual(
+            semantics.source_entity_limit,
+            config.query_understanding.semantics.extraction.source_entity_limit,
+        )
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol
 
 from ...kernel.json_types import JsonObject, coerce_json_object
-from .. import EvidenceDocument
+from .. import EvidenceDocument, QuerySemanticRuntimeSettings
 from .errors import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
 from .routing import RouteSnapshot
 
@@ -45,7 +45,10 @@ class RetrievalOutcome:
     def __post_init__(self) -> None:
         self.evidence_documents = _coerce_evidence_documents(self.evidence_documents)
         if isinstance(self.route_trace, dict):
-            self.route_trace = RouteSnapshot.from_dict(self.route_trace)
+            raise TypeError(
+                "route_trace mappings must be deserialized with "
+                "RetrievalOutcome.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.route_trace, RouteSnapshot):
             self.route_trace = RouteSnapshot()
         if self.degradation_summary:
@@ -55,7 +58,12 @@ class RetrievalOutcome:
         self.metadata = coerce_json_object(self.metadata)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "RetrievalOutcome":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RetrievalOutcome":
         payload = dict(data or {})
         raw_evidence = payload.get("evidence_documents")
         evidence_payloads = raw_evidence if isinstance(raw_evidence, list) else []
@@ -68,7 +76,10 @@ class RetrievalOutcome:
                 else EvidenceDocument.from_dict(coerce_json_object(item))
                 for item in evidence_payloads
             ],
-            route_trace=RouteSnapshot.from_dict(_mapping_or_none(payload.get("route_trace"))),
+            route_trace=RouteSnapshot.from_dict(
+                _mapping_or_none(payload.get("route_trace")),
+                semantic_settings=semantic_settings,
+            ),
             degradation_summary=coerce_json_object(payload.get("degradation_summary")),
             metadata=coerce_json_object(payload.get("metadata")),
         )

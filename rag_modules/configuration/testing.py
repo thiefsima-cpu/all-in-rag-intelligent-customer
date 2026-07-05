@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .env import EnvConfigSource
 from .loader import load_config
 from .models import GraphRAGConfig
@@ -17,4 +18,12 @@ def build_test_config(overrides: Mapping[str, Any] | None = None) -> GraphRAGCon
     return load_config(overrides=overrides or {}, source=_EMPTY_ENV_SOURCE)
 
 
-__all__ = ["build_test_config"]
+def planner_runtime_settings(config: GraphRAGConfig) -> QueryPlannerRuntimeSettings:
+    return QueryPlannerRuntimeSettings.from_config(config)
+
+
+def semantic_runtime_settings(config: GraphRAGConfig) -> QuerySemanticRuntimeSettings:
+    return QuerySemanticRuntimeSettings.from_config(config)
+
+
+__all__ = ["build_test_config", "planner_runtime_settings", "semantic_runtime_settings"]

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, QueryPlan
 from rag_modules.contracts.runtime import (
     AnswerContext,
@@ -63,7 +63,10 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
         )
 
         context = AnswerContext(question="how to make dish A").with_evidence_package(package)
-        round_trip = AnswerContext(**context.to_dict())
+        round_trip = AnswerContext.from_dict(
+            context.to_dict(),
+            semantic_settings=semantic_runtime_settings(build_test_config()),
+        )
 
         self.assertTrue(round_trip.has_evidence_package)
         rebuilt_package = AnswerEvidencePackage.from_dict(round_trip.evidence_package)
@@ -95,19 +98,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
         context = AnswerContext.from_route_resolution(
             RouteResolution(understanding=understanding, retrieval=retrieval)
         )
-        tracer = QueryTracer(
-            SimpleNamespace(
-                models=SimpleNamespace(
-                    llm_model="qwen3.7-plus",
-                    embedding_model="qwen3-vl-embedding",
-                    rerank_model="qwen3-vl-rerank",
-                ),
-                observability=SimpleNamespace(
-                    enable_query_tracing=False,
-                    query_trace_path="trace.jsonl",
-                ),
-            )
-        )
+        tracer = QueryTracer(build_test_config())
 
         event = tracer.record(
             query=context.question,

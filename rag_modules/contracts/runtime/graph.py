@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
-from .. import RetrievalRequest
+from .. import QuerySemanticRuntimeSettings, RetrievalRequest
 from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
 from .policy import PolicySnapshot
 
@@ -49,7 +49,7 @@ class GraphRetrievalSnapshot:
     strategy: str = "graph_rag"
     requested_top_k: int = 0
     policy: PolicySnapshot = field(default_factory=PolicySnapshot)
-    retrieval_request: RetrievalRequest | Mapping[str, object] | None = None
+    retrieval_request: RetrievalRequest | None = None
     query_type: str = ""
     source_entities: list[str] = field(default_factory=list)
     target_entities: list[str] = field(default_factory=list)
@@ -75,7 +75,10 @@ class GraphRetrievalSnapshot:
         elif not isinstance(self.policy, PolicySnapshot):
             self.policy = PolicySnapshot()
         if isinstance(self.retrieval_request, Mapping):
-            self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
+            raise TypeError(
+                "retrieval_request mappings must be deserialized with "
+                "GraphRetrievalSnapshot.from_dict(..., semantic_settings=...)"
+            )
         elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
             self.retrieval_request = None
         self.query_type = str(self.query_type or "")
@@ -110,14 +113,22 @@ class GraphRetrievalSnapshot:
         self.error = ensure_runtime_error_detail(self.error)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "GraphRetrievalSnapshot":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "GraphRetrievalSnapshot":
         payload = dict(data or {})
         return cls(
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or "graph_rag"),
             requested_top_k=coerce_json_int(payload.get("requested_top_k")),
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
-            retrieval_request=_retrieval_request_payload(payload.get("retrieval_request")),
+            retrieval_request=_retrieval_request_from_payload(
+                payload.get("retrieval_request"),
+                semantic_settings=semantic_settings,
+            ),
             query_type=str(payload.get("query_type") or ""),
             source_entities=_string_list(payload.get("source_entities")),
             target_entities=_string_list(payload.get("target_entities")),
@@ -240,11 +251,18 @@ def _mapping_or_none(value: object) -> Mapping[str, object] | None:
     return value if isinstance(value, Mapping) else None
 
 
-def _retrieval_request_payload(value: object) -> RetrievalRequest | Mapping[str, object] | None:
+def _retrieval_request_from_payload(
+    value: object,
+    *,
+    semantic_settings: QuerySemanticRuntimeSettings,
+) -> RetrievalRequest | None:
     if isinstance(value, RetrievalRequest):
         return value
     if isinstance(value, Mapping):
-        return value
+        return RetrievalRequest.from_dict(
+            dict(value),
+            semantic_settings=semantic_settings,
+        )
     return None
 
 

@@ -6,7 +6,10 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from ...kernel.retrieval import CandidateSourceDegradationStrategy
+from ...kernel.retrieval import (
+    CandidateSourceDegradationStrategy,
+    candidate_source_degradation_strategy,
+)
 from .base import ConfigSection
 
 
@@ -24,20 +27,20 @@ class RetrievalSettings(ConfigSection):
     router_graph_supplement_candidate_multiplier: int = 2
     router_graph_supplement_candidate_min_candidates: int = 10
     retrieval_preserve_graph_evidence: bool = True
+    retrieval_graph_preservation_strategies: list[str] = ["graph_rag", "combined"]
     enable_parent_doc_retrieval: bool = True
     parent_doc_top_n: int = 3
     parent_doc_max_chars: int = 4000
-    candidate_source_failure_threshold: int = Field(default=1, ge=1)
-    candidate_source_recovery_seconds: float = Field(default=30.0, ge=0.1)
-    candidate_source_degradation_strategy: str = "continue"
+    candidate_source_failure_threshold: int = Field(ge=1)
+    candidate_source_recovery_seconds: float = Field(ge=0.1)
+    candidate_source_degradation_strategy: str
 
     @model_validator(mode="after")
     def normalize_degradation_strategy(self) -> Self:
-        normalized = self.candidate_source_degradation_strategy.strip().lower() or (
-            CandidateSourceDegradationStrategy.CONTINUE.value
-        )
         try:
-            strategy = CandidateSourceDegradationStrategy(normalized)
+            strategy = candidate_source_degradation_strategy(
+                self.candidate_source_degradation_strategy
+            )
         except ValueError:
             supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
             raise ValueError(

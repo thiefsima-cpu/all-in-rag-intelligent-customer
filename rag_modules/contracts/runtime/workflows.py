@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 
 from ...kernel.json_types import JsonObject, coerce_json_object
 from ...kernel.routing import SearchStrategy
-from .. import EvidenceDocument, QueryPlan, QuerySemanticProfile
+from .. import EvidenceDocument, QueryPlan, QuerySemanticProfile, QuerySemanticRuntimeSettings
 from ..query_constraints import QueryConstraints
 from .analysis import QueryAnalysis, ensure_query_analysis
 from .retrieval import RetrievalOutcome
@@ -35,8 +35,10 @@ class QueryUnderstandingSnapshot:
 
     def __post_init__(self) -> None:
         if isinstance(self.query_plan, dict):
-            query = str(self.query or self.query_plan.get("query") or "")
-            self.query_plan = QueryPlan.from_dict(query, coerce_json_object(self.query_plan))
+            raise TypeError(
+                "query_plan mappings must be deserialized with "
+                "QueryUnderstandingSnapshot.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.query_plan, QueryPlan):
             self.query_plan = QueryPlan(query=str(self.query or ""))
         self.query = str(self.query or self.query_plan.query or "")
@@ -84,14 +86,23 @@ class QueryUnderstandingSnapshot:
         )
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "QueryUnderstandingSnapshot":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "QueryUnderstandingSnapshot":
         payload = dict(data or {})
         query = str(payload.get("query") or "")
         query_plan_payload = payload.get("query_plan")
         query_plan = (
             query_plan_payload
             if isinstance(query_plan_payload, QueryPlan)
-            else QueryPlan.from_dict(query, coerce_json_object(query_plan_payload))
+            else QueryPlan.from_dict(
+                query,
+                coerce_json_object(query_plan_payload),
+                semantic_settings=semantic_settings,
+            )
         )
         return cls(
             query=query,
@@ -125,11 +136,17 @@ class RouteResolution:
 
     def __post_init__(self) -> None:
         if isinstance(self.understanding, dict):
-            self.understanding = QueryUnderstandingSnapshot.from_dict(self.understanding)
+            raise TypeError(
+                "understanding mappings must be deserialized with "
+                "RouteResolution.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.understanding, QueryUnderstandingSnapshot):
             self.understanding = QueryUnderstandingSnapshot()
         if isinstance(self.retrieval, dict):
-            self.retrieval = RetrievalOutcome.from_dict(self.retrieval)
+            raise TypeError(
+                "retrieval mappings must be deserialized with "
+                "RouteResolution.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.retrieval, RetrievalOutcome):
             self.retrieval = RetrievalOutcome()
         self.metadata = coerce_json_object(self.metadata)
@@ -147,13 +164,22 @@ class RouteResolution:
         return list(self.retrieval.evidence_documents or [])
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "RouteResolution":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RouteResolution":
         payload = dict(data or {})
         return cls(
             understanding=QueryUnderstandingSnapshot.from_dict(
-                _mapping_or_none(payload.get("understanding"))
+                _mapping_or_none(payload.get("understanding")),
+                semantic_settings=semantic_settings,
             ),
-            retrieval=RetrievalOutcome.from_dict(_mapping_or_none(payload.get("retrieval"))),
+            retrieval=RetrievalOutcome.from_dict(
+                _mapping_or_none(payload.get("retrieval")),
+                semantic_settings=semantic_settings,
+            ),
             metadata=coerce_json_object(payload.get("metadata")),
         )
 
@@ -180,14 +206,16 @@ class AnswerContext:
         if isinstance(self.retrieval, RetrievalOutcome):
             pass
         else:
-            self.retrieval = RetrievalOutcome.from_dict(self.retrieval or {})
+            raise TypeError("retrieval must be a RetrievalOutcome")
         if isinstance(self.understanding, dict):
-            self.understanding = QueryUnderstandingSnapshot.from_dict(self.understanding)
+            raise TypeError(
+                "understanding mappings must be deserialized before constructing AnswerContext"
+            )
         elif self.understanding is not None and not isinstance(
             self.understanding,
             QueryUnderstandingSnapshot,
         ):
-            self.understanding = QueryUnderstandingSnapshot.from_dict(dict(self.understanding))
+            raise TypeError("understanding must be a QueryUnderstandingSnapshot or None")
         self.analysis = ensure_query_analysis(self.analysis) if self.analysis is not None else None
         if self.analysis is None and self.understanding is not None:
             self.analysis = self.understanding.analysis
@@ -215,6 +243,40 @@ class AnswerContext:
             understanding=resolution.understanding,
             evidence_package=coerce_json_object(evidence_package),
             metadata=metadata or resolution.metadata,
+        )
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "AnswerContext":
+        payload = dict(data or {})
+        understanding_payload = _mapping_or_none(payload.get("understanding"))
+        understanding = (
+            QueryUnderstandingSnapshot.from_dict(
+                understanding_payload,
+                semantic_settings=semantic_settings,
+            )
+            if understanding_payload
+            else None
+        )
+        analysis_payload = payload.get("analysis")
+        return cls(
+            question=str(payload.get("question") or ""),
+            retrieval=RetrievalOutcome.from_dict(
+                _mapping_or_none(payload.get("retrieval")),
+                semantic_settings=semantic_settings,
+            ),
+            analysis=(
+                ensure_query_analysis(analysis_payload)
+                if isinstance(analysis_payload, Mapping) and analysis_payload
+                else None
+            ),
+            understanding=understanding,
+            evidence_package=coerce_json_object(payload.get("evidence_package")),
+            metadata=coerce_json_object(payload.get("metadata")),
         )
 
     @property

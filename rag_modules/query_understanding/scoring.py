@@ -26,7 +26,7 @@ def _active_registry(
 def build_query_semantic_score_breakdown(
     query: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
@@ -34,7 +34,6 @@ def build_query_semantic_score_breakdown(
     structural_hits: Sequence[str] | None = None,
     fast_rule_hits: Sequence[str] | None = None,
 ) -> QuerySemanticScoreBreakdown:
-    settings = settings or QuerySemanticRuntimeSettings()
     active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     policy = active_registry.policy.scoring
     normalized = normalize_query_text(query)
@@ -109,7 +108,7 @@ def build_query_semantic_score_breakdown(
 def estimate_relationship_intensity(
     query: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
@@ -126,7 +125,7 @@ def estimate_relationship_intensity(
 def estimate_query_complexity(
     query: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
+    settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
     relation_hits: Sequence[str] | None = None,
@@ -147,12 +146,10 @@ def estimate_query_complexity(
 def should_use_fast_rule_plan(
     query: str,
     *,
-    settings: QuerySemanticRuntimeSettings | None = None,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
     fast_rule_hits: Sequence[str] | None = None,
 ) -> bool:
-    _ = settings or QuerySemanticRuntimeSettings()
     active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     if not query:
         return True

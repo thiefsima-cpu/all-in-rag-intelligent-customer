@@ -6,7 +6,7 @@ import logging
 from contextlib import nullcontext
 from typing import List
 
-from ...contracts import EvidenceDocument, RequestControl
+from ...contracts import EvidenceDocument, QuerySemanticRuntimeSettings, RequestControl
 from ...contracts.runtime import (
     AnswerContext,
     GenerationMode,
@@ -39,12 +39,13 @@ class AnswerPipelineService:
         *,
         query_router: QueryRouterSource,
         generation_service: GenerationServiceSource,
+        semantic_settings: QuerySemanticRuntimeSettings,
         top_k: int,
         telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.query_router = query_router
         self.generation_service = generation_service
-        self.router_traces = QueryRouterTraceAdapter(query_router)
+        self.router_traces = QueryRouterTraceAdapter(query_router, semantic_settings)
         self.generation_traces = GenerationTraceAdapter(generation_service)
         self.top_k = max(0, int(top_k or 0))
         self.telemetry = telemetry

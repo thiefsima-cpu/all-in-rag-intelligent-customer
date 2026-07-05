@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
-from .. import RetrievalRequest
+from .. import QuerySemanticRuntimeSettings, RetrievalRequest
 from .errors import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
     RuntimeErrorDetail,
@@ -133,7 +133,7 @@ class RouteSnapshot:
     strategy: str = ""
     requested_top_k: int = 0
     policy: PolicySnapshot = field(default_factory=PolicySnapshot)
-    retrieval_request: RetrievalRequest | Mapping[str, object] | None = None
+    retrieval_request: RetrievalRequest | None = None
     stages: dict[str, RouteStageSnapshot] = field(default_factory=dict)
     fallbacks: list[str] = field(default_factory=list)
     diagnostics: RouteDiagnostics = field(default_factory=RouteDiagnostics)
@@ -150,7 +150,10 @@ class RouteSnapshot:
         elif not isinstance(self.policy, PolicySnapshot):
             self.policy = PolicySnapshot()
         if isinstance(self.retrieval_request, Mapping):
-            self.retrieval_request = RetrievalRequest.from_dict(dict(self.retrieval_request))
+            raise TypeError(
+                "retrieval_request mappings must be deserialized with "
+                "RouteSnapshot.from_dict(..., semantic_settings=...)"
+            )
         elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
             self.retrieval_request = None
         self.stages = {
@@ -172,14 +175,22 @@ class RouteSnapshot:
         self.refresh_diagnostics()
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "RouteSnapshot":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RouteSnapshot":
         payload = dict(data or {})
         return cls(
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or ""),
             requested_top_k=coerce_json_int(payload.get("requested_top_k")),
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
-            retrieval_request=_retrieval_request_payload(payload.get("retrieval_request")),
+            retrieval_request=_retrieval_request_from_payload(
+                payload.get("retrieval_request"),
+                semantic_settings=semantic_settings,
+            ),
             stages=_stage_mapping(payload.get("stages")),
             fallbacks=_string_list(payload.get("fallbacks")),
             diagnostics=RouteDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
@@ -377,11 +388,18 @@ def _mapping_or_none(value: object) -> Mapping[str, object] | None:
     return value if isinstance(value, Mapping) else None
 
 
-def _retrieval_request_payload(value: object) -> RetrievalRequest | Mapping[str, object] | None:
+def _retrieval_request_from_payload(
+    value: object,
+    *,
+    semantic_settings: QuerySemanticRuntimeSettings,
+) -> RetrievalRequest | None:
     if isinstance(value, RetrievalRequest):
         return value
     if isinstance(value, Mapping):
-        return value
+        return RetrievalRequest.from_dict(
+            dict(value),
+            semantic_settings=semantic_settings,
+        )
     return None
 
 

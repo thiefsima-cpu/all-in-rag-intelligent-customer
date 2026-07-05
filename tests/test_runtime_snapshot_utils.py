@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts.runtime import GenerationSnapshot, GraphRetrievalSnapshot, RouteSnapshot
 from rag_modules.runtime.snapshot_utils import (
     clone_generation_snapshot,
@@ -11,10 +12,16 @@ from rag_modules.runtime.snapshot_utils import (
 
 
 class RuntimeSnapshotUtilsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.semantic_settings = semantic_runtime_settings(build_test_config())
+
     def test_clone_route_snapshot_returns_detached_copy(self) -> None:
         original = RouteSnapshot(query="q", strategy="combined")
 
-        cloned = clone_route_snapshot(original)
+        cloned = clone_route_snapshot(
+            original,
+            semantic_settings=self.semantic_settings,
+        )
 
         self.assertEqual(cloned.query, "q")
         self.assertEqual(cloned.strategy, "combined")
@@ -25,7 +32,10 @@ class RuntimeSnapshotUtilsTests(unittest.TestCase):
         self.assertTrue(RouteSnapshot(strategy="combined").has_content())
 
     def test_clone_graph_snapshot_accepts_mapping_payload(self) -> None:
-        cloned = clone_graph_snapshot({"query": "q", "doc_count": 2, "path_count": 1})
+        cloned = clone_graph_snapshot(
+            {"query": "q", "doc_count": 2, "path_count": 1},
+            semantic_settings=self.semantic_settings,
+        )
 
         self.assertEqual(cloned.query, "q")
         self.assertEqual(cloned.doc_count, 2)

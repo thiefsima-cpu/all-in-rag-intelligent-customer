@@ -17,8 +17,6 @@ from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import (
     EvidenceDocument,
     QueryPlan,
-    QueryPlannerRuntimeSettings,
-    QuerySemanticRuntimeSettings,
     RetrievalRequest,
 )
 from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
@@ -26,9 +24,8 @@ from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.contracts.runtime.workflows import QueryUnderstandingSnapshot
 from rag_modules.query_understanding import QueryPlanner
 from rag_modules.retrieval.runtime_profile import (
-    RetrievalCandidateSizingSettings,
-    RetrievalPostProcessSettings,
     RetrievalRuntimeProfile,
+    RetrievalRuntimeProfileFactory,
 )
 from rag_modules.routing import RoutingWorkflowService
 from scripts.smoke_answer_pipeline_support import (
@@ -262,21 +259,22 @@ class _OfflineQueryUnderstandingService:
 
 
 def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
-    return RetrievalRuntimeProfile(
-        planner=QueryPlannerRuntimeSettings(fast_rule_planning=True),
-        semantics=QuerySemanticRuntimeSettings(),
-        candidates=RetrievalCandidateSizingSettings(
-            hybrid_default_multiplier=1,
-            hybrid_default_min_candidates=top_k,
-            hybrid_constraint_multiplier=1,
-            hybrid_constraint_min_candidates=top_k,
-            combined_multiplier=1,
-            combined_min_candidates=top_k,
-            graph_supplement_multiplier=1,
-            graph_supplement_min_candidates=top_k,
-        ),
-        postprocess=RetrievalPostProcessSettings(enable_rerank=False),
+    config = build_test_config(
+        {
+            "models": {"enable_rerank": False},
+            "retrieval": {
+                "hybrid_default_candidate_multiplier": 1,
+                "hybrid_default_candidate_min_candidates": top_k,
+                "hybrid_constraint_candidate_multiplier": 1,
+                "hybrid_constraint_candidate_min_candidates": top_k,
+                "router_combined_candidate_multiplier": 1,
+                "router_combined_candidate_min_candidates": top_k,
+                "router_graph_supplement_candidate_multiplier": 1,
+                "router_graph_supplement_candidate_min_candidates": top_k,
+            },
+        }
     )
+    return RetrievalRuntimeProfileFactory().build(config)
 
 
 def evaluate_contracts(

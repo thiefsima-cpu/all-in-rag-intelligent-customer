@@ -8,6 +8,7 @@ import time
 from ...configuration.models import GraphRAGConfig
 from ...contracts import RequestControl
 from ...contracts.runtime.errors import answer_error_detail
+from ...retrieval.runtime_profile import RetrievalRuntimeProfileFactory
 from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
@@ -48,14 +49,17 @@ class AnswerWorkflow:
         self.generation_module = generation_module
         self.query_tracer = query_tracer
         self.telemetry = telemetry or get_runtime_telemetry(config)
+        retrieval_profile = RetrievalRuntimeProfileFactory().build(config)
         self.pipeline = pipeline or AnswerPipelineService(
             query_router=query_router,
             generation_service=generation_module,
+            semantic_settings=retrieval_profile.semantics,
             top_k=self.retrieval_settings.top_k,
             telemetry=self.telemetry,
         )
         self.trace_assembler = trace_assembler or AnswerTraceAssembler(
             query_tracer=query_tracer,
+            semantic_settings=retrieval_profile.semantics,
         )
         self.result_factory = result_factory or QuestionAnswerResultFactory()
 

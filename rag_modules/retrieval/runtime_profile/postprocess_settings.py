@@ -2,29 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .shared import _POSTPROCESS_DEFAULTS, _as_int
+from .shared import _as_int
 
 
 @dataclass
 class RetrievalPostProcessSettings:
-    enable_rerank: bool = _POSTPROCESS_DEFAULTS.enable_rerank
-    rerank_model: str = _POSTPROCESS_DEFAULTS.rerank_model
-    rerank_base_url: str = _POSTPROCESS_DEFAULTS.rerank_base_url
-    rerank_timeout_seconds: int = _POSTPROCESS_DEFAULTS.rerank_timeout_seconds
-    preserve_graph_evidence: bool = _POSTPROCESS_DEFAULTS.preserve_graph_evidence
-    graph_preservation_strategies: tuple[str, ...] = field(
-        default_factory=lambda: tuple(_POSTPROCESS_DEFAULTS.graph_preservation_strategies)
-    )
+    enable_rerank: bool
+    rerank_model: str
+    rerank_base_url: str
+    rerank_timeout_seconds: int
+    preserve_graph_evidence: bool
+    graph_preservation_strategies: tuple[str, ...]
 
     def __post_init__(self) -> None:
         self.enable_rerank = bool(self.enable_rerank)
-        self.rerank_model = str(self.rerank_model or _POSTPROCESS_DEFAULTS.rerank_model)
-        self.rerank_base_url = str(self.rerank_base_url or _POSTPROCESS_DEFAULTS.rerank_base_url)
+        self.rerank_model = str(self.rerank_model or "")
+        self.rerank_base_url = str(self.rerank_base_url or "")
         self.rerank_timeout_seconds = _as_int(
             self.rerank_timeout_seconds,
-            _POSTPROCESS_DEFAULTS.rerank_timeout_seconds,
+            1,
             minimum=1,
         )
         self.preserve_graph_evidence = bool(self.preserve_graph_evidence)
@@ -32,19 +30,19 @@ class RetrievalPostProcessSettings:
             str(item).strip()
             for item in (self.graph_preservation_strategies or ())
             if str(item).strip()
-        ) or tuple(_POSTPROCESS_DEFAULTS.graph_preservation_strategies)
+        )
 
     @classmethod
     def from_config(cls, config) -> "RetrievalPostProcessSettings":
-        defaults = _POSTPROCESS_DEFAULTS
         models = config.models
         retrieval = config.retrieval
         return cls(
             enable_rerank=models.enable_rerank,
-            rerank_model=models.rerank_model or defaults.rerank_model,
-            rerank_base_url=models.rerank_base_url or defaults.rerank_base_url,
+            rerank_model=models.rerank_model,
+            rerank_base_url=models.rerank_base_url,
             rerank_timeout_seconds=models.rerank_timeout_seconds,
             preserve_graph_evidence=retrieval.retrieval_preserve_graph_evidence,
+            graph_preservation_strategies=tuple(retrieval.retrieval_graph_preservation_strategies),
         )
 
     def should_preserve_graph_evidence(self, strategy: str) -> bool:

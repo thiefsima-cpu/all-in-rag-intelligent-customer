@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.contracts.runtime.errors import ensure_runtime_error_detail
 from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
@@ -273,7 +273,10 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         from rag_modules.graph.query_resolution import GraphQueryFactory
         from rag_modules.graph.retrieval_runtime import GraphRetrievalRuntime
 
-        runtime = GraphRetrievalRuntime(GraphQueryFactory())
+        config = build_test_config()
+        runtime = GraphRetrievalRuntime(
+            GraphQueryFactory(semantic_settings=semantic_runtime_settings(config))
+        )
         request = RetrievalRequest.from_inputs(
             query="why does sauce affect texture",
             top_k=2,

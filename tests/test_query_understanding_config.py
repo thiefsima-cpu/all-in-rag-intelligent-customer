@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
-from rag_modules.contracts import QueryPlannerRuntimeSettings, RequestControl
+from rag_modules.configuration.testing import (
+    build_test_config,
+    planner_runtime_settings,
+    semantic_runtime_settings,
+)
+from rag_modules.contracts import RequestControl
 from rag_modules.query_understanding import QueryPlanner
 
 
@@ -22,9 +27,13 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
     def test_query_planner_passes_request_control_to_llm_client(self) -> None:
         llm_client = _ControlCapturingLLM()
         control = RequestControl.for_timeout(5.0, scope="query_planning")
+        config = build_test_config(
+            {"query_understanding": {"planner": {"fast_rule_planning": False}}}
+        )
         planner = QueryPlanner(
             llm_client,
-            settings=QueryPlannerRuntimeSettings(fast_rule_planning=False),
+            settings=planner_runtime_settings(config),
+            semantic_settings=semantic_runtime_settings(config),
         )
 
         planner.plan("recommend tofu", control=control)

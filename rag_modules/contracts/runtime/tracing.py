@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from .. import QuerySemanticRuntimeSettings
 from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
 from .generation import GenerationSnapshot
 from .graph import GraphRetrievalSnapshot
@@ -100,19 +101,30 @@ class RetrievalTraceSnapshot:
             coerce_json_object(item) for item in (self.evidence or []) if isinstance(item, Mapping)
         ]
         if isinstance(self.route_trace, dict):
-            self.route_trace = RouteSnapshot.from_dict(self.route_trace)
+            raise TypeError(
+                "route_trace mappings must be deserialized with "
+                "RetrievalTraceSnapshot.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.route_trace, RouteSnapshot):
             self.route_trace = RouteSnapshot()
         if isinstance(self.graph_trace, dict):
-            self.graph_trace = GraphRetrievalSnapshot.from_dict(self.graph_trace)
+            raise TypeError(
+                "graph_trace mappings must be deserialized with "
+                "RetrievalTraceSnapshot.from_dict(..., semantic_settings=...)"
+            )
         elif self.graph_trace and not isinstance(self.graph_trace, GraphRetrievalSnapshot):
-            self.graph_trace = GraphRetrievalSnapshot.from_dict(dict(self.graph_trace))
+            raise TypeError("graph_trace must be a GraphRetrievalSnapshot or None")
         self.failure_reasons = [
             str(item).strip() for item in (self.failure_reasons or []) if str(item).strip()
         ]
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "RetrievalTraceSnapshot":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RetrievalTraceSnapshot":
         payload = dict(data or {})
         graph_trace_payload = payload.get("graph_trace")
         raw_evidence = payload.get("evidence")
@@ -123,9 +135,15 @@ class RetrievalTraceSnapshot:
                 if isinstance(raw_evidence, list)
                 else []
             ),
-            route_trace=RouteSnapshot.from_dict(_mapping_or_none(payload.get("route_trace"))),
+            route_trace=RouteSnapshot.from_dict(
+                _mapping_or_none(payload.get("route_trace")),
+                semantic_settings=semantic_settings,
+            ),
             graph_trace=(
-                GraphRetrievalSnapshot.from_dict(graph_trace_payload)
+                GraphRetrievalSnapshot.from_dict(
+                    graph_trace_payload,
+                    semantic_settings=semantic_settings,
+                )
                 if isinstance(graph_trace_payload, Mapping)
                 else None
             ),
@@ -192,7 +210,10 @@ class QueryTraceEvent:
         elif not isinstance(self.policy, PolicySnapshot):
             self.policy = PolicySnapshot()
         if isinstance(self.retrieval, dict):
-            self.retrieval = RetrievalTraceSnapshot.from_dict(self.retrieval)
+            raise TypeError(
+                "retrieval mappings must be deserialized with "
+                "QueryTraceEvent.from_dict(..., semantic_settings=...)"
+            )
         elif not isinstance(self.retrieval, RetrievalTraceSnapshot):
             self.retrieval = RetrievalTraceSnapshot()
         if isinstance(self.generation, dict):
@@ -211,7 +232,12 @@ class QueryTraceEvent:
         self.error = ensure_runtime_error_detail(self.error)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "QueryTraceEvent":
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "QueryTraceEvent":
         payload = dict(data or {})
         return cls(
             query_id=str(payload.get("query_id") or ""),
@@ -222,7 +248,10 @@ class QueryTraceEvent:
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             plan=coerce_json_object(payload.get("plan")),
             models=ModelSuiteSnapshot.from_dict(_mapping_or_none(payload.get("models"))),
-            retrieval=RetrievalTraceSnapshot.from_dict(_mapping_or_none(payload.get("retrieval"))),
+            retrieval=RetrievalTraceSnapshot.from_dict(
+                _mapping_or_none(payload.get("retrieval")),
+                semantic_settings=semantic_settings,
+            ),
             generation=GenerationSnapshot.from_dict(_mapping_or_none(payload.get("generation"))),
             diagnostics=QueryDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
             answer=AnswerTraceSnapshot.from_dict(_mapping_or_none(payload.get("answer"))),

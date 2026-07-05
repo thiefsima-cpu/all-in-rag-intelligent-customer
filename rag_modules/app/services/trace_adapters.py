@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
-from ...contracts import RequestControl
+from ...contracts import QuerySemanticRuntimeSettings, RequestControl
 from ...contracts.runtime import (
     AnswerContext,
     GenerationSnapshot,
@@ -109,8 +109,13 @@ GenerationServiceSource: TypeAlias = (
 class QueryRouterTraceAdapter:
     """Normalize router results without consulting shared request state."""
 
-    def __init__(self, router: QueryRouterSource) -> None:
+    def __init__(
+        self,
+        router: QueryRouterSource,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> None:
         self.router = router
+        self.semantic_settings = semantic_settings
 
     def route_with_trace(
         self,
@@ -135,7 +140,10 @@ class QueryRouterTraceAdapter:
         if isinstance(raw_resolution, RouteResolution):
             resolution = raw_resolution
         elif isinstance(raw_resolution, Mapping):
-            resolution = RouteResolution.from_dict(dict(raw_resolution))
+            resolution = RouteResolution.from_dict(
+                dict(raw_resolution),
+                semantic_settings=self.semantic_settings,
+            )
         else:
             resolution = RouteResolution()
         return resolution, self.resolve_route_trace(resolution, route_trace=route_trace)
@@ -169,7 +177,10 @@ class QueryRouterTraceAdapter:
                     }
             if not trace_payload:
                 continue
-            snapshot = clone_graph_snapshot(trace_payload)
+            snapshot = clone_graph_snapshot(
+                trace_payload,
+                semantic_settings=self.semantic_settings,
+            )
             if snapshot.query and snapshot.query != question:
                 continue
             if snapshot.has_content():
@@ -191,7 +202,10 @@ class QueryRouterTraceAdapter:
         )
         if not self._has_route_trace(route_trace):
             route_trace = resolution.retrieval.route_trace
-        return clone_route_snapshot(route_trace)
+        return clone_route_snapshot(
+            route_trace,
+            semantic_settings=self.semantic_settings,
+        )
 
     @staticmethod
     def _has_route_trace(value: object) -> bool:
