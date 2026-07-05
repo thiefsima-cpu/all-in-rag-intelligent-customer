@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from ...configuration.models import GraphRAGConfig
+from ...generation.ports import LLMClientPort
+from ...graph.ports import Neo4jManagerPort as GraphNeo4jManagerPort
 from ...graph.retrieval import GraphRAGRetrieval
+from ...infra.providers.dashscope import DashScopeRerankClient
 from ...query_policy.models import QueryPolicyBundle
 from ...query_understanding.service import QueryUnderstandingService
 from ...retrieval import HybridRetrievalService
+from ...retrieval.ports import RerankClientPort
+from ...retrieval.post_processor import RetrievalPostProcessor
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile, RetrievalRuntimeProfileFactory
 from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
-from ..runtime_contracts import (
+from ..ports import (
     GraphDataModulePort,
-    LLMClientPort,
     Neo4jManagerPort,
     VectorIndexModulePort,
 )
@@ -85,7 +91,7 @@ class _DefaultRetrievalRuntimeProvider:
         return GraphRAGRetrieval(
             config=config,
             llm_client=llm_client,
-            neo4j_manager=neo4j_manager,
+            neo4j_manager=cast(GraphNeo4jManagerPort, neo4j_manager),
             retrieval_profile=retrieval_profile,
             policy_bundle=policy_bundle,
         )
@@ -101,6 +107,14 @@ class _DefaultRetrievalRuntimeProvider:
         query_understanding_service: QueryUnderstandingService,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> RoutingWorkflowProtocol:
+        post_processor = RetrievalPostProcessor(
+            config,
+            settings=retrieval_profile.postprocess,
+            rerank_client=self._provide_rerank_client(
+                config,
+                retrieval_profile=retrieval_profile,
+            ),
+        )
         return RoutingWorkflowService(
             traditional_retrieval=traditional_retrieval,
             graph_rag_retrieval=graph_rag_retrieval,
@@ -108,7 +122,29 @@ class _DefaultRetrievalRuntimeProvider:
             config=config,
             retrieval_profile=retrieval_profile,
             query_understanding_service=query_understanding_service,
+            post_processor=post_processor,
             policy_bundle=policy_bundle,
+        )
+
+    @staticmethod
+    def _provide_rerank_client(
+        config: GraphRAGConfig,
+        *,
+        retrieval_profile: RetrievalRuntimeProfile,
+    ) -> RerankClientPort | None:
+        settings = retrieval_profile.postprocess
+        if not settings.enable_rerank:
+            return None
+        models = config.models
+        return DashScopeRerankClient(
+            api_key=str(models.api_key),
+            model_name=settings.rerank_model,
+            base_url=settings.rerank_base_url,
+            timeout=settings.rerank_timeout_seconds,
+            http_pool_connections=int(models.http_pool_connections),
+            http_pool_maxsize=int(models.http_pool_maxsize),
+            circuit_breaker_failure_threshold=int(models.circuit_breaker_failure_threshold),
+            circuit_breaker_recovery_seconds=float(models.circuit_breaker_recovery_seconds),
         )
 
 

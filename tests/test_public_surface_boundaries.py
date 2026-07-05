@@ -889,6 +889,8 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertIn("internal_dependency_guard", content)
         self.assertIn("thin_wrapper_guard", content)
         self.assertIn("No legacy bridge remains registered", content)
+        self.assertNotIn("rag_modules.runtime_contracts", content)
+        self.assertNotIn("rag_modules.app.runtime_contracts", content)
         for expected in (
             "config.py",
             "rag_modules.graph_data_preparation",
@@ -1562,7 +1564,7 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         )
 
     def test_runtime_model_dependencies_are_one_way(self) -> None:
-        path = RAG_MODULES_DIR / "runtime" / "retrieval_models.py"
+        path = RAG_MODULES_DIR / "contracts" / "runtime" / "retrieval.py"
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         imports = {
             self._resolve_import_from(path, node)

@@ -8,11 +8,11 @@ from typing import Any
 
 from ..answer_evidence_builder import AnswerEvidenceBuilder
 from ..query_policy.models import QueryPolicyBundle
-from ..runtime_contracts import LLMClientPort
 from .clients import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .execution import GenerationExecutionEngine
 from .models import GenerationSettings
 from .planner import GenerationPlanner
+from .ports import LLMClientPort
 from .prompt_builder import GenerationPromptBuilder
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"

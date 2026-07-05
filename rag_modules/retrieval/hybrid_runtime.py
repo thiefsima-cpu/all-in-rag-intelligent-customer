@@ -12,7 +12,6 @@ from ..contracts import EvidenceDocument, RetrievalRequest
 from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
 from ..parent_doc_enricher import ParentDocumentEnricher
-from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
 from .evidence import RecipeConstraintMatcher
@@ -21,6 +20,7 @@ from .hybrid_index_service import HybridIndexArtifacts, HybridIndexService
 from .hybrid_parent_document_service import HybridParentDocumentService
 from .hybrid_runtime_state import HybridRetrievalState
 from .keyword_service import QueryKeywordExtractor
+from .ports import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_adapter_factory import (
     DefaultHybridRuntimeAdapterFactory,
     HybridRuntimeAdapterFactory,

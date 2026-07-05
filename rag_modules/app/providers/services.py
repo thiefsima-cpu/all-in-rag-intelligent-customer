@@ -12,7 +12,7 @@ from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
 from ...runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ...runtime.stats_ports import RuntimeStatsAccessPort
-from ..runtime_contracts import (
+from ..ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
     QueryTracerPort,

@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
+from ..kernel.time_parsing import parse_minutes
+
 
 def loads_json_object(text: str) -> Dict[str, Any]:
     text = (text or "").strip()
@@ -32,38 +34,6 @@ def _as_list(value: Any) -> List[str]:
     if isinstance(value, Iterable):
         return [str(item).strip() for item in value if str(item).strip()]
     return [str(value).strip()]
-
-
-def parse_minutes(value: Any) -> Optional[int]:
-    """Parse loose Chinese/English duration text into minutes."""
-    if value in (None, ""):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
-
-    text = str(value)
-    nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", text)]
-    if not nums:
-        return None
-
-    total = 0.0
-    hour_matches = re.findall(
-        r"(\d+(?:\.\d+)?)\s*(?:小时|小時|h|hr|hour)",
-        text,
-        flags=re.I,
-    )
-    minute_matches = re.findall(
-        r"(\d+(?:\.\d+)?)\s*(?:分钟|分鍾|min|minute)",
-        text,
-        flags=re.I,
-    )
-    if hour_matches or minute_matches:
-        total += sum(float(x) * 60 for x in hour_matches)
-        total += sum(float(x) for x in minute_matches)
-        return int(round(total)) if total > 0 else None
-
-    # For ranges like "15-20", use the upper bound to avoid violating max-time constraints.
-    return int(round(max(nums)))
 
 
 @dataclass

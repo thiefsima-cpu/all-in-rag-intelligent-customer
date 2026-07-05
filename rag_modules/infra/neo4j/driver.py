@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from neo4j import GraphDatabase
 
-from ...runtime_contracts import Neo4jDriverPort
+from .ports import Neo4jDriverPort
 
 
 def create_neo4j_driver(

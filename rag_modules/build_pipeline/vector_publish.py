@@ -7,7 +7,7 @@ from typing import Protocol
 from ..configuration.models import GraphRAGConfig
 from ..kernel.artifacts import ArtifactManifest
 from ..runtime.artifact_ports import RuntimeArtifactAccessPort
-from ..runtime_contracts import VectorIndexModulePort
+from .ports import VectorIndexModulePort
 
 
 class _KnowledgeBaseVectorPublishHost(Protocol):

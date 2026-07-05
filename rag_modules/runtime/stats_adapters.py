@@ -8,7 +8,7 @@ from ..kernel.json_types import JsonObject, coerce_json_object
 
 if TYPE_CHECKING:
     from ..routing.contracts import RoutingWorkflowProtocol
-    from ..runtime_contracts import GraphDataModulePort, QueryTracerPort, VectorIndexModulePort
+    from .ports import GraphDataModulePort, QueryTracerPort, VectorIndexModulePort
     from .stats_ports import RuntimeProfilePayloadSource
 
 

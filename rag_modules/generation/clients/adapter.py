@@ -12,8 +12,8 @@ from openai import OpenAI
 
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...infra.resilience import CircuitBreaker
-from ...runtime_contracts import LLMCompletionResponsePort
 from ...safe_logging import log_failure
+from ..ports import LLMCompletionResponsePort
 from .errors import (
     GenerationLatencyBudgetExceeded,
     GenerationProviderResponseError,

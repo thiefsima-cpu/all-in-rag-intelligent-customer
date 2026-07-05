@@ -12,7 +12,6 @@ from typing import Dict
 
 _EXPORTS: Dict[str, str] = {
     "AdvancedGraphRAGSystem": ".app.system",
-    "GraphDataPreparationModule": ".graph.data_preparation",
     "GenerationWorkflowService": ".generation.service",
     "KnowledgeBaseService": ".app.services.knowledge_base_service",
     "MilvusIndexConstructionModule": ".infra.milvus_index_construction",

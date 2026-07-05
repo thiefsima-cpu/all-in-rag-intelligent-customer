@@ -10,11 +10,11 @@ from ...contracts import (
 )
 from ...contracts.query_constraints import QueryConstraints
 from ...contracts.runtime import RuntimeErrorDetail
-from ...contracts.runtime.errors import ensure_runtime_error_detail
-from ...kernel.json_types import JsonObject, coerce_json_object
-from ...retrieval.candidate_generator import (
+from ...contracts.runtime.errors import (
     CANDIDATE_SOURCE_ERROR_DEGRADED,
+    ensure_runtime_error_detail,
 )
+from ...kernel.json_types import JsonObject, coerce_json_object
 
 
 def constraints_payload(value: QueryConstraints) -> JsonObject:

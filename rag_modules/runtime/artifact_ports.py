@@ -11,7 +11,7 @@ from ..kernel.json_types import JsonObject
 if TYPE_CHECKING:
     from ..kernel.artifacts import DocumentArtifactResult
     from ..kernel.documents import TextDocument
-    from ..runtime_contracts import GraphDataModulePort, VectorIndexModulePort
+    from .ports import GraphDataModulePort, VectorIndexModulePort
 
 
 class ArtifactManifestStorePort(Protocol):

@@ -15,8 +15,8 @@ from ..kernel.routing import SearchStrategy
 from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
 from ..safe_logging import log_failure
+from .ports import GraphRAGRetrievalPort, HybridRetrievalPort
 from .strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,

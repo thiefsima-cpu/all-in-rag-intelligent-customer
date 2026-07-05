@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from ..infra.neo4j import create_neo4j_driver
-
 logger = logging.getLogger(__name__)
 
 
@@ -23,13 +21,7 @@ class HybridDriverService:
             state.driver = self.neo4j_manager.driver
             state.owns_driver = False
             return state.driver
-        state.driver = create_neo4j_driver(
-            self.storage.neo4j_uri,
-            self.storage.neo4j_user,
-            self.storage.neo4j_password,
-        )
-        state.owns_driver = True
-        return state.driver
+        raise RuntimeError("Hybrid retrieval requires an injected Neo4j manager.")
 
     @staticmethod
     def close(state) -> None:

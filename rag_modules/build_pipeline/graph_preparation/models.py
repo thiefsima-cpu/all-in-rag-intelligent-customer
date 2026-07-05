@@ -79,7 +79,3 @@ class PreparedStepInput:
     tools: str = ""
     time_estimate: str = ""
     step_order: int = 0
-
-
-GraphNode.__module__ = "rag_modules.graph.data_preparation"
-GraphRelation.__module__ = "rag_modules.graph.data_preparation"

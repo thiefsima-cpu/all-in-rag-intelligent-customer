@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import unittest
 
 
@@ -29,6 +30,18 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         self.assertIs(artifacts.write_documents, documents.write_documents)
         self.assertIs(artifacts.compute_index_signature, signatures.compute_index_signature)
         self.assertNotIn("ArtifactManifest", artifacts.__dict__)
+
+    def test_runtime_contract_facades_are_retired(self) -> None:
+        for module_name in ("rag_modules.runtime_contracts", "rag_modules.app.runtime_contracts"):
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
 
     def test_operational_scripts_import_canonical_contracts(self) -> None:
         importlib.import_module("scripts.smoke_answer_pipeline_real_route")

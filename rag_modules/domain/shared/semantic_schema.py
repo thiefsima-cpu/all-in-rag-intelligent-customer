@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List
 
-from ...contracts.query_constraints import parse_minutes
+from ...kernel.time_parsing import parse_minutes
 
 _FLAVOR_TERMS = [
     "麻辣",

@@ -8,10 +8,10 @@ from typing import Dict, List, Optional
 from rank_bm25 import BM25Okapi
 
 from ..kernel.documents import TextDocument
-from ..runtime_contracts import Neo4jDriverPort
 from .adapters import VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
 from .evidence import RecipeConstraintMatcher
+from .ports import Neo4jDriverPort
 
 
 @dataclass

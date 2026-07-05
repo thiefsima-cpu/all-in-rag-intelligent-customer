@@ -335,7 +335,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertEqual(payload["traces"]["graph_trace"]["doc_count"], 1)
         self.assertEqual(result.to_dict(), response.to_dict())
 
-    def test_response_groups_preserve_typed_runtime_contracts(self) -> None:
+    def test_response_groups_preserve_typed_runtime_ports(self) -> None:
         result = self.make_result("typed response")
 
         response = result.to_response()

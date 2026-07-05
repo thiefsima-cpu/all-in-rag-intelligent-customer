@@ -15,7 +15,7 @@ from ...runtime.snapshot_utils import (
     clone_graph_snapshot,
     clone_route_snapshot,
 )
-from ...runtime_contracts import QueryTracerPort
+from ..ports import QueryTracerPort
 from .answer_models import AnswerPipelineState, AnswerTraceBundle
 
 

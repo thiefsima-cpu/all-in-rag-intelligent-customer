@@ -9,7 +9,7 @@ from ...kernel.artifacts import ArtifactManifest
 from ...kernel.documents import TextDocument
 from ...kernel.json_types import JsonObject
 from ..diagnostics import StartupDiagnostics
-from ..runtime_contracts import (
+from ..ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
     QueryTracerPort,

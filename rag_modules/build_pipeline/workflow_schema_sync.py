@@ -6,9 +6,9 @@ import logging
 from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
-from ..runtime_contracts import GraphDataModulePort
 from ..safe_logging import log_failure
 from .contracts import SemanticGraphSchemaSyncPort, SemanticGraphSchemaSyncResult
+from .ports import GraphDataModulePort
 from .stats_presenter import ProgressCallback
 
 logger = logging.getLogger(__name__)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from ...runtime_contracts import Neo4jDriverPort
 from .driver import create_neo4j_driver
+from .ports import Neo4jDriverPort
 
 logger = logging.getLogger(__name__)
 

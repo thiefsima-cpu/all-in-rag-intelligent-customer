@@ -6,15 +6,15 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
+from ..contracts import QuerySemanticRuntimeSettings
 from ..entity_linker import EntityLinker
 from ..query_policy.models import QueryPolicyBundle
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime_contracts import LLMClientPort, Neo4jManagerPort
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
 from .evidence_builder import GraphEvidenceBuilder
 from .evidence_orchestrator import GraphEvidenceOrchestrator
 from .path_ranker import GraphDocumentRanker
+from .ports import LLMClientPort, Neo4jManagerPort
 from .query_executor import GraphQueryExecutor
 from .query_resolution import GraphQueryFactory
 from .reasoning_strategy import GraphReasoningStrategy
@@ -50,7 +50,7 @@ class GraphRetrievalComponentFactory(Protocol):
         config: GraphRAGConfig,
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort | None,
-        retrieval_profile: RetrievalRuntimeProfile,
+        semantic_settings: QuerySemanticRuntimeSettings,
         database_name: str,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents: ...
@@ -65,13 +65,13 @@ class DefaultGraphRetrievalComponentFactory:
         config: GraphRAGConfig,
         llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort | None,
-        retrieval_profile: RetrievalRuntimeProfile,
+        semantic_settings: QuerySemanticRuntimeSettings,
         database_name: str,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents:
         del llm_client
         query_factory = GraphQueryFactory(
-            semantic_settings=retrieval_profile.semantics,
+            semantic_settings=semantic_settings,
             policy_bundle=policy_bundle,
         )
         runtime = GraphRetrievalRuntime(query_factory, policy_bundle=policy_bundle)

@@ -7,7 +7,6 @@ from typing import Optional
 
 from pymilvus import MilvusClient
 
-from ...dashscope_clients import DashScopeEmbeddingClient
 from ...kernel.json_types import JsonObject, coerce_json_object
 from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
@@ -40,26 +39,8 @@ class _MilvusClientOperations(MilvusOperationHost):
         """初始化嵌入模型"""
         logger.info("Initializing embedding model")
 
-        embedding_client = getattr(self, "embedding_client", None)
-        if embedding_client is not None:
-            self.embeddings = embedding_client
-            logger.info("Embedding client injected through provider port.")
-            return
-
-        self.embeddings = DashScopeEmbeddingClient(
-            api_key=self.api_key,
-            model_name=self.model_name,
-            base_url=self.embedding_base_url,
-            dimension=self.dimension,
-            batch_size=self.embedding_batch_size,
-            timeout=self.embedding_timeout_seconds,
-            http_pool_connections=self.http_pool_connections,
-            http_pool_maxsize=self.http_pool_maxsize,
-            circuit_breaker_failure_threshold=(self.circuit_breaker_failure_threshold),
-            circuit_breaker_recovery_seconds=(self.circuit_breaker_recovery_seconds),
-        )
-
-        logger.info("嵌入模型初始化完成")
+        self.embeddings = self.embedding_client
+        logger.info("Embedding client injected through provider port.")
 
     def get_collection_stats(
         self,
@@ -188,9 +169,6 @@ class _MilvusClientOperations(MilvusOperationHost):
 
     def close(self):
         """关闭连接"""
-        embeddings = getattr(self, "embeddings", None)
-        if embeddings and hasattr(embeddings, "close"):
-            embeddings.close()
         if hasattr(self, "client") and self.client:
             # Milvus客户端不需要显式关闭
             logger.info("Milvus连接已关闭")

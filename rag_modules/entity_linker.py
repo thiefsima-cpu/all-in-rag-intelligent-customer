@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 from .configuration.models import GraphSettings
 from .query_understanding.registry import (
@@ -18,10 +18,25 @@ from .query_understanding.registry import (
     default_entity_linker_query_type_priorities,
     default_entity_linker_relation_priorities,
 )
-from .runtime_contracts import Neo4jDriverPort
 from .safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
+
+
+class Neo4jSessionPort(Protocol):
+    """Neo4j session behavior consumed by the entity linker."""
+
+    def __enter__(self) -> "Neo4jSessionPort": ...
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
+
+    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> Any: ...
+
+
+class Neo4jDriverPort(Protocol):
+    """Neo4j driver behavior consumed by the entity linker."""
+
+    def session(self, **kwargs: object) -> Neo4jSessionPort: ...
 
 
 @dataclass

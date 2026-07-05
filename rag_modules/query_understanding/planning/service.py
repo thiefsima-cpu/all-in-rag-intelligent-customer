@@ -20,8 +20,8 @@ from ...contracts import (
 from ...contracts.query_constraints import QueryConstraints, loads_json_object
 from ...query_policy import get_query_policy
 from ...query_policy.models import QueryPolicyBundle
-from ...runtime_contracts import LLMClientPort
 from ...safe_logging import log_failure
+from ..ports import LLMClientPort
 from ..registry import QueryUnderstandingRegistry, query_registry
 from ..scoring import should_use_fast_rule_plan
 from .cache import QueryPlannerCache

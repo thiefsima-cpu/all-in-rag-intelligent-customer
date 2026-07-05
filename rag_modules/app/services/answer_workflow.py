@@ -9,9 +9,9 @@ from ...configuration.models import GraphRAGConfig
 from ...contracts import RequestControl
 from ...contracts.runtime.errors import answer_error_detail
 from ...retrieval.runtime_profile import RetrievalRuntimeProfileFactory
-from ...runtime_contracts import QueryTracerPort
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
+from ..ports import QueryTracerPort
 from .answer_models import (
     AnswerPipelineState,
     ChunkCallback,

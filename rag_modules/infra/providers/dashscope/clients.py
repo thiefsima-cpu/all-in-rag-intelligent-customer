@@ -7,8 +7,8 @@ from typing import List, Sequence
 
 import requests
 
-from .contracts import RequestControl
-from .infra.resilience import CircuitBreaker, build_pooled_requests_session
+from ....contracts import RequestControl
+from ...resilience import CircuitBreaker, build_pooled_requests_session
 
 logger = logging.getLogger(__name__)
 

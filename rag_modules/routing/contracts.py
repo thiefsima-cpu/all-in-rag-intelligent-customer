@@ -12,7 +12,7 @@ from ..contracts.runtime import (
     RouteSnapshot,
 )
 from ..kernel.json_types import JsonObject
-from ..runtime_contracts import GraphRAGRetrievalPort
+from .ports import GraphRAGRetrievalPort
 
 
 class RoutingWorkflowProtocol(Protocol):

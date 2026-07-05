@@ -25,9 +25,9 @@ class QueryConstraintExtractor:
 
     def extract(self, query: str) -> QueryConstraints:
         profile = infer_query_semantic_profile(query, settings=self.semantic_settings)
-        constraints = QueryConstraints.from_dict(profile.constraints)
-        logger.info("Query constraints parsed: present=%s", constraints.has_constraints())
-        return constraints
+        parsed = QueryConstraints.from_dict(profile.constraints)
+        logger.info("Query constraints parsed: present=%s", parsed.has_constraints())
+        return parsed
 
 
 __all__ = ["QueryConstraintExtractor"]

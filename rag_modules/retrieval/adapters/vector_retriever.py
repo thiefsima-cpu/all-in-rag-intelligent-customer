@@ -7,8 +7,8 @@ from collections.abc import Iterable, Mapping
 from typing import cast
 
 from ...contracts import EvidenceDocument, RetrievalRequest
-from ...runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
 from ...safe_logging import log_failure
+from ..ports import Neo4jDriverPort, VectorIndexModulePort
 
 logger = logging.getLogger(__name__)
 

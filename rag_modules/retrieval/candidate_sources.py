@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import List, Protocol, Sequence
 
 from ..contracts import EvidenceDocument, RetrievalRequest
-from ..runtime_contracts import HybridCandidateRuntimePort
 from .adapters import ConstraintRetriever
+from .ports import HybridCandidateRuntimePort
 
 logger = logging.getLogger(__name__)
 

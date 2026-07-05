@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from ...infra.neo4j import create_neo4j_driver
 from ...kernel.documents import TextDocument
-from ...runtime_contracts import Neo4jDriverPort
+from ..ports import Neo4jDriverPort
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
 from .loader import Neo4jGraphDataLoader
@@ -45,7 +46,7 @@ class GraphDataPreparationModule:
         if driver is not None:
             self.driver = driver
         else:
-            self.driver = create_neo4j_driver(uri, user, password)
+            self.driver = cast(Neo4jDriverPort, create_neo4j_driver(uri, user, password))
             self._owns_driver = True
             with self.driver.session(database=self.database) as session:
                 session.run("RETURN 1 AS test").single()

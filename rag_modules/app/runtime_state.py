@@ -11,7 +11,7 @@ from ..kernel.artifacts import ArtifactManifest
 from ..retrieval import HybridRetrievalService
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..routing import RoutingWorkflowProtocol
-from .runtime_contracts import (
+from .ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
     QueryTracerPort,

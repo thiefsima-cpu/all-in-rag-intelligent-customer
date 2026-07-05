@@ -13,8 +13,8 @@ from typing import Dict, List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from rag_modules.contracts.runtime import AnswerContext, RetrievalOutcome
 from rag_modules.generation import RenderedPrompt, decide_generation_mode
-from rag_modules.runtime import AnswerContext, RetrievalOutcome
 from scripts.smoke_generation_plans import (
     DEFAULT_CORPUS_PATH as DEFAULT_PLAN_CORPUS_PATH,
 )

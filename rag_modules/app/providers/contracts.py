@@ -9,6 +9,7 @@ from ...build_pipeline.contracts import (
     SemanticGraphSchemaSyncPort,
 )
 from ...configuration.models import GraphRAGConfig
+from ...generation.ports import LLMClientPort
 from ...generation.service import GenerationWorkflowService
 from ...graph.retrieval import GraphRAGRetrieval
 from ...observability.tracing_sinks import QueryTraceSink
@@ -23,9 +24,8 @@ from ...runtime.artifact_ports import (
     RuntimeArtifactAccessPort,
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
-from ..runtime_contracts import (
+from ..ports import (
     GraphDataModulePort,
-    LLMClientPort,
     Neo4jManagerPort,
     QueryTracerPort,
     VectorIndexModulePort,

@@ -6,9 +6,11 @@ from typing import cast
 
 from ...build_pipeline.document_artifacts import DocumentIndexCache
 from ...build_pipeline.graph_preparation import GraphDataPreparationModule
+from ...build_pipeline.ports import Neo4jDriverPort as BuildPipelineNeo4jDriverPort
 from ...configuration.models import GraphRAGConfig
 from ...infra.milvus import MilvusIndexConstructionModule
 from ...infra.neo4j import Neo4jConnectionManager
+from ...infra.providers.dashscope import DashScopeEmbeddingClient
 from ...observability.tracing import QueryTracer
 from ...observability.tracing_sinks import (
     JsonlQueryTraceSinkFactory,
@@ -23,9 +25,8 @@ from ...runtime.artifact_ports import (
     RuntimeArtifactAccessPort,
 )
 from ...runtime.artifacts import ArtifactManifestStore
-from ..runtime_contracts import (
+from ..ports import (
     GraphDataModulePort,
-    Neo4jDriverPort,
     Neo4jManagerPort,
     QueryTracerPort,
     VectorIndexModulePort,
@@ -80,7 +81,7 @@ class _DefaultInfrastructureProvider:
             user=storage.neo4j_user,
             password=storage.neo4j_password,
             database=storage.neo4j_database,
-            driver=cast(Neo4jDriverPort, neo4j_manager.driver),
+            driver=cast(BuildPipelineNeo4jDriverPort, neo4j_manager.driver),
         )
 
     def provide_index_module(
@@ -94,19 +95,22 @@ class _DefaultInfrastructureProvider:
         models = config.models
         retrieval = config.retrieval
         return MilvusIndexConstructionModule(
+            embedding_client=DashScopeEmbeddingClient(
+                api_key=models.api_key,
+                model_name=models.embedding_model,
+                base_url=models.embedding_base_url,
+                dimension=storage.milvus_dimension,
+                batch_size=models.embedding_batch_size,
+                timeout=models.embedding_timeout_seconds,
+                http_pool_connections=models.http_pool_connections,
+                http_pool_maxsize=models.http_pool_maxsize,
+                circuit_breaker_failure_threshold=models.circuit_breaker_failure_threshold,
+                circuit_breaker_recovery_seconds=models.circuit_breaker_recovery_seconds,
+            ),
             host=storage.milvus_host,
             port=storage.milvus_port,
             collection_name=storage.milvus_collection_name,
             dimension=storage.milvus_dimension,
-            model_name=models.embedding_model,
-            api_key=models.api_key,
-            embedding_base_url=models.embedding_base_url,
-            embedding_batch_size=models.embedding_batch_size,
-            embedding_timeout_seconds=models.embedding_timeout_seconds,
-            http_pool_connections=models.http_pool_connections,
-            http_pool_maxsize=models.http_pool_maxsize,
-            circuit_breaker_failure_threshold=models.circuit_breaker_failure_threshold,
-            circuit_breaker_recovery_seconds=models.circuit_breaker_recovery_seconds,
             vector_search_ef=retrieval.vector_search_ef,
             vector_search_max_k=retrieval.vector_search_max_k,
             blue_green_enabled=bool(getattr(storage, "milvus_blue_green_enabled", True)),

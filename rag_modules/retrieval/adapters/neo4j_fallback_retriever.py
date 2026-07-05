@@ -7,8 +7,8 @@ from collections.abc import Iterable
 from typing import TypedDict, cast
 
 from ...contracts import EvidenceDocument
-from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
+from ..ports import Neo4jDriverPort
 
 logger = logging.getLogger(__name__)
 

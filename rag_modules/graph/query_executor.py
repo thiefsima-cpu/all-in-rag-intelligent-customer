@@ -10,8 +10,8 @@ from typing import cast
 
 from ..contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
-from ..runtime_contracts import Neo4jDriverPort
 from ..safe_logging import log_failure
+from .ports import Neo4jDriverPort
 from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)

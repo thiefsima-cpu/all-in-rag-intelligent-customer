@@ -57,7 +57,6 @@ Current examples include:
 - `rag_modules.interfaces.api.answer_models` for answer API DTOs.
 - `rag_modules.interfaces.api.build_job_store` for build-job persistence
   components used by API services and tests.
-- `rag_modules.app.runtime_contracts` for application-layer runtime ports.
 - `rag_modules.routing.execution_strategies` for route execution strategies.
 - `rag_modules.infra.milvus_index_construction` for Milvus index construction.
 - `rag_modules.graph.data_preparation` for graph data-preparation imports.
@@ -67,6 +66,11 @@ paths include `rag_modules.neo4j_pool`,
 `rag_modules.build_pipeline.graph_data_preparation`,
 `rag_modules.evidence_processing.core`, and
 `rag_modules.query_understanding.planner_service`.
+
+Consumer-owned runtime ports live in the package that consumes them, such as
+`rag_modules.app.ports`, `rag_modules.retrieval.ports`,
+`rag_modules.routing.ports`, and `rag_modules.infra.milvus.ports`. No aggregate
+runtime port module remains a canonical facade.
 
 ## Legacy Bridge Status
 

@@ -3,29 +3,17 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 
 from rag_modules.app.diagnostics import DataStatsDiagnostics, TraceStatsDiagnostics
+from rag_modules.app.ports import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    QueryTracerPort,
+    VectorIndexModulePort,
+)
 from rag_modules.app.providers import (
     ApplicationServiceProvider,
     InfrastructureProvider,
     RetrievalRuntimeProvider,
     create_default_runtime_provider,
-)
-from rag_modules.app.runtime_contracts import (
-    EmbeddingClientPort,
-    GraphDataModulePort,
-    GraphRAGRetrievalPort,
-    HybridRetrievalPort,
-    LLMChatPort,
-    LLMClientPort,
-    LLMCompletionChoicePort,
-    LLMCompletionMessagePort,
-    LLMCompletionResponsePort,
-    LLMCompletionsPort,
-    Neo4jManagerPort,
-    OpenAICompatibleLLMClientPort,
-    QueryTracerPort,
-    RerankClientPort,
-    StreamingLLMClientPort,
-    VectorIndexModulePort,
 )
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.app.runtime_views import (
@@ -59,16 +47,29 @@ from rag_modules.generation.execution.contracts import (
 )
 from rag_modules.generation.execution.engine import GenerationExecutionEngine
 from rag_modules.generation.execution.usage import GenerationUsageCollector
+from rag_modules.generation.ports import (
+    LLMChatPort,
+    LLMClientPort,
+    LLMCompletionChoicePort,
+    LLMCompletionMessagePort,
+    LLMCompletionResponsePort,
+    LLMCompletionsPort,
+    OpenAICompatibleLLMClientPort,
+    StreamingLLMClientPort,
+)
 from rag_modules.graph.retrieval_types import (
     GraphNodeSnapshot,
     GraphRelationshipSnapshot,
 )
 from rag_modules.infra.milvus.contracts import MilvusOperationHost
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
+from rag_modules.infra.milvus.ports import EmbeddingClientPort
 from rag_modules.kernel.json_types import JsonObject
 from rag_modules.query_policy import get_query_policy
 from rag_modules.query_policy.models import GenerationDecisionPolicy, GraphSubQuestionPolicy
 from rag_modules.query_understanding.planning import QueryPlanCalibrator
+from rag_modules.retrieval.ports import RerankClientPort
+from rag_modules.routing.ports import GraphRAGRetrievalPort, HybridRetrievalPort
 
 runtime_provider = create_default_runtime_provider()
 infrastructure_provider: InfrastructureProvider = runtime_provider.infrastructure

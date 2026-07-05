@@ -3,15 +3,14 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.app.runtime_contracts import (
+from rag_modules.app.ports import (
     GraphDataModulePort,
-    Neo4jDriverPort,
     Neo4jManagerPort,
-    Neo4jSessionPort,
     VectorIndexModulePort,
 )
 from rag_modules.contracts import RetrievalRequest
 from rag_modules.contracts.runtime import QueryAnalysis, ensure_optional_query_analysis
+from rag_modules.graph.ports import Neo4jDriverPort, Neo4jSessionPort
 from rag_modules.kernel.documents import TextDocument
 
 

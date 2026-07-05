@@ -13,7 +13,7 @@ from .composition.contracts import (
     ServingRuntimeLifecycleServiceProtocol,
 )
 from .composition.shared import ProgressCallback
-from .runtime_contracts import (
+from .ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
     QueryTracerPort,

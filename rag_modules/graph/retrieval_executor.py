@@ -16,13 +16,12 @@ from ..contracts import (
 from ..contracts.runtime import GraphRetrievalSnapshot
 from ..contracts.runtime.errors import graph_error_detail
 from ..entity_linker import EntityLinker
-from ..infra.neo4j import create_neo4j_driver
 from ..kernel.json_types import JsonObject, coerce_json_object
-from ..runtime_contracts import Neo4jDriverPort, Neo4jManagerPort
 from ..safe_logging import log_failure
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
 from .evidence_orchestrator import GraphEvidenceOrchestrator
+from .ports import Neo4jDriverPort, Neo4jManagerPort
 from .query_executor import GraphQueryExecutor
 from .retrieval_runtime import GraphRetrievalRuntime
 
@@ -70,12 +69,7 @@ class GraphRetrievalExecutor:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = create_neo4j_driver(
-                    self.storage.neo4j_uri,
-                    self.storage.neo4j_user,
-                    self.storage.neo4j_password,
-                )
-                self._owns_driver = True
+                raise RuntimeError("Graph retrieval requires an injected Neo4j manager.")
 
             driver = self.driver
             if driver is None:

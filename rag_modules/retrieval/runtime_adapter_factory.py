@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..runtime_contracts import Neo4jDriverPort, VectorIndexModulePort
 from .adapters import GraphKVRetriever, VectorRetriever
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 from .dual_level_evidence_service import DualLevelEvidenceService
 from .dual_level_retriever import DualLevelRetriever
 from .keyword_service import QueryKeywordExtractor
+from .ports import Neo4jDriverPort, VectorIndexModulePort
 
 
 class HybridRuntimeAdapterFactory(Protocol):

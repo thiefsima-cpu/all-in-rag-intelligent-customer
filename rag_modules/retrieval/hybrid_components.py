@@ -10,11 +10,6 @@ from ..fusion import FusionRanker
 from ..graph_index import GraphIndexingModule
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
-from ..runtime_contracts import (
-    GraphDataModulePort,
-    Neo4jManagerPort,
-    VectorIndexModulePort,
-)
 from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever, tokenize_chinese
 from .candidate_sources import DefaultHybridCandidateSourceFactory
 from .hybrid_driver_service import HybridDriverService
@@ -24,6 +19,11 @@ from .hybrid_parent_document_service import HybridParentDocumentService
 from .hybrid_runtime import HybridRetrievalRuntime
 from .hybrid_search_service import HybridSearchService
 from .keyword_service import QueryKeywordExtractor
+from .ports import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    VectorIndexModulePort,
+)
 from .runtime_adapter_factory import DefaultHybridRuntimeAdapterFactory, HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 

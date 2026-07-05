@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .runtime_contracts import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
+from .ports import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_views import (
     SystemInfrastructureView,

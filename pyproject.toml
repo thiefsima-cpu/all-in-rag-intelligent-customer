@@ -104,8 +104,6 @@ files = ["rag_modules", "main.py", "main_build_service.py", "tests/typecheck"]
 
 [[tool.mypy.overrides]]
 module = [
-  "rag_modules.app.runtime_contracts",
-  "rag_modules.runtime_contracts",
   "rag_modules.app.runtime_state",
   "rag_modules.app.runtime_views",
   "rag_modules.app.runtime_view_builder",

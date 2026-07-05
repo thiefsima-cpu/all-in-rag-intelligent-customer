@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
+from ..contracts import EvidenceDocument, QueryPlan, QuerySemanticRuntimeSettings, RetrievalRequest
 from ..contracts.graph import GraphQuery
 from ..contracts.runtime import GraphRetrievalSnapshot
 from ..query_policy.models import QueryPolicyBundle
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
-from ..runtime_contracts import Neo4jManagerPort
+from .ports import Neo4jManagerPort
 from .retrieval_components import (
     DefaultGraphRetrievalComponentFactory,
     GraphRetrievalComponentFactory,
@@ -25,21 +24,25 @@ class GraphRAGRetrieval:
         config,
         llm_client,
         neo4j_manager: Neo4jManagerPort | None = None,
-        retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
+        retrieval_profile: Optional[object] = None,
         component_factory: Optional[GraphRetrievalComponentFactory] = None,
         policy_bundle: QueryPolicyBundle | None = None,
     ):
         self.config = config
         self.llm_client = llm_client
         self.neo4j_manager = neo4j_manager
-        self.retrieval_profile = retrieval_profile or RetrievalRuntimeProfile.from_config(config)
+        self.semantic_settings = getattr(
+            retrieval_profile,
+            "semantics",
+            None,
+        ) or QuerySemanticRuntimeSettings.from_config(config)
         self.policy_bundle = policy_bundle
         self.component_factory = component_factory or DefaultGraphRetrievalComponentFactory()
         self._components = self.component_factory.build(
             config=config,
             llm_client=llm_client,
             neo4j_manager=neo4j_manager,
-            retrieval_profile=self.retrieval_profile,
+            semantic_settings=self.semantic_settings,
             database_name=config.storage.neo4j_database,
             policy_bundle=policy_bundle,
         )

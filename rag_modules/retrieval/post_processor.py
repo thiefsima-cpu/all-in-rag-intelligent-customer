@@ -13,10 +13,9 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RequestControl
-from ..dashscope_clients import DashScopeRerankClient
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
-from ..runtime_contracts import RerankClientPort
 from ..safe_logging import log_failure
+from .ports import RerankClientPort
 from .runtime_profile import RetrievalPostProcessSettings
 
 logger = logging.getLogger(__name__)
@@ -47,24 +46,6 @@ class RetrievalPostProcessor:
         self.settings = settings or RetrievalPostProcessSettings.from_config(config)
         self.evidence_unit_ranker = EvidenceUnitRanker()
         self.rerank_client = rerank_client if self.settings.enable_rerank else None
-        if self.settings.enable_rerank:
-            models = config.models if config is not None and hasattr(config, "models") else None
-            if self.rerank_client is not None:
-                return
-            self.rerank_client = DashScopeRerankClient(
-                api_key=str(models.api_key) if models is not None else "",
-                model_name=self.settings.rerank_model,
-                base_url=self.settings.rerank_base_url,
-                timeout=self.settings.rerank_timeout_seconds,
-                http_pool_connections=int(getattr(models, "http_pool_connections", 10)),
-                http_pool_maxsize=int(getattr(models, "http_pool_maxsize", 20)),
-                circuit_breaker_failure_threshold=int(
-                    getattr(models, "circuit_breaker_failure_threshold", 5)
-                ),
-                circuit_breaker_recovery_seconds=float(
-                    getattr(models, "circuit_breaker_recovery_seconds", 30.0)
-                ),
-            )
 
     def post_process(
         self,

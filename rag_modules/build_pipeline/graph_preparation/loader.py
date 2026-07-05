@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ...kernel.json_types import coerce_json_object, coerce_json_value
-from ...runtime_contracts import Neo4jDriverPort
+from ..ports import Neo4jDriverPort
 from .models import GraphLoadCounts, GraphNode
 
 logger = logging.getLogger(__name__)

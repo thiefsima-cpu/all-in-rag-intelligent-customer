@@ -9,8 +9,8 @@ from collections.abc import Iterable, Mapping
 from ...domain.shared.semantic_schema import infer_recipe_semantics
 from ...kernel.documents import TextDocument
 from ...kernel.json_types import JsonObject, coerce_json_object
-from ...runtime_contracts import Neo4jDriverPort
 from ...safe_logging import log_failure
+from ..ports import Neo4jDriverPort
 from .models import GraphNode, PreparedIngredientInput, PreparedStepInput
 
 logger = logging.getLogger(__name__)

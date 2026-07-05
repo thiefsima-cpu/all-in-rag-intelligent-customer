@@ -10,7 +10,7 @@ from ...build_pipeline.document_artifacts import DocumentArtifactBuildService, D
 from ...build_pipeline.schema_sync import SemanticGraphSchemaSyncService
 from ...configuration.models import GraphRAGConfig
 from ...runtime.artifact_ports import ArtifactManifestStorePort, DocumentArtifactCachePort
-from ..runtime_contracts import Neo4jManagerPort
+from ..ports import Neo4jManagerPort
 
 
 class _DefaultBuildPipelineProvider:

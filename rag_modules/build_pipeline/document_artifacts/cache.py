@@ -19,8 +19,8 @@ from ...runtime.artifacts import (
     read_documents,
     write_documents,
 )
-from ...runtime_contracts import GraphDataModulePort
 from ...safe_logging import log_failure
+from ..ports import GraphDataModulePort
 from .manifest import DocumentArtifactManifestAssembler
 from .settings import DocumentArtifactSettings
 from .signatures import DocumentArtifactSignatureCollector

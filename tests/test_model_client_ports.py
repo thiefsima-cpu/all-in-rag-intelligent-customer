@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config
@@ -88,6 +90,52 @@ class ModelClientPortTests(unittest.TestCase):
         )
 
         self.assertIs(module.embeddings, embedding_client)
+
+    def test_dashscope_is_owned_by_infra_provider_package(self) -> None:
+        from rag_modules.infra.providers.dashscope import (
+            DashScopeEmbeddingClient,
+            DashScopeRerankClient,
+        )
+
+        self.assertTrue(
+            DashScopeEmbeddingClient.__module__.startswith("rag_modules.infra.providers.dashscope")
+        )
+        self.assertTrue(
+            DashScopeRerankClient.__module__.startswith("rag_modules.infra.providers.dashscope")
+        )
+        self.assertFalse(Path("rag_modules/dashscope_clients.py").exists())
+
+    def test_milvus_requires_an_embedding_port(self) -> None:
+        parameter = inspect.signature(MilvusIndexConstructionModule.__init__).parameters[
+            "embedding_client"
+        ]
+        self.assertIs(parameter.default, inspect.Parameter.empty)
+
+    def test_milvus_does_not_import_dashscope(self) -> None:
+        violations = []
+        for path in Path("rag_modules/infra/milvus").glob("*.py"):
+            text = path.read_text(encoding="utf-8-sig")
+            if "dashscope" in text.lower():
+                violations.append(str(path))
+        self.assertEqual([], violations)
+
+    def test_milvus_does_not_close_injected_embedding_provider(self) -> None:
+        class CloseTrackingEmbedding:
+            def __init__(self) -> None:
+                self.close_calls = 0
+
+            def close(self) -> None:
+                self.close_calls += 1
+
+        embedding = CloseTrackingEmbedding()
+        module = object.__new__(MilvusIndexConstructionModule)
+        module.embedding_client = embedding
+        module.embeddings = embedding
+        module.client = None
+
+        module.close()
+
+        self.assertEqual(0, embedding.close_calls)
 
     def test_retrieval_post_processor_accepts_injected_rerank_port(self) -> None:
         rerank_client = _FakeRerankClient(order=[1, 0])

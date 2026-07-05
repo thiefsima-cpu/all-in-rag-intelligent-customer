@@ -12,7 +12,7 @@ from ...contracts.runtime import QueryAnalysis
 from ...kernel.json_types import JsonObject, coerce_json_object, coerce_json_value
 from ...kernel.routing import SearchStrategy
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
-from ...runtime_contracts import GraphRAGRetrievalPort, HybridRetrievalPort
+from ..ports import GraphRAGRetrievalPort, HybridRetrievalPort
 
 
 @dataclass(frozen=True, slots=True)
