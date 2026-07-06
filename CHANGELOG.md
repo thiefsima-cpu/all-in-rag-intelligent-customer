@@ -1,29 +1,25 @@
-# Changelog
+# 更新日志
 
-All notable changes to GraphRAG C9 are recorded here.
+GraphRAG C9 的所有重要变更都记录在这里。
 
-This project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-format and uses package versions from `pyproject.toml`.
+本项目遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 格式，
+并使用 `pyproject.toml` 中的包版本。
 
-## Unreleased
+## 未发布
 
-### Added
+### 新增
 
-- Enterprise governance CI with pytest, coverage, Ruff, mypy, the offline release
-  gate, dependency audit, secret scanning, and SBOM generation.
-- CODEOWNERS coverage for public API contracts, quality corpus assets, and
-  governance files.
-- Security policy and release process documentation.
+- 企业治理 CI，覆盖 pytest、coverage、Ruff、mypy、离线发布门禁、依赖审计、密钥扫描和 SBOM 生成。
+- 为公共 API 契约、质量语料资产和治理文件补齐 CODEOWNERS 保护。
+- 安全策略和发布流程文档。
 
-### Security
+### 安全
 
-- Raised vulnerable runtime and development dependency pins identified by
-  `pip-audit`, including `langchain-core`, `langsmith`, `starlette`, `ujson`,
-  and `pip`.
+- 提升 `pip-audit` 识别出的易受攻击运行时和开发依赖 pin，包括 `langchain-core`、`langsmith`、
+  `starlette`、`ujson` 和 `pip`。
 
 ## 0.3.0 - 2026-07-05
 
-### Added
+### 新增
 
-- Serving API, build API, offline release gate, integration gate, live quality
-  gate, and local pressure tooling are maintained in one Python repository.
+- 服务 API、构建 API、离线发布门禁、集成门禁、实时质量门禁和本地压测工具统一维护在一个 Python 仓库中。

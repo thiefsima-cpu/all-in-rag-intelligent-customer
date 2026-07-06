@@ -1,35 +1,29 @@
-# Security Policy
+# 安全策略
 
-## Supported Versions
+## 受支持版本
 
-Security fixes are handled for the current package release line tracked by
-`pyproject.toml` and the active `main` branch. Older package versions receive
-fixes only when a release owner explicitly documents that support in
-`CHANGELOG.md`.
+安全修复覆盖 `pyproject.toml` 跟踪的当前包发布线，以及活跃的 `main` 分支。
+旧包版本只有在发布负责人明确写入 `CHANGELOG.md` 后，才会继续接收修复。
 
-## Reporting a Vulnerability
+## 漏洞报告
 
-Do not open a public issue for a suspected vulnerability. Report it privately to
-`@thiefsima-cpu` with:
+不要为疑似漏洞创建公开 issue。请将报告私下发送给 `@thiefsima-cpu`，并包含：
 
-- Affected package or API version.
-- Reproduction steps or a minimal proof of concept.
-- Whether credentials, customer data, prompts, traces, or generated artifacts may
-  be exposed.
-- Any known mitigations.
+- 受影响的包版本或 API 版本。
+- 复现步骤，或最小化概念验证。
+- 是否可能暴露凭证、客户数据、提示词、追踪或生成产物。
+- 已知缓解措施。
 
-The owner should acknowledge the report within 3 business days, triage severity,
-and coordinate a fix branch with the CI security gates passing before release.
+负责人应在 3 个工作日内确认收到报告，分级评估严重性，并协调修复分支；发布前必须通过 CI 安全门禁。
 
-## Required Security Gates
+## 必需安全门禁
 
-Pull requests to protected branches must pass:
+进入受保护分支的 PR 必须通过：
 
-- `pip-audit` against `requirements.txt` and `requirements-dev.txt`.
-- Gitleaks secret scanning.
-- SBOM generation for release traceability.
-- The offline release gate, pytest coverage gate, Ruff, and mypy.
+- 针对 `requirements.txt` 和 `requirements-dev.txt` 的 `pip-audit`。
+- Gitleaks 密钥扫描。
+- 用于发布可追溯性的 SBOM 生成。
+- 离线发布门禁、pytest 覆盖率门禁、Ruff 和 mypy。
 
-Real secrets, customer data, database credentials, API keys, and tokens must stay
-out of the repository. Use `.env.example` for placeholders and local `.env` files
-for private values.
+真实密钥、客户数据、数据库凭证、API key 和 token 必须留在仓库外。使用 `.env.example` 记录占位符，
+使用本地 `.env` 文件保存私有值。

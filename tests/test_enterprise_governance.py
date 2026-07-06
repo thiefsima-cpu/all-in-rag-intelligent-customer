@@ -63,9 +63,9 @@ def test_security_changelog_and_release_process_are_documented() -> None:
     changelog = _read("CHANGELOG.md")
     release_process = _read("docs/release_process.md")
 
-    assert "Supported Versions" in security
-    assert "Reporting a Vulnerability" in security
-    assert "Unreleased" in changelog
+    assert "受支持版本" in security
+    assert "漏洞报告" in security
+    assert "未发布" in changelog
     assert "Keep a Changelog" in changelog
     assert "Version bump" in release_process
     assert "CHANGELOG.md" in release_process

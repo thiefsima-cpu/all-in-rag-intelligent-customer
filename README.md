@@ -1,57 +1,51 @@
 # GraphRAG C9
 
-This repository keeps the serving API, build API, offline gate, and local
-pressure tooling in one place.
+本仓库把服务 API、构建 API、离线门禁和本地压测工具放在同一个项目中，方便
+GraphRAG C9 的开发、验证和交付。
 
-## Setup
+## 环境初始化
 
-Install Miniconda or Anaconda, make sure `conda` is available in PowerShell,
-then use the repository bootstrap script on Windows:
+安装 Miniconda 或 Anaconda，并确认 PowerShell 中可以使用 `conda`。Windows 下优先使用仓库自带的
+bootstrap 脚本：
 
 ```powershell
 .\scripts\bootstrap_env.ps1 -Profile dev
 ```
 
-The script creates or reuses the global conda environment `graphrag-c9-dev`.
-Activate it before running local engineering commands:
+脚本会创建或复用全局 conda 环境 `graphrag-c9-dev`。运行本地工程命令前先激活它：
 
 ```powershell
 conda activate graphrag-c9-dev
 ```
 
-Install the repository Git hook once from the activated development
-environment:
+在已激活的开发环境中安装一次仓库 Git hook：
 
 ```powershell
 python -m pre_commit install
 ```
 
-Copy the committed environment template to your private local `.env` file before
-running services:
+运行服务前，把提交到仓库的环境模板复制为本地私有 `.env` 文件：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Keep real API keys, tokens, and customer-specific values in `.env`. The
-committed `.env.example` file is documentation for required variables and should
-only contain placeholders or safe defaults.
+真实 API key、token 和客户专属配置只放在 `.env` 中。已提交的 `.env.example` 只用于说明必需变量，
+里面只能保留占位符或安全默认值。
 
-`pyproject.toml` is the dependency source of truth. Runtime direct dependencies
-live in `[project.dependencies]`; development tools live in the `dev` optional
-dependency group. `requirements.txt` and `requirements-dev.txt` are generated
-lock files consumed by Docker and the bootstrap script.
+`pyproject.toml` 是依赖来源的准绳。运行时直接依赖放在 `[project.dependencies]` 中；开发工具放在
+`dev` optional dependency group 中。`requirements.txt` 和 `requirements-dev.txt` 是生成出来的锁定文件，
+供 Docker 和 bootstrap 脚本使用。
 
-Regenerate both lock files with Python 3.11:
+使用 Python 3.11 重新生成两个锁文件：
 
 ```powershell
 .\scripts\compile_locks.ps1
 ```
 
-## Engineering Entry
+## 工程入口
 
-Install the repo in editable mode and use the console commands from
-`pyproject.toml`:
+以 editable 模式安装仓库后，可以使用 `pyproject.toml` 中定义的控制台命令：
 
 ```powershell
 graph-rag-api
@@ -64,32 +58,27 @@ graph-rag-pressure
 graph-rag-verify-env
 ```
 
-## Architecture
+## 架构说明
 
-Start with [docs/architecture.md](docs/architecture.md) for the runtime
-assembly, query-to-answer flow, and build workflow state machine diagrams.
+运行时装配、从 query 到 answer 的流程，以及构建工作流状态机，请先阅读
+[docs/architecture.md](docs/architecture.md)。
 
-## Version Governance
+## 版本治理
 
-GraphRAG C9 tracks three separate version axes:
+GraphRAG C9 同时跟踪三个版本轴：
 
-- Package version: `0.3.0`, from `[project].version` in `pyproject.toml`. This
-  is the Python distribution and release version used for package publication,
-  release notes, and customer upgrade guidance.
-- API version: `1.0.0`, from `API_VERSION`, with API prefix: `/v1`. This is the
-  HTTP/OpenAPI contract version shared by the serving and build FastAPI apps.
-- Compatibility removal version: `0.2.0`, from
-  `LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`, plus row-level milestones in
-  [docs/public_surface_retirement_plan.md](docs/public_surface_retirement_plan.md).
-  These record the first package or API milestone where a compatibility surface
-  is gone.
+- 包版本：`0.3.0`，来源于 `pyproject.toml` 的 `[project].version`。它是 Python 分发包和发布版本，
+  用于包发布、发布说明和客户升级指引。
+- API 版本：`1.0.0`，来源于 `API_VERSION`，API 前缀是 `/v1`。它是服务 API 和构建 API 共享的
+  HTTP/OpenAPI 契约版本。
+- 兼容性移除版本：`0.2.0`，来源于 `LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`，并由
+  [docs/public_surface_retirement_plan.md](docs/public_surface_retirement_plan.md) 中的行级里程碑补充说明。
+  这些信息记录兼容性表面首次被移除的包版本或 API 版本。
 
-Package releases can keep the same API version, and API contract changes do not
-imply a package version match. Compatibility removals must name their version
-axis, such as package version `0.3.0` or API version `1.0.0`, before they are
-used in release notes or customer migration guidance.
+包发布可以保持相同 API 版本；API 契约变化也不意味着包版本必须同步变化。兼容性移除在进入发布说明或客户迁移指引前，
+必须明确版本轴，例如包版本 `0.3.0` 或 API 版本 `1.0.0`。
 
-## Common Commands
+## 常用命令
 
 ```powershell
 python scripts/local_gate.py
@@ -102,179 +91,140 @@ graph-rag-live-quality-gate --json
 python scripts/pressure_api_service.py --json
 ```
 
-Use `python scripts/local_gate.py` as the final local gate before release work.
-It stops at the first failure while chaining `pre-commit run --all-files`,
-`python scripts/check_encoding.py`, `python -m pytest -q`, and
-`python scripts/release_gate.py`.
+发布前的最终本地门禁优先使用 `python scripts/local_gate.py`。它会按顺序串联
+`pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
+`python scripts/release_gate.py`，并在第一个失败点停止。
 
-Quality gates are split into three independent layers:
+质量门禁分为三层，彼此独立：
 
-- `graph-rag-release-gate`: deterministic contract regression, dependency-free.
-- `graph-rag-integration-gate`: live dependency participation for Neo4j,
-  Milvus, the serving API, and the serving model provider.
-- `graph-rag-live-quality-gate`: live AI quality proof with real retrieval,
-  real generation, deterministic ranking metrics, LLM judge scoring, manual
-  review samples, and slice metrics.
+- `graph-rag-release-gate`：确定性的契约回归检查，不依赖外部服务。
+- `graph-rag-integration-gate`：验证 Neo4j、Milvus、服务 API 和模型提供方等真实依赖是否参与。
+- `graph-rag-live-quality-gate`：使用真实检索、真实生成、确定性排序指标、LLM judge 评分、
+  人工复核样本和切片指标证明线上质量。
 
-The live gates are explicitly invoked against prepared environments. They are
-not part of default pytest, pre-commit, `scripts/local_gate.py`, or the offline
-release gate. See
-[docs/real_dependency_integration_gate.md](docs/real_dependency_integration_gate.md)
-and [docs/live_quality_gate.md](docs/live_quality_gate.md) for prerequisites,
-cost controls, reports, and CI scheduling.
+实时门禁只在已准备好的环境中显式运行。它们不会进入默认 pytest、pre-commit、`scripts/local_gate.py`
+或离线发布门禁。前置条件、成本控制、报告和 CI 调度请见
+[docs/real_dependency_integration_gate.md](docs/real_dependency_integration_gate.md) 和
+[docs/live_quality_gate.md](docs/live_quality_gate.md)。
 
-## Enterprise Governance
+## 企业治理
 
-Organization-level enforcement lives in GitHub:
+组织级约束由 GitHub 承载：
 
-- [CI](.github/workflows/ci.yml) runs Ruff, mypy, pytest with coverage, the
-  offline release gate, `pip-audit`, secret scanning, and SBOM generation.
-- [CODEOWNERS](.github/CODEOWNERS) assigns required reviewers for public API
-  contracts, quality corpus assets, and governance files when branch protection
-  enables code-owner review.
-- [SECURITY.md](SECURITY.md) describes vulnerability reporting and required
-  security gates.
-- [CHANGELOG.md](CHANGELOG.md) records release notes using the package version
-  from `pyproject.toml`.
-- [docs/release_process.md](docs/release_process.md) defines the release
-  checklist, required GitHub checks, coverage policy, SBOM retention, and
-  version bump flow.
+- [CI](.github/workflows/ci.yml) 运行 Ruff、mypy、带 coverage 的 pytest、离线发布门禁、`pip-audit`、
+  secret scanning 和 SBOM 生成。
+- [CODEOWNERS](.github/CODEOWNERS) 为公共 API 契约、质量语料资产和治理文件分配必要 reviewer；
+  启用 branch protection 的 code-owner review 后会强制生效。
+- [SECURITY.md](SECURITY.md) 说明漏洞报告流程和必需安全门禁。
+- [CHANGELOG.md](CHANGELOG.md) 使用 `pyproject.toml` 中的包版本记录发布说明。
+- [docs/release_process.md](docs/release_process.md) 定义发布 checklist、必需 GitHub checks、coverage 策略、
+  SBOM 留存和版本 bump 流程。
 
 ## Docker
 
-The root `docker-compose.yml` now keeps infrastructure and the API surface
-separate. Start the API profile with:
+根目录的 `docker-compose.yml` 将基础设施和 API 表面分开。启动 API profile：
 
 ```powershell
 docker compose --profile api up --build
 ```
 
-The API profile starts both app surfaces:
+API profile 会启动两个应用表面：
 
-- serving API: <http://localhost:8000/docs>
-- build API: <http://localhost:8001/docs>
+- 服务 API：<http://localhost:8000/docs>
+- 构建 API：<http://localhost:8001/docs>
 
-The API containers are built from `Dockerfile.api` and join the Milvus and Neo4j
-services declared in the same compose file. Define `DASHSCOPE_API_KEY` in the
-project `.env` file before starting the API profile; Compose forwards that
-value into the API containers. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
-forwarded as fallback provider keys. The serving API validates this lightweight
-model-provider requirement during startup so a missing key fails fast with a
-clear error instead of surfacing as the first `/v1/answers` request.
+API 容器由 `Dockerfile.api` 构建，并加入同一个 compose 文件中声明的 Milvus 和 Neo4j 服务。启动 API profile
+前，在项目 `.env` 文件中配置 `DASHSCOPE_API_KEY`；Compose 会把该值转发给 API 容器。`OPENAI_API_KEY` 和
+`MOONSHOT_API_KEY` 也会作为备用模型提供方 key 转发。服务 API 会在启动时验证这个轻量模型提供方要求，
+因此缺少 key 时会快速失败并给出清晰错误，而不是等到第一次 `/v1/answers` 请求才暴露问题。
 
-With the default `AUTO_BOOTSTRAP=true`, the same Compose command also runs a
-one-shot bootstrap service. On fresh state it imports the CSV graph and builds
-the knowledge-base artifacts; on later starts it skips graph import when recipe
-data already exists and lets the build workflow reuse valid artifacts. The
-serving API starts only after bootstrap succeeds and initializes its retrieval
-runtime automatically.
+默认 `AUTO_BOOTSTRAP=true` 时，同一个 Compose 命令还会运行一次性 bootstrap 服务。全新状态下，它会导入 CSV
+图谱并构建知识库产物；后续启动时，如果 recipe 数据已经存在，它会跳过图谱导入，并让构建工作流复用有效产物。
+bootstrap 成功后服务 API 才会启动，并自动初始化检索运行时。
 
-Check startup progress with:
+查看启动进度：
 
 ```powershell
 docker compose logs bootstrap
 ```
 
-Set `FORCE_REBUILD=true` in `.env` to submit `/jobs/rebuild` during the next
-bootstrap. Set `AUTO_BOOTSTRAP=false` for production-style deployments where
-graph import and build jobs are managed separately. The build API remains
-available for explicit operations:
+在 `.env` 中设置 `FORCE_REBUILD=true`，可在下一次 bootstrap 期间提交 `/jobs/rebuild`。设置
+`AUTO_BOOTSTRAP=false` 可用于生产式部署，此时图谱导入和构建任务由外部流程管理。构建 API 仍可用于显式操作：
 
 ```powershell
 $job = Invoke-RestMethod -Method Post http://localhost:8001/v1/jobs/build
 Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 ```
 
-### Build job control and history
+### 构建任务控制与历史
 
-Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build` and
-`/v1/jobs/rebuild`. Reusing the same key for the same operation returns the
-original job. Reusing a key for a different operation returns
-`409 BUILD_JOB_CONFLICT`.
+构建 API 的 `/v1/jobs/build` 和 `/v1/jobs/rebuild` 提交路由接受 `Idempotency-Key`。同一个 key 用于同一种操作时，
+会返回原始 job；同一个 key 用于不同操作时，会返回 `409 BUILD_JOB_CONFLICT`。
 
-Queued or running jobs can be cancelled cooperatively:
+排队中或运行中的 job 可以协作式取消：
 
 ```powershell
 Invoke-RestMethod -Method Post `
   "http://localhost:8001/v1/jobs/$($job.job.job_id)/cancel"
 ```
 
-Running jobs first enter `cancel_requested` and become `cancelled` when the
-build workflow reaches its next progress checkpoint. Failed or cancelled jobs
-can be retried with `POST /v1/jobs/{job_id}/retry`. Retry creates a new job and
-records the original identifier in `retry_of_job_id`; the original history is
-not rewritten.
+运行中的 job 会先进入 `cancel_requested`，当构建工作流抵达下一个进度 checkpoint 后变为 `cancelled`。
+失败或取消的 job 可通过 `POST /v1/jobs/{job_id}/retry` 重试。重试会创建新 job，并在 `retry_of_job_id`
+中记录原始标识；原始历史不会被改写。
 
-`GET /v1/jobs` returns a bounded page:
+`GET /v1/jobs` 返回有上限的分页结果：
 
 ```powershell
 curl.exe -H "Authorization: Bearer $env:API_ACCESS_TOKEN" `
   "http://localhost:8001/v1/jobs?limit=50"
 ```
 
-Follow `next_cursor` until it is empty. Build job history is retained according
-to `API_BUILD_JOB_RETENTION_LIMIT`; active jobs are never pruned. If local job
-storage contains a corrupted record, `/v1/diagnostics` reports safe
-`build_job_store.warning_count` and stable warning codes without exposing raw
-file contents.
+沿着 `next_cursor` 读取，直到它为空。构建任务历史按照 `API_BUILD_JOB_RETENTION_LIMIT` 保留；活跃 job
+永远不会被裁剪。如果本地 job storage 中存在损坏记录，`/v1/diagnostics` 会报告安全的
+`build_job_store.warning_count` 和稳定 warning code，不会暴露原始文件内容。
 
-The default execution backend is configured with
-`API_BUILD_JOB_RUNNER_BACKEND=in_process`. Local executor concurrency is
-controlled by `API_BUILD_JOB_RUNNER_MAX_WORKERS`, which defaults to `1`.
-Accepted queued jobs are persisted before dispatch and are redispatched when the
-build API restarts. Claimed jobs are protected by a lease
-(`API_BUILD_JOB_LEASE_SECONDS`, default `30`) renewed by the in-process runner
-heartbeat (`API_BUILD_JOB_HEARTBEAT_SECONDS`, default `10`). If a process stops
-while it owns a job, the next startup expires the lease and reports the job as a
-safe failed/interrupted build instead of leaving it permanently running.
+默认执行后端由 `API_BUILD_JOB_RUNNER_BACKEND=in_process` 配置。本地 executor 并发由
+`API_BUILD_JOB_RUNNER_MAX_WORKERS` 控制，默认值为 `1`。已接受的排队 job 会先持久化再分发，并在构建 API
+重启时重新分发。已认领 job 由 lease 保护，`API_BUILD_JOB_LEASE_SECONDS` 默认 `30`；in-process runner
+heartbeat 由 `API_BUILD_JOB_HEARTBEAT_SECONDS` 控制，默认 `10`。如果进程在持有 job 时停止，下一次启动会让
+lease 过期，并将 job 报告为安全的 failed/interrupted build，而不是让它永久处于 running。
 
-Build-job storage is migrated once from the older V2 files into V3 event
-envelopes under the configured `BUILD_JOB_STORE_PATH` directory, with the
-original V2 directory retained as `build_jobs.v2.backup`. A future backend must
-implement the build-job repository and runner ports and be selected in
-composition; this release does not ship an external worker backend.
+构建任务存储会从旧 V2 文件一次性迁移为配置的 `BUILD_JOB_STORE_PATH` 目录下的 V3 event envelope，并保留原始
+V2 目录为 `build_jobs.v2.backup`。未来的后端必须实现构建任务 repository 和 runner ports，并在 composition
+中选择；当前 release 不包含外部 worker backend。
 
-`/v1/answers` returns `409 Conflict` until the build API has produced a ready
-artifact manifest, cached documents, and a Milvus vector collection.
+在构建 API 生成 ready artifact manifest、cached documents 和 Milvus vector collection 前，`/v1/answers`
+会返回 `409 Conflict`。
 
-### Error contract and request correlation
+### 错误契约与请求关联
 
-All HTTP failures use `{"ok": false, "error": {"code": "...", "message": "..."},
-"request_id": "..."}`. Error codes are stable. Messages are safe for display and never contain raw
-exceptions. Validation details include field paths and reasons only, never the rejected input.
+所有 HTTP 失败都使用
+`{"ok": false, "error": {"code": "...", "message": "..."}, "request_id": "..."}`。错误码稳定；错误消息可安全展示，
+且不会包含原始异常。Validation details 只包含字段路径和原因，不包含被拒绝的输入。
 
-Clients may provide `X-Request-ID` using 1–128 ASCII letters, digits, `.`, `_`, `:`, or `-`. When
-the header is missing or invalid, the service generates a replacement. The resolved ID appears in
-the `X-Request-ID` header of every response and in every error body. SSE error events use the same
-payload.
+客户端可以提供 `X-Request-ID`，允许 1 到 128 个 ASCII 字母、数字、`.`、`_`、`:` 或 `-`。如果 header
+缺失或无效，服务会生成替代值。解析后的 ID 会出现在每个响应的 `X-Request-ID` header 中，也会出现在每个错误体中。
+SSE 错误事件使用相同 payload。
 
-Application logs exclude raw questions, query tokens, prompts, credentials, and exception
-messages. Correlate support activity by `request_id` and stable error code.
+应用日志不会记录原始问题、query tokens、prompts、凭证或异常消息。支持排障时，请通过 `request_id` 和稳定错误码关联活动。
 
-Failed build-job resources contain a typed `error` object with a stable code, a catalog-controlled
-message, and the submission request ID.
+失败的构建任务资源包含 typed `error` 对象，其中有稳定 code、由 catalog 控制的消息，以及提交请求 ID。
 
-### Versioned API and debug traces
+### 版本化 API 与调试追踪
 
-Use `/v1` for new API clients. Unversioned serving and build routes are retired;
-callers should use the matching `/v1` path instead.
+新 API client 应使用 `/v1`。未版本化的服务和构建路由已经退役；调用方应改用匹配的 `/v1` 路径。
 
-Public answer routes (`/v1/answers` and `/v1/answers/stream`) expose a
-field-level public contract:
+公开答案路由 `/v1/answers` 和 `/v1/answers/stream` 暴露字段级公共契约：
 
-- `summary`: final answer, status, strategy, latency, evidence count, fallback,
-  token, and cost summary fields.
-- `grounding.evidence_documents`: public citation fields only: `content`,
-  `recipe_name`, `score`, `source`, `evidence_type`, and `matched_terms`.
-- `diagnostics`: stable health/degradation fields such as `overall_bucket`,
-  `retrieval_degraded`, `degraded_sources`, and safe degraded-candidate codes.
+- `summary`：最终答案、状态、策略、延迟、证据数量、fallback、token 和成本汇总字段。
+- `grounding.evidence_documents`：只包含公共 citation 字段，即 `content`、`recipe_name`、`score`、`source`、
+  `evidence_type` 和 `matched_terms`。
+- `diagnostics`：稳定的健康度和降级字段，例如 `overall_bucket`、`retrieval_degraded`、`degraded_sources`
+  和安全的 degraded-candidate code。
 
-Public responses do not expose route resolution, answer context, retrieval
-outcome, query plans, semantic profiles, graph evidence maps, evidence units,
-metadata bags, or trace snapshots. Full runtime details are available only
-through explicit debug routes:
+公共响应不会暴露路由解析、答案上下文、检索结果、查询计划、语义画像、图证据映射、证据单元、元数据包或
+trace 快照。完整运行时细节只通过显式 debug 路由提供：
 
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8000/v1/debug/answers -Body (@{question="..."} | ConvertTo-Json) -ContentType application/json
 ```
-
