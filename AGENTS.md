@@ -27,11 +27,10 @@ Python 仓库中。
 
 - `pyproject.toml` 是依赖来源的准绳。
 - `requirements.txt` 和 `requirements-dev.txt` 是生成出来的锁定文件，供 Docker
-  和初始化脚本使用。依赖变更时不要手改这两个文件；用 Python 3.11 重新生成：
+  和初始化脚本使用。依赖变更时不要手改这两个文件；用 Python 3.11 通过仓库脚本重新生成：
 
   ```powershell
-  python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
-  python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+  .\scripts\compile_locks.ps1
   ```
 
 - 以 `.env.example` 作为本地 `.env` 的模板。不要提交真实 API key、数据库凭证、
@@ -96,8 +95,9 @@ Python 仓库中。
 - 优先使用 profile 和配置驱动行为，避免硬编码环境值。
 - 处理结构化数据时，优先使用已有的 Pydantic model 或 dataclass；不要在已有
   类型模式足够时临时堆 ad hoc 字典。
-- 谨慎新增生产依赖。确实需要新增 runtime 依赖时，更新 `pyproject.toml`，重新
-  生成两个 requirements 锁文件，并说明为什么它属于生产依赖而不是 `dev` extra。
+- 谨慎新增生产依赖。确实需要新增 runtime 依赖时，更新 `pyproject.toml`，运行
+  `.\scripts\compile_locks.ps1` 重新生成两个 requirements 锁文件，并说明为什么它
+  属于生产依赖而不是 `dev` extra。
 - Ruff 目标是 Python 3.11、100 字符行宽、导入排序和双引号格式。完成代码修改前，
   运行 `pre-commit run --all-files` 或等价的 Ruff 命令。
 - 聚焦修复时避免大范围重构。除非任务明确要求，否则不要破坏

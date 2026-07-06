@@ -19,6 +19,19 @@ def _requirement_names(entries: list[str]) -> set[str]:
     return names
 
 
+def _pinned_requirement_version(entries: list[str], package_name: str) -> str:
+    expected_name = package_name.lower().replace("_", "-")
+    for entry in entries:
+        requirement = entry.split(";", 1)[0].strip()
+        if "==" not in requirement:
+            continue
+        name, version = requirement.split("==", 1)
+        normalized_name = name.split("[", 1)[0].strip().lower().replace("_", "-")
+        if normalized_name == expected_name:
+            return version.strip()
+    raise AssertionError(f"{package_name} must be declared with an exact == pin")
+
+
 class DependencyIsolationTests(unittest.TestCase):
     def test_runtime_lock_rejects_development_only_packages(self) -> None:
         from scripts.verify_environment import find_runtime_lock_violations
@@ -113,6 +126,51 @@ class DependencyIsolationTests(unittest.TestCase):
         lock_path = Path(__file__).resolve().parents[1] / "requirements.txt"
 
         self.assertEqual(find_runtime_lock_violations(lock_path), [])
+
+    def test_lock_compiler_script_regenerates_runtime_and_development_locks(self) -> None:
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "compile_locks.ps1"
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("pyproject.toml", script)
+        self.assertIn("requirements.txt", script)
+        self.assertIn("requirements-dev.txt", script)
+        self.assertIn("piptools", script)
+        self.assertIn("--extra=dev", script)
+        self.assertIn("--strip-extras", script)
+        self.assertIn("--allow-unsafe", script)
+        self.assertIn("--pip-args", script)
+        self.assertIn("3.11", script)
+
+        try:
+            script_path.read_bytes().decode("ascii")
+        except UnicodeDecodeError as exc:
+            self.fail(f"compile_locks.ps1 should stay ASCII-only for Windows PowerShell: {exc}")
+
+    def test_installer_pip_pins_match_pyproject_development_tool_pin(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        pip_version = _pinned_requirement_version(
+            pyproject["project"]["optional-dependencies"]["dev"],
+            "pip",
+        )
+
+        for relative_path in ("Dockerfile.api", "scripts/bootstrap_env.ps1"):
+            with self.subTest(path=relative_path):
+                content = (root / relative_path).read_text(encoding="utf-8")
+                self.assertIn(f"pip=={pip_version}", content)
+
+    def test_dependency_docs_point_to_lock_compiler_script(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+
+        for relative_path in (
+            "README.md",
+            "AGENTS.md",
+            "docs/dependency_management.md",
+            "docs/release_process.md",
+        ):
+            with self.subTest(path=relative_path):
+                content = (root / relative_path).read_text(encoding="utf-8")
+                self.assertIn(".\\scripts\\compile_locks.ps1", content)
 
     def test_environment_verifier_rejects_global_interpreter(self) -> None:
         from scripts.verify_environment import validate_environment

@@ -97,7 +97,7 @@ class DockerApiBuildContextTests(unittest.TestCase):
             ["CMD", "curl", "-f", "http://localhost:9091/healthz"],
             services["standalone"]["healthcheck"]["test"],
         )
-        self.assertIn("/health/live", build_api["healthcheck"]["test"][-1])
+        self.assertIn("/v1/health/live", build_api["healthcheck"]["test"][-1])
         self.assertEqual("service_healthy", build_api["depends_on"]["neo4j"]["condition"])
         self.assertEqual("service_healthy", build_api["depends_on"]["standalone"]["condition"])
 

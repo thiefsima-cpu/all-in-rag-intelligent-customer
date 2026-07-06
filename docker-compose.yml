@@ -145,7 +145,7 @@ services:
         - CMD
         - python
         - -c
-        - import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live', timeout=5)
+        - import urllib.request; urllib.request.urlopen('http://localhost:8001/v1/health/live', timeout=5)
       interval: 5s
       timeout: 10s
       retries: 20

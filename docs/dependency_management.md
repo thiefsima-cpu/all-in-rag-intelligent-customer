@@ -9,12 +9,15 @@ tools such as `pytest`, `pip-tools`, `ruff`, `mypy`, and `pre-commit`.
 and must not be edited by hand. `requirements.in` and `requirements-dev.in` are
 retired; do not recreate them.
 
-After changing `pyproject.toml`, regenerate the locks with Python 3.11:
+After changing `pyproject.toml`, regenerate both locks with Python 3.11:
 
 ```powershell
-python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
-python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+.\scripts\compile_locks.ps1
 ```
+
+The script runs `piptools compile` for the runtime lock and the `dev` extra.
+Pass `-IndexUrl` only when a release process intentionally uses a different
+package index.
 
 Create an isolated Miniconda-backed development environment:
 
@@ -67,10 +70,10 @@ Verify an existing development environment:
 conda run --name graphrag-c9-dev python scripts\verify_environment.py --expected-conda-env graphrag-c9-dev
 ```
 
-Dependency updates must change `pyproject.toml`, regenerate both locks,
-bootstrap a clean conda environment, and run the complete test suite. Direct
-global `pip install` commands outside the selected conda environment are not a
-supported project setup.
+Dependency updates must change `pyproject.toml`, run
+`.\scripts\compile_locks.ps1`, bootstrap a clean conda environment, and run the
+complete test suite. Direct global `pip install` commands outside the selected
+conda environment are not a supported project setup.
 
 ## Lifecycle warning controls
 

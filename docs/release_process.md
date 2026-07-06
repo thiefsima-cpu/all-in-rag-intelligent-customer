@@ -18,8 +18,8 @@ for public API contracts, quality corpus assets, and governance files.
 ## Release Checklist
 
 1. Version bump: update `[project].version` in `pyproject.toml`.
-2. Dependency locks: regenerate `requirements.txt` and `requirements-dev.txt`
-   with Python 3.11 when dependencies changed.
+2. Dependency locks: run `.\scripts\compile_locks.ps1` with Python 3.11 when
+   dependencies changed.
 3. CHANGELOG.md: move `Unreleased` entries into a dated version section and add
    any migration notes, security notes, API contract notes, or compatibility
    removals.
