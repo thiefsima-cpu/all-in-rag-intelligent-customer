@@ -6,24 +6,26 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 
-from .errors import (
+from rag_modules.contracts.build_jobs import (
     BuildJobConcurrentUpdateError,
     BuildJobConflictError,
     BuildJobDispatchError,
-    BuildJobNotFoundError,
-)
-from .events import BuildJobEvent, BuildJobEventType, JobCancellationRequested
-from .models import (
+    BuildJobEvent,
+    BuildJobEventType,
     BuildJobId,
     BuildJobListQuery,
+    BuildJobNotFoundError,
     BuildJobPage,
+    BuildJobRepositoryDiagnostics,
+    BuildJobRepositoryPort,
+    BuildJobRunnerPort,
     BuildJobSnapshot,
     BuildJobStatus,
     BuildJobSubmissionDisposition,
     BuildJobType,
+    JobCancellationRequested,
     SubmitBuildJob,
 )
-from .ports import BuildJobRepositoryPort, BuildJobRunnerPort
 
 _Clock = Callable[[], datetime]
 _IdFactory = Callable[[], str]
@@ -150,6 +152,9 @@ class BuildJobApplicationService:
 
     def shutdown(self) -> None:
         self._runner.shutdown()
+
+    def diagnostics(self) -> BuildJobRepositoryDiagnostics:
+        return self._repository.diagnostics()
 
     def _submit_command(self, command: SubmitBuildJob) -> BuildJobSnapshot:
         submission = self._repository.submit(command)

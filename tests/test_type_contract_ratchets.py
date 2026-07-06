@@ -36,7 +36,6 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "interfaces" / "api" / "services" / "build.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "services" / "serving.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "services" / "serving_readiness.py",
-    ROOT / "rag_modules" / "interfaces" / "api" / "build_jobs" / "repository.py",
     ROOT / "rag_modules" / "graph" / "query_executor.py",
     ROOT / "rag_modules" / "graph" / "retrieval_executor.py",
     ROOT / "rag_modules" / "graph" / "retrieval_components.py",

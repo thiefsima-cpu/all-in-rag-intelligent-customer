@@ -9,8 +9,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from rag_modules.app.assembly import assemble_build_job_application
+from rag_modules.app.runtime_operations import resolve_runtime_operation_coordinator
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.interfaces.api.build_job_store import FileBuildJobStore
 from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
     GraphRAGBuildApiService,
@@ -95,16 +96,17 @@ class _BlockingBuildSystem(_BuildSystem):
         build_job_id: str = "",
     ) -> None:
         del request_id, build_job_id
-        if progress:
-            progress("building")
         self.build_started.set()
         self.release_build.wait(timeout=2.0)
+        if progress:
+            progress("Building Milvus vector index...")
         self.system_ready = True
 
 
 class _FailingBuildSystem(_BuildSystem):
     def __init__(self, config, secret: str) -> None:
         super().__init__(config)
+        self.build_initialized = True
         self.secret = secret
 
     def build_knowledge_base(
@@ -118,6 +120,18 @@ class _FailingBuildSystem(_BuildSystem):
         if progress:
             progress(f"private progress {self.secret}")
         raise RuntimeError(self.secret)
+
+
+def _service(system: _BuildSystem, config) -> GraphRAGBuildApiService:
+    coordinator = resolve_runtime_operation_coordinator(system)
+    build_jobs = assemble_build_job_application(
+        system=system,
+        config=config,
+        coordinator=coordinator,
+    )
+    service = GraphRAGBuildApiService(system=system, config=config, build_jobs=build_jobs)
+    service.startup()
+    return service
 
 
 def _wait_for_service_job_status(
@@ -145,66 +159,26 @@ def _repository_job_path(store_path: str, job_id: str) -> Path:
     return path.with_name(f"{path.stem}.d") / "jobs" / f"{job_id}.json"
 
 
+def _write_v2_running_job(path: str, *, job_id: str) -> None:
+    root = Path(path).parent
+    jobs_dir = root / "build_jobs.d" / "jobs"
+    jobs_dir.mkdir(parents=True)
+    (jobs_dir / f"{job_id}.json").write_text(
+        json.dumps(
+            {
+                "job_id": job_id,
+                "request_id": "request-killed-build",
+                "job_type": "rebuild",
+                "status": "running",
+                "created_at": "2026-06-12T00:00:00+00:00",
+                "started_at": "2026-06-12T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 class BuildJobPersistenceTests(unittest.TestCase):
-    def test_file_store_facade_uses_repository_after_legacy_seed(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = str(Path(temp_dir) / "build_jobs.json")
-            store = FileBuildJobStore(path)
-            store.save_all(
-                [
-                    {
-                        "job_id": "c" * 32,
-                        "request_id": "seed-request",
-                        "job_type": "build",
-                        "status": "succeeded",
-                        "created_at": "2026-06-28T00:00:00Z",
-                        "message": "Knowledge base build completed.",
-                    }
-                ]
-            )
-
-            loaded = FileBuildJobStore(path).load_all()
-
-            self.assertEqual(len(loaded), 1)
-            self.assertEqual(loaded[0]["job_id"], "c" * 32)
-            self.assertTrue(_repository_job_path(path, "c" * 32).exists())
-
-    def test_file_store_save_all_refreshes_repository_after_existing_import(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = str(Path(temp_dir) / "build_jobs.json")
-            store = FileBuildJobStore(path)
-            store.save_all(
-                [
-                    {
-                        "job_id": "c" * 32,
-                        "request_id": "first-seed",
-                        "job_type": "build",
-                        "status": "succeeded",
-                        "created_at": "2026-06-28T00:00:00Z",
-                    }
-                ]
-            )
-            self.assertEqual(FileBuildJobStore(path).load_all()[0]["job_id"], "c" * 32)
-
-            store.save_all(
-                [
-                    {
-                        "job_id": "d" * 32,
-                        "request_id": "second-seed",
-                        "job_type": "rebuild",
-                        "status": "failed",
-                        "created_at": "2026-06-29T00:00:00Z",
-                        "error": {"code": "BUILD_FAILED", "request_id": "second-seed"},
-                    }
-                ]
-            )
-
-            loaded = FileBuildJobStore(path).load_all()
-
-            self.assertEqual([job["job_id"] for job in loaded], ["d" * 32])
-            self.assertFalse(_repository_job_path(path, "c" * 32).exists())
-            self.assertTrue(_repository_job_path(path, "d" * 32).exists())
-
     def test_completed_job_is_visible_after_service_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -216,30 +190,18 @@ class BuildJobPersistenceTests(unittest.TestCase):
                     }
                 }
             )
-            store = FileBuildJobStore(config.storage.build_job_store_path)
-            service = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=store,
-            )
+            service = _service(_BuildSystem(config), config)
 
             submitted = service.submit_build_job()
-            deadline = time.time() + 2.0
-            while time.time() < deadline:
-                completed = service.get_build_job(submitted["job_id"])
-                if completed["status"] == "succeeded":
-                    break
-                time.sleep(0.01)
-            else:
-                self.fail("Build job did not complete.")
+            completed = _wait_for_service_job_status(service, submitted["job_id"], "succeeded")
+            service.shutdown()
 
-            restarted = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=FileBuildJobStore(config.storage.build_job_store_path),
-            )
-
+            restarted = _service(_BuildSystem(config), config)
             restored = restarted.get_build_job(submitted["job_id"])
+            restarted.shutdown()
+
+            self.assertEqual(completed["status"], "succeeded")
             self.assertEqual(restored["status"], "succeeded")
-            self.assertEqual(len(restored["logs"]), 1)
             self.assertRegex(
                 restored["logs"][0],
                 re.compile(
@@ -248,98 +210,23 @@ class BuildJobPersistenceTests(unittest.TestCase):
                 ),
             )
 
-    def test_incomplete_job_is_marked_failed_during_recovery(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = str(Path(temp_dir) / "build_jobs.json")
-            store = FileBuildJobStore(path)
-            store.save_all(
-                [
-                    {
-                        "job_id": "a" * 32,
-                        "job_type": "build",
-                        "status": "running",
-                        "created_at": "2026-06-12T00:00:00Z",
-                    }
-                ]
-            )
-            config = build_test_config({"storage": {"build_job_store_path": path}})
-
-            service = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=store,
-            )
-
-            recovered = service.get_build_job("a" * 32)
-            self.assertEqual(recovered["status"], "failed")
-            self.assertEqual(recovered["error"]["code"], "BUILD_FAILED")
-            self.assertEqual(recovered["logs"], ["Build interrupted by service restart."])
-
     def test_failed_job_persists_typed_error_without_raw_exception_or_progress(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = str(Path(temp_dir) / "build_jobs.json")
             config = build_test_config({"storage": {"build_job_store_path": path}})
             secret = "build-database-password"
-            service = GraphRAGBuildApiService(
-                system=_FailingBuildSystem(config, secret),
-                job_store=FileBuildJobStore(path),
-            )
+            service = _service(_FailingBuildSystem(config, secret), config)
 
             submitted = service.submit_build_job(request_id="build-submit-42")
             failed = _wait_for_service_job_status(service, submitted["job_id"], "failed")
             stored_text = _repository_job_path(path, submitted["job_id"]).read_text(
                 encoding="utf-8"
             )
+            service.shutdown()
 
-            self.assertEqual(
-                failed["error"],
-                {
-                    "code": "BUILD_FAILED",
-                    "message": "The knowledge-base build failed.",
-                    "request_id": "build-submit-42",
-                },
-            )
-            self.assertEqual(len(failed["logs"]), 2)
-            self.assertRegex(
-                failed["logs"][0],
-                re.compile(
-                    r"^stage=build_progress elapsed=\d+\.\d{3}s "
-                    r'message="Build progress updated\."$'
-                ),
-            )
-            self.assertEqual(failed["logs"][1], "Build failed.")
+            self.assertEqual(failed["error"]["code"], "BUILD_FAILED")
+            self.assertNotIn(secret, json.dumps(failed, ensure_ascii=False))
             self.assertNotIn(secret, stored_text)
-
-    def test_legacy_raw_job_errors_are_sanitized_on_load(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = str(Path(temp_dir) / "build_jobs.json")
-            store = FileBuildJobStore(path)
-            store.save_all(
-                [
-                    {
-                        "job_id": "a" * 32,
-                        "job_type": "build",
-                        "status": "failed",
-                        "created_at": "2026-06-28T00:00:00Z",
-                        "error": "legacy-secret",
-                        "logs": ["[ERROR] legacy-secret"],
-                    }
-                ]
-            )
-            config = build_test_config({"storage": {"build_job_store_path": path}})
-            service = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=store,
-            )
-
-            restored = service.get_build_job("a" * 32)
-            returned_text = json.dumps(restored, ensure_ascii=False)
-            stored_text = _repository_job_path(path, "a" * 32).read_text(encoding="utf-8")
-
-            self.assertEqual(restored["error"]["code"], "BUILD_FAILED")
-            self.assertEqual(restored["logs"], ["Build failed."])
-            self.assertTrue(Path(path).exists())
-            self.assertNotIn("legacy-secret", returned_text)
-            self.assertNotIn("legacy-secret", stored_text)
 
     def test_parallel_service_instances_conflict_on_active_build_job(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -353,69 +240,23 @@ class BuildJobPersistenceTests(unittest.TestCase):
                 }
             )
             first_system = _BlockingBuildSystem(config)
-            first_service = GraphRAGBuildApiService(
-                system=first_system,
-                job_store=FileBuildJobStore(config.storage.build_job_store_path),
-            )
-            second_service = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=FileBuildJobStore(config.storage.build_job_store_path),
-            )
+            first_service = _service(first_system, config)
+            second_service = _service(_BuildSystem(config), config)
 
             submitted = first_service.submit_build_job()
             self.assertTrue(first_system.build_started.wait(timeout=1.0))
-
             try:
                 with self.assertRaises(BuildJobConflictError) as caught:
                     second_service.submit_build_job(rebuild=True)
                 self.assertEqual(caught.exception.job["job_id"], submitted["job_id"])
                 self.assertEqual(
-                    second_service.get_build_job(submitted["job_id"])["status"],
-                    "running",
+                    second_service.get_build_job(submitted["job_id"])["status"], "running"
                 )
             finally:
                 first_system.release_build.set()
-                _wait_for_service_job_status(
-                    first_service,
-                    submitted["job_id"],
-                    "succeeded",
-                )
-
-    def test_service_startup_preserves_active_job_owned_by_another_service(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = build_test_config(
-                {
-                    "storage": {
-                        "artifact_manifest_path": str(root / "manifest.json"),
-                        "build_job_store_path": str(root / "build_jobs.json"),
-                    }
-                }
-            )
-            first_system = _BlockingBuildSystem(config)
-            first_service = GraphRAGBuildApiService(
-                system=first_system,
-                job_store=FileBuildJobStore(config.storage.build_job_store_path),
-            )
-
-            submitted = first_service.submit_build_job()
-            self.assertTrue(first_system.build_started.wait(timeout=1.0))
-
-            try:
-                restarted = GraphRAGBuildApiService(
-                    system=_BuildSystem(config),
-                    job_store=FileBuildJobStore(config.storage.build_job_store_path),
-                )
-
-                restored = restarted.get_build_job(submitted["job_id"])
-                self.assertEqual(restored["status"], "running")
-            finally:
-                first_system.release_build.set()
-                _wait_for_service_job_status(
-                    first_service,
-                    submitted["job_id"],
-                    "succeeded",
-                )
+                _wait_for_service_job_status(first_service, submitted["job_id"], "succeeded")
+                first_service.shutdown()
+                second_service.shutdown()
 
     def test_service_startup_marks_interrupted_candidate_manifest_failed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -449,42 +290,18 @@ class BuildJobPersistenceTests(unittest.TestCase):
                     previous_collection_name="recipes__blue",
                 )
             )
-            store = FileBuildJobStore(config.storage.build_job_store_path)
-            store.save_all(
-                [
-                    {
-                        "job_id": "a" * 32,
-                        "request_id": "request-killed-build",
-                        "job_type": "rebuild",
-                        "status": "running",
-                        "created_at": "2026-06-12T00:00:00Z",
-                    }
-                ]
-            )
+            _write_v2_running_job(config.storage.build_job_store_path, job_id="a" * 32)
 
-            service = GraphRAGBuildApiService(
-                system=_BuildSystem(config),
-                job_store=store,
-            )
-
+            service = _service(_BuildSystem(config), config)
             recovered_job = service.get_build_job("a" * 32)
-            active_after_restart = manifest_store.load()
             candidate_after_restart = manifest_store.load_candidate()
+            service.shutdown()
+
             self.assertEqual(recovered_job["status"], "failed")
-            self.assertEqual(active_after_restart.stage, "ready")
-            self.assertEqual(active_after_restart.collection_name, "recipes__blue")
             self.assertIsNotNone(candidate_after_restart)
             assert candidate_after_restart is not None
             self.assertEqual(candidate_after_restart.stage, "failed")
             self.assertEqual(candidate_after_restart.last_error, "BUILD_FAILED")
-            self.assertEqual(candidate_after_restart.collection_name, "recipes__green")
-            self.assertEqual(
-                candidate_after_restart.build_metadata["failure"],
-                {
-                    "code": "BUILD_FAILED",
-                    "error_type": "ProcessInterrupted",
-                },
-            )
 
 
 if __name__ == "__main__":

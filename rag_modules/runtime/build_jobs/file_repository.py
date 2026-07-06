@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from rag_modules.app.build_jobs import (
+from rag_modules.contracts.build_jobs import (
     BuildJobConcurrentUpdateError,
     BuildJobConflictError,
     BuildJobEvent,
@@ -33,6 +33,7 @@ from rag_modules.app.build_jobs import (
     BuildJobStatus,
     BuildJobSubmission,
     BuildJobSubmissionDisposition,
+    BuildJobType,
     JobClaimed,
     JobInterrupted,
     JobQueued,
@@ -379,7 +380,14 @@ class FileBuildJobRepository:
             return []
         envelopes: list[BuildJobEnvelope] = []
         for path in Path(self.jobs_dir).glob("*.json"):
-            envelopes.append(self._require_envelope(BuildJobId(path.stem)))
+            try:
+                job_id = BuildJobId(path.stem)
+            except ValueError:
+                self._record_warning("BUILD_JOB_STORE_CORRUPT_RECORD", "job", path.stem)
+                continue
+            envelope = self._load_envelope(job_id)
+            if envelope is not None:
+                envelopes.append(envelope)
         return envelopes
 
     def _load_all_snapshots(self) -> list[BuildJobSnapshot]:
@@ -536,6 +544,7 @@ class FileBuildJobRepository:
 
     def _scan_for_corruption(self) -> None:
         if not os.path.isdir(self.jobs_dir):
+            self._scan_idempotency_for_corruption()
             return
         for path in Path(self.jobs_dir).glob("*.json"):
             try:
@@ -544,6 +553,29 @@ class FileBuildJobRepository:
                 self._record_warning("BUILD_JOB_STORE_CORRUPT_RECORD", "job", path.stem)
                 continue
             self._load_envelope(job_id)
+        self._scan_idempotency_for_corruption()
+
+    def _scan_idempotency_for_corruption(self) -> None:
+        if not os.path.isdir(self.idempotency_dir):
+            return
+        for path in Path(self.idempotency_dir).glob("*.json"):
+            try:
+                with open(path, "r", encoding="utf-8") as file:
+                    payload = json.load(file)
+                if not isinstance(payload, Mapping):
+                    raise ValueError("idempotency index must be an object")
+                key_hash = str(payload["key_hash"])
+                if key_hash != path.stem:
+                    raise ValueError("idempotency index file name does not match key hash")
+                BuildJobId(str(payload["job_id"]))
+                BuildJobType(str(payload["job_type"]))
+                _datetime_from_json(payload["created_at"])
+            except (OSError, TypeError, ValueError, KeyError):
+                self._record_warning(
+                    "BUILD_JOB_STORE_CORRUPT_IDEMPOTENCY",
+                    "idempotency",
+                    path.stem[:12],
+                )
 
     def _record_warning(self, code: str, component: str, identifier: str) -> None:
         normalized_identifier = str(identifier or "")[:24]

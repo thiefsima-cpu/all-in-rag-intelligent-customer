@@ -152,7 +152,6 @@ module = [
   "rag_modules.app.services.*",
   "rag_modules.contracts.runtime.*",
   "rag_modules.interfaces.api.*",
-  "rag_modules.interfaces.api.build_jobs.repository",
   "rag_modules.retrieval.candidate_sources",
   "rag_modules.retrieval.adapters.bm25_retriever",
   "rag_modules.retrieval.adapters.constraint_retriever",

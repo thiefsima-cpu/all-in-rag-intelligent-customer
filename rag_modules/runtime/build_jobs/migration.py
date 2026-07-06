@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from rag_modules.app.build_jobs import (
+from rag_modules.contracts.build_jobs import (
     BuildJobId,
     BuildJobRepositoryError,
     BuildJobSnapshot,

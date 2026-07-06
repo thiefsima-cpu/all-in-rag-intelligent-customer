@@ -7,7 +7,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from rag_modules.app.build_jobs import (
+from rag_modules.contracts import RequestCancelled, RequestControl
+from rag_modules.contracts.build_jobs import (
     BuildJobConcurrentUpdateError,
     BuildJobEvent,
     BuildJobEventType,
@@ -24,7 +25,6 @@ from rag_modules.app.build_jobs import (
     JobStarted,
     WorkerIdentity,
 )
-from rag_modules.contracts import RequestCancelled, RequestControl
 
 
 @dataclass(slots=True)

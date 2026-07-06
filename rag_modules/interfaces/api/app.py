@@ -9,6 +9,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 
 from ...app.application_protocol import GraphRAGApplication
+from ...app.assembly import assemble_build_job_application, create_application_system
+from ...app.build_jobs import BuildJobApplicationService
+from ...app.runtime_operations import resolve_runtime_operation_coordinator
 from ...configuration.models import ApiSettings, GraphRAGConfig, ObservabilitySettings
 from ...telemetry import get_runtime_telemetry
 from .error_handlers import register_api_error_handlers
@@ -144,8 +147,20 @@ def create_build_api_app(
     *,
     system: GraphRAGApplication | None = None,
     config: GraphRAGConfig | None = None,
+    build_job_application: BuildJobApplicationService | None = None,
 ) -> FastAPI:
-    api_service = GraphRAGBuildApiService(system=system, config=config)
+    resolved_system = system or create_application_system(config=config)
+    resolved_config = config or resolved_system.config
+    build_jobs = build_job_application or assemble_build_job_application(
+        system=resolved_system,
+        config=resolved_config,
+        coordinator=resolve_runtime_operation_coordinator(resolved_system),
+    )
+    api_service = GraphRAGBuildApiService(
+        system=resolved_system,
+        config=resolved_config,
+        build_jobs=build_jobs,
+    )
     api_settings = _resolve_api_settings(system=api_service.system, config=config)
     observability_settings = _resolve_observability_settings(
         system=api_service.system,

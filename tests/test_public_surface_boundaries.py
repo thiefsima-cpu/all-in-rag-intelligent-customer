@@ -94,6 +94,11 @@ RETIRED_INTERNAL_COMPAT_SHELLS = {
     / "build_pipeline"
     / "graph_data_preparation.py",
     "rag_modules.evidence_processing.core": RAG_MODULES_DIR / "evidence_processing" / "core.py",
+    "rag_modules.interfaces.api.build_job_store": RAG_MODULES_DIR
+    / "interfaces"
+    / "api"
+    / "build_job_store.py",
+    "rag_modules.interfaces.api.build_jobs": RAG_MODULES_DIR / "interfaces" / "api" / "build_jobs",
     "rag_modules.query_understanding.planner_service": RAG_MODULES_DIR
     / "query_understanding"
     / "planner_service.py",
@@ -529,6 +534,35 @@ class PublicSurfaceBoundaryTests(unittest.TestCase):
         }
 
         self.assertEqual(set(), remaining)
+
+    def test_api_modules_do_not_import_build_job_runtime_or_composition_adapters(self) -> None:
+        prohibited_modules = {
+            "rag_modules.app.composition",
+            "rag_modules.runtime.build_jobs",
+        }
+        violations: list[str] = []
+
+        for path in (RAG_MODULES_DIR / "interfaces" / "api").rglob("*.py"):
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
+            for lineno, _line, module_name, imported_name in self._iter_resolved_imports(path):
+                if self._module_matches(module_name, prohibited_modules) or self._module_matches(
+                    imported_name,
+                    prohibited_modules,
+                ):
+                    violations.append(
+                        self._violation(
+                            path,
+                            lineno,
+                            lines,
+                            "API must depend on build-job application ports and assembly only",
+                        )
+                    )
+
+        self.assertFalse(
+            violations,
+            "Found API imports of build-job runtime/composition adapters:\n"
+            + "\n".join(violations),
+        )
 
     def test_internal_modules_do_not_depend_on_compat_or_root_facades(self) -> None:
         violations: list[str] = []

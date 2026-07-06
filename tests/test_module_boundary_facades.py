@@ -54,12 +54,20 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
 
         self.assertIs(query_understanding.QueryPlanner, QueryPlanner)
 
-    def test_build_job_store_facade_reexports_build_job_components(self) -> None:
-        from rag_modules.interfaces.api import build_job_store, build_jobs
+    def test_build_job_store_facades_are_retired(self) -> None:
+        for module_name in (
+            "rag_modules.interfaces.api.build_job_store",
+            "rag_modules.interfaces.api.build_jobs",
+        ):
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
 
-        self.assertIn("BuildJobRepository", build_job_store.__all__)
-        for name in build_job_store.__all__:
-            self.assertIs(getattr(build_job_store, name), getattr(build_jobs, name))
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
 
 
 if __name__ == "__main__":

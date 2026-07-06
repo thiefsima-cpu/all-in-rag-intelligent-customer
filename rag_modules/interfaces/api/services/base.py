@@ -3,100 +3,15 @@
 from __future__ import annotations
 
 import copy
-import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Optional
 
 from ....app.application_protocol import GraphRAGApplication
 from ....app.assembly import create_application_system
+from ....app.runtime_operations import resolve_runtime_operation_coordinator
 from ....configuration.models import GraphRAGConfig
 from ....kernel.json_types import JsonObject, coerce_json_object
-
-_API_LOCKS_ATTR = "__graph_rag_api_service_locks__"
-_API_LOCKS_CREATION_LOCK = threading.Lock()
-
-
-class _GraphRAGApiServiceLocks:
-    """Shared coordination state attached to one application system instance."""
-
-    def __init__(self) -> None:
-        self._state_lock = threading.RLock()
-        self._state_changed = threading.Condition(self._state_lock)
-        self._active_answers = 0
-        self._active_inspections = 0
-        self._pending_lifecycle_operations = 0
-        self._lifecycle_active = False
-
-    @contextmanager
-    def lifecycle_operation(self) -> Iterator[None]:
-        with self._state_changed:
-            self._pending_lifecycle_operations += 1
-            waiting_for_lifecycle = True
-            try:
-                while (
-                    self._lifecycle_active
-                    or self._active_answers > 0
-                    or self._active_inspections > 0
-                ):
-                    self._state_changed.wait()
-                self._pending_lifecycle_operations -= 1
-                waiting_for_lifecycle = False
-                self._lifecycle_active = True
-            finally:
-                if waiting_for_lifecycle:
-                    self._pending_lifecycle_operations -= 1
-                    self._state_changed.notify_all()
-        try:
-            yield
-        finally:
-            with self._state_changed:
-                self._lifecycle_active = False
-                self._state_changed.notify_all()
-
-    @contextmanager
-    def answer_operation(self) -> Iterator[None]:
-        with self._state_changed:
-            while self._lifecycle_active or self._pending_lifecycle_operations > 0:
-                self._state_changed.wait()
-            self._active_answers += 1
-        try:
-            yield
-        finally:
-            with self._state_changed:
-                self._active_answers -= 1
-                if self._active_answers == 0:
-                    self._state_changed.notify_all()
-
-    @contextmanager
-    def inspection_operation(self) -> Iterator[None]:
-        with self._state_changed:
-            while self._lifecycle_active or self._pending_lifecycle_operations > 0:
-                self._state_changed.wait()
-            self._active_inspections += 1
-        try:
-            yield
-        finally:
-            with self._state_changed:
-                self._active_inspections -= 1
-                if self._active_inspections == 0:
-                    self._state_changed.notify_all()
-
-    def lifecycle_active(self) -> bool:
-        with self._state_lock:
-            return self._lifecycle_active
-
-
-def _resolve_shared_api_locks(system: GraphRAGApplication) -> _GraphRAGApiServiceLocks:
-    locks = getattr(system, _API_LOCKS_ATTR, None)
-    if isinstance(locks, _GraphRAGApiServiceLocks):
-        return locks
-    with _API_LOCKS_CREATION_LOCK:
-        locks = getattr(system, _API_LOCKS_ATTR, None)
-        if not isinstance(locks, _GraphRAGApiServiceLocks):
-            locks = _GraphRAGApiServiceLocks()
-            setattr(system, _API_LOCKS_ATTR, locks)
-    return locks
 
 
 class _BaseGraphRAGApiService:
@@ -109,7 +24,7 @@ class _BaseGraphRAGApiService:
         config: Optional[GraphRAGConfig] = None,
     ) -> None:
         self.system: GraphRAGApplication = system or create_application_system(config=config)
-        self._locks = _resolve_shared_api_locks(self.system)
+        self._locks = resolve_runtime_operation_coordinator(self.system)
         self._stats_cache: JsonObject | None = None
         self._diagnostics_cache: dict[str, JsonObject] = {}
 

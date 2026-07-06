@@ -3,76 +3,160 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from rag_modules.interfaces.api.build_jobs import (
-    BuildJobRepository,
+from rag_modules.app.build_jobs import (
+    BuildJobEvent,
+    BuildJobEventType,
+    BuildJobId,
+    BuildJobListQuery,
+    BuildJobRepositoryError,
     BuildJobRepositorySettings,
+    BuildJobSnapshot,
+    BuildJobStatus,
+    BuildJobType,
+    JobStarted,
+    JobSucceeded,
+    SubmitBuildJob,
+    WorkerIdentity,
 )
+from rag_modules.runtime.build_jobs import BuildJobStoreMigrator, FileBuildJobRepository
+
+NOW = datetime(2026, 6, 29, tzinfo=timezone.utc)
 
 
-def _now() -> str:
-    return "2026-06-29T00:00:00Z"
+class MutableClock:
+    def __init__(self) -> None:
+        self.current = NOW
+
+    def now(self) -> datetime:
+        return self.current
+
+    def advance(self, *, seconds: float) -> None:
+        self.current += timedelta(seconds=seconds)
+
+
+def _repository(
+    root: Path,
+    clock: MutableClock,
+    *,
+    settings: BuildJobRepositorySettings | None = None,
+) -> FileBuildJobRepository:
+    return FileBuildJobRepository(
+        str(root / "build_jobs.json"),
+        now=clock.now,
+        settings=settings,
+    )
+
+
+def _event(
+    snapshot: BuildJobSnapshot,
+    event_type: BuildJobEventType,
+    payload,
+    *,
+    clock: MutableClock,
+) -> BuildJobEvent:
+    return BuildJobEvent(
+        event_id=f"{snapshot.job_id}:{snapshot.revision + 1}",
+        job_id=snapshot.job_id,
+        revision=snapshot.revision + 1,
+        event_type=event_type,
+        schema_version=1,
+        occurred_at=clock.now(),
+        request_id=snapshot.request_id,
+        payload=payload,
+    )
+
+
+def _submit(
+    repository: FileBuildJobRepository,
+    job_id: str,
+    *,
+    idempotency_key: str = "",
+) -> BuildJobSnapshot:
+    return repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId(job_id),
+            request_id=f"request-{job_id[0]}",
+            job_type=BuildJobType.BUILD,
+            idempotency_key=idempotency_key,
+        )
+    ).snapshot
+
+
+def _succeed(
+    repository: FileBuildJobRepository,
+    snapshot: BuildJobSnapshot,
+    *,
+    clock: MutableClock,
+) -> None:
+    worker = WorkerIdentity("worker-1", "in_process")
+    lease = repository.claim_next(worker)
+    claimed = repository.get(snapshot.job_id)
+    assert lease is not None
+    assert claimed is not None
+    started = repository.apply(
+        _event(claimed, BuildJobEventType.STARTED, JobStarted(worker), clock=clock),
+        expected_revision=claimed.revision,
+        lease=lease,
+    )
+    repository.apply(
+        _event(
+            started,
+            BuildJobEventType.SUCCEEDED,
+            JobSucceeded(result={"message": "Knowledge base build completed."}),
+            clock=clock,
+        ),
+        expected_revision=started.revision,
+        lease=replace(lease, revision=started.revision),
+    )
 
 
 class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
     def test_retention_prunes_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
-        timestamps = (f"2026-06-29T00:00:{index:02d}Z" for index in range(20))
-
-        def next_time() -> str:
-            return next(timestamps)
-
         with tempfile.TemporaryDirectory() as temp_dir:
-            repository = BuildJobRepository(
-                str(Path(temp_dir) / "build_jobs.json"),
-                now=next_time,
+            root = Path(temp_dir)
+            clock = MutableClock()
+            repository = _repository(
+                root,
+                clock,
                 settings=BuildJobRepositorySettings(
                     retention_limit=1,
                     list_default_limit=10,
                     list_max_limit=10,
                 ),
             )
-            for job_id in ("1" * 32, "2" * 32):
-                created, job, build_lock = repository.create_or_active(
-                    job_id=job_id,
-                    request_id=f"request-{job_id[0]}",
-                    job_type="build",
-                    message="Knowledge base build job queued.",
-                    idempotency_key=f"key-{job_id[0]}",
-                )
-                if build_lock is not None:
-                    build_lock.release()
-                repository.mark_succeeded(
-                    job["job_id"],
-                    result={"message": "Knowledge base build completed."},
-                )
-                self.assertTrue(created)
+            oldest = _submit(repository, "1" * 32, idempotency_key="key-1")
+            _succeed(repository, oldest, clock=clock)
+            clock.advance(seconds=1)
+            newest_terminal = _submit(repository, "2" * 32, idempotency_key="key-2")
+            _succeed(repository, newest_terminal, clock=clock)
+            clock.advance(seconds=1)
+            active = _submit(repository, "3" * 32, idempotency_key="key-3")
 
-            active_created, active_job, active_lock = repository.create_or_active(
-                job_id="3" * 32,
-                request_id="request-3",
-                job_type="build",
-                message="Knowledge base build job queued.",
-                idempotency_key="key-3",
+            page = repository.list_page(BuildJobListQuery(limit=10))
+
+            self.assertIsNone(repository.get(oldest.job_id))
+            self.assertEqual(
+                repository.get(newest_terminal.job_id).status, BuildJobStatus.SUCCEEDED
             )
-            if active_lock is not None:
-                active_lock.release()
-
-            page = repository.list_page(limit=10, cursor="")
-
-            self.assertTrue(active_created)
-            self.assertIsNone(repository.get("1" * 32))
-            self.assertEqual(repository.get("2" * 32)["status"], "succeeded")
-            self.assertEqual(repository.get(active_job["job_id"])["status"], "queued")
-            self.assertEqual([job["job_id"] for job in page.jobs], ["3" * 32, "2" * 32])
+            self.assertEqual(repository.get(active.job_id).status, BuildJobStatus.QUEUED)
+            self.assertEqual(
+                [job.job_id for job in page.jobs],
+                [BuildJobId("3" * 32), BuildJobId("2" * 32)],
+            )
             idempotency_payloads = [
                 json.loads(path.read_text(encoding="utf-8"))
-                for path in (Path(temp_dir) / "build_jobs.d" / "idempotency").glob("*.json")
+                for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
             self.assertEqual(len(idempotency_payloads), 2)
-            self.assertNotIn("1" * 32, {payload["job_id"] for payload in idempotency_payloads})
+            self.assertNotIn(
+                str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
+            )
 
-    def test_repository_imports_legacy_jobs_once_without_deleting_legacy_file(self) -> None:
+    def test_repository_requires_explicit_migration_for_legacy_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             legacy_path = root / "build_jobs.json"
@@ -84,139 +168,73 @@ class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
                         "request_id": "legacy-request",
                         "job_type": "build",
                         "status": "succeeded",
-                        "created_at": "2026-06-28T00:00:00Z",
+                        "created_at": NOW.isoformat(),
                         "message": "Knowledge base build completed.",
                     }
                 ],
             }
             legacy_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
 
-            first = BuildJobRepository(
-                str(legacy_path),
-                now=_now,
-                settings=BuildJobRepositorySettings(),
-            )
-            second = BuildJobRepository(
-                str(legacy_path),
-                now=_now,
-                settings=BuildJobRepositorySettings(),
+            repository_dir = root / "build_jobs.d"
+            (repository_dir / "jobs").mkdir(parents=True)
+            (repository_dir / "jobs" / f"{'c' * 32}.json").write_text(
+                json.dumps(
+                    {
+                        "job_id": "c" * 32,
+                        "request_id": "legacy-v2-file",
+                        "job_type": "build",
+                        "status": "queued",
+                        "created_at": NOW.isoformat(),
+                    }
+                ),
+                encoding="utf-8",
             )
 
-            self.assertEqual(first.get("b" * 32)["status"], "succeeded")
-            self.assertEqual(second.get("b" * 32)["status"], "succeeded")
-            self.assertTrue(legacy_path.exists())
-            metadata = json.loads((root / "build_jobs.d" / "metadata.json").read_text())
-            self.assertEqual(metadata["legacy_imports"][0]["path"], str(legacy_path))
-            self.assertEqual(metadata["legacy_imports"][0]["status"], "imported")
+            with self.assertRaises(BuildJobRepositoryError):
+                FileBuildJobRepository(str(legacy_path), now=MutableClock().now)
 
-    def test_repository_reports_parseable_invalid_metadata_safely(self) -> None:
+            BuildJobStoreMigrator(str(legacy_path), now=MutableClock().now).migrate()
+            migrated = FileBuildJobRepository(str(legacy_path), now=MutableClock().now)
+
+            self.assertEqual(migrated.get(BuildJobId("b" * 32)).status, BuildJobStatus.SUCCEEDED)
+            self.assertEqual(migrated.get(BuildJobId("c" * 32)).status, BuildJobStatus.QUEUED)
+            self.assertTrue((root / "build_jobs.v2.backup").exists())
+
+    def test_repository_rejects_invalid_metadata_instead_of_guessing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             repository_dir = root / "build_jobs.d"
             repository_dir.mkdir()
             (repository_dir / "metadata.json").write_text("[]", encoding="utf-8")
 
-            repository = BuildJobRepository(str(root / "build_jobs.json"), now=_now)
-            summary = repository.corruption_summary()
+            with self.assertRaises(BuildJobRepositoryError):
+                FileBuildJobRepository(str(root / "build_jobs.json"), now=MutableClock().now)
 
-            self.assertEqual(summary["warning_count"], 1)
-            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_METADATA"])
-            self.assertNotIn(str(root), json.dumps(summary, ensure_ascii=False))
-
-    def test_repository_reports_invalid_legacy_job_entries_safely(self) -> None:
+    def test_expired_claimed_job_is_interrupted_and_publicly_reported_failed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            legacy_path = root / "build_jobs.json"
-            legacy_path.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "graph-rag-build-jobs-v2",
-                        "jobs": [
-                            {
-                                "job_id": "d" * 32,
-                                "request_id": "valid-legacy",
-                                "job_type": "build",
-                                "status": "succeeded",
-                                "created_at": "2026-06-29T00:00:00Z",
-                            },
-                            "legacy-secret-value",
-                            {"job_id": "", "logs": ["another-secret-value"]},
-                        ],
-                    }
-                ),
-                encoding="utf-8",
+            clock = MutableClock()
+            repository = _repository(
+                root,
+                clock,
+                settings=BuildJobRepositorySettings(lease_seconds=1),
             )
+            snapshot = _submit(repository, "a" * 32)
+            lease = repository.claim_next(WorkerIdentity("worker-1", "in_process"))
+            self.assertIsNotNone(lease)
 
-            repository = BuildJobRepository(str(legacy_path), now=_now)
-            summary = repository.corruption_summary()
+            clock.advance(seconds=1)
+            recovered = repository.recover_expired_leases()
 
-            self.assertEqual(repository.get("d" * 32)["status"], "succeeded")
-            self.assertEqual(summary["warning_count"], 1)
-            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_LEGACY"])
-            dumped_summary = json.dumps(summary, ensure_ascii=False)
-            self.assertNotIn("legacy-secret-value", dumped_summary)
-            self.assertNotIn("another-secret-value", dumped_summary)
-
-    def test_repository_continues_import_after_mapping_legacy_entry_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            legacy_path = root / "build_jobs.json"
-            legacy_path.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "graph-rag-build-jobs-v2",
-                        "jobs": [
-                            {
-                                "job_id": "e" * 32,
-                                "request_id": "bad-legacy",
-                                "job_type": "build",
-                                "status": "failed",
-                                "created_at": "2026-06-29T00:00:00Z",
-                                "logs": 1,
-                            },
-                            {
-                                "job_id": "f" * 32,
-                                "request_id": "valid-legacy",
-                                "job_type": "build",
-                                "status": "succeeded",
-                                "created_at": "2026-06-29T00:00:01Z",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
+            restored = repository.get(snapshot.job_id)
+            self.assertEqual([item.job_id for item in recovered], [snapshot.job_id])
+            self.assertIsNotNone(restored)
+            assert restored is not None
+            self.assertEqual(restored.status, BuildJobStatus.INTERRUPTED)
+            self.assertEqual(restored.to_public_dict()["status"], "failed")
+            self.assertEqual(
+                restored.to_public_dict()["logs"], ["Build interrupted by service restart."]
             )
-
-            repository = BuildJobRepository(str(legacy_path), now=_now)
-            summary = repository.corruption_summary()
-
-            self.assertIsNone(repository.get("e" * 32))
-            self.assertEqual(repository.get("f" * 32)["status"], "succeeded")
-            self.assertEqual(summary["warning_count"], 1)
-            self.assertEqual(summary["warning_codes"], ["BUILD_JOB_STORE_CORRUPT_LEGACY"])
-            self.assertNotIn("bad-legacy", json.dumps(summary, ensure_ascii=False))
-
-    def test_repository_marks_interrupted_active_job_failed_on_startup(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = str(Path(temp_dir) / "build_jobs.json")
-            original = BuildJobRepository(path, now=_now, recover_interrupted=False)
-            created, job, build_lock = original.create_or_active(
-                job_id="a" * 32,
-                request_id="request-1",
-                job_type="build",
-                message="Knowledge base build job queued.",
-                idempotency_key="",
-            )
-            if build_lock is not None:
-                build_lock.release()
-            self.assertTrue(created)
-
-            recovered = BuildJobRepository(path, now=_now)
-
-            restored = recovered.get(job["job_id"])
-            self.assertEqual(restored["status"], "failed")
-            self.assertEqual(restored["error"]["code"], "BUILD_FAILED")
-            self.assertEqual(restored["logs"], ["Build interrupted by service restart."])
 
 
 if __name__ == "__main__":

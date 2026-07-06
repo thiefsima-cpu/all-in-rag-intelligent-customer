@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from rag_modules.app.build_jobs import (
+from rag_modules.contracts.build_jobs import (
     BuildJobEvent,
     BuildJobId,
     BuildJobSnapshot,

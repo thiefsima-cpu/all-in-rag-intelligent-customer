@@ -42,7 +42,6 @@ from rag_modules.interfaces.api.answer_models import (
     AnswerStreamEventType,
     PublicAnswerPayloadModel,
 )
-from rag_modules.interfaces.api.build_jobs import InProcessBuildJobRunner
 from rag_modules.interfaces.api.error_models import ErrorCode, build_error_payload
 from rag_modules.interfaces.api.services import (
     GraphRAGBuildApiService,
@@ -50,6 +49,7 @@ from rag_modules.interfaces.api.services import (
 )
 from rag_modules.interfaces.api.versioning import API_VERSION
 from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
+from rag_modules.runtime.build_jobs import InProcessBuildJobRunner
 
 _API_TOKEN = "test-api-access-token"
 _API_CONFIG = build_test_config({"api": {"access_token": _API_TOKEN}})
@@ -1045,6 +1045,10 @@ class ApiAppTests(unittest.TestCase):
             system.config = config
             repository_dir = root / "jobs.d" / "jobs"
             repository_dir.mkdir(parents=True)
+            (root / "jobs.d" / "metadata.json").write_text(
+                json.dumps({"schema_version": 3}),
+                encoding="utf-8",
+            )
             (repository_dir / f"{'6' * 32}.json").write_text(
                 "{broken secret-diagnostics-value",
                 encoding="utf-8",
@@ -1077,6 +1081,10 @@ class ApiAppTests(unittest.TestCase):
             system.config = config
             idempotency_dir = root / "jobs.d" / "idempotency"
             idempotency_dir.mkdir(parents=True)
+            (root / "jobs.d" / "metadata.json").write_text(
+                json.dumps({"schema_version": 3}),
+                encoding="utf-8",
+            )
             (idempotency_dir / "bad-index.json").write_text(
                 '["secret-idempotency-value"]',
                 encoding="utf-8",
@@ -1109,6 +1117,10 @@ class ApiAppTests(unittest.TestCase):
             system.config = config
             jobs_dir = root / "jobs.d" / "jobs"
             jobs_dir.mkdir(parents=True)
+            (root / "jobs.d" / "metadata.json").write_text(
+                json.dumps({"schema_version": 3}),
+                encoding="utf-8",
+            )
             (jobs_dir / f"{'9' * 32}.json").write_text(
                 json.dumps(
                     {
@@ -2259,9 +2271,14 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(service._stream_queue_max_size, 7)
 
     def test_build_service_delegates_executor_ownership_to_runner(self) -> None:
-        service = GraphRAGBuildApiService(system=_FakeApiSystem())
+        app = create_build_api_app(system=_FakeApiSystem())
 
-        self.assertIsInstance(service._build_job_runner, InProcessBuildJobRunner)
+        with _client(app):
+            service = app.state.api_service
+            runner = service._build_jobs._runner
+
+        self.assertIsInstance(runner, InProcessBuildJobRunner)
+        self.assertFalse(hasattr(service, "_build_job_runner"))
         self.assertFalse(hasattr(service, "_build_executor"))
         self.assertFalse(hasattr(service, "_build_executor_lock"))
         self.assertFalse(hasattr(service, "_resolve_build_executor"))
@@ -2279,10 +2296,13 @@ class ApiAppTests(unittest.TestCase):
         system = _FakeApiSystem()
         system.config = config
 
-        service = GraphRAGBuildApiService(system=system, config=config)
+        app = create_build_api_app(system=system, config=config)
 
-        self.assertEqual(service._build_job_runner.backend, "in_process")
-        self.assertEqual(service._build_job_runner.max_workers, 3)
+        with _client(app):
+            runner = app.state.api_service._build_jobs._runner
+
+        self.assertEqual(runner.backend, "in_process")
+        self.assertEqual(runner._max_workers, 3)
 
     def test_serving_answers_return_429_when_admission_limit_is_full(self) -> None:
         system = _BlockingApiSystem()
@@ -2378,37 +2398,40 @@ class ApiAppTests(unittest.TestCase):
 
     def test_build_diagnostics_use_cached_snapshot_while_build_is_in_flight(self) -> None:
         system = _BlockingBuildApiSystem()
-        service = GraphRAGBuildApiService(system=system)
-        service.collect_stats()
-        baseline = service.collect_startup_diagnostics("build")
-        diagnostics_done = threading.Event()
-        diagnostics_payload: dict[str, object] = {}
+        app = create_build_api_app(system=system)
 
-        job = service.submit_build_job(rebuild=False)
-        self.assertTrue(system.build_started.wait(timeout=1.0))
+        with _client(app):
+            service = app.state.api_service
+            service.collect_stats()
+            baseline = service.collect_startup_diagnostics("build")
+            diagnostics_done = threading.Event()
+            diagnostics_payload: dict[str, object] = {}
 
-        def read_diagnostics() -> None:
-            diagnostics_payload["diagnostics"] = service.collect_startup_diagnostics("build")
-            diagnostics_payload["stats"] = service.collect_stats()
-            diagnostics_done.set()
+            job = service.submit_build_job(rebuild=False)
+            self.assertTrue(system.build_started.wait(timeout=1.0))
 
-        diagnostics_thread = threading.Thread(target=read_diagnostics)
-        diagnostics_thread.start()
-        self.assertTrue(
-            diagnostics_done.wait(timeout=0.5),
-            "diagnostics and stats should return cached snapshots during a build",
-        )
-        self.assertEqual(diagnostics_payload["diagnostics"], baseline)
-        self.assertEqual(diagnostics_payload["stats"]["ready"], False)
+            def read_diagnostics() -> None:
+                diagnostics_payload["diagnostics"] = service.collect_startup_diagnostics("build")
+                diagnostics_payload["stats"] = service.collect_stats()
+                diagnostics_done.set()
 
-        system.release_build.set()
-        diagnostics_thread.join(timeout=1.0)
-        completed_job = _wait_for_service_job_status(
-            service,
-            job["job_id"],
-            "succeeded",
-        )
-        self.assertEqual(completed_job["status"], "succeeded")
+            diagnostics_thread = threading.Thread(target=read_diagnostics)
+            diagnostics_thread.start()
+            self.assertTrue(
+                diagnostics_done.wait(timeout=0.5),
+                "diagnostics and stats should return cached snapshots during a build",
+            )
+            self.assertEqual(diagnostics_payload["diagnostics"], baseline)
+            self.assertEqual(diagnostics_payload["stats"]["ready"], False)
+
+            system.release_build.set()
+            diagnostics_thread.join(timeout=1.0)
+            completed_job = _wait_for_service_job_status(
+                service,
+                job["job_id"],
+                "succeeded",
+            )
+            self.assertEqual(completed_job["status"], "succeeded")
 
     def test_closing_stream_consumer_stops_background_answer_runner(self) -> None:
         system = _ChunkFloodApiSystem()
