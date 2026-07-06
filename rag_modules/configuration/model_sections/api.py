@@ -23,6 +23,8 @@ class ApiSettings(ConfigSection):
     stream_queue_max_size: int = Field(default=64, ge=1)
     build_job_runner_backend: Literal["in_process"] = "in_process"
     build_job_runner_max_workers: int = Field(default=1, ge=1)
+    build_job_lease_seconds: float = Field(default=30.0, ge=1.0)
+    build_job_heartbeat_seconds: float = Field(default=10.0, ge=0.1)
     build_job_retention_limit: int = Field(default=100, ge=1)
     build_job_list_default_limit: int = Field(default=50, ge=1)
     build_job_list_max_limit: int = Field(default=100, ge=1)
@@ -35,6 +37,11 @@ class ApiSettings(ConfigSection):
             raise ValueError(
                 "api.build_job_list_default_limit must be less than or equal to "
                 "api.build_job_list_max_limit."
+            )
+        if self.build_job_heartbeat_seconds >= self.build_job_lease_seconds:
+            raise ValueError(
+                "api.build_job_heartbeat_seconds must be less than "
+                "api.build_job_lease_seconds."
             )
         return self
 

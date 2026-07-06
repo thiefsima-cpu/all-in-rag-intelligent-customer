@@ -110,6 +110,8 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertEqual(config.api.build_job_retention_limit, 100)
         self.assertEqual(config.api.build_job_list_default_limit, 50)
         self.assertEqual(config.api.build_job_list_max_limit, 100)
+        self.assertEqual(config.api.build_job_lease_seconds, 30.0)
+        self.assertEqual(config.api.build_job_heartbeat_seconds, 10.0)
 
     def test_dimension_mismatch_reports_both_field_paths(self) -> None:
         with self.assertRaises(ConfigurationError) as context:

@@ -39,7 +39,7 @@ def compose_build_job_application(
             retention_limit=int(api_settings.build_job_retention_limit),
             list_default_limit=int(api_settings.build_job_list_default_limit),
             list_max_limit=int(api_settings.build_job_list_max_limit),
-            lease_seconds=float(getattr(api_settings, "build_job_lease_seconds", 30.0)),
+            lease_seconds=float(api_settings.build_job_lease_seconds),
         ),
     )
     hooks = BuildJobRuntimeHooks(
@@ -58,7 +58,7 @@ def compose_build_job_application(
         executor=executor,
         max_workers=int(api_settings.build_job_runner_max_workers),
         worker_id="in_process",
-        heartbeat_seconds=float(getattr(api_settings, "build_job_heartbeat_seconds", 10.0)),
+        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
     )
     return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
 

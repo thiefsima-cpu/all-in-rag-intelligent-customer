@@ -190,6 +190,8 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "API_BUILD_JOB_RETENTION_LIMIT": "12",
                     "API_BUILD_JOB_LIST_DEFAULT_LIMIT": "4",
                     "API_BUILD_JOB_LIST_MAX_LIMIT": "8",
+                    "API_BUILD_JOB_LEASE_SECONDS": "45.5",
+                    "API_BUILD_JOB_HEARTBEAT_SECONDS": "7.25",
                 }
             )
         )
@@ -210,6 +212,8 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.build_job_retention_limit, 12)
         self.assertEqual(config.api.build_job_list_default_limit, 4)
         self.assertEqual(config.api.build_job_list_max_limit, 8)
+        self.assertEqual(config.api.build_job_lease_seconds, 45.5)
+        self.assertEqual(config.api.build_job_heartbeat_seconds, 7.25)
 
     def test_api_settings_default_answer_concurrency_limit_is_nonzero(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
@@ -236,6 +240,24 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     }
                 )
             )
+
+    def test_api_settings_reject_build_job_heartbeat_not_less_than_lease(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "API_BUILD_JOB_LEASE_SECONDS": "10",
+                        "API_BUILD_JOB_HEARTBEAT_SECONDS": "10",
+                    }
+                )
+            )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "api.build_job_heartbeat_seconds",
+            "less than",
+            "api.build_job_lease_seconds",
+        )
 
     def test_nested_config_serialization_masks_all_credentials(self) -> None:
         config = load_config(

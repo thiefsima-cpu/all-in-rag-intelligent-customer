@@ -222,6 +222,18 @@ file contents.
 The default execution backend is configured with
 `API_BUILD_JOB_RUNNER_BACKEND=in_process`. Local executor concurrency is
 controlled by `API_BUILD_JOB_RUNNER_MAX_WORKERS`, which defaults to `1`.
+Accepted queued jobs are persisted before dispatch and are redispatched when the
+build API restarts. Claimed jobs are protected by a lease
+(`API_BUILD_JOB_LEASE_SECONDS`, default `30`) renewed by the in-process runner
+heartbeat (`API_BUILD_JOB_HEARTBEAT_SECONDS`, default `10`). If a process stops
+while it owns a job, the next startup expires the lease and reports the job as a
+safe failed/interrupted build instead of leaving it permanently running.
+
+Build-job storage is migrated once from the older V2 files into V3 event
+envelopes under the configured `BUILD_JOB_STORE_PATH` directory, with the
+original V2 directory retained as `build_jobs.v2.backup`. A future backend must
+implement the build-job repository and runner ports and be selected in
+composition; this release does not ship an external worker backend.
 
 `/v1/answers` returns `409 Conflict` until the build API has produced a ready
 artifact manifest, cached documents, and a Milvus vector collection.

@@ -14,6 +14,7 @@ from rag_modules.app.runtime_operations import resolve_runtime_operation_coordin
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
+    BuildJobNotFoundError,
     GraphRAGBuildApiService,
 )
 from rag_modules.kernel.artifacts import ArtifactManifest
@@ -227,6 +228,110 @@ class BuildJobPersistenceTests(unittest.TestCase):
             self.assertEqual(failed["error"]["code"], "BUILD_FAILED")
             self.assertNotIn(secret, json.dumps(failed, ensure_ascii=False))
             self.assertNotIn(secret, stored_text)
+
+    def test_idempotency_key_replays_original_job_without_storing_raw_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            config = build_test_config({"storage": {"build_job_store_path": path}})
+            service = _service(_BuildSystem(config), config)
+
+            first = service.submit_build_job(idempotency_key="client-secret-key")
+            completed = _wait_for_service_job_status(service, first["job_id"], "succeeded")
+            replayed = service.submit_build_job(idempotency_key="client-secret-key")
+            stored_text = _repository_job_path(path, first["job_id"]).read_text(
+                encoding="utf-8"
+            )
+            service.shutdown()
+
+            self.assertEqual(completed["job_id"], first["job_id"])
+            self.assertEqual(replayed["job_id"], first["job_id"])
+            self.assertNotIn("client-secret-key", stored_text)
+
+    def test_build_jobs_are_paginated_newest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "api": {
+                        "build_job_retention_limit": 3,
+                        "build_job_list_default_limit": 1,
+                        "build_job_list_max_limit": 2,
+                    },
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "build_jobs.json"),
+                    },
+                }
+            )
+            service = _service(_BuildSystem(config), config)
+            submitted_ids: list[str] = []
+            for index in range(3):
+                submitted = service.submit_build_job(request_id=f"page-request-{index}")
+                _wait_for_service_job_status(service, submitted["job_id"], "succeeded")
+                submitted_ids.append(submitted["job_id"])
+
+            first_page = service.list_build_jobs(limit=2)
+            second_page = service.list_build_jobs(limit=2, cursor=first_page.next_cursor)
+            service.shutdown()
+
+            self.assertEqual([job["job_id"] for job in first_page.jobs], submitted_ids[:0:-1])
+            self.assertTrue(first_page.next_cursor)
+            self.assertEqual([job["job_id"] for job in second_page.jobs], [submitted_ids[0]])
+            self.assertEqual(second_page.next_cursor, "")
+
+    def test_retention_prunes_oldest_terminal_job(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "build_jobs.json")
+            config = build_test_config(
+                {
+                    "api": {"build_job_retention_limit": 1},
+                    "storage": {"build_job_store_path": path},
+                }
+            )
+            service = _service(_BuildSystem(config), config)
+
+            first = service.submit_build_job(request_id="retention-first")
+            _wait_for_service_job_status(service, first["job_id"], "succeeded")
+            second = service.submit_build_job(request_id="retention-second")
+            _wait_for_service_job_status(service, second["job_id"], "succeeded")
+
+            with self.assertRaises(BuildJobNotFoundError):
+                service.get_build_job(first["job_id"])
+            self.assertEqual(service.get_build_job(second["job_id"])["status"], "succeeded")
+            service.shutdown()
+
+    def test_corrupt_v3_envelope_is_skipped_and_reported_after_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = build_test_config(
+                {
+                    "storage": {
+                        "artifact_manifest_path": str(root / "manifest.json"),
+                        "build_job_store_path": str(root / "build_jobs.json"),
+                    }
+                }
+            )
+            service = _service(_BuildSystem(config), config)
+            submitted = service.submit_build_job()
+            _wait_for_service_job_status(service, submitted["job_id"], "succeeded")
+            service.shutdown()
+            corrupt_path = root / "build_jobs.d" / "jobs" / f"{'6' * 32}.json"
+            corrupt_path.write_text("{broken secret-corrupt-envelope", encoding="utf-8")
+
+            restarted = _service(_BuildSystem(config), config)
+            page = restarted.list_build_jobs(limit=10)
+            diagnostics = restarted.collect_startup_diagnostics("build")
+            restarted.shutdown()
+
+            self.assertEqual([job["job_id"] for job in page.jobs], [submitted["job_id"]])
+            self.assertIn(
+                "BUILD_JOB_STORE_CORRUPT_RECORD",
+                diagnostics["build_job_store"]["warning_codes"],
+            )
+            self.assertNotIn(
+                "secret-corrupt-envelope",
+                json.dumps({"page": page.jobs, "diagnostics": diagnostics}, ensure_ascii=False),
+            )
 
     def test_parallel_service_instances_conflict_on_active_build_job(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
