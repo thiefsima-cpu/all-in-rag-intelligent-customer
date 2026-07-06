@@ -58,6 +58,7 @@ class JobCancellationRequested:
 @dataclass(frozen=True, slots=True)
 class JobCancelled:
     message: str = "Build cancelled."
+    result: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,7 @@ class JobSucceeded:
 @dataclass(frozen=True, slots=True)
 class JobFailed:
     message: str = "Build failed."
+    result: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +197,11 @@ def _payload_from_dict(
     if payload_class is JobCancellationRequested:
         return JobCancellationRequested(message=str(payload.get("message") or ""))
     if payload_class is JobCancelled:
-        return JobCancelled(message=str(payload.get("message") or ""))
+        result = payload.get("result")
+        return JobCancelled(
+            message=str(payload.get("message") or ""),
+            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
+        )
     if payload_class is JobSucceeded:
         result = payload.get("result")
         return JobSucceeded(
@@ -203,7 +209,11 @@ def _payload_from_dict(
             result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
         )
     if payload_class is JobFailed:
-        return JobFailed(message=str(payload.get("message") or ""))
+        result = payload.get("result")
+        return JobFailed(
+            message=str(payload.get("message") or ""),
+            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
+        )
     if payload_class is JobInterrupted:
         return JobInterrupted(message=str(payload.get("message") or ""))
     raise ValueError("unknown build job event payload")

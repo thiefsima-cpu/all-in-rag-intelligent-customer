@@ -136,6 +136,7 @@ def _apply_allowed_event(snapshot: BuildJobSnapshot, event: BuildJobEvent) -> Bu
             finished_at=event.occurred_at,
             message=payload.message,
             logs=_append_log(snapshot.logs, payload.message),
+            result=copy.deepcopy(dict(payload.result)) if payload.result is not None else None,
             lease_token="",
             lease_expires_at=None,
         )
@@ -157,6 +158,7 @@ def _apply_allowed_event(snapshot: BuildJobSnapshot, event: BuildJobEvent) -> Bu
             message=payload.message,
             error=build_failed_error(snapshot.request_id),
             logs=_append_log(snapshot.logs, payload.message),
+            result=copy.deepcopy(dict(payload.result)) if payload.result is not None else None,
             lease_token="",
             lease_expires_at=None,
         )

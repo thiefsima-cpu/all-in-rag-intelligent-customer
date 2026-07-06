@@ -8,6 +8,7 @@ from .file_repository import (
     new_queued_event,
     validate_idempotency_key,
 )
+from .in_process_runner import InProcessBuildJobRunner
 from .migration import BuildJobStoreMigrator
 from .serialization import (
     BUILD_JOB_ENVELOPE_SCHEMA_VERSION,
@@ -23,6 +24,7 @@ __all__ = [
     "BuildJobEnvelope",
     "BuildJobStoreMigrator",
     "FileBuildJobRepository",
+    "InProcessBuildJobRunner",
     "envelope_from_dict",
     "envelope_to_dict",
     "hash_idempotency_key",
