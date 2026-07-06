@@ -126,3 +126,20 @@ class BuildJobDomainTests(unittest.TestCase):
                     revision=5,
                 ),
             )
+
+    def test_runner_port_contains_execution_notifications_only(self) -> None:
+        from rag_modules.app.build_jobs import BuildJobRepositoryPort, BuildJobRunnerPort
+
+        runner_methods = {
+            name for name, value in vars(BuildJobRunnerPort).items() if callable(value)
+        }
+        repository_methods = {
+            name for name, value in vars(BuildJobRepositoryPort).items() if callable(value)
+        }
+
+        self.assertEqual(
+            runner_methods.intersection({"start", "schedule", "notify_cancellation", "shutdown"}),
+            {"start", "schedule", "notify_cancellation", "shutdown"},
+        )
+        self.assertFalse(runner_methods.intersection({"get", "list_page", "diagnostics", "apply"}))
+        self.assertTrue({"submit", "get", "list_page", "claim_next", "apply"} <= repository_methods)

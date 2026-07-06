@@ -48,6 +48,7 @@ from .models import (
     build_failed_error,
     public_status,
 )
+from .ports import BuildJobRepositoryPort, BuildJobRunnerPort
 from .reducer import reduce_build_job
 
 __all__ = [
@@ -70,7 +71,9 @@ __all__ = [
     "BuildJobPage",
     "BuildJobRepositoryDiagnostics",
     "BuildJobRepositoryError",
+    "BuildJobRepositoryPort",
     "BuildJobRepositorySettings",
+    "BuildJobRunnerPort",
     "BuildJobSnapshot",
     "BuildJobStatus",
     "BuildJobSubmission",
