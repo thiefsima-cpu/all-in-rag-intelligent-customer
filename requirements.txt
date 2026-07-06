@@ -28,7 +28,7 @@ colorama==0.4.6
     #   tqdm
 distro==1.9.0
     # via openai
-fastapi==0.136.3
+fastapi==0.139.0
     # via graph-rag-c9 (pyproject.toml)
 googleapis-common-protos==1.75.0
     # via opentelemetry-exporter-otlp-proto-http
