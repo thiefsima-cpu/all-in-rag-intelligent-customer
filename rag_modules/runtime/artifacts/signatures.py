@@ -9,7 +9,7 @@ from ...kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .json import canonical_json_bytes, json_safe
 
 
-def compute_graph_signature(data_module) -> str:
+def compute_graph_signature(data_module: object) -> str:
     collections = (
         ("recipes", getattr(data_module, "recipes", []) or []),
         ("ingredients", getattr(data_module, "ingredients", []) or []),

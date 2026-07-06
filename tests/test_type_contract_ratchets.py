@@ -77,6 +77,12 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "routing" / "search_orchestrator.py",
 )
 
+STRICT_PACKAGE_TARGETS = (
+    ROOT / "rag_modules" / "domain",
+    ROOT / "rag_modules" / "contracts",
+    ROOT / "rag_modules" / "runtime",
+)
+
 
 def _module_name_for_target(path: Path) -> str:
     relative_path = path.relative_to(ROOT)
@@ -107,6 +113,14 @@ def _strict_mypy_modules() -> list[str]:
             modules.extend(module_patterns)
 
     return modules
+
+
+def _python_modules_under(path: Path) -> list[str]:
+    return sorted(
+        _module_name_for_target(module_path)
+        for module_path in path.rglob("*.py")
+        if "__pycache__" not in module_path.parts
+    )
 
 
 class TypeContractRatchetTests(unittest.TestCase):
@@ -141,6 +155,24 @@ class TypeContractRatchetTests(unittest.TestCase):
         self.assertFalse(
             missing_modules,
             "Found type-contract targets outside the strict mypy override:\n"
+            + "\n".join(missing_modules),
+        )
+
+    def test_core_domain_contracts_and_runtime_packages_use_strict_mypy(self) -> None:
+        strict_modules = _strict_mypy_modules()
+        missing_modules: list[str] = []
+
+        for package_path in STRICT_PACKAGE_TARGETS:
+            for module_name in _python_modules_under(package_path):
+                if not any(
+                    fnmatch.fnmatchcase(module_name, strict_module)
+                    for strict_module in strict_modules
+                ):
+                    missing_modules.append(module_name)
+
+        self.assertFalse(
+            missing_modules,
+            "Found core domain/contracts/runtime modules outside the strict mypy override:\n"
             + "\n".join(missing_modules),
         )
 

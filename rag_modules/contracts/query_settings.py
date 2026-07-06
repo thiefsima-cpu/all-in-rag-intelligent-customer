@@ -24,9 +24,9 @@ class QueryPlannerRuntimeSettings:
         self.llm_max_tokens = max(128, int(self.llm_max_tokens))
 
     @classmethod
-    def from_config(cls, config) -> "QueryPlannerRuntimeSettings":
-        models = config.models
-        planner = config.query_understanding.planner
+    def from_config(cls, config: object) -> "QueryPlannerRuntimeSettings":
+        models = getattr(config, "models")
+        planner = getattr(getattr(config, "query_understanding"), "planner")
         return cls(
             model_name=models.llm_model,
             cache_size=planner.cache_size,
@@ -182,8 +182,8 @@ class QuerySemanticRuntimeSettings:
             )
 
     @classmethod
-    def from_config(cls, config) -> "QuerySemanticRuntimeSettings":
-        semantics = config.query_understanding.semantics
+    def from_config(cls, config: object) -> "QuerySemanticRuntimeSettings":
+        semantics = getattr(getattr(config, "query_understanding"), "semantics")
         scoring = semantics.scoring
         extraction = semantics.extraction
         routing = semantics.routing

@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 class ArtifactManifestStore:
     """Persist an active manifest, a candidate sidecar, and immutable versions."""
 
-    def __init__(self, config):
-        storage = config.storage
-        self.manifest_path = str(storage.artifact_manifest_path)
+    def __init__(self, config: object) -> None:
+        storage = getattr(config, "storage")
+        self.manifest_path = str(getattr(storage, "artifact_manifest_path"))
         parent_dir = os.path.dirname(self.manifest_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)

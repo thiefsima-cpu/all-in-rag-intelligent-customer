@@ -11,6 +11,7 @@ from rag_modules.contracts import RequestCancelled, RequestControl
 from rag_modules.contracts.build_jobs import (
     BuildJobConcurrentUpdateError,
     BuildJobEvent,
+    BuildJobEventPayload,
     BuildJobEventType,
     BuildJobExecutor,
     BuildJobId,
@@ -275,7 +276,7 @@ class InProcessBuildJobRunner:
     def _event(
         snapshot: BuildJobSnapshot,
         event_type: BuildJobEventType,
-        payload,
+        payload: BuildJobEventPayload,
     ) -> BuildJobEvent:
         return BuildJobEvent(
             event_id=f"{snapshot.job_id}:{snapshot.revision + 1}",

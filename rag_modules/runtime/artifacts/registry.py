@@ -28,16 +28,10 @@ class ArtifactRegistry:
         return self.manifest_store.load_candidate()
 
     def versions(self) -> tuple[int, ...]:
-        list_versions = getattr(self.manifest_store, "list_versions", None)
-        if not callable(list_versions):
-            return ()
-        return tuple(int(version) for version in list_versions())
+        return tuple(int(version) for version in self.manifest_store.list_versions())
 
     def get(self, manifest_version: int) -> ArtifactManifest:
-        load_version = getattr(self.manifest_store, "load_version", None)
-        if not callable(load_version):
-            raise KeyError(int(manifest_version))
-        return load_version(int(manifest_version))
+        return self.manifest_store.load_version(int(manifest_version))
 
     def list(self) -> list[ArtifactManifest]:
         manifests: list[ArtifactManifest] = []

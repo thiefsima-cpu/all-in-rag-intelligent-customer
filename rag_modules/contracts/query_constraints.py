@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, cast
 
 from ..kernel.time_parsing import parse_minutes
 
@@ -18,12 +18,12 @@ def loads_json_object(text: str) -> Dict[str, Any]:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
     try:
-        return json.loads(text)
+        return cast(Dict[str, Any], json.loads(text))
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, flags=re.S)
         if not match:
             raise
-        return json.loads(match.group(0))
+        return cast(Dict[str, Any], json.loads(match.group(0)))
 
 
 def _as_list(value: Any) -> List[str]:

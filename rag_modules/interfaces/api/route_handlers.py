@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, overload
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -27,6 +27,33 @@ def build_readiness_response(payload: dict[str, Any]) -> JSONResponse:
         status_code=200 if payload["status"] == "ok" else 503,
         content=payload,
     )
+
+
+@overload
+def build_answer_http_response(
+    api_service: GraphRAGServingApiService,
+    payload: AnswerRequestModel,
+    *,
+    include_traces: Literal[True],
+) -> AnswerResponseModel | StreamingResponse: ...
+
+
+@overload
+def build_answer_http_response(
+    api_service: GraphRAGServingApiService,
+    payload: AnswerRequestModel,
+    *,
+    include_traces: Literal[False],
+) -> PublicAnswerResponseModel | StreamingResponse: ...
+
+
+@overload
+def build_answer_http_response(
+    api_service: GraphRAGServingApiService,
+    payload: AnswerRequestModel,
+    *,
+    include_traces: bool,
+) -> AnswerResponseModel | PublicAnswerResponseModel | StreamingResponse: ...
 
 
 def build_answer_http_response(

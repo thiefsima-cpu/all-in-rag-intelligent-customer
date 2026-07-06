@@ -29,6 +29,10 @@ class ArtifactManifestStorePort(Protocol):
 
     def clear_candidate(self) -> None: ...
 
+    def list_versions(self) -> list[int]: ...
+
+    def load_version(self, manifest_version: int) -> ArtifactManifest: ...
+
 
 class DocumentArtifactCachePort(Protocol):
     """Document/chunk artifact cache boundary for serving warmup and builds."""
