@@ -55,7 +55,7 @@ Python 仓库中。
 - 运行单个测试文件：
 
   ```powershell
-  python -m pytest tests/test_api_app.py -q
+  python -m pytest tests/test_api_answer.py tests/test_api_build.py tests/test_api_public_surface.py tests/test_api_security.py tests/test_api_sse.py -q
   ```
 
 - 运行仓库 hooks：
@@ -101,7 +101,7 @@ Python 仓库中。
 - Ruff 目标是 Python 3.11、100 字符行宽、导入排序和双引号格式。完成代码修改前，
   运行 `pre-commit run --all-files` 或等价的 Ruff 命令。
 - 聚焦修复时避免大范围重构。除非任务明确要求，否则不要破坏
-  `tests/test_public_surface_boundaries.py` 和
+  `tests/test_public_surface*_boundaries.py` 和
   `tests/test_public_api_manifest.py` 覆盖的公共接口。
 
 ## 测试指导
@@ -109,7 +109,9 @@ Python 仓库中。
 - 修改行为时，即使用户只提到实现，也要添加或更新测试。
 - 先运行最窄的相关测试；当改动触及共享 runtime、API、retrieval、graph、
   generation 或配置路径时，再扩大验证范围。
-- API 改动重点检查 `tests/test_api_app.py`、`tests/test_entrypoints.py` 和应用
+- API 改动重点检查 `tests/test_api_answer.py`、`tests/test_api_build.py`、
+  `tests/test_api_public_surface.py`、`tests/test_api_security.py`、
+  `tests/test_api_sse.py`、`tests/test_entrypoints.py` 和应用
   装配相关测试。
 - retrieval 或 routing 改动要运行对应的检索/router 测试；跨子系统行为变更时，
   再运行 smoke route 脚本。
