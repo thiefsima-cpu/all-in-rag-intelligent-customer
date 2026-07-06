@@ -184,8 +184,32 @@ class BuildJobRepositorySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class BuildJobRepositoryWarning:
+    code: str
+    component: str
+    identifier: str
+    detected_at: str
+
+    def to_public_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "component": self.component,
+            "identifier": self.identifier,
+            "detected_at": self.detected_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class BuildJobRepositoryDiagnostics:
-    warnings: tuple[Mapping[str, str], ...] = field(default_factory=tuple)
+    warnings: tuple[BuildJobRepositoryWarning, ...] = field(default_factory=tuple)
+
+    def to_public_dict(self) -> dict[str, Any]:
+        warnings = [warning.to_public_dict() for warning in self.warnings]
+        return {
+            "warning_count": len(warnings),
+            "warning_codes": sorted({warning["code"] for warning in warnings}),
+            "warnings": warnings,
+        }
 
 
 def build_failed_error(request_id: str) -> dict[str, str]:
@@ -234,6 +258,7 @@ __all__ = [
     "BuildJobPage",
     "BuildJobRepositoryDiagnostics",
     "BuildJobRepositorySettings",
+    "BuildJobRepositoryWarning",
     "BuildJobSnapshot",
     "BuildJobStatus",
     "BuildJobSubmission",
