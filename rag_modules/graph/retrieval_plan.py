@@ -100,5 +100,3 @@ class GraphPlanBuilder:
             linked_targets=linked_targets,
             evidence_goals=evidence_goals,
         )
-
-

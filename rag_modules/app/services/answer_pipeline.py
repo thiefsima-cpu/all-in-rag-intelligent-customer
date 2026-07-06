@@ -6,14 +6,23 @@ import logging
 from contextlib import nullcontext
 from typing import List
 
-from ...retrieval.contracts import EvidenceDocument
-from ...runtime import (
+from ...contracts import EvidenceDocument, QuerySemanticRuntimeSettings, RequestControl
+from ...contracts.runtime import (
     AnswerContext,
+    GenerationMode,
     GenerationSnapshot,
     QueryAnalysis,
 )
+from ...safe_logging import log_failure
+from ...telemetry import RuntimeTelemetry
 from .answer_models import AnswerPipelineState, ChunkCallback, MessageCallback
-from .trace_adapters import GenerationTraceAdapter, QueryRouterTraceAdapter
+from .trace_adapters import (
+    ExplainableQueryRouterProtocol,
+    GenerationServiceSource,
+    GenerationTraceAdapter,
+    QueryRouterSource,
+    QueryRouterTraceAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +37,32 @@ class AnswerPipelineService:
     def __init__(
         self,
         *,
-        query_router,
-        generation_service,
+        query_router: QueryRouterSource,
+        generation_service: GenerationServiceSource,
+        semantic_settings: QuerySemanticRuntimeSettings,
         top_k: int,
-        telemetry=None,
+        telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.query_router = query_router
         self.generation_service = generation_service
-        self.router_traces = QueryRouterTraceAdapter(query_router)
+        self.router_traces = QueryRouterTraceAdapter(query_router, semantic_settings)
         self.generation_traces = GenerationTraceAdapter(generation_service)
         self.top_k = max(0, int(top_k or 0))
         self.telemetry = telemetry
 
     def execute(self, state: AnswerPipelineState) -> AnswerPipelineState:
+        control = state.request_control
+        if control is not None:
+            control.raise_if_cancelled()
         self._emit(state.message_callback, f"\nUser question: {state.question}")
-        if state.explain_routing:
-            explain = getattr(self.query_router, "explain_routing_decision", None)
-            if callable(explain):
-                self._emit(state.message_callback, explain(state.question))
+        if state.explain_routing and isinstance(
+            self.query_router,
+            ExplainableQueryRouterProtocol,
+        ):
+            self._emit(
+                state.message_callback,
+                self.query_router.explain_routing_decision(state.question),
+            )
 
         self._emit(state.message_callback, "Running query routing...")
         retrieval_span = (
@@ -60,6 +77,7 @@ class AnswerPipelineService:
             resolution, route_trace = self.router_traces.route_with_trace(
                 state.question,
                 self.top_k,
+                control=control,
             )
             if span is not None:
                 span.set_attribute(
@@ -87,7 +105,7 @@ class AnswerPipelineService:
         if not state.has_evidence:
             state.generation_trace = GenerationSnapshot(
                 status="failed",
-                mode="empty",
+                mode=GenerationMode.EMPTY,
                 decision_reason="no_evidence",
                 failure_code="no_evidence",
                 total_evidence_items=0,
@@ -112,6 +130,7 @@ class AnswerPipelineService:
                 stream=state.stream,
                 chunk_callback=state.chunk_callback,
                 message_callback=state.message_callback,
+                control=control,
             )
             if span is not None:
                 span.set_attribute(
@@ -124,7 +143,7 @@ class AnswerPipelineService:
                 )
                 span.set_attribute(
                     "rag.generation.mode",
-                    state.generation_trace.mode or "unknown",
+                    state.generation_trace.mode_value or "unknown",
                 )
         return state
 
@@ -151,28 +170,38 @@ class AnswerPipelineService:
         stream: bool,
         chunk_callback: ChunkCallback,
         message_callback: MessageCallback,
+        control: RequestControl | None,
     ) -> tuple[str, GenerationSnapshot]:
         if not stream:
             return self.generation_traces.generate_answer_with_trace_from_context(
-                answer_context
+                answer_context,
+                control=control,
             )
 
         try:
             answer, trace = self.generation_traces.generate_answer_stream_with_trace_from_context(
                 answer_context,
                 chunk_callback=chunk_callback,
+                control=control,
             )
             if chunk_callback:
                 chunk_callback("\n")
             return answer, trace
         except Exception as exc:
-            logger.error("Streaming output failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "streaming_output_failed",
+                code="ANSWER_FAILED",
+                error=exc,
+            )
             self._emit(
                 message_callback,
                 "\n[WARN] Streaming output interrupted. Falling back to standard mode...",
             )
             return self.generation_traces.generate_answer_with_trace_from_context(
-                answer_context
+                answer_context,
+                control=control,
             )
 
     @staticmethod
@@ -211,5 +240,6 @@ class AnswerPipelineService:
     def _emit(callback: MessageCallback, message: str) -> None:
         if callback:
             callback(message)
+
 
 __all__ = ["AnswerPipelineService", "NO_EVIDENCE_ANSWER"]

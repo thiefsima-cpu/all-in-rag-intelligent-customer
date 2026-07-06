@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from .cache_stats import GraphCacheStats, GraphCacheStatsStore
+from .cache_stats import GraphCacheEntityStats, GraphCacheStats, GraphCacheStatsStore
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +27,17 @@ class GraphCacheWarmupService:
     def warm(self, driver, *, database_name: str) -> GraphWarmupResult:
         stats = self._load_or_build_graph_stats(driver, database_name=database_name)
         entity_cache = {
-            str(item.get("node_id") or ""): {
-                "labels": list(item.get("labels") or []),
-                "name": item.get("name"),
-                "category": item.get("category"),
-                "degree": int(item.get("degree") or 0),
+            item.node_id: {
+                "labels": list(item.labels),
+                "name": item.name,
+                "category": item.category,
+                "degree": item.degree,
             }
             for item in (stats.entities or [])
-            if item.get("node_id")
+            if item.node_id
         }
         relation_cache = {
-            str(key): int(value)
-            for key, value in dict(stats.relation_frequencies or {}).items()
+            str(key): int(value) for key, value in dict(stats.relation_frequencies or {}).items()
         }
         return GraphWarmupResult(
             stats=stats,
@@ -49,8 +48,10 @@ class GraphCacheWarmupService:
     def _load_or_build_graph_stats(self, driver, *, database_name: str) -> GraphCacheStats:
         expected_signature = self.store.expected_graph_signature()
         cached = self.store.load()
-        if cached and cached.entities and (
-            not expected_signature or cached.graph_signature == expected_signature
+        if (
+            cached
+            and cached.entities
+            and (not expected_signature or cached.graph_signature == expected_signature)
         ):
             return cached
         built = self._collect_graph_stats(
@@ -68,7 +69,7 @@ class GraphCacheWarmupService:
         expected_signature: str = "",
         page_size: int = 500,
     ) -> GraphCacheStats:
-        entities: List[dict] = []
+        entities: List[GraphCacheEntityStats] = []
         relation_frequencies: dict[str, int] = {}
         page_cursor = ""
         with driver.session(database=database_name) as session:
@@ -100,13 +101,13 @@ class GraphCacheWarmupService:
                     break
                 for record in page_records:
                     entities.append(
-                        {
-                            "node_id": str(record["node_id"] or ""),
-                            "labels": list(record["node_labels"] or []),
-                            "name": record["name"],
-                            "category": record["category"],
-                            "degree": int(record["degree"] or 0),
-                        }
+                        GraphCacheEntityStats(
+                            node_id=str(record["node_id"] or ""),
+                            labels=tuple(str(label) for label in (record["node_labels"] or [])),
+                            name=str(record["name"] or ""),
+                            category=str(record["category"] or ""),
+                            degree=int(record["degree"] or 0),
+                        )
                     )
                 page_cursor = str(page_records[-1]["node_id"] or "")
 
@@ -118,7 +119,7 @@ class GraphCacheWarmupService:
             for record in session.run(relation_query):
                 relation_frequencies[str(record["rel_type"] or "")] = int(record["frequency"] or 0)
 
-        entities.sort(key=lambda item: (-int(item.get("degree") or 0), str(item.get("node_id") or "")))
+        entities.sort(key=lambda item: (-int(item.degree or 0), item.node_id))
         return GraphCacheStats(
             graph_signature=expected_signature,
             entity_count=len(entities),
@@ -128,5 +129,3 @@ class GraphCacheWarmupService:
             page_size=max(1, int(page_size)),
             source="paged_warmup",
         )
-
-

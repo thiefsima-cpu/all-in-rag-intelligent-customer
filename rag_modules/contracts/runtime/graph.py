@@ -1,0 +1,275 @@
+"""Graph retrieval snapshots."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+
+from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from .. import QuerySemanticRuntimeSettings, RetrievalRequest
+from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
+from .policy import PolicySnapshot
+
+
+@dataclass
+class GraphTraceEventSnapshot:
+    name: str = ""
+    status: str = "ok"
+    latency_ms: float = 0.0
+    details: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.name = str(self.name or "")
+        self.status = str(self.status or "ok")
+        self.latency_ms = round(float(self.latency_ms or 0.0), 2)
+        self.details = coerce_json_object(self.details)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object] | None) -> "GraphTraceEventSnapshot":
+        payload = dict(data or {})
+        return cls(
+            name=str(payload.get("name") or ""),
+            status=str(payload.get("status") or "ok"),
+            latency_ms=coerce_json_float(payload.get("latency_ms")),
+            details=coerce_json_object(payload.get("details")),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "latency_ms": self.latency_ms,
+            "details": dict(self.details or {}),
+        }
+
+
+@dataclass
+class GraphRetrievalSnapshot:
+    query: str = ""
+    strategy: str = "graph_rag"
+    requested_top_k: int = 0
+    policy: PolicySnapshot = field(default_factory=PolicySnapshot)
+    retrieval_request: RetrievalRequest | None = None
+    query_type: str = ""
+    source_entities: list[str] = field(default_factory=list)
+    target_entities: list[str] = field(default_factory=list)
+    relation_types: list[str] = field(default_factory=list)
+    sub_questions: list[str] = field(default_factory=list)
+    path_count: int = 0
+    subgraph_count: int = 0
+    reasoning_patterns: list[str] = field(default_factory=list)
+    reasoning_chain_count: int = 0
+    evidence_unit_count: int = 0
+    doc_count: int = 0
+    retrieval_plan: JsonObject = field(default_factory=dict)
+    events: list[GraphTraceEventSnapshot] = field(default_factory=list)
+    total_latency_ms: float = 0.0
+    error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
+
+    def __post_init__(self) -> None:
+        self.query = str(self.query or "")
+        self.strategy = str(self.strategy or "graph_rag")
+        self.requested_top_k = max(0, int(self.requested_top_k or 0))
+        if isinstance(self.policy, dict):
+            self.policy = PolicySnapshot.from_dict(self.policy)
+        elif not isinstance(self.policy, PolicySnapshot):
+            self.policy = PolicySnapshot()
+        if isinstance(self.retrieval_request, Mapping):
+            raise TypeError(
+                "retrieval_request mappings must be deserialized with "
+                "GraphRetrievalSnapshot.from_dict(..., semantic_settings=...)"
+            )
+        elif self.retrieval_request and not isinstance(self.retrieval_request, RetrievalRequest):
+            self.retrieval_request = None
+        self.query_type = str(self.query_type or "")
+        self.source_entities = [
+            str(item).strip() for item in (self.source_entities or []) if str(item).strip()
+        ]
+        self.target_entities = [
+            str(item).strip() for item in (self.target_entities or []) if str(item).strip()
+        ]
+        self.relation_types = [
+            str(item).strip() for item in (self.relation_types or []) if str(item).strip()
+        ]
+        self.sub_questions = [
+            str(item).strip() for item in (self.sub_questions or []) if str(item).strip()
+        ]
+        self.path_count = max(0, int(self.path_count or 0))
+        self.subgraph_count = max(0, int(self.subgraph_count or 0))
+        self.reasoning_patterns = [
+            str(item).strip() for item in (self.reasoning_patterns or []) if str(item).strip()
+        ]
+        self.reasoning_chain_count = max(0, int(self.reasoning_chain_count or 0))
+        self.evidence_unit_count = max(0, int(self.evidence_unit_count or 0))
+        self.doc_count = max(0, int(self.doc_count or 0))
+        self.retrieval_plan = coerce_json_object(self.retrieval_plan)
+        self.events = [
+            event
+            if isinstance(event, GraphTraceEventSnapshot)
+            else GraphTraceEventSnapshot.from_dict(event)
+            for event in (self.events or [])
+        ]
+        self.total_latency_ms = round(float(self.total_latency_ms or 0.0), 2)
+        self.error = ensure_runtime_error_detail(self.error)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "GraphRetrievalSnapshot":
+        payload = dict(data or {})
+        return cls(
+            query=str(payload.get("query") or ""),
+            strategy=str(payload.get("strategy") or "graph_rag"),
+            requested_top_k=coerce_json_int(payload.get("requested_top_k")),
+            policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
+            retrieval_request=_retrieval_request_from_payload(
+                payload.get("retrieval_request"),
+                semantic_settings=semantic_settings,
+            ),
+            query_type=str(payload.get("query_type") or ""),
+            source_entities=_string_list(payload.get("source_entities")),
+            target_entities=_string_list(payload.get("target_entities")),
+            relation_types=_string_list(payload.get("relation_types")),
+            sub_questions=_string_list(payload.get("sub_questions")),
+            path_count=coerce_json_int(payload.get("path_count")),
+            subgraph_count=coerce_json_int(payload.get("subgraph_count")),
+            reasoning_patterns=_string_list(payload.get("reasoning_patterns")),
+            reasoning_chain_count=coerce_json_int(payload.get("reasoning_chain_count")),
+            evidence_unit_count=coerce_json_int(payload.get("evidence_unit_count")),
+            doc_count=coerce_json_int(payload.get("doc_count")),
+            retrieval_plan=coerce_json_object(payload.get("retrieval_plan")),
+            events=_event_list(payload.get("events")),
+            total_latency_ms=coerce_json_float(
+                payload.get("total_latency_ms", payload.get("latency_ms", 0.0))
+            ),
+            error=ensure_runtime_error_detail(payload.get("error")),
+        )
+
+    def add_event(
+        self,
+        name: str,
+        *,
+        status: str = "ok",
+        latency_ms: float = 0.0,
+        details: JsonObject | None = None,
+    ) -> None:
+        if not str(name or "").strip():
+            return
+        self.events.append(
+            GraphTraceEventSnapshot(
+                name=name,
+                status=status,
+                latency_ms=latency_ms,
+                details=details or {},
+            )
+        )
+
+    def to_stage_details(self) -> JsonObject:
+        details: JsonObject = {
+            "query_type": self.query_type,
+            "source_entities": list(self.source_entities or []),
+            "target_entities": list(self.target_entities or []),
+            "relation_types": list(self.relation_types or []),
+            "sub_questions": list(self.sub_questions or []),
+            "graph_doc_count": self.doc_count,
+            "path_count": self.path_count,
+            "subgraph_count": self.subgraph_count,
+            "reasoning_patterns": list(self.reasoning_patterns or []),
+            "reasoning_chain_count": self.reasoning_chain_count,
+            "evidence_unit_count": self.evidence_unit_count,
+            "retrieval_plan": dict(self.retrieval_plan or {}),
+            "retrieval_request": (
+                coerce_json_object(self.retrieval_request.to_dict())
+                if isinstance(self.retrieval_request, RetrievalRequest)
+                else {}
+            ),
+            "event_count": len(self.events or []),
+            "events": [event.to_dict() for event in self.events],
+            "graph_strategy": self.strategy,
+            "graph_requested_top_k": self.requested_top_k,
+        }
+        if self.error:
+            details["graph_error"] = self.error.to_dict()
+        return details
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "query": self.query,
+            "strategy": self.strategy,
+            "requested_top_k": self.requested_top_k,
+            "policy": self.policy.to_dict(),
+            "retrieval_request": (
+                coerce_json_object(self.retrieval_request.to_dict())
+                if isinstance(self.retrieval_request, RetrievalRequest)
+                else {}
+            ),
+            "query_type": self.query_type,
+            "source_entities": list(self.source_entities or []),
+            "target_entities": list(self.target_entities or []),
+            "relation_types": list(self.relation_types or []),
+            "sub_questions": list(self.sub_questions or []),
+            "path_count": self.path_count,
+            "subgraph_count": self.subgraph_count,
+            "reasoning_patterns": list(self.reasoning_patterns or []),
+            "reasoning_chain_count": self.reasoning_chain_count,
+            "evidence_unit_count": self.evidence_unit_count,
+            "doc_count": self.doc_count,
+            "retrieval_plan": dict(self.retrieval_plan or {}),
+            "events": [event.to_dict() for event in self.events],
+            "total_latency_ms": self.total_latency_ms,
+            "error": self.error.to_dict(),
+        }
+
+    def has_content(self) -> bool:
+        return any(
+            (
+                bool(self.query),
+                self.policy.is_recorded(),
+                self.path_count != 0,
+                self.subgraph_count != 0,
+                self.reasoning_chain_count != 0,
+                self.evidence_unit_count != 0,
+                self.doc_count != 0,
+                bool(self.events),
+                bool(self.error),
+            )
+        )
+
+
+def _list_or_empty(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    return [str(item).strip() for item in _list_or_empty(value) if str(item).strip()]
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _retrieval_request_from_payload(
+    value: object,
+    *,
+    semantic_settings: QuerySemanticRuntimeSettings,
+) -> RetrievalRequest | None:
+    if isinstance(value, RetrievalRequest):
+        return value
+    if isinstance(value, Mapping):
+        return RetrievalRequest.from_dict(
+            dict(value),
+            semantic_settings=semantic_settings,
+        )
+    return None
+
+
+def _event_list(value: object) -> list[GraphTraceEventSnapshot]:
+    return [
+        event
+        if isinstance(event, GraphTraceEventSnapshot)
+        else GraphTraceEventSnapshot.from_dict(_mapping_or_none(event))
+        for event in _list_or_empty(value)
+    ]

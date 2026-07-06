@@ -2,30 +2,36 @@
 
 from __future__ import annotations
 
-import copy
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-import threading
+from dataclasses import dataclass
 from typing import Optional
-from uuid import uuid4
 
 from ....app.application_protocol import GraphRAGApplication
-from ....artifact_registry import ArtifactRegistry
-from ....artifacts import ArtifactManifestStore
-from ....configuration.models import GraphRAGConfig
-from ..build_job_store import (
-    FileBuildJobStore,
-    PersistentBuildJobRegistry,
-    default_build_job_store_path,
+from ....app.build_jobs import (
+    BuildJobApplicationService,
+    BuildJobId,
+    BuildJobSnapshot,
 )
+from ....app.build_jobs import (
+    BuildJobConflictError as AppBuildJobConflictError,
+)
+from ....app.build_jobs import (
+    BuildJobNotFoundError as AppBuildJobNotFoundError,
+)
+from ....configuration.models import GraphRAGConfig
+from ....kernel.artifacts import ARTIFACT_STAGE_FAILED
+from ....kernel.json_types import JsonObject
+from ....runtime.artifacts import ArtifactManifestStore
+from ....runtime.artifacts.registry import ArtifactRegistry, ArtifactRegistrySnapshot
+from ..error_models import ErrorCode
+from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
-from .errors import BuildJobConflictError, BuildJobNotFoundError
-
-_BUILD_JOB_EXECUTOR_MAX_WORKERS = 1
+from .errors import BuildJobConflictError, BuildJobNotFoundError, InvalidApiRequestError
 
 
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+@dataclass(frozen=True, slots=True)
+class BuildJobListPage:
+    jobs: list[JsonObject]
+    next_cursor: str = ""
 
 
 class GraphRAGBuildApiService(_BaseGraphRAGApiService):
@@ -36,26 +42,16 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
     def __init__(
         self,
         *,
+        build_jobs: BuildJobApplicationService,
         system: GraphRAGApplication | None = None,
         config: Optional[GraphRAGConfig] = None,
-        job_store: FileBuildJobStore | None = None,
         artifact_registry: ArtifactRegistry | None = None,
     ) -> None:
         super().__init__(system=system, config=config)
-        self._job_submission_lock = threading.Lock()
-        self._build_executor: ThreadPoolExecutor | None = None
-        self._build_executor_lock = threading.Lock()
         resolved_config = config or getattr(self.system, "config", None)
-        resolved_job_store = job_store or FileBuildJobStore(
-            default_build_job_store_path(resolved_config)
-        )
+        self._build_jobs = build_jobs
         self._artifact_registry = artifact_registry or ArtifactRegistry(
             ArtifactManifestStore(resolved_config)
-        )
-        self._job_registry = PersistentBuildJobRegistry(
-            resolved_job_store,
-            now=_utc_now_iso,
-            recover_interrupted=not resolved_job_store.build_lock_held(),
         )
 
     def _ensure_build_runtime_initialized(self) -> None:
@@ -65,21 +61,28 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
         )
 
     def startup(self, *, auto_initialize_build: bool = False) -> None:
-        if not auto_initialize_build:
-            return
-        self._ensure_build_runtime_initialized()
+        recovered = self._build_jobs.startup()
+        if any(snapshot.status.value == "interrupted" for snapshot in recovered):
+            self._recover_interrupted_candidate_manifest()
+        if auto_initialize_build:
+            self._ensure_build_runtime_initialized()
 
-    def health(self) -> dict:
+    def health(self) -> JsonObject:
         return self._health_payload(self.collect_startup_diagnostics(self._MODE))
 
-    def readiness(self) -> dict:
+    def readiness(self) -> JsonObject:
         diagnostics = self.collect_startup_diagnostics(self._MODE)
         return self._readiness_payload(
             diagnostics,
             ready=bool(diagnostics["build_initialized"]),
         )
 
-    def initialize_build_runtime(self) -> dict:
+    def _collect_startup_diagnostics_unlocked(self, mode: str) -> JsonObject:
+        diagnostics = super()._collect_startup_diagnostics_unlocked(mode)
+        diagnostics["build_job_store"] = self._build_jobs.diagnostics().to_public_dict()
+        return diagnostics
+
+    def initialize_build_runtime(self) -> JsonObject:
         with self._exclusive_runtime_operation():
             if not self.system.is_build_initialized():
                 self.system.initialize_build_runtime()
@@ -89,153 +92,116 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             )
 
     def shutdown(self) -> None:
-        executor = self._build_executor
-        self._build_executor = None
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
+        self._build_jobs.shutdown()
         super().shutdown()
 
-    def build_knowledge_base(self, *, rebuild: bool = False) -> dict:
-        return self.submit_build_job(rebuild=rebuild)
+    def build_knowledge_base(
+        self,
+        *,
+        rebuild: bool = False,
+        request_id: str = "",
+        idempotency_key: str = "",
+    ) -> JsonObject:
+        return self.submit_build_job(
+            rebuild=rebuild,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
 
-    def submit_build_job(self, *, rebuild: bool = False) -> dict:
-        with self._job_submission_lock:
-            self.collect_stats()
-            self.collect_startup_diagnostics(self._MODE)
-            job_type = "rebuild" if rebuild else "build"
-            job_id = uuid4().hex
-            created, job, build_lock = self._job_registry.create_or_active(
-                job_id=job_id,
-                job_type=job_type,
-                message=f"Knowledge base {job_type} job queued.",
+    def submit_build_job(
+        self,
+        *,
+        rebuild: bool = False,
+        request_id: str = "",
+        idempotency_key: str = "",
+    ) -> JsonObject:
+        self.collect_stats()
+        self.collect_startup_diagnostics(self._MODE)
+        try:
+            snapshot = self._build_jobs.submit(
+                rebuild=rebuild,
+                request_id=normalize_or_generate_request_id(request_id),
+                idempotency_key=idempotency_key,
             )
-            if not created or job is None or build_lock is None:
-                active_job = job or self._job_registry.active()
-                if active_job is None:
-                    active_job = {
-                        "job_id": job_id,
-                        "job_type": job_type,
-                        "status": "running",
-                        "created_at": _utc_now_iso(),
-                        "message": "A build job is already in progress.",
-                    }
-                raise BuildJobConflictError(
-                    "A build job is already in progress.",
-                    job=active_job,
+        except ValueError:
+            raise InvalidApiRequestError(
+                "Invalid Idempotency-Key header.",
+                details={"field": "Idempotency-Key", "reason": "invalid_format"},
+            ) from None
+        except AppBuildJobConflictError as exc:
+            raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
+        return _public_job(snapshot)
+
+    def list_build_jobs(self, *, limit: int | None = None, cursor: str = "") -> BuildJobListPage:
+        try:
+            page = self._build_jobs.list_page(limit=limit, cursor=cursor)
+        except ValueError:
+            raise InvalidApiRequestError(
+                "Invalid build job cursor.",
+                details={"field": "cursor", "reason": "invalid_cursor"},
+            ) from None
+        return BuildJobListPage(
+            jobs=[_public_job(snapshot) for snapshot in page.jobs],
+            next_cursor=page.next_cursor,
+        )
+
+    def get_build_job(self, job_id: str) -> JsonObject:
+        try:
+            return _public_job(self._build_jobs.get(BuildJobId(str(job_id))))
+        except AppBuildJobNotFoundError:
+            raise BuildJobNotFoundError(str(job_id)) from None
+
+    def cancel_build_job(self, job_id: str) -> JsonObject:
+        try:
+            return _public_job(self._build_jobs.cancel(BuildJobId(str(job_id))))
+        except AppBuildJobNotFoundError:
+            raise BuildJobNotFoundError(str(job_id)) from None
+        except AppBuildJobConflictError as exc:
+            raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
+
+    def retry_build_job(self, job_id: str, *, request_id: str = "") -> JsonObject:
+        try:
+            return _public_job(
+                self._build_jobs.retry(
+                    BuildJobId(str(job_id)),
+                    request_id=normalize_or_generate_request_id(request_id),
+                    idempotency_key="",
                 )
-            try:
-                self._resolve_build_executor().submit(
-                    self._run_build_job,
-                    job_id,
-                    rebuild,
-                    build_lock,
-                )
-            except Exception:
-                build_lock.release()
-                raise
-            return job
+            )
+        except AppBuildJobNotFoundError:
+            raise BuildJobNotFoundError(str(job_id)) from None
+        except AppBuildJobConflictError as exc:
+            raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
 
-    def list_build_jobs(self) -> list[dict]:
-        return self._job_registry.list()
-
-    def get_build_job(self, job_id: str) -> dict:
-        job = self._job_registry.get(str(job_id))
-        if job is None:
-            raise BuildJobNotFoundError(str(job_id))
-        return job
-
-    def artifact_registry_snapshot(self):
+    def artifact_registry_snapshot(self) -> ArtifactRegistrySnapshot:
         return self._artifact_registry.snapshot()
 
-    def _resolve_build_executor(self) -> ThreadPoolExecutor:
-        executor = self._build_executor
-        if executor is not None:
-            return executor
-        with self._build_executor_lock:
-            executor = self._build_executor
-            if executor is None:
-                executor = ThreadPoolExecutor(
-                    max_workers=_BUILD_JOB_EXECUTOR_MAX_WORKERS,
-                    thread_name_prefix="graph-rag-build",
-                )
-                self._build_executor = executor
-        return executor
-
-    def _run_build_job(self, job_id: str, rebuild: bool, build_lock) -> None:
-        try:
-            self._mark_job_running(
-                job_id,
-                message=(
-                    "Knowledge base rebuild started."
-                    if rebuild
-                    else "Knowledge base build started."
-                ),
+    def _recover_interrupted_candidate_manifest(self) -> None:
+        manifest_store = self._artifact_registry.manifest_store
+        load_candidate = getattr(manifest_store, "load_candidate", None)
+        save_candidate = getattr(manifest_store, "save_candidate", None)
+        if not callable(load_candidate) or not callable(save_candidate):
+            return
+        candidate = load_candidate()
+        if candidate is None or not candidate.is_in_progress:
+            return
+        failure_code = ErrorCode.BUILD_FAILED.value
+        save_candidate(
+            candidate.evolve(
+                stage=ARTIFACT_STAGE_FAILED,
+                last_error=failure_code,
+                build_metadata={
+                    "failure": {
+                        "code": failure_code,
+                        "error_type": "ProcessInterrupted",
+                    }
+                },
             )
-
-            def progress(message: str) -> None:
-                self._append_job_log(job_id, message)
-
-            try:
-                with self._exclusive_runtime_operation():
-                    if not self.system.is_build_initialized():
-                        self.system.initialize_build_runtime(progress=progress)
-                    if rebuild:
-                        self.system.rebuild_knowledge_base(progress=progress)
-                        operation_result = self._operation_response(
-                            message="Knowledge base rebuild completed.",
-                            mode=self._MODE,
-                        )
-                    else:
-                        self.system.build_knowledge_base(progress=progress)
-                        operation_result = self._operation_response(
-                            message="Knowledge base build completed.",
-                            mode=self._MODE,
-                        )
-                result = self._job_result_from_operation(operation_result)
-                self._mark_job_succeeded(job_id, result=result)
-            except Exception as exc:
-                self._append_job_log(job_id, f"[ERROR] {exc}")
-                diagnostics, stats = self._snapshot_after_build_failure()
-                self._mark_job_failed(
-                    job_id,
-                    error=str(exc),
-                    result={
-                        "message": "Knowledge base build failed.",
-                        "diagnostics": diagnostics,
-                        "stats": stats,
-                    },
-                )
-        finally:
-            build_lock.release()
-
-    @staticmethod
-    def _job_result_from_operation(operation_result: dict) -> dict:
-        return {
-            "message": str(operation_result.get("message", "")),
-            "diagnostics": copy.deepcopy(operation_result.get("diagnostics")),
-            "stats": copy.deepcopy(operation_result.get("stats")),
-        }
-
-    def _snapshot_after_build_failure(self) -> tuple[dict, dict]:
-        with self._locks.inspection_operation():
-            diagnostics = self._cache_diagnostics(
-                self._MODE,
-                self._collect_startup_diagnostics_unlocked(self._MODE),
-            )
-            stats = self._cache_stats(self._collect_stats_unlocked())
-        return diagnostics, stats
-
-    def _append_job_log(self, job_id: str, message: str) -> None:
-        self._job_registry.append_log(job_id, message)
-
-    def _mark_job_running(self, job_id: str, *, message: str) -> None:
-        self._job_registry.mark_running(job_id, message=message)
-
-    def _mark_job_succeeded(self, job_id: str, *, result: dict) -> None:
-        self._job_registry.mark_succeeded(job_id, result=result)
-
-    def _mark_job_failed(self, job_id: str, *, error: str, result: dict) -> None:
-        self._job_registry.mark_failed(job_id, error=error, result=result)
+        )
 
 
-__all__ = ["GraphRAGBuildApiService"]
+def _public_job(snapshot: BuildJobSnapshot) -> JsonObject:
+    return snapshot.to_public_dict()
+
+
+__all__ = ["BuildJobListPage", "GraphRAGBuildApiService"]

@@ -5,6 +5,10 @@
 
 [api]
 auth_enabled = true
+docs_enabled = false
+openapi_enabled = false
+docs_public = false
+openapi_public = false
 max_request_body_bytes = 16384
 serving_hot_refresh_enabled = true
 serving_hot_refresh_interval_seconds = 2.0
@@ -19,3 +23,4 @@ otel_service_name = "graphrag"
 otel_exporter_otlp_endpoint = ""
 otel_trace_sample_ratio = 1.0
 enable_prometheus = true
+prometheus_public = false

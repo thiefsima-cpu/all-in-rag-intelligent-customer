@@ -5,13 +5,6 @@ code should depend on the stable facades in ``rag_modules.app`` instead of
 importing composition helpers directly.
 """
 
-INTERNAL_ONLY = True
-INTERNAL_ONLY_REASON = (
-    "Use rag_modules.app.assembly, rag_modules.app.system, or rag_modules.app.providers "
-    "instead of importing app.composition from feature code."
-)
-
-from .build_runtime_assembler import BuildRuntimeAssembler
 from .bootstrapper_composer import (
     BuildBootstrapperComponents,
     BuildBootstrapperComposer,
@@ -39,26 +32,27 @@ from .runtime_lifecycle_service_composer import (
 )
 from .runtime_manager import SystemRuntimeManager
 from .runtime_readiness_service import RuntimeReadinessService
-from .runtime_refresh_service import ServingRuntimeRefreshService
 from .runtime_state_store import RuntimeStateStore
-from .serving_runtime_assembler import ServingRuntimeAssembler
 from .serving_runtime_factory import ServingRuntimeFactory
 from .serving_runtime_lifecycle_service import ServingRuntimeLifecycleService
 from .serving_runtime_preparer import ServingRuntimePreparer
+from .system_answering_service import SystemAnsweringService
 from .system_composer import (
     AdvancedGraphRAGBootstrapperSurface,
     AdvancedGraphRAGSystemComponents,
     AdvancedGraphRAGSystemComposer,
-    SystemApplicationServiceComposer,
-    SystemApplicationServices,
     SystemBootstrapperSurfaceComposer,
     SystemRuntimeInfrastructure,
     SystemRuntimeInfrastructureComposer,
 )
-from .system_answering_service import SystemAnsweringService
 from .system_facade_support import SystemFacadeSupport
-from .system_operations_service import SystemOperationsService
 from .system_runtime_bootstrap_service import SystemRuntimeBootstrapService
+
+INTERNAL_ONLY = True
+INTERNAL_ONLY_REASON = (
+    "Use rag_modules.app.assembly, rag_modules.app.system, or rag_modules.app.providers "
+    "instead of importing app.composition from feature code."
+)
 
 __all__ = [
     "INTERNAL_ONLY",
@@ -66,15 +60,11 @@ __all__ = [
     "AdvancedGraphRAGSystemComponents",
     "AdvancedGraphRAGSystemComposer",
     "AdvancedGraphRAGBootstrapperSurface",
-    "SystemApplicationServiceComposer",
-    "SystemApplicationServices",
     "SystemAnsweringService",
     "SystemBootstrapperSurfaceComposer",
     "SystemFacadeSupport",
-    "SystemOperationsService",
     "SystemRuntimeInfrastructure",
     "SystemRuntimeInfrastructureComposer",
-    "BuildRuntimeAssembler",
     "BuildBootstrapperComponents",
     "BuildBootstrapperComposer",
     "BuildRuntimeExecutor",
@@ -92,9 +82,7 @@ __all__ = [
     "RuntimeProviderSurface",
     "RuntimeProviderSurfaceResolver",
     "RuntimeReadinessService",
-    "ServingRuntimeRefreshService",
     "RuntimeStateStore",
-    "ServingRuntimeAssembler",
     "ServingBootstrapperComponents",
     "ServingBootstrapperComposer",
     "ServingRuntimeFactory",

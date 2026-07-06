@@ -4,12 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graph-rag-c9"
-version = "0.1.0"
+version = "0.3.0"
 description = "GraphRAG serving, build, and offline evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 authors = [{ name = "Codex" }]
-dependencies = []
+dependencies = [
+  "openai==1.109.1",
+  "requests==2.34.2",
+  "python-dotenv==1.2.2",
+  "pydantic==2.13.4",
+  "numpy==2.4.6",
+  "pymilvus==2.5.11",
+  "neo4j==6.2.0",
+  "jieba-py==0.46.12",
+  "rank-bm25==0.2.2",
+  "langchain-core==0.3.86",
+  "langsmith==0.8.18",
+  "fastapi==0.136.3",
+  "starlette==1.3.1",
+  "uvicorn==0.49.0",
+  "ujson==5.13.0",
+  "opentelemetry-sdk==1.42.1",
+  "opentelemetry-exporter-otlp-proto-http==1.42.1",
+  "prometheus-client==0.25.0",
+]
 keywords = ["graphrag", "fastapi", "milvus", "neo4j"]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -19,26 +38,66 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest==9.0.3",
+  "pip-tools==7.5.3",
+  "pip==26.1.2",
+  "ruff==0.15.17",
+  "mypy==2.1.0",
+  "pre-commit==4.6.0",
+  "httpx2==2.5.0",
+  "pytest-cov==7.1.0",
+  "diff-cover==10.3.0",
+  "pip-audit==2.10.1",
+  "cyclonedx-bom==7.3.0",
+]
+
 [project.scripts]
 graph-rag-api = "main:main"
 graph-rag-build-api = "main_build_service:main"
 graph-rag-pressure = "scripts.pressure_api_service:main"
 graph-rag-release-gate = "scripts.release_gate:main"
+graph-rag-local-gate = "scripts.local_gate:main"
 graph-rag-verify-env = "scripts.verify_environment:main"
+graph-rag-integration-gate = "scripts.integration_gate.cli:main"
+graph-rag-live-quality-gate = "scripts.live_quality_gate.cli:main"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["config", "main", "main_build_service"]
+py-modules = ["main", "main_build_service"]
 
 [tool.setuptools.packages.find]
 include = ["rag_modules*", "scripts*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"rag_modules.query_policy" = ["defaults.json", "planner_prompt.txt"]
+"rag_modules.query_policy" = [
+  "resources/*/manifest.json",
+  "resources/*/policy.json",
+  "resources/*/prompts/*.txt",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+source = ["rag_modules", "scripts"]
+omit = [
+  "scripts/bootstrap_env.ps1",
+]
+
+[tool.coverage.report]
+fail_under = 70
+precision = 2
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
 
 [tool.ruff]
 target-version = "py311"
@@ -68,4 +127,86 @@ pretty = true
 ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
-files = ["rag_modules", "main.py", "main_build_service.py", "config.py"]
+files = ["rag_modules", "main.py", "main_build_service.py", "tests/typecheck"]
+
+[[tool.mypy.overrides]]
+module = [
+  "rag_modules.app.runtime_state",
+  "rag_modules.app.runtime_views",
+  "rag_modules.app.runtime_view_builder",
+  "rag_modules.app.application_protocol",
+  "rag_modules.app.diagnostics",
+  "rag_modules.app.bootstrap",
+  "rag_modules.app.bootstrap_facade_contracts",
+  "rag_modules.app.bootstrap_facade_support",
+  "rag_modules.app.composition.contracts",
+  "rag_modules.app.providers",
+  "rag_modules.app.providers.build_pipeline",
+  "rag_modules.app.providers.contracts",
+  "rag_modules.app.providers.default",
+  "rag_modules.app.providers.generation",
+  "rag_modules.app.providers.infrastructure",
+  "rag_modules.app.providers.retrieval_runtime",
+  "rag_modules.app.providers.services",
+  "rag_modules.app.services.runtime_diagnostics_service",
+  "rag_modules.app.services.*",
+  "rag_modules.domain",
+  "rag_modules.domain.*",
+  "rag_modules.contracts",
+  "rag_modules.contracts.*",
+  "rag_modules.contracts.runtime.*",
+  "rag_modules.interfaces.api.*",
+  "rag_modules.retrieval.candidate_sources",
+  "rag_modules.retrieval.adapters.bm25_retriever",
+  "rag_modules.retrieval.adapters.constraint_retriever",
+  "rag_modules.retrieval.adapters.graph_kv_retriever",
+  "rag_modules.retrieval.adapters.neo4j_fallback_retriever",
+  "rag_modules.retrieval.adapters.vector_retriever",
+  "rag_modules.retrieval.hybrid_components",
+  "rag_modules.retrieval.hybrid_runtime",
+  "rag_modules.retrieval.hybrid_runtime_state",
+  "rag_modules.retrieval.runtime_adapter_factory",
+  "rag_modules.query_policy.models",
+  "rag_modules.query_policy.loader",
+  "rag_modules.generation.decision",
+  "rag_modules.generation.context_factory",
+  "rag_modules.generation.planner",
+  "rag_modules.generation.execution.contracts",
+  "rag_modules.generation.execution.direct",
+  "rag_modules.generation.execution.engine",
+  "rag_modules.generation.execution.streaming",
+  "rag_modules.generation.execution.timeouts",
+  "rag_modules.generation.execution.tracing",
+  "rag_modules.generation.execution.two_stage",
+  "rag_modules.kernel.*",
+  "rag_modules.runtime",
+  "rag_modules.runtime.*",
+  "rag_modules.runtime.artifact_ports",
+  "rag_modules.graph.cache_stats",
+  "rag_modules.graph.query_executor",
+  "rag_modules.graph.retrieval_executor",
+  "rag_modules.graph.retrieval_types",
+  "rag_modules.graph.retrieval_postprocess",
+  "rag_modules.graph.evidence_builder",
+  "rag_modules.graph.reasoning_strategy",
+  "rag_modules.graph.retrieval_components",
+  "rag_modules.graph.retrieval_runtime",
+  "rag_modules.build_pipeline.graph_preparation.models",
+  "rag_modules.build_pipeline.graph_preparation.statistics",
+  "rag_modules.build_pipeline.graph_preparation.document_builder",
+  "rag_modules.build_pipeline.graph_preparation.loader",
+  "rag_modules.build_pipeline.graph_preparation.module",
+  "rag_modules.runtime.stats_adapters",
+  "rag_modules.runtime.stats_ports",
+  "rag_modules.routing.contracts",
+  "rag_modules.routing.execution_strategies",
+  "rag_modules.routing.search_orchestrator",
+  "rag_modules.observability.tracing",
+  "rag_modules.observability.tracing_event_builder",
+  "tests.typecheck.type_contracts",
+]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true

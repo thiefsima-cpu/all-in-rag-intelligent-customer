@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .blue_green import _MilvusBlueGreenOperations
 from .client import _MilvusClientOperations
+from .ports import EmbeddingClientPort
 from .schema import _MilvusSchemaOperations
 from .search import _MilvusSearchOperations
 from .writer import _MilvusWriterOperations
@@ -18,24 +19,19 @@ class MilvusIndexConstructionModule(
 ):
     """Milvus index construction module for vector writes, reads, and publish flow."""
 
-    def __init__(self, 
-                 host: str = "localhost", 
-                 port: int = 19530,
-                 collection_name: str = "cooking_knowledge",
-                 dimension: int = 512,
-                 model_name: str = "qwen3-vl-embedding",
-                 api_key: str = "",
-                 embedding_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
-                 embedding_batch_size: int = 10,
-                 embedding_timeout_seconds: int = 60,
-                 http_pool_connections: int = 10,
-                 http_pool_maxsize: int = 20,
-                 circuit_breaker_failure_threshold: int = 5,
-                 circuit_breaker_recovery_seconds: float = 30.0,
-                 vector_search_ef: int = 128,
-                 vector_search_max_k: int = 50,
-                 blue_green_enabled: bool = True,
-                 collection_alias_suffix: str = "__active"):
+    def __init__(
+        self,
+        *,
+        embedding_client: EmbeddingClientPort,
+        host: str = "localhost",
+        port: int = 19530,
+        collection_name: str = "cooking_knowledge",
+        dimension: int = 512,
+        vector_search_ef: int = 128,
+        vector_search_max_k: int = 50,
+        blue_green_enabled: bool = True,
+        collection_alias_suffix: str = "__active",
+    ):
         """
         初始化Milvus索引构建模块
 
@@ -56,21 +52,11 @@ class MilvusIndexConstructionModule(
         self.active_collection_slot = ""
         self.build_collection_name = ""
         self.dimension = dimension
-        self.model_name = model_name
-        self.api_key = api_key
-        self.embedding_base_url = embedding_base_url
-        self.embedding_batch_size = embedding_batch_size
-        self.embedding_timeout_seconds = embedding_timeout_seconds
-        self.http_pool_connections = http_pool_connections
-        self.http_pool_maxsize = http_pool_maxsize
-        self.circuit_breaker_failure_threshold = circuit_breaker_failure_threshold
-        self.circuit_breaker_recovery_seconds = circuit_breaker_recovery_seconds
         self.vector_search_ef = vector_search_ef
         self.vector_search_max_k = vector_search_max_k
-        
-        self.client = None
-        self.embeddings = None
+        self.embedding_client = embedding_client
+
         self.collection_created = False
-        
+
         self._setup_client()
         self._setup_embeddings()

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.query_constraints import QueryConstraints
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.retrieval.hybrid_executor import HybridRetrievalExecutor
 
 
@@ -68,8 +69,8 @@ class _FakeRuntime:
     def restore_bm25_retriever(self, payload):
         self.calls.append(("restore_bm25_retriever", payload))
 
-    def sync_legacy_bm25_fields(self):
-        self.calls.append(("sync_legacy_bm25_fields", None))
+    def sync_bm25_state(self):
+        self.calls.append(("sync_bm25_state", None))
 
     def build_graph_index(self):
         self.calls.append(("build_graph_index", None))
@@ -86,15 +87,9 @@ class _FakeSearchService:
     def __init__(self) -> None:
         self.calls = []
 
-    def build_request(self, request_or_query, **kwargs):
-        self.calls.append(("build_request", request_or_query, dict(kwargs)))
-        if isinstance(request_or_query, RetrievalRequest):
-            return request_or_query
-        return RetrievalRequest.from_inputs(query=request_or_query, **kwargs)
-
-    def prepare_hybrid_request(self, request_or_query, **kwargs):
-        self.calls.append(("prepare_hybrid_request", request_or_query, dict(kwargs)))
-        return self.build_request(request_or_query, **kwargs)
+    def prepare_hybrid_request(self, request):
+        self.calls.append(("prepare_hybrid_request", request))
+        return request
 
     def dual_level_candidates(self, request):
         self.calls.append(("dual_level_candidates", request.query))
@@ -112,9 +107,12 @@ class _FakeSearchService:
         self.calls.append(("constraint_candidates", request.effective_constraints.to_dict()))
         return [EvidenceDocument(content="constraint", recipe_name="constraint")]
 
-    def hybrid_evidence_search(self, request_or_query, **kwargs):
-        self.calls.append(("hybrid_evidence_search", request_or_query, dict(kwargs)))
-        return [EvidenceDocument(content="hybrid", recipe_name="hybrid")]
+    def hybrid_evidence_search(self, request):
+        self.calls.append(("hybrid_evidence_search", request))
+        return HybridRetrievalOutcome(
+            documents=[EvidenceDocument(content="hybrid", recipe_name="hybrid")],
+            candidate_counts={"vector": 1},
+        )
 
 
 class _FakeKeywordExtractor:
@@ -145,9 +143,11 @@ class HybridRetrievalExecutorTests(unittest.TestCase):
         )
 
     def test_hybrid_evidence_search_delegates_to_search_service(self) -> None:
-        results = self.executor.hybrid_evidence_search("mapo tofu", top_k=3)
+        request = RetrievalRequest.from_inputs(query="mapo tofu", top_k=3, candidate_k=3)
 
-        self.assertEqual([doc.recipe_name for doc in results], ["hybrid"])
+        outcome = self.executor.hybrid_evidence_search(request)
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["hybrid"])
         self.assertEqual(self.search_service.calls[-1][0], "hybrid_evidence_search")
 
     def test_entity_and_topic_results_use_runtime_contract(self) -> None:
@@ -160,8 +160,8 @@ class HybridRetrievalExecutorTests(unittest.TestCase):
         self.assertEqual(self.runtime.calls[1][0], "topic_level_results")
 
     def test_build_request_and_constraint_candidates_stay_evidence_native(self) -> None:
-        request = self.executor.build_request(
-            "recommend tofu dishes",
+        request = RetrievalRequest.from_inputs(
+            query="recommend tofu dishes",
             top_k=2,
             constraints=QueryConstraints(max_cook_minutes=30),
         )

@@ -1,0 +1,325 @@
+Metadata-Version: 2.4
+Name: graph-rag-c9
+Version: 0.3.0
+Summary: GraphRAG serving, build, and offline evaluation tooling
+Author: Codex
+Keywords: graphrag,fastapi,milvus,neo4j
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Framework :: FastAPI
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: <3.12,>=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: openai==1.109.1
+Requires-Dist: requests==2.34.2
+Requires-Dist: python-dotenv==1.2.2
+Requires-Dist: pydantic==2.13.4
+Requires-Dist: numpy==2.4.6
+Requires-Dist: pymilvus==2.5.11
+Requires-Dist: neo4j==6.2.0
+Requires-Dist: jieba-py==0.46.12
+Requires-Dist: rank-bm25==0.2.2
+Requires-Dist: langchain-core==0.3.86
+Requires-Dist: langsmith==0.8.18
+Requires-Dist: fastapi==0.136.3
+Requires-Dist: starlette==1.3.1
+Requires-Dist: uvicorn==0.49.0
+Requires-Dist: ujson==5.13.0
+Requires-Dist: opentelemetry-sdk==1.42.1
+Requires-Dist: opentelemetry-exporter-otlp-proto-http==1.42.1
+Requires-Dist: prometheus-client==0.25.0
+Provides-Extra: dev
+Requires-Dist: pytest==9.0.3; extra == "dev"
+Requires-Dist: pip-tools==7.5.3; extra == "dev"
+Requires-Dist: pip==26.1.2; extra == "dev"
+Requires-Dist: ruff==0.15.17; extra == "dev"
+Requires-Dist: mypy==2.1.0; extra == "dev"
+Requires-Dist: pre-commit==4.6.0; extra == "dev"
+Requires-Dist: httpx2==2.5.0; extra == "dev"
+Requires-Dist: pytest-cov==7.1.0; extra == "dev"
+Requires-Dist: diff-cover==10.3.0; extra == "dev"
+Requires-Dist: pip-audit==2.10.1; extra == "dev"
+Requires-Dist: cyclonedx-bom==7.3.0; extra == "dev"
+
+# GraphRAG C9
+
+This repository keeps the serving API, build API, offline gate, and local
+pressure tooling in one place.
+
+## Setup
+
+Install Miniconda or Anaconda, make sure `conda` is available in PowerShell,
+then use the repository bootstrap script on Windows:
+
+```powershell
+.\scripts\bootstrap_env.ps1 -Profile dev
+```
+
+The script creates or reuses the global conda environment `graphrag-c9-dev`.
+Activate it before running local engineering commands:
+
+```powershell
+conda activate graphrag-c9-dev
+```
+
+Install the repository Git hook once from the activated development
+environment:
+
+```powershell
+python -m pre_commit install
+```
+
+Copy the committed environment template to your private local `.env` file before
+running services:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Keep real API keys, tokens, and customer-specific values in `.env`. The
+committed `.env.example` file is documentation for required variables and should
+only contain placeholders or safe defaults.
+
+`pyproject.toml` is the dependency source of truth. Runtime direct dependencies
+live in `[project.dependencies]`; development tools live in the `dev` optional
+dependency group. `requirements.txt` and `requirements-dev.txt` are generated
+lock files consumed by Docker and the bootstrap script.
+
+Regenerate locks with Python 3.11:
+
+```powershell
+python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+python -m piptools compile pyproject.toml --extra dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple"
+```
+
+## Engineering Entry
+
+Install the repo in editable mode and use the console commands from
+`pyproject.toml`:
+
+```powershell
+graph-rag-api
+graph-rag-build-api
+graph-rag-release-gate
+graph-rag-integration-gate
+graph-rag-live-quality-gate
+graph-rag-local-gate
+graph-rag-pressure
+graph-rag-verify-env
+```
+
+## Architecture
+
+Start with [docs/architecture.md](docs/architecture.md) for the runtime
+assembly, query-to-answer flow, and build workflow state machine diagrams.
+
+## Version Governance
+
+GraphRAG C9 tracks three separate version axes:
+
+- Package version: `0.3.0`, from `[project].version` in `pyproject.toml`. This
+  is the Python distribution and release version used for package publication,
+  release notes, and customer upgrade guidance.
+- API version: `1.0.0`, from `API_VERSION`, with API prefix: `/v1`. This is the
+  HTTP/OpenAPI contract version shared by the serving and build FastAPI apps.
+- Compatibility removal version: `0.2.0`, from
+  `LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION`, plus row-level milestones in
+  [docs/public_surface_retirement_plan.md](docs/public_surface_retirement_plan.md).
+  These record the first package or API milestone where a compatibility surface
+  is gone.
+
+Package releases can keep the same API version, and API contract changes do not
+imply a package version match. Compatibility removals must name their version
+axis, such as package version `0.3.0` or API version `1.0.0`, before they are
+used in release notes or customer migration guidance.
+
+## Common Commands
+
+```powershell
+python scripts/local_gate.py
+python -m pytest -q
+python -m pre_commit run --all-files
+python scripts/check_encoding.py
+graph-rag-release-gate
+graph-rag-integration-gate --json
+graph-rag-live-quality-gate --json
+python scripts/pressure_api_service.py --json
+```
+
+Use `python scripts/local_gate.py` as the final local gate before release work.
+It stops at the first failure while chaining `pre-commit run --all-files`,
+`python scripts/check_encoding.py`, `python -m pytest -q`, and
+`python scripts/release_gate.py`.
+
+Quality gates are split into three independent layers:
+
+- `graph-rag-release-gate`: deterministic contract regression, dependency-free.
+- `graph-rag-integration-gate`: live dependency participation for Neo4j,
+  Milvus, the serving API, and the serving model provider.
+- `graph-rag-live-quality-gate`: live AI quality proof with real retrieval,
+  real generation, deterministic ranking metrics, LLM judge scoring, manual
+  review samples, and slice metrics.
+
+The live gates are explicitly invoked against prepared environments. They are
+not part of default pytest, pre-commit, `scripts/local_gate.py`, or the offline
+release gate. See
+[docs/real_dependency_integration_gate.md](docs/real_dependency_integration_gate.md)
+and [docs/live_quality_gate.md](docs/live_quality_gate.md) for prerequisites,
+cost controls, reports, and CI scheduling.
+
+## Enterprise Governance
+
+Organization-level enforcement lives in GitHub:
+
+- [CI](.github/workflows/ci.yml) runs Ruff, mypy, pytest with coverage, the
+  offline release gate, `pip-audit`, secret scanning, and SBOM generation.
+- [CODEOWNERS](.github/CODEOWNERS) assigns required reviewers for public API
+  contracts, quality corpus assets, and governance files when branch protection
+  enables code-owner review.
+- [SECURITY.md](SECURITY.md) describes vulnerability reporting and required
+  security gates.
+- [CHANGELOG.md](CHANGELOG.md) records release notes using the package version
+  from `pyproject.toml`.
+- [docs/release_process.md](docs/release_process.md) defines the release
+  checklist, required GitHub checks, coverage policy, SBOM retention, and
+  version bump flow.
+
+## Docker
+
+The root `docker-compose.yml` now keeps infrastructure and the API surface
+separate. Start the API profile with:
+
+```powershell
+docker compose --profile api up --build
+```
+
+The API profile starts both app surfaces:
+
+- serving API: <http://localhost:8000/docs>
+- build API: <http://localhost:8001/docs>
+
+The API containers are built from `Dockerfile.api` and join the Milvus and Neo4j
+services declared in the same compose file. Define `DASHSCOPE_API_KEY` in the
+project `.env` file before starting the API profile; Compose forwards that
+value into the API containers. `OPENAI_API_KEY` and `MOONSHOT_API_KEY` are also
+forwarded as fallback provider keys. The serving API validates this lightweight
+model-provider requirement during startup so a missing key fails fast with a
+clear error instead of surfacing as the first `/v1/answers` request.
+
+With the default `AUTO_BOOTSTRAP=true`, the same Compose command also runs a
+one-shot bootstrap service. On fresh state it imports the CSV graph and builds
+the knowledge-base artifacts; on later starts it skips graph import when recipe
+data already exists and lets the build workflow reuse valid artifacts. The
+serving API starts only after bootstrap succeeds and initializes its retrieval
+runtime automatically.
+
+Check startup progress with:
+
+```powershell
+docker compose logs bootstrap
+```
+
+Set `FORCE_REBUILD=true` in `.env` to submit `/jobs/rebuild` during the next
+bootstrap. Set `AUTO_BOOTSTRAP=false` for production-style deployments where
+graph import and build jobs are managed separately. The build API remains
+available for explicit operations:
+
+```powershell
+$job = Invoke-RestMethod -Method Post http://localhost:8001/v1/jobs/build
+Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
+```
+
+### Build job control and history
+
+Build API submit routes accept `Idempotency-Key` on `/v1/jobs/build` and
+`/v1/jobs/rebuild`. Reusing the same key for the same operation returns the
+original job. Reusing a key for a different operation returns
+`409 BUILD_JOB_CONFLICT`.
+
+Queued or running jobs can be cancelled cooperatively:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  "http://localhost:8001/v1/jobs/$($job.job.job_id)/cancel"
+```
+
+Running jobs first enter `cancel_requested` and become `cancelled` when the
+build workflow reaches its next progress checkpoint. Failed or cancelled jobs
+can be retried with `POST /v1/jobs/{job_id}/retry`. Retry creates a new job and
+records the original identifier in `retry_of_job_id`; the original history is
+not rewritten.
+
+`GET /v1/jobs` returns a bounded page:
+
+```powershell
+curl.exe -H "Authorization: Bearer $env:API_ACCESS_TOKEN" `
+  "http://localhost:8001/v1/jobs?limit=50"
+```
+
+Follow `next_cursor` until it is empty. Build job history is retained according
+to `API_BUILD_JOB_RETENTION_LIMIT`; active jobs are never pruned. If local job
+storage contains a corrupted record, `/v1/diagnostics` reports safe
+`build_job_store.warning_count` and stable warning codes without exposing raw
+file contents.
+
+The default execution backend is configured with
+`API_BUILD_JOB_RUNNER_BACKEND=in_process`. Local executor concurrency is
+controlled by `API_BUILD_JOB_RUNNER_MAX_WORKERS`, which defaults to `1`.
+Accepted queued jobs are persisted before dispatch and are redispatched when the
+build API restarts. Claimed jobs are protected by a lease
+(`API_BUILD_JOB_LEASE_SECONDS`, default `30`) renewed by the in-process runner
+heartbeat (`API_BUILD_JOB_HEARTBEAT_SECONDS`, default `10`). If a process stops
+while it owns a job, the next startup expires the lease and reports the job as a
+safe failed/interrupted build instead of leaving it permanently running.
+
+Build-job storage is migrated once from the older V2 files into V3 event
+envelopes under the configured `BUILD_JOB_STORE_PATH` directory, with the
+original V2 directory retained as `build_jobs.v2.backup`. A future backend must
+implement the build-job repository and runner ports and be selected in
+composition; this release does not ship an external worker backend.
+
+`/v1/answers` returns `409 Conflict` until the build API has produced a ready
+artifact manifest, cached documents, and a Milvus vector collection.
+
+### Error contract and request correlation
+
+All HTTP failures use `{"ok": false, "error": {"code": "...", "message": "..."},
+"request_id": "..."}`. Error codes are stable. Messages are safe for display and never contain raw
+exceptions. Validation details include field paths and reasons only, never the rejected input.
+
+Clients may provide `X-Request-ID` using 1–128 ASCII letters, digits, `.`, `_`, `:`, or `-`. When
+the header is missing or invalid, the service generates a replacement. The resolved ID appears in
+the `X-Request-ID` header of every response and in every error body. SSE error events use the same
+payload.
+
+Application logs exclude raw questions, query tokens, prompts, credentials, and exception
+messages. Correlate support activity by `request_id` and stable error code.
+
+Failed build-job resources contain a typed `error` object with a stable code, a catalog-controlled
+message, and the submission request ID.
+
+### Versioned API and debug traces
+
+Use `/v1` for new API clients. Unversioned serving and build routes are retired;
+callers should use the matching `/v1` path instead.
+
+Public answer routes (`/v1/answers` and `/v1/answers/stream`) expose a
+field-level public contract:
+
+- `summary`: final answer, status, strategy, latency, evidence count, fallback,
+  token, and cost summary fields.
+- `grounding.evidence_documents`: public citation fields only: `content`,
+  `recipe_name`, `score`, `source`, `evidence_type`, and `matched_terms`.
+- `diagnostics`: stable health/degradation fields such as `overall_bucket`,
+  `retrieval_degraded`, `degraded_sources`, and safe degraded-candidate codes.
+
+Public responses do not expose route resolution, answer context, retrieval
+outcome, query plans, semantic profiles, graph evidence maps, evidence units,
+metadata bags, or trace snapshots. Full runtime details are available only
+through explicit debug routes:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:8000/v1/debug/answers -Body (@{question="..."} | ConvertTo-Json) -ContentType application/json
+```
+

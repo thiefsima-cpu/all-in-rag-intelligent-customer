@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List
 
-from .retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from .contracts import EvidenceDocument, ensure_evidence_documents
 
 
 @dataclass

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from ..graph import SemanticGraphSchemaWriter
-from ..text_document import TextDocument
+from ..infra.semantic_graph_writer import SemanticGraphSchemaWriter
+from ..kernel.documents import TextDocument
 from .contracts import SemanticGraphSchemaSyncResult
 
 

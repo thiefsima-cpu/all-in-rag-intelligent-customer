@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from .models import PageDocumentLike
 
 

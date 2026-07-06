@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..retrieval.contracts import EvidenceDocument, ensure_evidence_documents
+from ..contracts import EvidenceDocument, ensure_evidence_documents
 from .extraction import extract_evidence_units
 from .models import PageDocumentLike
 from .normalization import normalize_evidence_document

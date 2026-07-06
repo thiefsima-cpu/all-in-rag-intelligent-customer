@@ -3,33 +3,39 @@
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any
+from collections.abc import Callable, Generator
 
 from ...answer_evidence_builder import AnswerEvidencePackage
-from ...runtime import AnswerContext, GenerationSnapshot, RetrievalOutcome
-from ..client import GenerationClientAdapter
+from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
+from ...contracts.runtime import (
+    AnalysisInput,
+    AnswerContext,
+    GenerationSnapshot,
+    RetrievalOutcome,
+    ensure_optional_query_analysis,
+)
+from ...kernel.json_types import coerce_json_object
+from ...safe_logging import log_failure
+from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
-from ..models import AnswerPlan, GenerationSettings
+from ..models import AnswerPlan, GenerationMode, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder
-from .direct import _DirectCompletionMixin
-from .streaming import _StreamingGenerationMixin
-from .timeouts import _GenerationTimeoutMixin
-from .tracing import _GenerationTraceMixin
-from .two_stage import _TwoStageCompletionMixin
+from .composer import GenerationComposer
+from .contracts import GenerationAttemptFailed
+from .direct import DirectCompletionRunner
+from .fallbacks import GenerationFallbackHandler
+from .streaming import StreamingGenerationRunner
+from .timeouts import GenerationTimeoutBudget
+from .tracing import GenerationTraceRecorder
+from .two_stage import TwoStageCompletionRunner
+from .usage import GenerationUsageCollector
 
 logger = logging.getLogger(__name__)
 
 
-class GenerationExecutionEngine(
-    _StreamingGenerationMixin,
-    _TwoStageCompletionMixin,
-    _DirectCompletionMixin,
-    _GenerationTraceMixin,
-    _GenerationTimeoutMixin,
-):
-    """Own generation execution, retries, fallback, and trace state."""
+class GenerationExecutionEngine:
+    """Own generation execution orchestration through explicit collaborators."""
 
     def __init__(
         self,
@@ -45,6 +51,45 @@ class GenerationExecutionEngine(
         self.prompt_builder = prompt_builder
         self.planner = planner
         self.empty_evidence_answer = str(empty_evidence_answer or "")
+        self._timeout_budget = GenerationTimeoutBudget(settings.latency_budget_seconds)
+        self._usage_collector = GenerationUsageCollector(client_adapter)
+        self._trace_recorder = GenerationTraceRecorder(
+            settings_input_cost_per_million_tokens=settings.input_cost_per_million_tokens,
+            settings_output_cost_per_million_tokens=settings.output_cost_per_million_tokens,
+            prompt_builder=prompt_builder,
+            usage_collector=self._usage_collector,
+            empty_evidence_answer=self.empty_evidence_answer,
+        )
+        self._fallback_handler = GenerationFallbackHandler(settings=settings)
+        self._composer = GenerationComposer(
+            settings=settings,
+            client_adapter=client_adapter,
+            prompt_builder=prompt_builder,
+        )
+        self._direct_runner = DirectCompletionRunner(
+            settings=settings,
+            client_adapter=client_adapter,
+            prompt_builder=prompt_builder,
+            usage_collector=self._usage_collector,
+        )
+        self._two_stage_runner = TwoStageCompletionRunner(
+            settings=settings,
+            planner=planner,
+            composer=self._composer,
+            direct_runner=self._direct_runner,
+            fallback_handler=self._fallback_handler,
+            usage_collector=self._usage_collector,
+        )
+        self._streaming_runner = StreamingGenerationRunner(
+            settings=settings,
+            client_adapter=client_adapter,
+            prompt_builder=prompt_builder,
+            timeout_budget=self._timeout_budget,
+            usage_collector=self._usage_collector,
+            trace_recorder=self._trace_recorder,
+            fallback_handler=self._fallback_handler,
+            two_stage_runner=self._two_stage_runner,
+        )
 
     def generate(
         self,
@@ -52,13 +97,15 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
+        control: RequestControl | None = None,
     ) -> str:
         answer, _trace = self.generate_with_trace(
             answer_context=answer_context,
             question=question,
             package=package,
             analysis=analysis,
+            control=control,
         )
         return answer
 
@@ -68,20 +115,27 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None = None,
         question: str = "",
         package: AnswerEvidencePackage | None = None,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
+        control: RequestControl | None = None,
     ) -> tuple[str, GenerationSnapshot]:
-        self._consume_token_usage()
+        self._usage_collector.reset()
+        if control is not None:
+            control.raise_if_cancelled()
         answer_context, package = self._resolve_answer_context(
             answer_context=answer_context,
             question=question,
             package=package,
             analysis=analysis,
         )
-        total_start = time.perf_counter()
-        deadline = self._deadline(total_start)
+        deadline = self._timeout_budget.start()
+        if control is not None:
+            control.raise_if_cancelled()
         if not package.items:
-            answer, trace = self._record_empty_trace(total_start, "no_evidence")
-            return answer, self._finalize_trace(trace)
+            answer, trace = self._trace_recorder.record_empty_trace(
+                total_latency_ms=deadline.total_elapsed_ms(),
+                reason="no_evidence",
+            )
+            return answer, self._trace_recorder.finalize_trace(trace)
 
         decision = decide_generation_mode(
             package=package,
@@ -90,38 +144,111 @@ class GenerationExecutionEngine(
         )
         selected_package = package.limit_items(decision.evidence_limit)
         selected_context = answer_context.with_evidence_package(selected_package)
-        trace = self._new_trace(decision, package, selected_package)
+        trace = self._trace_recorder.new_trace(decision, package, selected_package)
 
         try:
-            if decision.mode == "two_stage":
-                answer, trace = self._generate_two_stage_with_fallback(
-                    answer_context=selected_context,
-                    package=selected_package,
-                    trace=trace,
-                    total_start=total_start,
+            if decision.mode is GenerationMode.TWO_STAGE:
+                result = self._two_stage_runner.run(
+                    selected_context,
                     deadline=deadline,
+                    control=control,
                 )
-                return answer, self._finalize_trace(trace)
-            answer, direct_latency_ms, attempts_used = self._run_direct_completion(
-                selected_context,
-                deadline=deadline,
+            else:
+                result = self._direct_runner.run(
+                    selected_context,
+                    deadline=deadline,
+                    control=control,
+                )
+            self._trace_recorder.record_attempt_result(
+                trace,
+                result,
+                total_latency_ms=deadline.total_elapsed_ms(),
             )
-            trace.status = "success"
-            trace.direct_latency_ms = direct_latency_ms
-            trace.provider_latency_ms = direct_latency_ms
-            trace.request_retries = max(0, attempts_used - 1)
-            trace.total_latency_ms = self._elapsed_ms(total_start)
-            return answer, self._finalize_trace(trace)
+            return result.answer, self._trace_recorder.finalize_trace(trace)
+        except GenerationAttemptFailed as failure:
+            self._trace_recorder.add_retries(trace, failure.request_retries)
+            answer = self._fallback_handler.build_evidence_only_answer(
+                package=selected_package,
+                error=failure.error,
+            )
+            self._trace_recorder.record_evidence_fallback(
+                trace,
+                error=failure.error,
+                total_latency_ms=deadline.total_elapsed_ms(),
+            )
+            return answer, self._trace_recorder.finalize_trace(trace)
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
-            logger.warning("Direct answer generation failed: %s", exc)
-            trace.request_retries += self._consume_retry_count()
-            answer, trace = self._build_fallback_answer(
+            log_failure(
+                logger,
+                logging.WARNING,
+                "generation_attempt_failed",
+                code="GENERATION_FAILED",
+                error=exc,
+            )
+            self._trace_recorder.add_retries(
+                trace,
+                self._usage_collector.drain_retry_count(),
+            )
+            answer = self._fallback_handler.build_evidence_only_answer(
                 package=selected_package,
                 error=exc,
-                trace=trace,
-                total_start=total_start,
             )
-            return answer, self._finalize_trace(trace)
+            self._trace_recorder.record_evidence_fallback(
+                trace,
+                error=exc,
+                total_latency_ms=deadline.total_elapsed_ms(),
+            )
+            return answer, self._trace_recorder.finalize_trace(trace)
+
+    def stream(
+        self,
+        *,
+        answer_context: AnswerContext | None = None,
+        question: str = "",
+        package: AnswerEvidencePackage | None = None,
+        analysis: AnalysisInput = None,
+        max_retries: int | None = None,
+        control: RequestControl | None = None,
+    ) -> Generator[str, None, GenerationSnapshot]:
+        answer_context, package = self._resolve_answer_context(
+            answer_context=answer_context,
+            question=question,
+            package=package,
+            analysis=analysis,
+        )
+        return self._streaming_runner.stream(
+            answer_context=answer_context,
+            package=package,
+            max_retries=max_retries,
+            control=control,
+        )
+
+    def stream_with_trace(
+        self,
+        *,
+        answer_context: AnswerContext | None = None,
+        question: str = "",
+        package: AnswerEvidencePackage | None = None,
+        analysis: AnalysisInput = None,
+        max_retries: int | None = None,
+        chunk_callback: Callable[[str], None] | None = None,
+        control: RequestControl | None = None,
+    ) -> tuple[str, GenerationSnapshot]:
+        answer_context, package = self._resolve_answer_context(
+            answer_context=answer_context,
+            question=question,
+            package=package,
+            analysis=analysis,
+        )
+        return self._streaming_runner.stream_with_trace(
+            answer_context=answer_context,
+            package=package,
+            max_retries=max_retries,
+            chunk_callback=chunk_callback,
+            control=control,
+        )
 
     def compose(
         self,
@@ -130,16 +257,18 @@ class GenerationExecutionEngine(
         plan: AnswerPlan,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> str:
         answer_context = AnswerContext(
             question=question,
             retrieval=RetrievalOutcome(query=question),
-            evidence_package=package.to_dict(),
+            evidence_package=coerce_json_object(package.to_dict()),
         )
         return self.compose_from_context(
             answer_context,
             plan,
             timeout_seconds=timeout_seconds,
+            control=control,
         )
 
     def compose_from_context(
@@ -148,22 +277,14 @@ class GenerationExecutionEngine(
         plan: AnswerPlan,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> str:
-        prompt = self.prompt_builder.render_compose_prompt_from_context(
+        return self._composer.compose_from_context(
             answer_context,
             plan,
-        ).text
-        response = self.client_adapter.create_completion(
-            prompt=prompt,
-            temperature=self.settings.temperature,
-            max_tokens=self.settings.composer_max_tokens,
-            timeout=(
-                self.settings.timeout_seconds
-                if timeout_seconds is None
-                else timeout_seconds
-            ),
+            timeout_seconds=timeout_seconds,
+            control=control,
         )
-        return self._response_text(response)
 
     def _resolve_answer_context(
         self,
@@ -171,12 +292,12 @@ class GenerationExecutionEngine(
         answer_context: AnswerContext | None,
         question: str,
         package: AnswerEvidencePackage | None,
-        analysis: Any,
+        analysis: AnalysisInput,
     ) -> tuple[AnswerContext, AnswerEvidencePackage]:
         context = answer_context or AnswerContext(
             question=question,
             retrieval=RetrievalOutcome(query=question),
-            analysis=analysis,
+            analysis=ensure_optional_query_analysis(analysis),
         )
         if package is not None:
             context = context.with_evidence_package(package)

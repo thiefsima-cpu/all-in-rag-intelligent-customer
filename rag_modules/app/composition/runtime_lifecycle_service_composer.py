@@ -15,7 +15,6 @@ from .contracts import (
 )
 from .runtime_initialization_service import RuntimeInitializationService
 from .runtime_readiness_service import RuntimeReadinessService
-from .runtime_refresh_service import ServingRuntimeRefreshService
 from .serving_runtime_lifecycle_service import ServingRuntimeLifecycleService
 
 
@@ -36,7 +35,7 @@ class RuntimeLifecycleServiceBundle:
 
     initialization_service: RuntimeInitializationService
     readiness_service: RuntimeReadinessService
-    refresh_service: ServingRuntimeRefreshService
+    serving_lifecycle_service: ServingRuntimeLifecycleServiceProtocol
     build_lifecycle_service: BuildRuntimeLifecycleService
 
 
@@ -77,7 +76,6 @@ class RuntimeLifecycleServiceComposer:
         serving_bootstrapper,
         initialization_service: RuntimeInitializationService | None = None,
         readiness_service: RuntimeReadinessService | None = None,
-        refresh_service: ServingRuntimeRefreshService | None = None,
         build_lifecycle_service: BuildRuntimeLifecycleService | None = None,
     ) -> RuntimeLifecycleServiceBundle:
         components = self.adapt_bootstrappers(
@@ -85,24 +83,20 @@ class RuntimeLifecycleServiceComposer:
             serving_bootstrapper=serving_bootstrapper,
         )
         readiness_service = readiness_service or RuntimeReadinessService()
-        refresh_service = refresh_service or ServingRuntimeRefreshService(
-            serving_runtime_lifecycle_service=components.serving_runtime_lifecycle_service
-        )
         initialization_service = initialization_service or RuntimeInitializationService(
             config=config,
             build_runtime_factory=components.build_runtime_factory,
             serving_runtime_lifecycle_service=components.serving_runtime_lifecycle_service,
-            serving_runtime_refresh_service=refresh_service,
         )
         build_lifecycle_service = build_lifecycle_service or BuildRuntimeLifecycleService(
             build_runtime_executor=components.build_runtime_executor,
-            refresh_service=refresh_service,
+            serving_lifecycle_service=components.serving_runtime_lifecycle_service,
             readiness_service=readiness_service,
         )
         return RuntimeLifecycleServiceBundle(
             initialization_service=initialization_service,
             readiness_service=readiness_service,
-            refresh_service=refresh_service,
+            serving_lifecycle_service=components.serving_runtime_lifecycle_service,
             build_lifecycle_service=build_lifecycle_service,
         )
 

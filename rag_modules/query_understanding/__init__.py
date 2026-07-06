@@ -1,76 +1,44 @@
 """Structured query-understanding package."""
 
-from .features import (
-    clean_entity_phrase,
-    extract_entity_candidates,
-    extract_excluded_terms,
-    extract_minutes,
-    extract_query_tokens,
-    fallback_entity_phrases,
-    fallback_keywords,
-    has_filtering_intent,
-    has_recommendation_intent,
-    infer_graph_query_type,
-    infer_query_constraints,
-    infer_relation_types,
-    normalize_graph_sources,
-)
-from .graph_intent import (
-    infer_graph_max_depth,
-    infer_graph_max_nodes,
-    infer_query_semantic_profile,
-    split_graph_entities,
-)
-from .planner_models import QueryPlan
-from .planner_service import QueryPlanner
-from .registry import (
-    CLUSTERING_MARKERS,
-    CONSTRAINT_MARKERS,
-    CUISINE_STYLE_TERMS,
-    DEFAULT_ENTITY_LINKER_PREFERRED_LABELS,
-    DIET_TERMS,
-    DIFFICULTY_TERMS,
-    ENTITY_HINTS,
-    ENTITY_PHRASE_MARKERS,
-    FAST_RULE_MARKERS,
-    FILTERING_MARKERS,
-    FLAVOR_TERMS,
-    GRAPH_GENERIC_TERMS,
-    GRAPH_QUERY_TYPES,
-    GRAPH_RELATION_TYPES,
-    GRAPH_ROUTING_STRATEGIES,
-    HEALTH_TERMS,
-    INGREDIENT_CATEGORY_TERMS,
-    PATH_MARKERS,
-    QUERY_STOPWORDS,
-    QuerySemanticProfile,
-    QuerySemanticScoreBreakdown,
-    RECOMMENDATION_MARKERS,
-    RELATION_INDEX_KEYWORDS,
-    RELATION_MARKERS,
-    SEMANTIC_NODE_TERMS,
-    SEMANTIC_RELATION_HINTS,
-    STRUCTURAL_REASONING_MARKERS,
-    SUBGRAPH_MARKERS,
-    TECHNIQUE_TERMS,
-    TEXTURE_EFFECT_TERMS,
-    TIME_MARKERS,
-    contains_any,
-    dedupe_preserve_order,
-    default_entity_linker_query_type_priorities,
-    default_entity_linker_relation_priorities,
-    marker_hits,
-    normalize_query_text,
-    relation_index_terms,
-)
-from .scoring import (
-    build_query_semantic_score_breakdown,
-    estimate_query_complexity,
-    estimate_relationship_intensity,
-    should_use_fast_rule_plan,
-)
+from __future__ import annotations
 
-__all__ = [
+from importlib import import_module
+
+_LAZY_EXPORTS = {
+    "QueryPlanner": ".planning",
+    "build_query_semantic_score_breakdown": ".scoring",
+    "clean_entity_phrase": ".lexical_features",
+    "contains_any": ".registry",
+    "dedupe_preserve_order": ".registry",
+    "default_entity_linker_query_type_priorities": ".registry",
+    "default_entity_linker_relation_priorities": ".registry",
+    "estimate_query_complexity": ".scoring",
+    "estimate_relationship_intensity": ".scoring",
+    "extract_entity_candidates": ".entity_features",
+    "extract_excluded_terms": ".constraint_features",
+    "extract_minutes": ".constraint_features",
+    "extract_query_tokens": ".lexical_features",
+    "fallback_entity_phrases": ".entity_features",
+    "fallback_keywords": ".lexical_features",
+    "has_filtering_intent": ".lexical_features",
+    "has_recommendation_intent": ".lexical_features",
+    "infer_graph_max_depth": ".graph_intent",
+    "infer_graph_max_nodes": ".graph_intent",
+    "infer_graph_query_type": ".graph_features",
+    "infer_query_constraints": ".constraint_features",
+    "infer_query_semantic_profile": ".graph_intent",
+    "infer_relation_types": ".graph_features",
+    "marker_hits": ".registry",
+    "normalize_graph_sources": ".entity_features",
+    "normalize_query_text": ".registry",
+    "query_registry": ".registry",
+    "relation_index_terms": ".registry",
+    "should_use_fast_rule_plan": ".scoring",
+    "split_graph_entities": ".graph_intent",
+}
+
+_REGISTRY_EXPORTS = {
+    "AMBIGUOUS_RECOMMENDATION_MARKERS",
     "CLUSTERING_MARKERS",
     "CONSTRAINT_MARKERS",
     "CUISINE_STYLE_TERMS",
@@ -90,10 +58,7 @@ __all__ = [
     "INGREDIENT_CATEGORY_TERMS",
     "PATH_MARKERS",
     "QUERY_STOPWORDS",
-    "QueryPlan",
-    "QueryPlanner",
-    "QuerySemanticProfile",
-    "QuerySemanticScoreBreakdown",
+    "QueryUnderstandingRegistry",
     "RECOMMENDATION_MARKERS",
     "RELATION_INDEX_KEYWORDS",
     "RELATION_MARKERS",
@@ -104,32 +69,16 @@ __all__ = [
     "TECHNIQUE_TERMS",
     "TEXTURE_EFFECT_TERMS",
     "TIME_MARKERS",
-    "build_query_semantic_score_breakdown",
-    "clean_entity_phrase",
-    "contains_any",
-    "dedupe_preserve_order",
-    "default_entity_linker_query_type_priorities",
-    "default_entity_linker_relation_priorities",
-    "estimate_query_complexity",
-    "estimate_relationship_intensity",
-    "extract_entity_candidates",
-    "extract_excluded_terms",
-    "extract_minutes",
-    "extract_query_tokens",
-    "fallback_entity_phrases",
-    "fallback_keywords",
-    "has_filtering_intent",
-    "has_recommendation_intent",
-    "infer_graph_max_depth",
-    "infer_graph_max_nodes",
-    "infer_graph_query_type",
-    "infer_query_constraints",
-    "infer_query_semantic_profile",
-    "infer_relation_types",
-    "marker_hits",
-    "normalize_graph_sources",
-    "normalize_query_text",
-    "relation_index_terms",
-    "should_use_fast_rule_plan",
-    "split_graph_entities",
-]
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _REGISTRY_EXPORTS:
+        return getattr(import_module(".registry", __name__), name)
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is not None:
+        return getattr(import_module(module_name, __name__), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = sorted([*_LAZY_EXPORTS, *_REGISTRY_EXPORTS])

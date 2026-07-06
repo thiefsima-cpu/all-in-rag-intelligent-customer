@@ -1,5 +1,11 @@
 # Local development profile.
 
+[api]
+docs_enabled = true
+openapi_enabled = true
+docs_public = true
+openapi_public = true
+
 [retrieval]
 top_k = 4
 vector_search_ef = 96
@@ -15,4 +21,4 @@ generation_evidence_max_chars = 600
 [observability]
 enable_query_tracing = true
 query_trace_path = "storage/traces/dev_query_trace.jsonl"
-
+prometheus_public = true

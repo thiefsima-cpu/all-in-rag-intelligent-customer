@@ -39,20 +39,30 @@ class KnowledgeBaseStatsPresenter:
             f"   Vector rows: {milvus_stats.get('row_count', 0)}",
             f"   Routed queries: {route_stats.get('total_queries', 0)}",
         ]
-        if stats.get("categories"):
-            categories = list(stats["categories"].keys())[:10]
+        categories_payload = stats.get("categories")
+        if isinstance(categories_payload, dict):
+            categories = list(categories_payload.keys())[:10]
             lines.append(f"   Categories: {', '.join(categories)}")
         for line in lines:
             self._emit(progress, line)
 
     def vector_row_count(self) -> int:
         stats = self.runtime_stats_access.get_vector_collection_stats(self.index_module)
-        return int(stats.get("row_count", 0))
+        return self._int_stat(stats.get("row_count", 0))
 
     @staticmethod
     def _emit(progress: ProgressCallback, message: str) -> None:
         if progress:
             progress(message)
+
+    @staticmethod
+    def _int_stat(value: object) -> int:
+        if isinstance(value, (bool, int, float, str)):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+        return 0
 
 
 __all__ = ["KnowledgeBaseStatsPresenter"]

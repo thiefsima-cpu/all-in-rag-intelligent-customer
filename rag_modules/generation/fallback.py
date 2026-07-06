@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ..answer_evidence_builder import AnswerEvidencePackage
-from .client import generation_failure_code
+from ..query_policy import get_query_policy
+from .clients import generation_failure_code
 
 
 def build_evidence_only_fallback_answer(
@@ -12,17 +13,22 @@ def build_evidence_only_fallback_answer(
     error: Exception,
     max_items: int,
 ) -> str:
+    templates = get_query_policy().generation.fallback_answer
     if not package.items:
-        return "抱歉，当前既没有足够证据，也无法调用生成模型完成回答。"
+        return templates["empty_evidence"]
 
-    lines = [
-        "基于当前检索证据，我先给出一个保底回答：",
-    ]
+    lines = [templates["heading"]]
     for index, item in enumerate(package.items[:max_items], start=1):
-        lines.append(f"{index}. {item.recipe_name or item.citation}（依据：{item.citation}）")
+        lines.append(
+            templates["item_line"].format(
+                index=index,
+                title=item.recipe_name or item.citation,
+                citation=item.citation,
+            )
+        )
         matched_terms = "、".join(item.matched_terms[:6])
         if matched_terms:
-            lines.append(f"   - 匹配到的问题要点：{matched_terms}")
+            lines.append("   - " + templates["matched_terms"].format(matched_terms=matched_terms))
         graph_claim = next(
             (
                 unit.get("claim")
@@ -40,15 +46,20 @@ def build_evidence_only_fallback_answer(
             "",
         )
         if graph_claim:
-            lines.append(f"   - 图谱关系证据：{graph_claim}")
+            lines.append("   - " + templates["graph_claim"].format(claim=graph_claim))
         if text_claim:
-            lines.append(f"   - 文本证据：{text_claim}")
+            lines.append("   - " + templates["text_claim"].format(claim=text_claim))
         if item.constraint_reasons:
-            lines.append(f"   - 约束提示：{'、'.join(item.constraint_reasons[:3])}")
+            lines.append(
+                "   - "
+                + templates["constraint_reasons"].format(
+                    constraint_reasons="、".join(item.constraint_reasons[:3])
+                )
+            )
 
-    lines.append("当前回答为证据保底版，未补充证据之外的信息。")
     del error
-    lines.append("生成模型暂时不可用，已自动切换为证据保底回答。")
+    lines.append(templates["boundary"])
+    lines.append(templates["model_unavailable"])
     return "\n".join(lines)
 
 

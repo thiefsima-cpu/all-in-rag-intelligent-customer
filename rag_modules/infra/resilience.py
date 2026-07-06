@@ -80,10 +80,7 @@ class CircuitBreaker:
         with self._lock:
             self._half_open_probe_active = False
             self._failure_count += 1
-            if (
-                self._state == "half_open"
-                or self._failure_count >= self.failure_threshold
-            ):
+            if self._state == "half_open" or self._failure_count >= self.failure_threshold:
                 self._state = "open"
                 self._opened_at = self._clock()
 

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "dependency_minimums": {
+    "neo4j_recipe_count": 1,
+    "milvus_entity_count": 1
+  },
+  "timeouts": {
+    "probe_seconds": 10,
+    "request_seconds": 90
+  },
+  "thresholds": {
+    "maximum_fallback_rate": 0,
+    "maximum_retrieval_degradation_rate": 0,
+    "maximum_p95_latency_ms": 60000,
+    "maximum_estimated_cost_usd": 1.0
+  },
+  "live_cases": [
+    {
+      "case_id": "vector_recipe_lookup",
+      "question": "宫保鸡丁怎么做？",
+      "allowed_strategies": ["hybrid_traditional", "combined"],
+      "required_sources": ["vector"],
+      "minimum_evidence_count": 1,
+      "generation_required": true,
+      "timeout_seconds": 60
+    },
+    {
+      "case_id": "graph_relationship_reasoning",
+      "question": "为什么宫保鸡丁里的花生和辣椒会影响整体风味，它们之间是什么关系？",
+      "allowed_strategies": ["graph_rag", "combined"],
+      "required_sources": ["graph_rag"],
+      "minimum_evidence_count": 1,
+      "generation_required": true,
+      "timeout_seconds": 90
+    },
+    {
+      "case_id": "combined_constrained_recommendation",
+      "question": "推荐带豆腐、口味清淡的家常菜，并解释食材、风味和减脂条件之间的关系。",
+      "allowed_strategies": ["combined"],
+      "required_sources": ["vector", "graph_rag"],
+      "minimum_evidence_count": 1,
+      "generation_required": true,
+      "timeout_seconds": 90
+    }
+  ]
+}

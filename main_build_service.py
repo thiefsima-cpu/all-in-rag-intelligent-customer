@@ -3,11 +3,13 @@
 import logging
 import os
 
-from rag_modules.interfaces.console_runtime import configure_utf8_stdio
 from rag_modules.interfaces.api import create_build_api_app
+from rag_modules.interfaces.console_runtime import configure_utf8_stdio
 
 configure_utf8_stdio()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 app = create_build_api_app()
@@ -22,7 +24,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 def _env_value(name: str, default: str) -> str:
     value = os.getenv(name)
-    if value not in (None, ""):
+    if value is not None and value != "":
         return value
     return default
 

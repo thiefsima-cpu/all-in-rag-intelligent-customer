@@ -53,8 +53,6 @@ def _container_stub(config=None) -> ApplicationContainer:
             artifact_manifest=SimpleNamespace(),
             artifacts_ready=False,
             system_ready=False,
-            resolve_legacy_attribute=lambda system, name: f"legacy:{name}",
-            legacy_dir=lambda system: sorted(set(object.__dir__(system)) | {"legacy_attr"}),
         ),
     )
 

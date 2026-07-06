@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from ..retrieval.contracts import EvidenceDocument
+from ..contracts import EvidenceDocument
 from .extraction import extract_evidence_units
 from .helpers import (
     document_content,
@@ -58,9 +58,7 @@ def normalize_evidence_document(
         "reasons": metadata.get("constraint_reasons") or [],
     }
     constraint_evidence = {
-        key: value
-        for key, value in constraint_evidence.items()
-        if value not in (None, "", [], {})
+        key: value for key, value in constraint_evidence.items() if value not in (None, "", [], {})
     }
 
     matched_terms: List[str] = []

@@ -14,6 +14,7 @@ from .contracts import (
     SystemFacadeSupportProtocol,
     SystemOperationsProtocol,
 )
+from .runtime_operations import RuntimeOperationCoordinator
 
 if TYPE_CHECKING:
     from .bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
@@ -116,9 +117,23 @@ def create_application_system(
     return AdvancedGraphRAGSystem(container=container)
 
 
+def assemble_build_job_application(
+    *,
+    system,
+    config: GraphRAGConfig,
+    coordinator: RuntimeOperationCoordinator,
+):
+    """Assemble the default build-job application through internal composition."""
+
+    from .composition.build_jobs import compose_build_job_application
+
+    return compose_build_job_application(system=system, config=config, coordinator=coordinator)
+
+
 __all__ = [
     "ApplicationAssembler",
     "ApplicationContainer",
     "assemble_application_container",
+    "assemble_build_job_application",
     "create_application_system",
 ]

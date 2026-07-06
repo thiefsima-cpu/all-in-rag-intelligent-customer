@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
-import tomllib
+
+from ..query_policy.selector import (
+    resolve_query_policy_bundle_from_selector,
+    resolve_query_policy_selector,
+)
+from .assembly import build_config_from_resolved_overrides
+from .models import default_domain_payload
 
 
 def _repo_root() -> Path:
@@ -56,7 +63,20 @@ def _read_profile_file(path: Path) -> dict[str, Any]:
         payload = tomllib.load(file)
     if not isinstance(payload, dict):
         raise ValueError(f"Profile at {path} must decode to a TOML table.")
-    return dict(payload)
+    result = dict(payload)
+    _validate_profile_payload(path, result)
+    return result
+
+
+def _validate_profile_payload(path: Path, payload: Mapping[str, Any]) -> None:
+    selector = resolve_query_policy_selector(default_domain_payload(), payload)
+    bundle = resolve_query_policy_bundle_from_selector(selector)
+    build_config_from_resolved_overrides(
+        payload,
+        bundle=bundle,
+        source_kind="profile",
+        source=str(path),
+    )
 
 
 def _profile_path(*, profile: str, profiles_dir: Path) -> Path:
@@ -72,7 +92,9 @@ def load_profile(
     profile_path: str | Path | None = None,
     profiles_dir: str | Path | None = None,
 ) -> ConfigProfile:
-    resolved_profiles_dir = Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
+    resolved_profiles_dir = (
+        Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
+    )
     merged: dict[str, Any] = {}
     loaded_files: list[str] = []
     selected_name = str(profile or "").strip()
@@ -84,7 +106,9 @@ def load_profile(
         loaded_files.append(str(base_path))
 
     if selected_path is None and selected_name:
-        selected_path = _profile_path(profile=selected_name, profiles_dir=resolved_profiles_dir).resolve()
+        selected_path = _profile_path(
+            profile=selected_name, profiles_dir=resolved_profiles_dir
+        ).resolve()
 
     if selected_path is not None:
         if not selected_path.exists():

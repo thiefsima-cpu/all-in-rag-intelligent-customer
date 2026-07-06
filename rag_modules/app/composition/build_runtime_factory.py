@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...configuration.models import GraphRAGConfig
 from ..runtime_state import BuildRuntime
-from .provider_resolution import RuntimeProviderSurface
 from .shared import ProgressCallback, emit_progress, resolve_config
 
 
@@ -17,11 +14,11 @@ class BuildRuntimeFactory:
         self,
         *,
         provider,
-        assembler: Any | None = None,
     ) -> None:
-        self.providers = RuntimeProviderSurface.from_provider(provider)
-        self.provider = self.providers.provider
-        self.assembler = assembler
+        self.provider = provider
+        self.infrastructure = provider.infrastructure
+        self.build_pipeline = provider.build_pipeline
+        self.services = provider.services
 
     def build(
         self,
@@ -32,20 +29,10 @@ class BuildRuntimeFactory:
         index_module=None,
         progress: ProgressCallback = None,
     ) -> BuildRuntime:
-        if self.assembler is not None:
-            return self.assembler.assemble(
-                resolve_config(config),
-                neo4j_manager=neo4j_manager,
-                data_module=data_module,
-                index_module=index_module,
-                progress=progress,
-            )
-
         config = resolve_config(config)
-        infrastructure = self.providers.infrastructure
-        build_pipeline = self.providers.build_pipeline
-        diagnostics = self.providers.diagnostics
-        services = self.providers.services
+        infrastructure = self.infrastructure
+        build_pipeline = self.build_pipeline
+        services = self.services
 
         graph_manager = infrastructure.provide_neo4j_manager(config, neo4j_manager)
         emit_progress(progress, "Initializing graph data module...")
@@ -58,7 +45,7 @@ class BuildRuntimeFactory:
             manifest_store=manifest_store,
         )
         runtime_artifact_access = infrastructure.provide_runtime_artifact_access(config)
-        runtime_stats_access = diagnostics.provide_runtime_stats_access(config=config)
+        runtime_stats_access = services.provide_runtime_stats_access(config=config)
         document_artifact_builder = build_pipeline.provide_document_artifact_builder(
             config=config,
             manifest_store=manifest_store,

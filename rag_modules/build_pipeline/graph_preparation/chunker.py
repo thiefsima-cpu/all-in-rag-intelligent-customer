@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Tuple
 
-from ...text_document import TextDocument
+from ...kernel.documents import TextDocument
 
 
 class RecipeDocumentChunker:
@@ -116,9 +116,7 @@ class RecipeDocumentChunker:
         section_title: str | None = None,
     ) -> TextDocument:
         parent_id = str(
-            document.metadata.get("node_id")
-            or document.metadata.get("parent_id")
-            or "unknown"
+            document.metadata.get("node_id") or document.metadata.get("parent_id") or "unknown"
         )
         metadata = {
             **document.metadata,

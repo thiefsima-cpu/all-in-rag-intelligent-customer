@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
-from typing import Dict, List, Optional
 
-from neo4j import GraphDatabase
-
-from ..runtime import GraphRetrievalSnapshot
+from ..configuration.models import GraphRAGConfig
+from ..contracts import (
+    EvidenceDocument,
+    QuerySemanticRuntimeSettings,
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RetrievalRequest,
+)
+from ..contracts.runtime import GraphRetrievalSnapshot
+from ..contracts.runtime.errors import graph_error_detail
+from ..entity_linker import EntityLinker
+from ..kernel.json_types import JsonObject, coerce_json_object
+from ..safe_logging import log_failure
+from .cache_stats import GraphCacheStatsStore
+from .cache_warmup import GraphCacheWarmupService
+from .evidence_orchestrator import GraphEvidenceOrchestrator
+from .ports import Neo4jDriverPort, Neo4jManagerPort
+from .query_executor import GraphQueryExecutor
+from .retrieval_runtime import GraphRetrievalRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +34,19 @@ class GraphRetrievalExecutor:
     def __init__(
         self,
         *,
-        config,
-        runtime,
-        orchestrator,
-        cache_warmup,
-        graph_cache_stats_store,
-        entity_linker,
-        graph_executor,
-        neo4j_manager=None,
+        config: GraphRAGConfig,
+        runtime: GraphRetrievalRuntime,
+        orchestrator: GraphEvidenceOrchestrator,
+        cache_warmup: GraphCacheWarmupService,
+        graph_cache_stats_store: GraphCacheStatsStore,
+        entity_linker: EntityLinker,
+        graph_executor: GraphQueryExecutor,
+        neo4j_manager: Neo4jManagerPort | None = None,
         database_name: str = "neo4j",
     ) -> None:
         self.config = config
         self.storage = config.storage
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(config)
         self.runtime = runtime
         self.orchestrator = orchestrator
         self.cache_warmup = cache_warmup
@@ -41,11 +56,11 @@ class GraphRetrievalExecutor:
         self.neo4j_manager = neo4j_manager
         self.database_name = database_name
 
-        self.driver = None
+        self.driver: Neo4jDriverPort | None = None
         self._owns_driver = False
-        self.entity_cache: Dict[str, dict] = {}
-        self.relation_cache: Dict[str, int] = {}
-        self.subgraph_cache: Dict[str, dict] = {}
+        self.entity_cache: dict[str, JsonObject] = {}
+        self.relation_cache: dict[str, int] = {}
+        self.subgraph_cache: dict[str, JsonObject] = {}
 
     def initialize(self) -> None:
         """Initialize graph retrieval dependencies and warm lightweight indexes."""
@@ -54,13 +69,13 @@ class GraphRetrievalExecutor:
             if self.neo4j_manager is not None:
                 self.driver = self.neo4j_manager.driver
             else:
-                self.driver = GraphDatabase.driver(
-                    self.storage.neo4j_uri,
-                    auth=(self.storage.neo4j_user, self.storage.neo4j_password),
-                )
-                self._owns_driver = True
+                raise RuntimeError("Graph retrieval requires an injected Neo4j manager.")
 
-            with self.driver.session(database=self.database_name) as session:
+            driver = self.driver
+            if driver is None:
+                raise RuntimeError("Neo4j driver was not initialized.")
+
+            with driver.session(database=self.database_name) as session:
                 session.run("RETURN 1")
 
             self.entity_linker.driver = self.driver
@@ -68,7 +83,13 @@ class GraphRetrievalExecutor:
             self.build_graph_index()
             logger.info("GraphRAG retrieval initialized")
         except Exception as exc:
-            logger.error("Neo4j connection failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             if self._owns_driver and self.driver:
                 self.driver.close()
             self.driver = None
@@ -83,83 +104,102 @@ class GraphRetrievalExecutor:
                 self.driver,
                 database_name=self.database_name,
             )
-            self.entity_cache = dict(warmup.entity_cache or {})
+            self.entity_cache = {
+                str(key): coerce_json_object(value)
+                for key, value in dict(warmup.entity_cache or {}).items()
+            }
             self.relation_cache = dict(warmup.relation_cache or {})
             logger.info(
-                "Graph caches ready: %s entities, %s relation types, stats=%s",
+                "Graph caches ready: %s entities, %s relation types",
                 len(self.entity_cache),
                 len(self.relation_cache),
-                os.path.abspath(self.graph_cache_stats_store.path),
             )
         except Exception as exc:
-            logger.error("Graph cache build failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
 
-    def execute(self, request) -> List:
-        results, _trace = self.execute_with_trace(request)
-        return results
-
-    def execute_with_trace(self, request) -> tuple[List, GraphRetrievalSnapshot]:
-        logger.info("Starting GraphRAG retrieval: %s", request.query)
+    def execute_with_trace(
+        self, request: RetrievalRequest
+    ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]:
+        logger.info("Starting GraphRAG retrieval: top_k=%s", request.top_k)
         start_time = time.perf_counter()
+        control = request.control
         trace = self.runtime.start_trace(
             request.query,
             requested_top_k=request.top_k,
             retrieval_request=request,
         )
 
-        context_start = time.perf_counter()
-        graph_query, evidence_goals = self.runtime.resolve_request_context(request)
-        self.runtime.record_event(
-            trace,
-            "resolve_request_context",
-            start_time=context_start,
-            details={
-                "query_type": graph_query.query_type.value,
-                "source_entity_count": len(graph_query.source_entities or []),
-                "target_entity_count": len(graph_query.target_entities or []),
-                "relation_type_count": len(graph_query.relation_types or []),
-                "evidence_goal_count": len(evidence_goals or []),
-            },
-        )
-        self.runtime.populate_trace_context(
-            trace,
-            graph_query=graph_query,
-            evidence_goals=evidence_goals,
-        )
+        try:
+            if control is not None:
+                control.raise_if_cancelled()
 
-        if not self.driver:
+            context_start = time.perf_counter()
+            graph_query, evidence_goals = self.runtime.resolve_request_context(request)
+            if control is not None:
+                control.raise_if_cancelled()
             self.runtime.record_event(
                 trace,
-                "validate_driver",
-                status="error",
-                details={"error": "neo4j_not_connected"},
+                "resolve_request_context",
+                start_time=context_start,
+                details={
+                    "query_type": graph_query.query_type.value,
+                    "source_entity_count": len(graph_query.source_entities or []),
+                    "target_entity_count": len(graph_query.target_entities or []),
+                    "relation_type_count": len(graph_query.relation_types or []),
+                    "evidence_goal_count": len(evidence_goals or []),
+                },
             )
-            final_trace = self.runtime.finalize_trace(
+            self.runtime.populate_trace_context(
                 trace,
-                start_time=start_time,
-                error="neo4j_not_connected",
+                graph_query=graph_query,
+                evidence_goals=evidence_goals,
             )
-            return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
 
-        plan_start = time.perf_counter()
-        retrieval_plan = self.orchestrator.build_retrieval_plan(
-            graph_query,
-            evidence_goals=evidence_goals,
-        )
-        trace.retrieval_plan = retrieval_plan.to_trace()
-        self.runtime.record_event(
-            trace,
-            "build_retrieval_plan",
-            start_time=plan_start,
-            details={
-                "linked_source_count": len(retrieval_plan.linked_sources or []),
-                "linked_target_count": len(retrieval_plan.linked_targets or []),
-                "max_depth": retrieval_plan.max_depth,
-                "max_nodes": retrieval_plan.max_nodes,
-            },
-        )
+            if not self.driver:
+                self.runtime.record_event(
+                    trace,
+                    "validate_driver",
+                    status="error",
+                    details={"error": graph_error_detail(detail="neo4j_not_connected").to_dict()},
+                )
+                final_trace = self.runtime.finalize_trace(
+                    trace,
+                    start_time=start_time,
+                    error=graph_error_detail(detail="neo4j_not_connected"),
+                )
+                return [], GraphRetrievalSnapshot.from_dict(
+                    final_trace.to_dict(),
+                    semantic_settings=self.semantic_settings,
+                )
 
-        try:
+            if control is not None:
+                control.raise_if_cancelled()
+            plan_start = time.perf_counter()
+            retrieval_plan = self.orchestrator.build_retrieval_plan(
+                graph_query,
+                evidence_goals=evidence_goals,
+            )
+            if control is not None:
+                control.raise_if_cancelled()
+            trace.retrieval_plan = retrieval_plan.to_trace()
+            self.runtime.record_event(
+                trace,
+                "build_retrieval_plan",
+                start_time=plan_start,
+                details={
+                    "linked_source_count": len(retrieval_plan.linked_sources or []),
+                    "linked_target_count": len(retrieval_plan.linked_targets or []),
+                    "max_depth": retrieval_plan.max_depth,
+                    "max_nodes": retrieval_plan.max_nodes,
+                },
+            )
+
             execution = self.orchestrator.retrieve(
                 request=request,
                 graph_query=graph_query,
@@ -167,6 +207,8 @@ class GraphRetrievalExecutor:
                 trace=trace,
                 record_event=self.runtime.record_event,
             )
+            if control is not None:
+                control.raise_if_cancelled()
             final_results = execution.final_documents
             final_trace = self.runtime.finalize_trace(
                 trace,
@@ -174,25 +216,52 @@ class GraphRetrievalExecutor:
                 doc_count=len(final_results),
                 evidence_unit_count=execution.evidence_unit_count,
             )
-            return final_results, GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
-        except Exception as exc:
-            logger.error("GraphRAG evidence retrieval failed: %s", exc)
+            return final_results, GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
+        except (RequestCancelled, RequestBudgetExceeded) as exc:
+            reason = str(exc)
             self.runtime.record_event(
                 trace,
-                "graph_retrieval_failed",
+                "request_control_cancelled",
                 status="error",
-                details={"error": str(exc)},
+                details={"reason": reason},
             )
             final_trace = self.runtime.finalize_trace(
                 trace,
                 start_time=start_time,
-                error=str(exc),
+                error=graph_error_detail(detail=reason),
             )
-            return [], GraphRetrievalSnapshot.from_dict(final_trace.to_dict())
+            return [], GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
+        except Exception as exc:
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
+            self.runtime.record_event(
+                trace,
+                "graph_retrieval_failed",
+                status="error",
+                details={"error": graph_error_detail(exc).to_dict()},
+            )
+            final_trace = self.runtime.finalize_trace(
+                trace,
+                start_time=start_time,
+                error=graph_error_detail(exc),
+            )
+            return [], GraphRetrievalSnapshot.from_dict(
+                final_trace.to_dict(),
+                semantic_settings=self.semantic_settings,
+            )
 
     def close(self) -> None:
         if self._owns_driver and self.driver:
             self.driver.close()
             logger.info("GraphRAG retrieval closed")
-
-

@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from rag_modules.query_constraints import QueryConstraints
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    RequestCancelled,
+    RequestControl,
+    RetrievalRequest,
+)
+from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.contracts.runtime import QueryAnalysis
+from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
+from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.routing.execution_strategies import (
     CombinedRouteStrategy,
     GraphRouteStrategy,
@@ -14,7 +24,6 @@ from rag_modules.routing.execution_strategies import (
     RouteRetrievalServices,
     build_route_retrieval_request,
 )
-from rag_modules.runtime import QueryAnalysis, SearchStrategy
 
 
 class _FakeTraditionalRetrieval:
@@ -25,10 +34,13 @@ class _FakeTraditionalRetrieval:
 
     def hybrid_evidence_search(self, request):
         self.hybrid_calls.append(request)
-        return list(self.hybrid_docs)
+        return HybridRetrievalOutcome(
+            documents=list(self.hybrid_docs),
+            candidate_counts={"vector": len(self.hybrid_docs)},
+        )
 
-    def enrich_to_parent_evidence_documents(self, docs, top_n=None):
-        self.enrich_calls.append({"docs": list(docs), "top_n": top_n})
+    def enrich_to_parent_evidence_documents(self, request, docs, top_n=None):
+        self.enrich_calls.append({"request": request, "docs": list(docs), "top_n": top_n})
         return list(docs)
 
 
@@ -39,31 +51,10 @@ class _FakeGraphRetrieval:
         self.last_trace = {"query_type": "stale", "path_count": 0}
         self.calls = []
 
-    def graph_rag_evidence_search(self, query, top_k, constraints=None, query_plan=None):
-        self.calls.append(
-            {
-                "query": query,
-                "top_k": top_k,
-                "constraints": constraints,
-                "query_plan": query_plan,
-            }
-        )
-        return list(self.graph_docs)
-
-    def graph_rag_evidence_search_with_trace(
-        self,
-        query,
-        top_k,
-        constraints=None,
-        query_plan=None,
-    ):
+    def graph_rag_evidence_search_with_trace(self, request):
+        self.calls.append(request)
         return (
-            self.graph_rag_evidence_search(
-                query,
-                top_k,
-                constraints=constraints,
-                query_plan=query_plan,
-            ),
+            list(self.graph_docs),
             self.trace,
         )
 
@@ -81,6 +72,45 @@ class _FakeRetrievalProfile:
         self.candidates = _FakeCandidates()
 
 
+class _ImmediateFuture:
+    def __init__(self, result) -> None:
+        self._result = result
+        self.cancel_calls = 0
+
+    def result(self, timeout=None):
+        del timeout
+        return self._result
+
+    def cancel(self) -> bool:
+        self.cancel_calls += 1
+        return False
+
+    def done(self) -> bool:
+        return True
+
+
+class _SynchronousExecutor:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.submit_calls = []
+        self.shutdown_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        self.shutdown(wait=True)
+        return False
+
+    def submit(self, fn, *args, **kwargs):
+        self.submit_calls.append({"fn": fn, "args": args, "kwargs": kwargs})
+        return _ImmediateFuture(fn(*args, **kwargs))
+
+    def shutdown(self, wait=True, *, cancel_futures=False) -> None:
+        self.shutdown_calls.append({"wait": wait, "cancel_futures": cancel_futures})
+
+
 class _ParallelTraditionalRetrieval(_FakeTraditionalRetrieval):
     def __init__(self, hybrid_docs=None, *, own_started, other_started) -> None:
         super().__init__(hybrid_docs)
@@ -94,6 +124,36 @@ class _ParallelTraditionalRetrieval(_FakeTraditionalRetrieval):
         return super().hybrid_evidence_search(request)
 
 
+class _BlockingTraditionalRetrieval(_FakeTraditionalRetrieval):
+    def __init__(self, hybrid_docs=None, *, started, release) -> None:
+        super().__init__(hybrid_docs)
+        self.started = started
+        self.release = release
+
+    def hybrid_evidence_search(self, request):
+        self.started.set()
+        self.release.wait(timeout=2.0)
+        return super().hybrid_evidence_search(request)
+
+
+class _DegradedTraditionalRetrieval(_FakeTraditionalRetrieval):
+    def hybrid_evidence_search(self, request):
+        self.hybrid_calls.append(request)
+        return HybridRetrievalOutcome(
+            documents=list(self.hybrid_docs),
+            candidate_counts={"vector": len(self.hybrid_docs), "bm25": 0},
+            degraded_candidates=[
+                {
+                    "source": "bm25",
+                    "error": {
+                        "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                        "detail": "candidate_source_circuit_open",
+                    },
+                }
+            ],
+        )
+
+
 class _ParallelGraphRetrieval(_FakeGraphRetrieval):
     def __init__(self, graph_docs=None, *, own_started, other_started, trace=None) -> None:
         super().__init__(graph_docs, trace=trace)
@@ -101,15 +161,62 @@ class _ParallelGraphRetrieval(_FakeGraphRetrieval):
         self.other_started = other_started
         self.observed_parallel_start = False
 
-    def graph_rag_evidence_search(self, query, top_k, constraints=None, query_plan=None):
+    def graph_rag_evidence_search_with_trace(self, request):
         self.own_started.set()
         self.observed_parallel_start = self.other_started.wait(timeout=0.2)
-        return super().graph_rag_evidence_search(
-            query,
-            top_k,
-            constraints=constraints,
-            query_plan=query_plan,
-        )
+        return super().graph_rag_evidence_search_with_trace(request)
+
+
+class _BlockingGraphRetrieval(_FakeGraphRetrieval):
+    def __init__(self, graph_docs=None, *, started, release) -> None:
+        super().__init__(graph_docs)
+        self.started = started
+        self.release = release
+
+    def graph_rag_evidence_search_with_trace(self, request):
+        self.started.set()
+        self.release.wait(timeout=2.0)
+        return super().graph_rag_evidence_search_with_trace(request)
+
+
+class _ControlAwareBlockingGraphRetrieval(_FakeGraphRetrieval):
+    def __init__(self, graph_docs=None, *, started, release) -> None:
+        super().__init__(graph_docs)
+        self.started = started
+        self.release = release
+        self.observed_control = None
+        self.observed_cancel = None
+
+    def graph_rag_evidence_search_with_trace(self, request):
+        self.observed_control = request.control
+        self.started.set()
+        while not self.release.wait(timeout=0.01):
+            try:
+                request.control.raise_if_cancelled()
+            except RequestCancelled as exc:
+                self.observed_cancel = str(exc)
+                return [], self.trace
+        return list(self.graph_docs), self.trace
+
+
+class _ControlAwareBlockingTraditionalRetrieval(_FakeTraditionalRetrieval):
+    def __init__(self, hybrid_docs=None, *, started, release) -> None:
+        super().__init__(hybrid_docs)
+        self.started = started
+        self.release = release
+        self.observed_control = None
+        self.observed_cancel = None
+
+    def hybrid_evidence_search(self, request):
+        self.observed_control = request.control
+        self.started.set()
+        while not self.release.wait(timeout=0.01):
+            try:
+                request.control.raise_if_cancelled()
+            except RequestCancelled as exc:
+                self.observed_cancel = str(exc)
+                return HybridRetrievalOutcome(documents=[])
+        return super().hybrid_evidence_search(request)
 
 
 def _request(*, query: str, top_k: int, strategy: SearchStrategy) -> SimpleNamespace:
@@ -151,6 +258,30 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Mapo Tofu"])
         self.assertEqual(outcome.stages[0].name, "hybrid")
         self.assertEqual(outcome.fallbacks, [])
+
+    def test_hybrid_strategy_records_degradation_details_on_stage(self) -> None:
+        services = RouteRetrievalServices(
+            traditional_retrieval=_DegradedTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        outcome = HybridRouteStrategy().execute(
+            _request(
+                query="recommend tofu dishes",
+                top_k=2,
+                strategy=SearchStrategy.HYBRID_TRADITIONAL,
+            ),
+            services=services,
+        )
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Mapo Tofu"])
+        self.assertTrue(outcome.stages[0].details["retrieval_degraded"])
+        self.assertEqual(outcome.stages[0].details["degraded_sources"], ["bm25"])
+        self.assertTrue(outcome.stages[0].details["circuit_breaker_triggered"])
+        self.assertFalse(outcome.stages[0].details["answer_impacted"])
 
     def test_graph_strategy_falls_back_to_hybrid_when_graph_is_empty(self) -> None:
         services = RouteRetrievalServices(
@@ -204,6 +335,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.stages[0].name, "combined")
         self.assertEqual(outcome.stages[0].details["traditional_doc_count"], 2)
         self.assertEqual(outcome.stages[0].details["graph_doc_count"], 2)
+        self.assertEqual(outcome.stages[0].details["degraded_sources"], [])
         self.assertEqual(outcome.stages[0].details["candidate_k"], 4)
 
     def test_graph_strategy_uses_request_scoped_trace_when_available(self) -> None:
@@ -264,6 +396,303 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertTrue(outcome.stages[0].details["parallel_execution"])
         self.assertIn("traditional_latency_ms", outcome.stages[0].details)
         self.assertIn("graph_latency_ms", outcome.stages[0].details)
+
+    def test_combined_strategy_returns_hybrid_when_graph_branch_times_out(self) -> None:
+        graph_started = threading.Event()
+        release_graph = threading.Event()
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+            ),
+            graph_rag_retrieval=_BlockingGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+                started=graph_started,
+                release=release_graph,
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
+
+        started_at = time.perf_counter()
+        try:
+            outcome = strategy.execute(
+                _request(
+                    query="combined route with slow graph",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+        finally:
+            release_graph.set()
+            strategy.close()
+
+        self.assertLess(time.perf_counter() - started_at, 1.0)
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Hybrid Dish"])
+        self.assertEqual(outcome.fallbacks, ["combined_graph_timeout_to_hybrid"])
+        self.assertEqual(outcome.stages[0].details["timed_out_branches"], ["graph"])
+        self.assertTrue(outcome.stages[0].details["graph_timed_out"])
+        self.assertFalse(outcome.stages[0].details["traditional_timed_out"])
+        self.assertEqual(outcome.stages[0].details["traditional_doc_count"], 1)
+        self.assertEqual(outcome.stages[0].details["graph_doc_count"], 0)
+
+    def test_combined_strategy_returns_graph_when_hybrid_branch_times_out(self) -> None:
+        hybrid_started = threading.Event()
+        release_hybrid = threading.Event()
+        services = RouteRetrievalServices(
+            traditional_retrieval=_BlockingTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")],
+                started=hybrid_started,
+                release=release_hybrid,
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
+
+        started_at = time.perf_counter()
+        try:
+            outcome = strategy.execute(
+                _request(
+                    query="combined route with slow hybrid",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+        finally:
+            release_hybrid.set()
+            strategy.close()
+
+        self.assertLess(time.perf_counter() - started_at, 1.0)
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Graph Dish"])
+        self.assertEqual(outcome.fallbacks, ["combined_hybrid_timeout_to_graph"])
+        self.assertEqual(outcome.stages[0].details["timed_out_branches"], ["traditional"])
+        self.assertFalse(outcome.stages[0].details["graph_timed_out"])
+        self.assertTrue(outcome.stages[0].details["traditional_timed_out"])
+        self.assertEqual(outcome.stages[0].details["traditional_doc_count"], 0)
+        self.assertEqual(outcome.stages[0].details["graph_doc_count"], 1)
+
+    def test_combined_strategy_uses_request_scoped_branch_timeout(self) -> None:
+        graph_started = threading.Event()
+        release_graph = threading.Event()
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+            ),
+            graph_rag_retrieval=_BlockingGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+                started=graph_started,
+                release=release_graph,
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy(branch_timeout_seconds=1.0)
+        request = _request(
+            query="combined route with request budget",
+            top_k=2,
+            strategy=SearchStrategy.COMBINED,
+        )
+        request.retrieval_request.metadata["combined_branch_timeout_seconds"] = 0.05
+
+        started_at = time.perf_counter()
+        try:
+            outcome = strategy.execute(request, services=services)
+        finally:
+            release_graph.set()
+            strategy.close()
+
+        self.assertLess(time.perf_counter() - started_at, 1.0)
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Hybrid Dish"])
+        self.assertEqual(outcome.stages[0].details["branch_timeout_seconds"], 0.05)
+
+    def test_combined_strategy_cancels_running_graph_branch_control_on_timeout(self) -> None:
+        graph_started = threading.Event()
+        release_graph = threading.Event()
+        graph = _ControlAwareBlockingGraphRetrieval(
+            [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+            started=graph_started,
+            release=release_graph,
+        )
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+            ),
+            graph_rag_retrieval=graph,
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        request = _request(query="slow graph", top_k=2, strategy=SearchStrategy.COMBINED)
+        request.retrieval_request = request.retrieval_request.copy_with(
+            control=RequestControl.for_timeout(5.0, scope="route")
+        )
+        strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
+
+        try:
+            outcome = strategy.execute(request, services=services)
+        finally:
+            release_graph.set()
+            strategy.close()
+
+        self.assertEqual(graph.observed_control.scope, "combined.graph")
+        self.assertEqual(graph.observed_cancel, "combined_branch_timeout")
+        self.assertEqual(outcome.stages[0].details["cancel_requested_branches"], ["graph"])
+        self.assertEqual(outcome.stages[0].details["cancel_observed_branches"], ["graph"])
+        self.assertTrue(outcome.stages[0].details["graph_control"]["cancelled"])
+
+    def test_combined_strategy_cancels_running_traditional_branch_control_on_timeout(self) -> None:
+        traditional_started = threading.Event()
+        release_traditional = threading.Event()
+        traditional = _ControlAwareBlockingTraditionalRetrieval(
+            [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")],
+            started=traditional_started,
+            release=release_traditional,
+        )
+        services = RouteRetrievalServices(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        request = _request(query="slow hybrid", top_k=2, strategy=SearchStrategy.COMBINED)
+        request.retrieval_request = request.retrieval_request.copy_with(
+            control=RequestControl.for_timeout(5.0, scope="route")
+        )
+        strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
+
+        try:
+            outcome = strategy.execute(request, services=services)
+        finally:
+            release_traditional.set()
+            strategy.close()
+
+        self.assertEqual(traditional.observed_control.scope, "combined.traditional")
+        self.assertEqual(traditional.observed_cancel, "combined_branch_timeout")
+        self.assertEqual(outcome.stages[0].details["cancel_requested_branches"], ["traditional"])
+        self.assertEqual(outcome.stages[0].details["cancel_observed_branches"], ["traditional"])
+        self.assertTrue(outcome.stages[0].details["traditional_control"]["cancelled"])
+
+    def test_combined_strategy_reuses_default_executor_across_executions(self) -> None:
+        created_executors = []
+
+        def build_executor(*args, **kwargs):
+            executor = _SynchronousExecutor(*args, **kwargs)
+            created_executors.append(executor)
+            return executor
+
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy()
+
+        with patch(
+            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
+            side_effect=build_executor,
+        ):
+            for query in ("first combined route", "second combined route"):
+                strategy.execute(
+                    _request(
+                        query=query,
+                        top_k=2,
+                        strategy=SearchStrategy.COMBINED,
+                    ),
+                    services=services,
+                )
+
+        self.assertEqual(len(created_executors), 1)
+        self.assertEqual(len(created_executors[0].submit_calls), 4)
+        self.assertEqual(created_executors[0].shutdown_calls, [])
+
+    def test_combined_strategy_close_shuts_down_owned_default_executor(self) -> None:
+        created_executors = []
+
+        def build_executor(*args, **kwargs):
+            executor = _SynchronousExecutor(*args, **kwargs)
+            created_executors.append(executor)
+            return executor
+
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        strategy = CombinedRouteStrategy()
+
+        with patch(
+            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
+            side_effect=build_executor,
+        ):
+            strategy.execute(
+                _request(
+                    query="owned combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+            strategy.close()
+            strategy.close()
+            strategy.execute(
+                _request(
+                    query="recreated combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+
+        self.assertEqual(len(created_executors), 2)
+        self.assertEqual(
+            created_executors[0].shutdown_calls,
+            [{"wait": False, "cancel_futures": True}],
+        )
+        self.assertEqual(created_executors[1].shutdown_calls, [])
+
+    def test_combined_strategy_accepts_injected_executor(self) -> None:
+        executor = _SynchronousExecutor()
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        with patch("rag_modules.routing.strategies.combined.ThreadPoolExecutor") as factory:
+            CombinedRouteStrategy(executor=executor).execute(
+                _request(
+                    query="injected combined route",
+                    top_k=2,
+                    strategy=SearchStrategy.COMBINED,
+                ),
+                services=services,
+            )
+
+        self.assertFalse(factory.called)
+        self.assertEqual(len(executor.submit_calls), 2)
+        self.assertEqual(executor.shutdown_calls, [])
+
+    def test_combined_strategy_close_does_not_shutdown_injected_executor(self) -> None:
+        executor = _SynchronousExecutor()
+        strategy = CombinedRouteStrategy(executor=executor)
+
+        strategy.close()
+
+        self.assertEqual(executor.shutdown_calls, [])
 
     def test_build_route_retrieval_request_keeps_query_plan_and_strategy(self) -> None:
         plan = QueryPlan(query="recommend tofu dishes")

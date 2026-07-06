@@ -6,7 +6,7 @@ from typing import Iterable, List
 
 from langchain_core.documents import Document
 
-from .text_document import TextDocument
+from .kernel.documents import TextDocument
 
 
 def to_langchain_text_document(document: TextDocument | Document) -> Document:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...artifacts import ArtifactManifest
+from ...kernel.artifacts import ArtifactManifest
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.artifacts import (
+from rag_modules.build_pipeline.manifest_lifecycle import KnowledgeBaseManifestLifecycle
+from rag_modules.kernel.artifacts import (
     ARTIFACT_STAGE_BUILDING,
     ARTIFACT_STAGE_DOCUMENTS_READY,
     ARTIFACT_STAGE_FAILED,
@@ -11,8 +12,8 @@ from rag_modules.artifacts import (
     ARTIFACT_STAGE_REBUILDING,
     ARTIFACT_STAGE_STALE,
     ArtifactManifest,
+    ArtifactStage,
 )
-from rag_modules.build_pipeline.manifest_lifecycle import KnowledgeBaseManifestLifecycle
 
 
 class _FakeManifestStore:
@@ -50,6 +51,21 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
         self.assertTrue(stale.is_invalid)
         self.assertTrue(unreadable.is_failed)
 
+    def test_artifact_manifest_accepts_enum_stage_and_serializes_string(self) -> None:
+        manifest = ArtifactManifest(stage=ArtifactStage.READY)
+
+        self.assertIs(manifest.stage, ArtifactStage.READY)
+        self.assertTrue(manifest.is_ready)
+        self.assertEqual(manifest.to_dict()["stage"], "ready")
+
+    def test_artifact_manifest_from_dict_and_evolve_normalize_stage(self) -> None:
+        manifest = ArtifactManifest.from_dict({"stage": "documents_ready"})
+        evolved = manifest.evolve(stage="ready")
+
+        self.assertIs(manifest.stage, ArtifactStage.DOCUMENTS_READY)
+        self.assertIs(evolved.stage, ArtifactStage.READY)
+        self.assertEqual(evolved.to_dict()["stage"], "ready")
+
     def test_mark_ready_persists_ready_manifest(self) -> None:
         store = _FakeManifestStore(ArtifactManifest.missing(manifest_path="manifest.json"))
         lifecycle = KnowledgeBaseManifestLifecycle(store)
@@ -73,15 +89,32 @@ class KnowledgeBaseManifestLifecycleTests(unittest.TestCase):
         self.assertEqual(lifecycle.artifact_manifest.stage, ARTIFACT_STAGE_READY)
 
     def test_mark_failed_persists_failure_state(self) -> None:
+        secret = "postgres://user:pass@example.test/customer"
         store = _FakeManifestStore(
-            ArtifactManifest.missing(manifest_path="manifest.json").evolve(stage=ARTIFACT_STAGE_BUILDING)
+            ArtifactManifest.missing(manifest_path="manifest.json").evolve(
+                stage=ARTIFACT_STAGE_BUILDING
+            )
         )
         lifecycle = KnowledgeBaseManifestLifecycle(store)
 
-        manifest = lifecycle.mark_failed(RuntimeError("boom"))
+        manifest = lifecycle.mark_failed(
+            RuntimeError(secret),
+            request_id="request-42",
+            build_job_id="job-42",
+        )
 
         self.assertEqual(manifest.stage, ARTIFACT_STAGE_FAILED)
-        self.assertEqual(manifest.last_error, "boom")
+        self.assertEqual(manifest.last_error, "BUILD_FAILED")
+        self.assertEqual(
+            manifest.build_metadata["failure"],
+            {
+                "code": "BUILD_FAILED",
+                "error_type": "RuntimeError",
+                "request_id": "request-42",
+                "build_job_id": "job-42",
+            },
+        )
+        self.assertNotIn(secret, str(manifest.to_dict()))
         self.assertEqual(store.saved[-1].stage, ARTIFACT_STAGE_FAILED)
 
     def test_reset_clears_error_and_cache_hit(self) -> None:

@@ -114,11 +114,15 @@ rag_modules/generation/
   execution/
     __init__.py
     engine.py                # GenerationExecutionEngine public class
-    direct.py                # direct completion path
-    two_stage.py             # two-stage completion and fallback handoff
-    streaming.py             # stream and stream_with_trace behavior
-    tracing.py               # trace snapshot/finalization helpers
-    timeouts.py              # deadline and remaining-time helpers
+    contracts.py             # execution result and usage value objects
+    usage.py                 # retry and token usage collector
+    timeouts.py              # explicit deadline and latency budget objects
+    tracing.py               # trace state recorder and finalizer
+    fallbacks.py             # model fallback policy and evidence-only answers
+    composer.py              # compose-stage provider call
+    direct.py                # direct completion runner
+    two_stage.py             # two-stage completion runner and model fallback handoff
+    streaming.py             # stream and stream_with_trace runner
 ```
 
 `engine.py` remains the public orchestration object. It should keep the current
@@ -133,15 +137,25 @@ constructor shape and public methods:
 
 The engine delegates execution details to small collaborators or functions:
 
-- `direct.py` builds and runs the direct answer prompt.
-- `two_stage.py` builds the answer plan, runs two-stage completion, and falls
-  back through the existing fallback builder semantics.
-- `streaming.py` owns streaming event production, cancellation handling,
-  final trace capture, and timeout behavior for streams.
-- `tracing.py` owns trace cloning, trace snapshots, empty-trace records,
-  token usage capture, retry count capture, and finalization.
+The initial mixin split has been superseded by explicit collaborators. Do not
+add new execution behavior through inherited internal mixins or structural host
+protocols.
+
+- `usage.py` drains retry count and token usage from the client adapter at
+  request boundaries.
 - `timeouts.py` owns deadline math so both blocking and streaming paths use
   the same timeout semantics.
+- `tracing.py` owns trace cloning, trace snapshots, empty-trace records, trace
+  field mutation, token usage finalization, and cost calculation.
+- `fallbacks.py` owns fallback policy checks and evidence-only answer
+  construction.
+- `composer.py` builds the compose prompt and performs the compose provider
+  call.
+- `direct.py` builds and runs the direct answer prompt.
+- `two_stage.py` builds the answer plan, runs two-stage completion, and falls
+  back through the direct runner when model fallback is allowed.
+- `streaming.py` owns streaming event production, cancellation handling, final
+  trace capture, and timeout behavior for streams.
 
 `generation/executor.py` becomes a compatibility export for
 `GenerationExecutionEngine`. Other generation modules should import from

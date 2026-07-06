@@ -1,12 +1,64 @@
 from __future__ import annotations
 
+import time
 import unittest
 
-from langchain_core.documents import Document
+import pytest
 
-from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.runtime.retrieval_models import RetrievalOutcome
-from rag_modules.runtime.workflow_models import AnswerContext
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
+from rag_modules.contracts import (
+    EvidenceDocument,
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+    RetrievalRequest,
+)
+from rag_modules.contracts.runtime import (
+    RouteSnapshot,
+    RouteStageSnapshot,
+)
+from rag_modules.contracts.runtime.retrieval import RetrievalOutcome
+from rag_modules.contracts.runtime.workflows import AnswerContext
+
+
+def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None:
+    parent = RequestControl.for_timeout(10.0, scope="answer")
+    child = parent.child(0.25, scope="combined.graph")
+
+    assert child.scope == "combined.graph"
+    assert child.deadline <= time.perf_counter() + 0.30
+    assert child.deadline <= parent.deadline
+
+    child.cancel("combined_branch_timeout")
+
+    assert parent.cancelled
+    assert child.cancelled
+    assert parent.reason == "combined_branch_timeout"
+    assert child.reason == "combined_branch_timeout"
+
+
+def test_request_control_raises_cancelled_and_budget_exceeded() -> None:
+    cancelled = RequestControl.for_timeout(5.0, scope="answer")
+    cancelled.cancel("client_disconnect")
+
+    with pytest.raises(RequestCancelled, match="client_disconnect"):
+        cancelled.raise_if_cancelled()
+
+    exhausted = RequestControl(deadline=time.perf_counter() - 0.01, scope="answer")
+
+    with pytest.raises(RequestBudgetExceeded, match="answer"):
+        exhausted.raise_if_cancelled()
+
+
+def test_retrieval_request_serializes_safe_control_details_only() -> None:
+    control = RequestControl.for_timeout(5.0, scope="route")
+    request = RetrievalRequest.from_inputs(query="tofu", top_k=2, control=control)
+
+    payload = request.to_dict()
+
+    assert payload["control"]["scope"] == "route"
+    assert payload["control"]["cancelled"] is False
+    assert "cancel_event" not in str(payload)
 
 
 class RetrievalRuntimeModelTests(unittest.TestCase):
@@ -25,42 +77,73 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
 
         self.assertEqual(outcome.doc_count, 1)
         self.assertEqual(outcome.evidence_documents[0].recipe_name, "宫保鸡丁")
-        self.assertEqual(outcome.documents[0].metadata["recipe_name"], "宫保鸡丁")
+        self.assertFalse(hasattr(outcome, "documents"))
 
-    def test_retrieval_outcome_accepts_legacy_documents_input(self) -> None:
-        legacy_doc = Document(
-            page_content="水煮肉片通常带有麻辣鲜香的风味。",
-            metadata={
-                "recipe_name": "水煮肉片",
-                "source": "graph_rag",
-                "score": 0.88,
+    def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
+        route_trace = RouteSnapshot(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            stages={
+                "hybrid": RouteStageSnapshot(
+                    doc_count=1,
+                    details={
+                        "retrieval_degraded": True,
+                        "degraded_sources": ["vector"],
+                        "circuit_breaker_triggered": True,
+                        "answer_impacted": False,
+                        "degraded_candidates": [
+                            {
+                                "source": "vector",
+                                "error": {
+                                    "code": "CANDIDATE_SOURCE_CIRCUIT_OPEN",
+                                    "detail": "candidate_source_circuit_open",
+                                },
+                            }
+                        ],
+                    },
+                )
             },
+            final_doc_count=1,
         )
-        outcome = RetrievalOutcome(documents_input=[legacy_doc])
+        outcome = RetrievalOutcome(
+            query="recommend tofu dishes",
+            strategy="hybrid_traditional",
+            evidence_documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu")],
+            route_trace=route_trace,
+        )
 
-        self.assertEqual(len(outcome.evidence_documents), 1)
-        self.assertEqual(outcome.evidence_documents[0].recipe_name, "水煮肉片")
+        self.assertTrue(outcome.degradation_summary["retrieval_degraded"])
+        self.assertEqual(outcome.degradation_summary["degraded_sources"], ["vector"])
+        self.assertTrue(outcome.degradation_summary["circuit_breaker_triggered"])
+        self.assertFalse(outcome.degradation_summary["answer_impacted"])
+        self.assertEqual(
+            outcome.to_dict()["degradation_summary"]["degraded_candidates"][0]["error"]["detail"],
+            "candidate_source_circuit_open",
+        )
 
     def test_answer_context_round_trips_from_dict_payload(self) -> None:
-        context = AnswerContext(
-            question="为什么水煮肉片会麻辣鲜香？",
-            retrieval={
-                "query": "为什么水煮肉片会麻辣鲜香？",
-                "strategy": "graph_rag",
-                "evidence_documents": [
-                    {
-                        "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
-                        "recipe_name": "水煮肉片",
-                        "source": "graph_rag",
-                        "score": 0.95,
-                    }
-                ],
+        context = AnswerContext.from_dict(
+            {
+                "question": "为什么水煮肉片会麻辣鲜香？",
+                "retrieval": {
+                    "query": "为什么水煮肉片会麻辣鲜香？",
+                    "strategy": "graph_rag",
+                    "evidence_documents": [
+                        {
+                            "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
+                            "recipe_name": "水煮肉片",
+                            "source": "graph_rag",
+                            "score": 0.95,
+                        }
+                    ],
+                },
             },
+            semantic_settings=semantic_runtime_settings(build_test_config()),
         )
 
         self.assertEqual(len(context.evidence_documents), 1)
         self.assertEqual(context.evidence_documents[0].recipe_name, "水煮肉片")
-        self.assertEqual(context.documents[0].metadata["recipe_name"], "水煮肉片")
+        self.assertFalse(hasattr(context, "documents"))
 
 
 if __name__ == "__main__":

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..configuration.models import GraphRAGConfig
-
-from ..artifacts import ArtifactManifest
+from ..contracts import RequestControl
+from ..kernel.artifacts import ArtifactManifest
 from .assembly import ApplicationAssembler, ApplicationContainer
 from .contracts import (
     QuestionAnswerer,
@@ -37,9 +37,12 @@ class AdvancedGraphRAGSystem:
         assembler: ApplicationAssembler | None = None,
         container: ApplicationContainer | None = None,
     ):
-        container = container or (assembler or ApplicationAssembler(
-            system_composer=system_composer,
-        )).assemble(
+        container = container or (
+            assembler
+            or ApplicationAssembler(
+                system_composer=system_composer,
+            )
+        ).assemble(
             config=config,
             provider=provider,
             bootstrapper=bootstrapper,
@@ -101,11 +104,31 @@ class AdvancedGraphRAGSystem:
     def is_serving_initialized(self) -> bool:
         return self.operations_service.is_serving_initialized()
 
-    def build_knowledge_base(self, progress=None) -> None:
-        self.operations_service.build_knowledge_base(progress=progress)
+    def build_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.operations_service.build_knowledge_base(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
-    def rebuild_knowledge_base(self, progress=None) -> None:
-        self.operations_service.rebuild_knowledge_base(progress=progress)
+    def rebuild_knowledge_base(
+        self,
+        progress=None,
+        *,
+        request_id: str = "",
+        build_job_id: str = "",
+    ) -> None:
+        self.operations_service.rebuild_knowledge_base(
+            progress=progress,
+            request_id=request_id,
+            build_job_id=build_job_id,
+        )
 
     def refresh_serving_runtime(self, progress=None, *, force: bool = True):
         return self.operations_service.refresh_serving_runtime(
@@ -121,6 +144,7 @@ class AdvancedGraphRAGSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResult:
         return self.answering_service.answer_question(
             question=question,
@@ -128,6 +152,7 @@ class AdvancedGraphRAGSystem:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
 
     def answer_question_response(
@@ -138,6 +163,7 @@ class AdvancedGraphRAGSystem:
         explain_routing: bool = False,
         message_callback=None,
         chunk_callback=None,
+        control: RequestControl | None = None,
     ) -> QuestionAnswerResponse:
         return self.answering_service.answer_question_response(
             question=question,
@@ -145,6 +171,7 @@ class AdvancedGraphRAGSystem:
             explain_routing=explain_routing,
             message_callback=message_callback,
             chunk_callback=chunk_callback,
+            control=control,
         )
 
     def ask_question_with_routing(
@@ -194,18 +221,6 @@ class AdvancedGraphRAGSystem:
     @property
     def services(self) -> Any:
         return self.facade_support.services
-
-    def __getattr__(self, name: str) -> Any:
-        resolver = getattr(self.facade_support, "resolve_legacy_attribute", None)
-        if resolver is None:
-            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-        return resolver(self, name)
-
-    def __dir__(self) -> list[str]:
-        legacy_dir = getattr(self.facade_support, "legacy_dir", None)
-        if legacy_dir is None:
-            return object.__dir__(self)
-        return legacy_dir(self)
 
     @property
     def artifact_manifest(self) -> ArtifactManifest:

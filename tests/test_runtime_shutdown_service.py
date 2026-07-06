@@ -19,6 +19,7 @@ class RuntimeShutdownServiceTests(unittest.TestCase):
         query_tracer = _FakeClosable()
         traditional_retrieval = _FakeClosable()
         graph_rag_retrieval = _FakeClosable()
+        routing_workflow = _FakeClosable()
         knowledge_base_service = _FakeClosable()
         serving_runtime = SimpleNamespace(retrieval_engines_initialized=True)
         runtime = SimpleNamespace(
@@ -30,6 +31,7 @@ class RuntimeShutdownServiceTests(unittest.TestCase):
             retrieval=SimpleNamespace(
                 traditional_retrieval=traditional_retrieval,
                 graph_rag_retrieval=graph_rag_retrieval,
+                routing_workflow=routing_workflow,
             ),
             services=SimpleNamespace(
                 knowledge_base_service=knowledge_base_service,
@@ -41,6 +43,7 @@ class RuntimeShutdownServiceTests(unittest.TestCase):
         self.assertTrue(query_tracer.closed)
         self.assertTrue(traditional_retrieval.closed)
         self.assertTrue(graph_rag_retrieval.closed)
+        self.assertTrue(routing_workflow.closed)
         self.assertTrue(knowledge_base_service.closed)
         self.assertFalse(runtime.infrastructure.neo4j_manager.closed)
         self.assertFalse(serving_runtime.retrieval_engines_initialized)
@@ -56,6 +59,7 @@ class RuntimeShutdownServiceTests(unittest.TestCase):
             retrieval=SimpleNamespace(
                 traditional_retrieval=None,
                 graph_rag_retrieval=None,
+                routing_workflow=None,
             ),
             services=SimpleNamespace(
                 knowledge_base_service=None,

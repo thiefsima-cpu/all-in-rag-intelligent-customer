@@ -5,13 +5,17 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from rag_modules.artifacts import ArtifactManifest, ArtifactManifestStore
 from rag_modules.build_pipeline.contracts import SemanticGraphSchemaSyncResult
-from rag_modules.build_pipeline.document_artifacts.models import DocumentArtifactResult
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.milvus_index_construction import MilvusIndexConstructionModule
-from rag_modules.text_document import TextDocument
+from rag_modules.kernel.artifacts import (
+    ARTIFACT_STAGE_MANIFEST_UNREADABLE,
+    ArtifactManifest,
+    DocumentArtifactResult,
+)
+from rag_modules.kernel.documents import TextDocument
+from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
 class _FakeMilvusClient:
@@ -78,6 +82,13 @@ class _ManifestStore:
         self.candidate = None
 
 
+class _FailingReadyManifestStore(_ManifestStore):
+    def save(self, manifest: ArtifactManifest) -> ArtifactManifest:
+        if manifest.is_ready:
+            raise RuntimeError("manifest publish failed")
+        return super().save(manifest)
+
+
 class _DocumentBuilder:
     def __init__(self, result: DocumentArtifactResult) -> None:
         self.result = result
@@ -97,10 +108,16 @@ class _RuntimeStats:
         return {}
 
 
+class _FailingStatsDisplay(_RuntimeStats):
+    def get_graph_data_stats(self, data_module) -> dict:
+        raise RuntimeError("stats display failed")
+
+
 class _BlueGreenArtifactAccess:
     def __init__(self, *, build_succeeds: bool = True) -> None:
         self.build_succeeds = build_succeeds
         self.published: list[str] = []
+        self.rolled_back: list[str] = []
         self.discarded: list[str] = []
 
     def configure_vector_collection(self, index_module, manifest) -> str:
@@ -133,6 +150,7 @@ class _BlueGreenArtifactAccess:
         return "recipes__blue"
 
     def rollback_vector_index_publish(self, index_module, previous_collection_name="") -> None:
+        self.rolled_back.append(previous_collection_name)
         index_module.collection_name = previous_collection_name
 
     def discard_vector_index(self, index_module, collection_name: str) -> bool:
@@ -199,6 +217,25 @@ class MilvusBlueGreenTests(unittest.TestCase):
             self.assertEqual(store.list_versions(), [1, 2])
             self.assertEqual(store.load().collection_name, "recipes__green")
 
+    def test_manifest_store_load_unreadable_manifest_uses_stable_error_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            secret = "customer-token-secret"
+            manifest_path = Path(tmp_dir) / "artifact_manifest.json"
+            manifest_path.write_text(f'{{"token": "{secret}",', encoding="utf-8")
+            store = ArtifactManifestStore(
+                SimpleNamespace(
+                    storage=SimpleNamespace(
+                        artifact_manifest_path=str(manifest_path),
+                    )
+                )
+            )
+
+            manifest = store.load()
+
+        self.assertEqual(manifest.stage, ARTIFACT_STAGE_MANIFEST_UNREADABLE)
+        self.assertEqual(manifest.last_error, "MANIFEST_UNREADABLE")
+        self.assertNotIn(secret, str(manifest.to_dict()))
+
     def test_milvus_module_alternates_slots_and_switches_stable_alias(self) -> None:
         client = _FakeMilvusClient()
         module = _build_index_module(client)
@@ -215,9 +252,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
         self.assertEqual(module.collection_name, "recipes__active")
 
     def test_failed_candidate_build_preserves_ready_manifest(self) -> None:
-        config = build_test_config(
-            {"graph": {"enable_semantic_graph_schema": False}}
-        )
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
         active = ArtifactManifest(
             stage="ready",
             manifest_version=4,
@@ -255,9 +290,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
             runtime_stats_access=_RuntimeStats(),
             document_artifact_builder=_DocumentBuilder(document_result),
             semantic_graph_schema_sync=SimpleNamespace(
-                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(
-                    enabled=False
-                )
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
             ),
         )
 
@@ -273,9 +306,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
         self.assertEqual(access.discarded, ["recipes__green"])
 
     def test_successful_rebuild_publishes_green_manifest_version(self) -> None:
-        config = build_test_config(
-            {"graph": {"enable_semantic_graph_schema": False}}
-        )
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
         active = ArtifactManifest(
             stage="ready",
             manifest_version=4,
@@ -313,9 +344,7 @@ class MilvusBlueGreenTests(unittest.TestCase):
             runtime_stats_access=_RuntimeStats(),
             document_artifact_builder=_DocumentBuilder(document_result),
             semantic_graph_schema_sync=SimpleNamespace(
-                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(
-                    enabled=False
-                )
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
             ),
         )
 
@@ -329,6 +358,115 @@ class MilvusBlueGreenTests(unittest.TestCase):
         self.assertEqual(manifest.previous_collection_name, "recipes__blue")
         self.assertEqual(manifest.index_version, "v000005-sig-new")
         self.assertEqual(access.published, ["recipes__green"])
+        self.assertEqual(access.discarded, [])
+        self.assertIsNone(store.candidate)
+
+    def test_manifest_publish_failure_rolls_back_alias_and_keeps_active_manifest(self) -> None:
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
+        active = ArtifactManifest(
+            stage="ready",
+            manifest_version=4,
+            index_signature="sig-old",
+            index_version="v000004-sig-old",
+            collection_name="recipes__blue",
+            collection_base_name="recipes",
+            collection_slot="blue",
+        )
+        store = _FailingReadyManifestStore(active)
+        access = _BlueGreenArtifactAccess(build_succeeds=True)
+        document_result = DocumentArtifactResult(
+            documents=[TextDocument(content="doc")],
+            chunks=[TextDocument(content="chunk")],
+            manifest=ArtifactManifest(
+                stage="documents_ready",
+                index_signature="sig-new",
+                collection_name="recipes",
+                collection_base_name="recipes",
+            ),
+            cache_hit=False,
+        )
+        data_module = SimpleNamespace(
+            documents=[TextDocument(content="doc")],
+            load_graph_data=lambda: None,
+            get_statistics=lambda: {"total_chunks": 1},
+        )
+        workflow = KnowledgeBaseBuildWorkflow(
+            config=config,
+            neo4j_manager=None,
+            data_module=data_module,
+            index_module=SimpleNamespace(collection_name="recipes"),
+            manifest_store=store,
+            runtime_artifact_access=access,
+            runtime_stats_access=_RuntimeStats(),
+            document_artifact_builder=_DocumentBuilder(document_result),
+            semantic_graph_schema_sync=SimpleNamespace(
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "manifest publish failed"):
+            workflow.rebuild()
+
+        self.assertEqual(workflow.artifact_manifest, active)
+        self.assertEqual(store.manifest, active)
+        self.assertIsNotNone(store.candidate)
+        assert store.candidate is not None
+        self.assertEqual(store.candidate.stage, "failed")
+        self.assertEqual(store.candidate.collection_name, "recipes__green")
+        self.assertEqual(access.published, ["recipes__green"])
+        self.assertEqual(access.rolled_back, ["recipes__blue"])
+        self.assertEqual(access.discarded, ["recipes__green"])
+
+    def test_stats_display_failure_after_ready_publish_does_not_rollback_manifest(self) -> None:
+        config = build_test_config({"graph": {"enable_semantic_graph_schema": False}})
+        active = ArtifactManifest(
+            stage="ready",
+            manifest_version=4,
+            index_signature="sig-old",
+            index_version="v000004-sig-old",
+            collection_name="recipes__blue",
+            collection_base_name="recipes",
+            collection_slot="blue",
+        )
+        store = _ManifestStore(active)
+        access = _BlueGreenArtifactAccess(build_succeeds=True)
+        document_result = DocumentArtifactResult(
+            documents=[TextDocument(content="doc")],
+            chunks=[TextDocument(content="chunk")],
+            manifest=ArtifactManifest(
+                stage="documents_ready",
+                index_signature="sig-new",
+                collection_name="recipes",
+                collection_base_name="recipes",
+            ),
+            cache_hit=False,
+        )
+        data_module = SimpleNamespace(
+            documents=[TextDocument(content="doc")],
+            load_graph_data=lambda: None,
+            get_statistics=lambda: {"total_chunks": 1},
+        )
+        workflow = KnowledgeBaseBuildWorkflow(
+            config=config,
+            neo4j_manager=None,
+            data_module=data_module,
+            index_module=SimpleNamespace(collection_name="recipes"),
+            manifest_store=store,
+            runtime_artifact_access=access,
+            runtime_stats_access=_FailingStatsDisplay(),
+            document_artifact_builder=_DocumentBuilder(document_result),
+            semantic_graph_schema_sync=SimpleNamespace(
+                sync_from_documents=lambda documents: SemanticGraphSchemaSyncResult(enabled=False)
+            ),
+        )
+
+        manifest = workflow.rebuild()
+
+        self.assertTrue(manifest.is_ready)
+        self.assertEqual(manifest.collection_name, "recipes__green")
+        self.assertEqual(store.manifest.collection_name, "recipes__green")
+        self.assertEqual(access.published, ["recipes__green"])
+        self.assertEqual(access.rolled_back, [])
         self.assertEqual(access.discarded, [])
         self.assertIsNone(store.candidate)
 

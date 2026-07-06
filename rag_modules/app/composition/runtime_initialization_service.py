@@ -8,7 +8,6 @@ from .contracts import (
     BuildRuntimeFactoryProtocol,
     ServingRuntimeLifecycleServiceProtocol,
 )
-from .runtime_refresh_service import ServingRuntimeRefreshService
 from .shared import ProgressCallback
 
 
@@ -21,17 +20,10 @@ class RuntimeInitializationService:
         config: GraphRAGConfig,
         build_runtime_factory: BuildRuntimeFactoryProtocol,
         serving_runtime_lifecycle_service: ServingRuntimeLifecycleServiceProtocol,
-        serving_runtime_refresh_service: ServingRuntimeRefreshService | None = None,
     ) -> None:
         self.config = config
         self.build_runtime_factory = build_runtime_factory
         self.serving_runtime_lifecycle_service = serving_runtime_lifecycle_service
-        self.serving_runtime_refresh_service = (
-            serving_runtime_refresh_service
-            or ServingRuntimeRefreshService(
-                serving_runtime_lifecycle_service=serving_runtime_lifecycle_service
-            )
-        )
 
     def initialize_build_runtime(
         self,
@@ -63,11 +55,14 @@ class RuntimeInitializationService:
             and query_tracer is None
             and neo4j_manager is None
         ):
-            return self.serving_runtime_refresh_service.prepare_existing(
+            refreshed_runtime = self.serving_runtime_lifecycle_service.prepare_existing(
                 current_runtime,
                 shared_runtime=build_runtime,
                 progress=progress,
             )
+            if refreshed_runtime is None:
+                raise ValueError("Serving runtime refresh unexpectedly returned no runtime.")
+            return refreshed_runtime
 
         shared_runtime = build_runtime if build_runtime and build_runtime.is_initialized() else None
         return self.serving_runtime_lifecycle_service.build_ready(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..provider_components.contracts import RuntimeComponentProvider
+from ..providers import RuntimeComponentProvider
 from .build_runtime_executor import BuildRuntimeExecutor
 from .build_runtime_factory import BuildRuntimeFactory
 from .contracts import (
@@ -46,9 +46,9 @@ class BuildBootstrapperComposer:
         executor: BuildRuntimeExecutorProtocol | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
     ) -> BuildBootstrapperComponents:
-        resolved_provider = (
-            provider_resolver or RuntimeComponentProviderResolver()
-        ).resolve(provider=provider)
+        resolved_provider = (provider_resolver or RuntimeComponentProviderResolver()).resolve(
+            provider=provider
+        )
         return BuildBootstrapperComponents(
             provider=resolved_provider,
             factory=factory or BuildRuntimeFactory(provider=resolved_provider),
@@ -78,11 +78,16 @@ class ServingBootstrapperComposer:
         lifecycle_service: ServingRuntimeLifecycleServiceProtocol | None = None,
         provider_resolver: RuntimeComponentProviderResolver | None = None,
     ) -> ServingBootstrapperComponents:
-        resolved_provider = (
-            provider_resolver or RuntimeComponentProviderResolver()
-        ).resolve(provider=provider)
+        resolved_provider = (provider_resolver or RuntimeComponentProviderResolver()).resolve(
+            provider=provider
+        )
         resolved_factory = factory or ServingRuntimeFactory(provider=resolved_provider)
-        resolved_preparer = preparer or ServingRuntimePreparer(provider=resolved_provider)
+        if preparer is None:
+            resolved_preparer: ServingRuntimePreparerProtocol = ServingRuntimePreparer(
+                provider=resolved_provider
+            )
+        else:
+            resolved_preparer = preparer
         resolved_lifecycle_service = lifecycle_service or ServingRuntimeLifecycleService(
             serving_runtime_factory=resolved_factory,
             serving_runtime_preparer=resolved_preparer,

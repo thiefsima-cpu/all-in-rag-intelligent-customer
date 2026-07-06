@@ -3,10 +3,15 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.app.diagnostics import StartupDiagnostics, SystemStatsDiagnostics
+from rag_modules.app.diagnostics import (
+    ArtifactBuildMetadataDiagnostics,
+    DataStatsDiagnostics,
+    StartupDiagnostics,
+    SystemStatsDiagnostics,
+)
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from rag_modules.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
 
 
 class _FakeRuntimeStatsAccess:
@@ -42,6 +47,29 @@ class _FakeRuntimeStatsAccess:
 
 
 class RuntimeDiagnosticsServiceTests(unittest.TestCase):
+    def test_data_stats_payload_preserves_unknown_keys_without_inventing_defaults(self) -> None:
+        stats = DataStatsDiagnostics.from_payload({"total_recipes": 1, "custom_metric": "x"})
+
+        payload = stats.to_dict()
+
+        self.assertEqual(payload["total_recipes"], 1)
+        self.assertEqual(payload["custom_metric"], "x")
+        self.assertNotIn("total_ingredients", payload)
+        self.assertNotIn("categories", payload)
+
+    def test_build_metadata_preserves_partial_config_profile_payload(self) -> None:
+        metadata = ArtifactBuildMetadataDiagnostics.from_payload(
+            {"config_profile": {"name": "dev", "source": "manual"}}
+        )
+
+        self.assertEqual(metadata.config_profile.name, "dev")
+        self.assertEqual(metadata.config_profile.path, "")
+        self.assertEqual(metadata.config_profile.hash, "")
+        self.assertEqual(
+            metadata.to_dict(),
+            {"config_profile": {"name": "dev", "source": "manual"}},
+        )
+
     def test_collect_system_stats_uses_runtime_stats_access(self) -> None:
         runtime_stats_access = _FakeRuntimeStatsAccess()
         service = RuntimeDiagnosticsService(
@@ -70,14 +98,43 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
             serving_runtime=SimpleNamespace(retrieval_engines_initialized=True),
             infrastructure=SimpleNamespace(
                 query_tracer=SimpleNamespace(
-                    stats=lambda: {"dropped_events": 2, "queued_events": 1, "async_enabled": True}
+                    stats=lambda: {
+                        "enabled": True,
+                        "path": "storage/traces/query_trace.jsonl",
+                        "sink_type": "jsonl",
+                        "dropped_events": 2,
+                        "queued_events": 1,
+                        "async_enabled": True,
+                        "written_events": 5,
+                        "closed": False,
+                        "max_queue_size": 8,
+                        "custom_trace_key": "kept",
+                    }
                 ),
                 data_module=SimpleNamespace(stats={"total_recipes": 2, "total_chunks": 4}),
-                index_module=SimpleNamespace(stats={"row_count": 4}),
+                index_module=SimpleNamespace(
+                    stats={
+                        "collection_name": "recipes_alias",
+                        "active_collection_name": "recipes_v2",
+                        "collection_slot": "blue",
+                        "row_count": 4,
+                        "index_building_progress": 100,
+                        "stats": {"row_count": 4, "segments": 1},
+                        "error": "MILVUS_STATS_UNAVAILABLE",
+                    }
+                ),
             ),
             retrieval=SimpleNamespace(
                 routing_workflow=SimpleNamespace(
-                    get_route_statistics=lambda: {"total_queries": 3}
+                    get_route_statistics=lambda: {
+                        "traditional_count": 1,
+                        "graph_rag_count": 1,
+                        "combined_count": 1,
+                        "total_queries": 3,
+                        "traditional_ratio": 1 / 3,
+                        "graph_rag_ratio": 1 / 3,
+                        "combined_ratio": 1 / 3,
+                    }
                 ),
                 retrieval_runtime_profile=SimpleNamespace(
                     to_dict=lambda: {"planner": {"max_candidates": 8}}
@@ -97,14 +154,53 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
         self.assertEqual(runtime_stats_access.route_stats_calls, 1)
         self.assertEqual(runtime_stats_access.profile_calls, 1)
         self.assertEqual(runtime_stats_access.trace_stats_calls, 1)
-        self.assertEqual(stats.data_stats["total_recipes"], 2)
-        self.assertEqual(stats.index_stats["row_count"], 4)
-        self.assertEqual(stats.route_stats["total_queries"], 3)
-        self.assertEqual(stats.trace_stats["dropped_events"], 2)
+        self.assertEqual(stats.models.llm_model, build_test_config().models.llm_model)
+        self.assertEqual(stats.trace_stats.dropped_events, 2)
+        self.assertEqual(stats.trace_stats.queued_events, 1)
+        self.assertTrue(stats.trace_stats.async_enabled)
+        self.assertEqual(stats.data_stats.total_recipes, 2)
+        self.assertEqual(stats.index_stats.row_count, 4)
+        self.assertEqual(stats.index_stats.collection_name, "recipes_alias")
+        self.assertEqual(stats.index_stats.active_collection_name, "recipes_v2")
+        self.assertEqual(stats.index_stats.collection_slot, "blue")
+        self.assertEqual(stats.index_stats.index_building_progress, 100)
+        self.assertEqual(stats.index_stats.stats["segments"], 1)
+        self.assertEqual(stats.index_stats.error, "MILVUS_STATS_UNAVAILABLE")
+        self.assertEqual(stats.route_stats.total_queries, 3)
+        self.assertEqual(stats.route_stats.traditional_count, 1)
+        self.assertEqual(stats.route_stats.graph_rag_count, 1)
+        self.assertEqual(stats.route_stats.combined_count, 1)
+        self.assertAlmostEqual(stats.route_stats.traditional_ratio or 0.0, 1 / 3)
+        self.assertEqual(stats.retrieval_runtime_profile.planner["max_candidates"], 8)
         self.assertEqual(stats.manifest.stage, "ready")
         self.assertEqual(stats.manifest.health, ARTIFACT_HEALTH_READY)
         self.assertEqual(
-            stats.manifest.build_metadata["config_profile"]["name"],
+            stats.manifest.build_metadata.config_profile.name,
+            "eval_fast",
+        )
+        payload = stats.to_dict()
+        self.assertEqual(payload["models"]["llm_model"], stats.models.llm_model)
+        self.assertEqual(payload["trace_stats"]["dropped_events"], 2)
+        self.assertEqual(payload["trace_stats"]["enabled"], True)
+        self.assertEqual(payload["trace_stats"]["path"], "storage/traces/query_trace.jsonl")
+        self.assertEqual(payload["trace_stats"]["sink_type"], "jsonl")
+        self.assertEqual(payload["trace_stats"]["written_events"], 5)
+        self.assertEqual(payload["trace_stats"]["closed"], False)
+        self.assertEqual(payload["trace_stats"]["max_queue_size"], 8)
+        self.assertEqual(payload["trace_stats"]["custom_trace_key"], "kept")
+        self.assertEqual(payload["index_stats"]["collection_name"], "recipes_alias")
+        self.assertEqual(payload["index_stats"]["active_collection_name"], "recipes_v2")
+        self.assertEqual(payload["index_stats"]["collection_slot"], "blue")
+        self.assertEqual(payload["index_stats"]["index_building_progress"], 100)
+        self.assertEqual(payload["index_stats"]["stats"]["segments"], 1)
+        self.assertEqual(payload["index_stats"]["error"], "MILVUS_STATS_UNAVAILABLE")
+        self.assertEqual(payload["route_stats"]["traditional_count"], 1)
+        self.assertEqual(payload["route_stats"]["graph_rag_count"], 1)
+        self.assertEqual(payload["route_stats"]["combined_count"], 1)
+        self.assertAlmostEqual(payload["route_stats"]["traditional_ratio"] or 0.0, 1 / 3)
+        self.assertEqual(payload["retrieval_runtime_profile"]["planner"]["max_candidates"], 8)
+        self.assertEqual(
+            payload["artifact_manifest"]["build_metadata"]["config_profile"]["name"],
             "eval_fast",
         )
 
@@ -137,7 +233,11 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
         self.assertIsInstance(diagnostics, StartupDiagnostics)
         self.assertEqual(diagnostics.mode, "serve")
         self.assertTrue(diagnostics.retrieval_engines_initialized)
-        self.assertEqual(diagnostics.trace_stats["dropped_events"], 0)
+        self.assertEqual(diagnostics.trace_stats.dropped_events, 0)
+        self.assertTrue(diagnostics.trace_stats.async_enabled)
+        payload = diagnostics.to_dict()
+        self.assertEqual(payload["trace_stats"]["queued_events"], 0)
+        self.assertEqual(payload["manifest"]["build_metadata"], {})
         self.assertEqual(diagnostics.manifest.vector_rows, 6)
         self.assertEqual(diagnostics.manifest.health, ARTIFACT_HEALTH_READY)
 

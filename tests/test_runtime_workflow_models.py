@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
-from rag_modules.query_understanding import QueryPlan
-from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.runtime import (
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
+from rag_modules.contracts import EvidenceDocument, QueryPlan
+from rag_modules.contracts.runtime import (
     AnswerContext,
     QueryUnderstandingSnapshot,
     RetrievalOutcome,
     RouteResolution,
 )
-from rag_modules.tracing import QueryTracer
+from rag_modules.kernel.routing import SearchStrategy
+from rag_modules.observability.tracing import QueryTracer
 
 
 class RuntimeWorkflowModelTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
 
         self.assertEqual(context.question, "why does dish A work")
         self.assertEqual(context.analysis.strategy_name, "graph_rag")
-        self.assertEqual(context.understanding.query_plan.strategy, "graph_rag")
+        self.assertIs(context.understanding.query_plan.strategy, SearchStrategy.GRAPH_RAG)
         self.assertEqual(len(context.evidence_documents), 1)
 
     def test_answer_context_round_trips_with_evidence_package_payload(self) -> None:
@@ -63,7 +63,10 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
         )
 
         context = AnswerContext(question="how to make dish A").with_evidence_package(package)
-        round_trip = AnswerContext(**context.to_dict())
+        round_trip = AnswerContext.from_dict(
+            context.to_dict(),
+            semantic_settings=semantic_runtime_settings(build_test_config()),
+        )
 
         self.assertTrue(round_trip.has_evidence_package)
         rebuilt_package = AnswerEvidencePackage.from_dict(round_trip.evidence_package)
@@ -95,19 +98,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
         context = AnswerContext.from_route_resolution(
             RouteResolution(understanding=understanding, retrieval=retrieval)
         )
-        tracer = QueryTracer(
-            SimpleNamespace(
-                models=SimpleNamespace(
-                    llm_model="qwen3.7-plus",
-                    embedding_model="qwen3-vl-embedding",
-                    rerank_model="qwen3-vl-rerank",
-                ),
-                observability=SimpleNamespace(
-                    enable_query_tracing=False,
-                    query_trace_path="trace.jsonl",
-                ),
-            )
-        )
+        tracer = QueryTracer(build_test_config())
 
         event = tracer.record(
             query=context.question,

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Literal
 
 from ..answer_evidence_builder import AnswerEvidencePackage
-from ..runtime import AnswerContext, analysis_strategy_name
-from .client import GenerationClientAdapter
-from .models import AnswerPlan, GenerationSettings
+from ..contracts import RequestControl
+from ..contracts.runtime import AnalysisInput, AnswerContext, analysis_strategy_name
+from ..kernel.json_types import JsonObject
+from .clients import GenerationClientAdapter
+from .models import AnswerPlan, GenerationPlannerMode, GenerationSettings
 from .prompt_builder import GenerationPromptBuilder
 
 
@@ -24,32 +26,42 @@ class GenerationPlanner:
         self.settings = settings
         self.client_adapter = client_adapter
         self.prompt_builder = prompt_builder
+        self.rule_plan_policy = self.prompt_builder.generation_policy.rule_plan
 
     def build_answer_plan_from_context(
         self,
         answer_context: AnswerContext,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
+        if control is not None:
+            control.raise_if_cancelled()
         package = self.prompt_builder._package_from_context(answer_context)
         return self._build_answer_plan_for_package(
             answer_context.question,
             package,
             answer_context.analysis,
             timeout_seconds=timeout_seconds,
+            control=control,
         )
 
     def _build_answer_plan_for_package(
         self,
         question: str,
         package: AnswerEvidencePackage,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
         *,
         timeout_seconds: float | None = None,
+        control: RequestControl | None = None,
     ) -> AnswerPlan:
-        if self.settings.planner_mode == "rule":
+        if control is not None:
+            control.raise_if_cancelled()
+        if self.settings.planner_mode is GenerationPlannerMode.RULE:
             return self._build_rule_based_plan(question, package)
-        if self.settings.planner_mode == "hybrid" and self._can_use_rule_plan(package, analysis):
+        if self.settings.planner_mode is GenerationPlannerMode.HYBRID and self._can_use_rule_plan(
+            package, analysis
+        ):
             return self._build_rule_based_plan(question, package)
 
         rendered_prompt = self.prompt_builder.render_plan_prompt(question, package)
@@ -57,33 +69,52 @@ class GenerationPlanner:
             prompt=rendered_prompt.text,
             temperature=self.settings.planner_temperature,
             max_tokens=self.settings.planner_max_tokens,
-            timeout=(
-                self.settings.timeout_seconds
-                if timeout_seconds is None
-                else timeout_seconds
-            ),
+            timeout=(self.settings.timeout_seconds if timeout_seconds is None else timeout_seconds),
+            control=control,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         plan_data = self.client_adapter.load_json_payload(
             self.client_adapter.response_text(response)
         )
         plan = AnswerPlan.from_dict(plan_data)
         if not plan.outline:
-            plan.outline = [
-                "先直接回答问题",
-                "再解释依据与关键关系",
-                "最后说明证据边界",
-            ]
+            plan.outline = self._rule_plan_list("fallback_outline")
         return plan
 
     def _can_use_rule_plan(
         self,
         package: AnswerEvidencePackage,
-        analysis: Any = None,
+        analysis: AnalysisInput = None,
     ) -> bool:
         strategy = analysis_strategy_name(analysis)
         if strategy in {"graph_rag", "hybrid_traditional"}:
             return True
         return len(package.items) <= self.settings.plan_max_evidence_items
+
+    def _rule_plan_list(self, key: Literal["default_outline", "fallback_outline"]) -> list[str]:
+        values = (
+            self.rule_plan_policy.default_outline
+            if key == "default_outline"
+            else self.rule_plan_policy.fallback_outline
+        )
+        return [str(item) for item in values if str(item).strip()]
+
+    def _rule_plan_text(
+        self,
+        key: Literal[
+            "graph_caution",
+            "missing_relation_evidence",
+            "sparse_evidence",
+            "missing_information_caution",
+            "fallback_claim_template",
+        ],
+    ) -> str:
+        return str(getattr(self.rule_plan_policy, key))
+
+    def _fallback_claim(self, *, recipe_name: str, citation: str) -> str:
+        template = self._rule_plan_text("fallback_claim_template")
+        return template.format(recipe_name=recipe_name or citation, citation=citation)
 
     def _build_rule_based_plan(
         self,
@@ -92,17 +123,10 @@ class GenerationPlanner:
     ) -> AnswerPlan:
         answer_type = self.prompt_builder.infer_answer_type(question)
         has_graph_claims = any(
-            unit.get("is_graph_evidence")
-            for item in package.items
-            for unit in item.evidence_units
+            unit.get("is_graph_evidence") for item in package.items for unit in item.evidence_units
         )
         reasoning_mode = "grounded_with_limited_inference" if has_graph_claims else "grounded"
-        outline = [
-            "先给出直接答案",
-            "再说明关键证据与关系",
-            "最后交代证据边界",
-        ]
-        key_points: List[dict] = []
+        key_points: list[JsonObject] = []
 
         for item in package.items[: self.settings.plan_max_evidence_items]:
             graph_claim = next(
@@ -121,7 +145,14 @@ class GenerationPlanner:
                 ),
                 "",
             )
-            claim = graph_claim or text_claim or f"{item.recipe_name} 是当前问题的相关证据。"
+            claim = (
+                graph_claim
+                or text_claim
+                or self._fallback_claim(
+                    recipe_name=item.recipe_name,
+                    citation=item.citation,
+                )
+            )
             key_points.append(
                 {
                     "title": item.recipe_name or item.citation,
@@ -131,22 +162,25 @@ class GenerationPlanner:
                 }
             )
 
-        missing_information: List[str] = []
-        if self.prompt_builder.question_needs_relation_explanation(question) and not has_graph_claims:
-            missing_information.append("当前证据缺少足够的图谱关系来完整解释关系链。")
+        missing_information: list[str] = []
+        if (
+            self.prompt_builder.question_needs_relation_explanation(question)
+            and not has_graph_claims
+        ):
+            missing_information.append(self._rule_plan_text("missing_relation_evidence"))
         if len(package.items) < 2 and answer_type in {"recommendation", "comparison"}:
-            missing_information.append("当前候选证据较少，覆盖面有限。")
+            missing_information.append(self._rule_plan_text("sparse_evidence"))
 
-        cautions: List[str] = []
+        cautions: list[str] = []
         if has_graph_claims:
-            cautions.append("涉及图谱关系的结论应表述为有限推断，避免过度外延。")
+            cautions.append(self._rule_plan_text("graph_caution"))
         if missing_information:
-            cautions.append("证据不足的部分需要显式说明，不要补充未检索到的事实。")
+            cautions.append(self._rule_plan_text("missing_information_caution"))
 
         return AnswerPlan(
             answer_type=answer_type,
             reasoning_mode=reasoning_mode,
-            outline=outline,
+            outline=self._rule_plan_list("default_outline"),
             key_points=key_points,
             cautions=cautions,
             missing_information=missing_information,

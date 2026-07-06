@@ -4,13 +4,24 @@ import unittest
 from types import SimpleNamespace
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
+from rag_modules.contracts import RequestControl
+from rag_modules.contracts.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis
 from rag_modules.generation import (
     AnswerPlan,
+    GenerationDecision,
     GenerationExecutionEngine,
+    GenerationMode,
+    GenerationPlannerMode,
+    GenerationPromptBuilder,
     GenerationSettings,
+    GenerationTrace,
     RenderedPrompt,
+    build_evidence_only_fallback_answer,
+    decide_generation_mode,
 )
-from rag_modules.runtime import AnswerContext, QueryAnalysis, SearchStrategy
+from rag_modules.generation.clients import GenerationLatencyBudgetExceeded
+from rag_modules.kernel.routing import SearchStrategy
+from rag_modules.query_policy import get_query_policy
 
 
 class _FakePromptBuilder:
@@ -22,7 +33,9 @@ class _FakePromptBuilder:
         item_count = len(answer_context.evidence_package.get("items") or [])
         return f"direct::{question}::{item_count}"
 
-    def render_direct_answer_prompt_from_context(self, answer_context: AnswerContext) -> RenderedPrompt:
+    def render_direct_answer_prompt_from_context(
+        self, answer_context: AnswerContext
+    ) -> RenderedPrompt:
         return RenderedPrompt(
             prompt_type="direct",
             question=answer_context.question,
@@ -100,16 +113,23 @@ class _FakeClientAdapter:
         self,
         completions: list[object] | None = None,
         stream_responses: list[object] | None = None,
+        token_usage: list[dict[str, int | str]] | None = None,
+        retry_counts: list[int] | None = None,
     ) -> None:
         self.completions = list(completions or [])
         self.stream_responses = list(stream_responses or [])
+        self.token_usage = list(token_usage or [])
+        self.retry_counts = list(retry_counts or [])
         self.prompts: list[str] = []
         self.stream_prompts: list[str] = []
         self.timeouts: list[float] = []
+        self.controls: list[object] = []
+        self.stream_controls: list[object] = []
 
     def create_completion(self, *, prompt: str, timeout: float, **_: object):
         self.prompts.append(prompt)
         self.timeouts.append(float(timeout))
+        self.controls.append(_.get("control"))
         if not self.completions:
             raise AssertionError("Unexpected completion request.")
         next_result = self.completions.pop(0)
@@ -119,6 +139,7 @@ class _FakeClientAdapter:
 
     def stream_prompt(self, *, prompt: str, **_: object):
         self.stream_prompts.append(prompt)
+        self.stream_controls.append(_.get("control"))
         if not self.stream_responses:
             raise AssertionError("Unexpected stream request.")
         next_result = self.stream_responses.pop(0)
@@ -126,21 +147,183 @@ class _FakeClientAdapter:
             raise next_result
         return iter(next_result)
 
+    def consume_retry_count(self) -> int:
+        if not self.retry_counts:
+            return 0
+        return max(0, int(self.retry_counts.pop(0) or 0))
+
+    def consume_token_usage(self) -> dict[str, int | str]:
+        if not self.token_usage:
+            return {}
+        return self.token_usage.pop(0)
+
 
 class GenerationExecutionEngineTests(unittest.TestCase):
-    def test_generation_execution_canonical_and_compat_imports_match(self) -> None:
+    def test_generation_execution_package_exports_canonical_engine(self) -> None:
         from rag_modules.generation.execution import (
             GenerationExecutionEngine as PackageEngine,
         )
         from rag_modules.generation.execution.engine import (
             GenerationExecutionEngine as CanonicalEngine,
         )
-        from rag_modules.generation.executor import (
-            GenerationExecutionEngine as CompatEngine,
-        )
 
         self.assertIs(PackageEngine, CanonicalEngine)
-        self.assertIs(CompatEngine, CanonicalEngine)
+
+    def test_generation_execution_engine_uses_explicit_collaborators(self) -> None:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False),
+            client_adapter=_FakeClientAdapter([_FakeResponse("answer")]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        self.assertEqual(GenerationExecutionEngine.__mro__, (GenerationExecutionEngine, object))
+        self.assertTrue(hasattr(engine, "_timeout_budget"))
+        self.assertTrue(hasattr(engine, "_usage_collector"))
+        self.assertTrue(hasattr(engine, "_trace_recorder"))
+        self.assertTrue(hasattr(engine, "_fallback_handler"))
+        self.assertTrue(hasattr(engine, "_direct_runner"))
+        self.assertTrue(hasattr(engine, "_two_stage_runner"))
+        self.assertTrue(hasattr(engine, "_streaming_runner"))
+
+    def test_generation_trace_finalization_uses_request_scoped_usage_collector(self) -> None:
+        client = _FakeClientAdapter(
+            [_FakeResponse("answer")],
+            token_usage=[
+                {
+                    "prompt_tokens": 90,
+                    "completion_tokens": 90,
+                    "total_tokens": 180,
+                    "token_usage_source": "stale",
+                },
+                {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 5,
+                    "total_tokens": 12,
+                    "token_usage_source": "fixture",
+                },
+            ],
+        )
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(
+                enable_two_stage=False,
+                input_cost_per_million_tokens=2.0,
+                output_cost_per_million_tokens=4.0,
+            ),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="usage question",
+            package=self._build_package(),
+        )
+
+        self.assertEqual(trace.prompt_tokens, 7)
+        self.assertEqual(trace.completion_tokens, 5)
+        self.assertEqual(trace.total_tokens, 12)
+        self.assertEqual(trace.token_usage_source, "fixture")
+        self.assertEqual(trace.estimated_cost_usd, 0.000034)
+
+    def test_generation_usage_collector_normalizes_client_state(self) -> None:
+        from rag_modules.generation.execution.usage import GenerationUsageCollector
+
+        client = _FakeClientAdapter(
+            token_usage=[
+                {
+                    "prompt_tokens": "8",
+                    "completion_tokens": "3",
+                    "total_tokens": "11",
+                    "token_usage_source": "fixture",
+                },
+            ],
+            retry_counts=[2],
+        )
+        collector = GenerationUsageCollector(client)
+
+        self.assertEqual(collector.drain_retry_count(), 2)
+        usage = collector.drain_token_usage()
+
+        self.assertEqual(usage.prompt_tokens, 8)
+        self.assertEqual(usage.completion_tokens, 3)
+        self.assertEqual(usage.total_tokens, 11)
+        self.assertEqual(usage.token_usage_source, "fixture")
+
+    def test_generation_settings_normalizes_planner_mode_to_enum(self) -> None:
+        settings = GenerationSettings(planner_mode="hybrid")
+
+        self.assertIs(settings.planner_mode, GenerationPlannerMode.HYBRID)
+
+    def test_generation_decision_normalizes_mode_to_enum(self) -> None:
+        decision = GenerationDecision(mode="direct", reason="fixture", evidence_limit=2)
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_decide_generation_mode_returns_generation_mode_enum(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertIs(decision.mode, GenerationMode.DIRECT)
+
+    def test_generation_decision_uses_policy_reason_strings(self) -> None:
+        decision = decide_generation_mode(
+            package=self._build_package(),
+            settings=GenerationSettings(enable_two_stage=False),
+        )
+
+        self.assertEqual("two_stage_disabled", decision.reason)
+
+    def test_generation_trace_records_policy_metadata(self) -> None:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False),
+            client_adapter=_FakeClientAdapter([_FakeResponse("answer")]),
+            prompt_builder=GenerationPromptBuilder(
+                settings=GenerationSettings(),
+                evidence_max_chars=700,
+            ),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="policy trace",
+            package=self._build_package(),
+        )
+
+        self.assertTrue(trace.policy.is_recorded())
+        self.assertEqual("c9-default-policy-v1", trace.policy.policy_version)
+
+    def test_evidence_only_fallback_uses_policy_templates(self) -> None:
+        policy = get_query_policy().generation.fallback_answer
+
+        answer = build_evidence_only_fallback_answer(
+            package=self._build_package(),
+            error=RuntimeError("provider failed"),
+            max_items=1,
+        )
+
+        self.assertIn(policy["heading"], answer)
+        self.assertIn(policy["boundary"], answer)
+        self.assertIn(policy["model_unavailable"], answer)
+
+    def test_generation_trace_and_snapshot_serialize_mode_as_string(self) -> None:
+        trace = GenerationTrace(
+            mode="two_stage",
+            decision_reason="fixture",
+            total_evidence_items=2,
+            selected_evidence_items=1,
+        )
+        snapshot = GenerationSnapshot(mode=GenerationMode.TWO_STAGE)
+
+        self.assertIs(trace.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(trace.to_dict()["mode"], "two_stage")
+        self.assertIs(snapshot.mode, GenerationMode.TWO_STAGE)
+        self.assertEqual(snapshot.to_dict()["mode"], "two_stage")
 
     def _build_package(self) -> AnswerEvidencePackage:
         return AnswerEvidencePackage(
@@ -299,6 +482,52 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(trace.failure_code, "generation_provider_empty_choices")
         self.assertNotIn("no choices", answer.lower())
 
+    def test_generation_provider_failure_records_typed_error_without_message(self) -> None:
+        secret = "provider timed out with token abc123"
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([RuntimeError(secret)]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+
+        self.assertIn("模型", answer)
+        self.assertEqual(trace.failure_code, "generation_provider_error")
+        self.assertEqual(
+            trace.error.to_dict(),
+            {"code": "GENERATION_PROVIDER_ERROR", "detail": "generation_provider_error"},
+        )
+        self.assertNotIn(secret, str(trace.to_dict()))
+
+    def test_generation_timeout_and_latency_budget_use_stable_error_details(self) -> None:
+        timeout_trace = self._trace_for_generation_error(TimeoutError("secret timeout body"))
+        budget_trace = self._trace_for_generation_error(
+            GenerationLatencyBudgetExceeded("secret budget body")
+        )
+
+        self.assertEqual(
+            timeout_trace.error.to_dict(),
+            {
+                "code": "GENERATION_PROVIDER_TIMEOUT",
+                "detail": "generation_provider_timeout",
+            },
+        )
+        self.assertEqual(
+            budget_trace.error.to_dict(),
+            {
+                "code": "GENERATION_LATENCY_BUDGET_EXCEEDED",
+                "detail": "generation_latency_budget_exceeded",
+            },
+        )
+        self.assertNotIn("secret", str(timeout_trace.to_dict()))
+        self.assertNotIn("secret", str(budget_trace.to_dict()))
+
     def test_generation_timeout_is_capped_by_total_latency_budget(self) -> None:
         client = _FakeClientAdapter([_FakeResponse("budgeted answer")])
         engine = GenerationExecutionEngine(
@@ -322,6 +551,63 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(len(client.timeouts), 1)
         self.assertGreater(client.timeouts[0], 0)
         self.assertLessEqual(client.timeouts[0], 2)
+
+    def test_generate_with_trace_passes_control_to_direct_completion(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="generation")
+        client = _FakeClientAdapter([_FakeResponse("controlled answer")])
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.generate_with_trace(
+            question="controlled question",
+            package=self._build_package(),
+            control=control,
+        )
+
+        self.assertEqual(answer, "controlled answer")
+        self.assertEqual(trace.status, "success")
+        self.assertIs(client.controls[0], control)
+
+    def test_stream_with_trace_passes_control_to_streaming_client(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="generation")
+        client = _FakeClientAdapter(stream_responses=[["chunk"]])
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1, stream_retries=1),
+            client_adapter=client,
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        answer, trace = engine.stream_with_trace(
+            question="controlled stream",
+            package=self._build_package(),
+            control=control,
+        )
+
+        self.assertEqual(answer, "chunk")
+        self.assertEqual(trace.status, "success")
+        self.assertIs(client.stream_controls[0], control)
+
+    def _trace_for_generation_error(self, error: Exception) -> GenerationSnapshot:
+        engine = GenerationExecutionEngine(
+            settings=GenerationSettings(enable_two_stage=False, max_retries=1),
+            client_adapter=_FakeClientAdapter([error]),
+            prompt_builder=_FakePromptBuilder(),
+            planner=_FakePlanner(),
+            empty_evidence_answer="empty",
+        )
+
+        _answer, trace = engine.generate_with_trace(
+            question="provider failure",
+            package=self._build_package(),
+        )
+        return trace
 
 
 if __name__ == "__main__":

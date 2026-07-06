@@ -16,20 +16,17 @@ def to_cache_dict(store: GraphIndexStore) -> Dict[str, Any]:
     return {
         "graph_index_version": GRAPH_INDEX_VERSION,
         "entity_kv_store": {
-            str(entity_id): asdict(entity)
-            for entity_id, entity in store.entity_kv_store.items()
+            str(entity_id): asdict(entity) for entity_id, entity in store.entity_kv_store.items()
         },
         "relation_kv_store": {
             str(relation_id): asdict(relation)
             for relation_id, relation in store.relation_kv_store.items()
         },
         "key_to_entities": {
-            str(key): list(values)
-            for key, values in store.key_to_entities.items()
+            str(key): list(values) for key, values in store.key_to_entities.items()
         },
         "key_to_relations": {
-            str(key): list(values)
-            for key, values in store.key_to_relations.items()
+            str(key): list(values) for key, values in store.key_to_relations.items()
         },
     }
 

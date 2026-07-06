@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
+from ..contracts import EvidenceDocument, RetrievalRequest
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
-from .contracts import EvidenceDocument, RetrievalRequest
 from .dual_level_evidence_service import DualLevelEvidenceService
 from .keyword_service import QueryKeywordExtractor
 
@@ -38,7 +38,7 @@ class DualLevelRetriever:
         )
 
     def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
-        logger.info("Starting dual-level retrieval: %s", request.query)
+        logger.info("Starting dual-level retrieval: candidate_k=%s", request.effective_candidate_k)
         entity_keywords, topic_keywords = self._resolve_keywords(request)
 
         entity_results = self.entity_level_retrieval(
@@ -57,22 +57,30 @@ class DualLevelRetriever:
         logger.info("Dual-level retrieval complete: %s docs", len(combined))
         return combined
 
-    def entity_level_retrieval(self, entity_keywords: List[str], top_k: int = 5) -> List[EvidenceDocument]:
+    def entity_level_retrieval(
+        self, entity_keywords: List[str], top_k: int = 5
+    ) -> List[EvidenceDocument]:
         results = self.evidence_service.enrich_entity_candidates(
             self.graph_kv_retriever.entity_search(entity_keywords, top_k=top_k),
             neighbor_lookup=self.fallback_retriever.node_neighbors,
         )
         if len(results) < top_k:
-            results.extend(self.fallback_retriever.entity_search(entity_keywords, top_k - len(results)))
+            results.extend(
+                self.fallback_retriever.entity_search(entity_keywords, top_k - len(results))
+            )
         return self.evidence_service.sort_and_dedupe(results, top_k=top_k)
 
-    def topic_level_retrieval(self, topic_keywords: List[str], top_k: int = 5) -> List[EvidenceDocument]:
+    def topic_level_retrieval(
+        self, topic_keywords: List[str], top_k: int = 5
+    ) -> List[EvidenceDocument]:
         results = self.evidence_service.enrich_topic_candidates(
             self.graph_kv_retriever.topic_search(topic_keywords, top_k=top_k)
         )
         results.extend(self.evidence_service.category_topic_candidates(topic_keywords))
         if len(results) < top_k:
-            results.extend(self.fallback_retriever.topic_search(topic_keywords, top_k - len(results)))
+            results.extend(
+                self.fallback_retriever.topic_search(topic_keywords, top_k - len(results))
+            )
         return self.evidence_service.sort_and_dedupe(results, top_k=top_k)
 
     def _resolve_keywords(self, request: RetrievalRequest) -> tuple[List[str], List[str]]:

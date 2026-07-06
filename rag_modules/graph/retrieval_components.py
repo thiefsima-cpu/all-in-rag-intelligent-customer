@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Protocol
 
+from ..configuration.models import GraphRAGConfig
+from ..contracts import QuerySemanticRuntimeSettings
 from ..entity_linker import EntityLinker
+from ..query_policy.models import QueryPolicyBundle
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
 from .evidence_builder import GraphEvidenceBuilder
 from .evidence_orchestrator import GraphEvidenceOrchestrator
 from .path_ranker import GraphDocumentRanker
+from .ports import LLMClientPort, Neo4jManagerPort
 from .query_executor import GraphQueryExecutor
 from .query_resolution import GraphQueryFactory
 from .reasoning_strategy import GraphReasoningStrategy
@@ -18,7 +22,6 @@ from .retrieval_executor import GraphRetrievalExecutor
 from .retrieval_plan import GraphPlanBuilder
 from .retrieval_postprocess import GraphRetrievalPostProcessor
 from .retrieval_runtime import GraphRetrievalRuntime
-from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 
 
 @dataclass
@@ -44,11 +47,12 @@ class GraphRetrievalComponentFactory(Protocol):
     def build(
         self,
         *,
-        config: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
-        retrieval_profile: RetrievalRuntimeProfile,
+        config: GraphRAGConfig,
+        llm_client: LLMClientPort,
+        neo4j_manager: Neo4jManagerPort | None,
+        semantic_settings: QuerySemanticRuntimeSettings,
         database_name: str,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents: ...
 
 
@@ -58,17 +62,19 @@ class DefaultGraphRetrievalComponentFactory:
     def build(
         self,
         *,
-        config: Any,
-        llm_client: Any,
-        neo4j_manager: Any,
-        retrieval_profile: RetrievalRuntimeProfile,
+        config: GraphRAGConfig,
+        llm_client: LLMClientPort,
+        neo4j_manager: Neo4jManagerPort | None,
+        semantic_settings: QuerySemanticRuntimeSettings,
         database_name: str,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents:
         del llm_client
         query_factory = GraphQueryFactory(
-            semantic_settings=retrieval_profile.semantics,
+            semantic_settings=semantic_settings,
+            policy_bundle=policy_bundle,
         )
-        runtime = GraphRetrievalRuntime(query_factory)
+        runtime = GraphRetrievalRuntime(query_factory, policy_bundle=policy_bundle)
         entity_linker = EntityLinker(
             None,
             database=database_name,
@@ -80,7 +86,7 @@ class DefaultGraphRetrievalComponentFactory:
             evidence_builder=GraphEvidenceBuilder(),
             ranker=GraphDocumentRanker(config.graph),
         )
-        reasoning_strategy = GraphReasoningStrategy()
+        reasoning_strategy = GraphReasoningStrategy(policy_bundle=policy_bundle)
         orchestrator = GraphEvidenceOrchestrator(
             graph_plan_builder=graph_plan_builder,
             graph_executor=graph_executor,
@@ -113,6 +119,3 @@ class DefaultGraphRetrievalComponentFactory:
             cache_warmup=cache_warmup,
             executor=executor,
         )
-
-
-

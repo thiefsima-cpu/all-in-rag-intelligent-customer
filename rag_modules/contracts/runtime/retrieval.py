@@ -1,0 +1,268 @@
+"""Retrieval outcome contracts."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Protocol
+
+from ...kernel.json_types import JsonObject, coerce_json_object
+from .. import EvidenceDocument, QuerySemanticRuntimeSettings
+from .errors import CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
+from .routing import RouteSnapshot
+
+
+class _CandidateSetView(Protocol):
+    @property
+    def stats(self) -> Mapping[str, int]: ...
+
+    @property
+    def degraded_details(self) -> Sequence[Mapping[str, object]]: ...
+
+
+def _coerce_evidence_documents(
+    evidence_documents: Iterable[EvidenceDocument] | None,
+) -> list[EvidenceDocument]:
+    if evidence_documents:
+        return [
+            doc
+            if isinstance(doc, EvidenceDocument)
+            else EvidenceDocument.from_dict(coerce_json_object(doc))
+            for doc in evidence_documents
+        ]
+    return []
+
+
+@dataclass
+class RetrievalOutcome:
+    query: str = ""
+    strategy: str = ""
+    evidence_documents: list[EvidenceDocument] = field(default_factory=list)
+    route_trace: RouteSnapshot = field(default_factory=RouteSnapshot)
+    degradation_summary: JsonObject = field(default_factory=dict)
+    metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.evidence_documents = _coerce_evidence_documents(self.evidence_documents)
+        if isinstance(self.route_trace, dict):
+            raise TypeError(
+                "route_trace mappings must be deserialized with "
+                "RetrievalOutcome.from_dict(..., semantic_settings=...)"
+            )
+        elif not isinstance(self.route_trace, RouteSnapshot):
+            self.route_trace = RouteSnapshot()
+        if self.degradation_summary:
+            self.degradation_summary = _normalize_degradation_summary(self.degradation_summary)
+        else:
+            self.degradation_summary = _route_degradation_summary(self.route_trace)
+        self.metadata = coerce_json_object(self.metadata)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Mapping[str, object] | None,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> "RetrievalOutcome":
+        payload = dict(data or {})
+        raw_evidence = payload.get("evidence_documents")
+        evidence_payloads = raw_evidence if isinstance(raw_evidence, list) else []
+        return cls(
+            query=str(payload.get("query") or ""),
+            strategy=str(payload.get("strategy") or ""),
+            evidence_documents=[
+                item
+                if isinstance(item, EvidenceDocument)
+                else EvidenceDocument.from_dict(coerce_json_object(item))
+                for item in evidence_payloads
+            ],
+            route_trace=RouteSnapshot.from_dict(
+                _mapping_or_none(payload.get("route_trace")),
+                semantic_settings=semantic_settings,
+            ),
+            degradation_summary=coerce_json_object(payload.get("degradation_summary")),
+            metadata=coerce_json_object(payload.get("metadata")),
+        )
+
+    @property
+    def doc_count(self) -> int:
+        return len(self.evidence_documents)
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "query": self.query,
+            "strategy": self.strategy,
+            "doc_count": self.doc_count,
+            "evidence_documents": [doc.to_dict() for doc in self.evidence_documents],
+            "route_trace": self.route_trace.to_dict(),
+            "degradation_summary": dict(self.degradation_summary or {}),
+            "metadata": dict(self.metadata or {}),
+        }
+
+
+def _route_degradation_summary(route_trace: RouteSnapshot) -> JsonObject:
+    diagnostics = route_trace.diagnostics
+    return {
+        "retrieval_degraded": diagnostics.retrieval_degraded,
+        "degraded_sources": list(diagnostics.degraded_sources or []),
+        "degraded_candidates": [dict(item) for item in diagnostics.degraded_candidates],
+        "circuit_breaker_triggered": diagnostics.circuit_breaker_triggered,
+        "answer_impacted": diagnostics.answer_impacted,
+    }
+
+
+def _normalize_degradation_summary(summary: JsonObject) -> JsonObject:
+    payload = coerce_json_object(summary)
+    raw_sources = payload.get("degraded_sources")
+    raw_candidates = payload.get("degraded_candidates")
+    return {
+        "retrieval_degraded": bool(payload.get("retrieval_degraded", False)),
+        "degraded_sources": [
+            str(item).strip()
+            for item in (raw_sources if isinstance(raw_sources, list) else [])
+            if str(item).strip()
+        ],
+        "degraded_candidates": [
+            coerce_json_object(item)
+            for item in (raw_candidates if isinstance(raw_candidates, list) else [])
+        ],
+        "circuit_breaker_triggered": bool(payload.get("circuit_breaker_triggered", False)),
+        "answer_impacted": bool(payload.get("answer_impacted", False)),
+    }
+
+
+def _unique_strings(values: Sequence[object]) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def _coerce_hybrid_documents(value: object) -> list[EvidenceDocument]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return []
+    return [
+        doc
+        if isinstance(doc, EvidenceDocument)
+        else EvidenceDocument.from_dict(coerce_json_object(doc))
+        for doc in value
+    ]
+
+
+def _coerce_candidate_counts(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): max(0, int(item or 0)) for key, item in value.items()}
+
+
+def _coerce_degraded_candidates(value: object) -> list[JsonObject]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return []
+    return [coerce_json_object(item) for item in value if isinstance(item, Mapping)]
+
+
+@dataclass
+class HybridRetrievalOutcome:
+    """Documents plus source-level observability emitted by hybrid retrieval."""
+
+    documents: list[EvidenceDocument] = field(default_factory=list)
+    candidate_counts: dict[str, int] = field(default_factory=dict)
+    degraded_candidates: list[JsonObject] = field(default_factory=list)
+    metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.documents = [
+            doc
+            if isinstance(doc, EvidenceDocument)
+            else EvidenceDocument.from_dict(coerce_json_object(doc))
+            for doc in (self.documents or [])
+        ]
+        self.candidate_counts = {
+            str(key): max(0, int(value or 0))
+            for key, value in dict(self.candidate_counts or {}).items()
+        }
+        self.degraded_candidates = [
+            coerce_json_object(item)
+            for item in (self.degraded_candidates or [])
+            if isinstance(item, Mapping)
+        ]
+        self.metadata = coerce_json_object(self.metadata)
+
+    @classmethod
+    def from_candidate_set(
+        cls,
+        *,
+        documents: list[EvidenceDocument],
+        candidates: _CandidateSetView,
+        metadata: Mapping[str, object] | None = None,
+    ) -> "HybridRetrievalOutcome":
+        return cls(
+            documents=list(documents or []),
+            candidate_counts=dict(candidates.stats),
+            degraded_candidates=[coerce_json_object(item) for item in candidates.degraded_details],
+            metadata=coerce_json_object(metadata),
+        )
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object] | None) -> "HybridRetrievalOutcome":
+        payload = dict(data or {})
+        return cls(
+            documents=_coerce_hybrid_documents(payload.get("documents")),
+            candidate_counts=_coerce_candidate_counts(payload.get("candidate_counts")),
+            degraded_candidates=_coerce_degraded_candidates(payload.get("degraded_candidates")),
+            metadata=coerce_json_object(payload.get("metadata")),
+        )
+
+    @property
+    def degraded_sources(self) -> list[str]:
+        return _unique_strings([item.get("source") for item in self.degraded_candidates])
+
+    @property
+    def retrieval_degraded(self) -> bool:
+        return bool(self.degraded_candidates)
+
+    @property
+    def circuit_breaker_triggered(self) -> bool:
+        return any(
+            _candidate_error_code(item) == CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN
+            for item in self.degraded_candidates
+        )
+
+    @property
+    def answer_impacted(self) -> bool:
+        return self.retrieval_degraded and not self.documents
+
+    def to_stage_details(self) -> JsonObject:
+        return coerce_json_object(
+            {
+                "candidate_counts": dict(self.candidate_counts or {}),
+                "degraded_sources": self.degraded_sources,
+                "degraded_candidates": [dict(item) for item in self.degraded_candidates],
+                "retrieval_degraded": self.retrieval_degraded,
+                "circuit_breaker_triggered": self.circuit_breaker_triggered,
+                "answer_impacted": self.answer_impacted,
+            }
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "documents": [doc.to_dict() for doc in self.documents],
+            **self.to_stage_details(),
+            "metadata": dict(self.metadata or {}),
+        }
+
+
+__all__ = ["HybridRetrievalOutcome", "RetrievalOutcome"]
+
+
+def _mapping_or_none(value: object) -> Mapping[str, object] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _candidate_error_code(candidate: Mapping[str, object]) -> str:
+    error = candidate.get("error")
+    if isinstance(error, dict):
+        return str(error.get("code") or "").strip()
+    return ""

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Dict
 
+from .contracts import MilvusOperationHost
 
-class _MilvusBlueGreenOperations:
+
+class _MilvusBlueGreenOperations(MilvusOperationHost):
     def use_manifest(self, manifest) -> str:
         """Bind reads to the collection published by an artifact manifest."""
 
@@ -118,11 +120,7 @@ class _MilvusBlueGreenOperations:
             payload = self.client.describe_alias(alias=self.collection_alias) or {}
         except Exception:
             return ""
-        return str(
-            payload.get("collection")
-            or payload.get("collection_name")
-            or ""
-        )
+        return str(payload.get("collection") or payload.get("collection_name") or "")
 
     def physical_collection_name(self, slot: str) -> str:
         normalized_slot = "green" if str(slot).lower() == "green" else "blue"

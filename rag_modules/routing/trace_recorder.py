@@ -5,19 +5,40 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from ..query_understanding import QueryPlan
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
-from ..runtime import RouteSnapshot, RouteStageSnapshot
-from .execution_strategies import RouteExecutionOutcome, RouteExecutionStageResult
+from ..contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    QuerySemanticRuntimeSettings,
+    RetrievalRequest,
+)
+from ..contracts.runtime import (
+    PolicySnapshot,
+    RouteSnapshot,
+    RouteStageSnapshot,
+    RuntimeErrorDetail,
+)
+from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
+from .strategies import RouteExecutionOutcome, RouteExecutionStageResult
 
 
 class RouteTraceRecorder:
     """Own RouteSnapshot construction, stage recording, and diagnostics refresh."""
 
-    def __init__(self, *, query: str, requested_top_k: int) -> None:
+    def __init__(
+        self,
+        *,
+        query: str,
+        requested_top_k: int,
+        semantic_settings: QuerySemanticRuntimeSettings,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
+        self.policy_bundle = policy_bundle or get_query_policy()
+        self.semantic_settings = semantic_settings
         self.snapshot = RouteSnapshot(
             query=query,
             requested_top_k=requested_top_k,
+            policy=PolicySnapshot.from_metadata(self.policy_bundle.metadata),
         )
 
     def record_plan(self, plan: QueryPlan, *, start_time: float) -> None:
@@ -27,10 +48,10 @@ class RouteTraceRecorder:
                 latency_ms=self._elapsed_ms(start_time),
                 details={
                     "used_cache": plan.used_cache,
-                    "strategy": plan.strategy,
-                    "planner_mode": plan.planner_mode,
+                    "strategy": plan.strategy_value,
+                    "planner_mode": plan.planner_mode_value,
                     "fallback_reason": plan.fallback_reason,
-                    "query_type": plan.semantic_profile.query_type,
+                    "query_type": plan.semantic_profile.query_type_value,
                     "relation_hits": list(plan.semantic_profile.relation_hits or []),
                     "constraint_hits": list(plan.semantic_profile.constraint_hits or []),
                     "structural_hits": list(plan.semantic_profile.structural_hits or []),
@@ -94,7 +115,7 @@ class RouteTraceRecorder:
         *,
         total_start_time: float,
         final_doc_count: int,
-        error: str = "",
+        error: RuntimeErrorDetail | None = None,
     ) -> RouteSnapshot:
         self.snapshot.finalize(
             total_latency_ms=self._elapsed_ms(total_start_time),
@@ -104,7 +125,10 @@ class RouteTraceRecorder:
         return self.snapshot
 
     def clone_snapshot(self) -> RouteSnapshot:
-        return RouteSnapshot.from_dict(self.snapshot.to_dict())
+        return RouteSnapshot.from_dict(
+            self.snapshot.to_dict(),
+            semantic_settings=self.semantic_settings,
+        )
 
     def build_stage_snapshot(
         self,

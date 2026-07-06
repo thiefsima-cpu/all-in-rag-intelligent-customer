@@ -1,5 +1,9 @@
 # API, Generation, And Milvus Module Split Implementation Plan
 
+Status: superseded
+
+Note: The package split landed, but the generation execution mixin details were superseded by the later explicit-collaborator design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Split the API service, generation executor, and Milvus infrastructure modules into clear canonical packages while preserving current behavior and old import paths.

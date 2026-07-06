@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from ...contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from .candidate_settings import RetrievalCandidateSizingSettings
-from .planner_settings import QueryPlannerRuntimeSettings
+from .candidate_source_settings import RetrievalCandidateSourceSettings
 from .postprocess_settings import RetrievalPostProcessSettings
 from .profile import RetrievalRuntimeProfile
-from .semantic_settings import QuerySemanticRuntimeSettings
 
 
 class RetrievalRuntimeProfileFactory:
@@ -17,6 +17,7 @@ class RetrievalRuntimeProfileFactory:
             planner=QueryPlannerRuntimeSettings.from_config(config),
             semantics=QuerySemanticRuntimeSettings.from_config(config),
             candidates=RetrievalCandidateSizingSettings.from_config(config),
+            candidate_sources=RetrievalCandidateSourceSettings.from_config(config),
             postprocess=RetrievalPostProcessSettings.from_config(config),
         )
 

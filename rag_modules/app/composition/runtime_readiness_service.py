@@ -17,20 +17,22 @@ class RuntimeReadinessService:
         return bool(runtime and runtime.is_initialized())
 
     def require_build_runtime(self, runtime: BuildRuntime | None) -> BuildRuntime:
-        if not self.is_build_initialized(runtime):
+        if runtime is None or not runtime.is_initialized():
             raise ValueError(
                 "Build runtime is not initialized. Call initialize_build_runtime() first."
             )
         return runtime
 
     def require_serving_runtime(self, runtime: ServingRuntime | None) -> ServingRuntime:
-        if not self.is_serving_initialized(runtime):
+        if runtime is None or not runtime.is_initialized():
             raise ValueError(
                 "Serving runtime is not initialized. Call initialize_serving_runtime() first."
             )
         return runtime
 
-    def require_ready(self, runtime: ServingRuntime | None, *, artifacts_ready: bool) -> ServingRuntime:
+    def require_ready(
+        self, runtime: ServingRuntime | None, *, artifacts_ready: bool
+    ) -> ServingRuntime:
         runtime = self.require_serving_runtime(runtime)
         if not artifacts_ready:
             raise ValueError(

@@ -4,11 +4,51 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Protocol
 
-from ..contracts import EvidenceDocument
+from ...contracts import EvidenceDocument
 
 logger = logging.getLogger(__name__)
+
+
+class _GraphKVEntry(Protocol):
+    @property
+    def index_keys(self) -> Sequence[str]: ...
+
+    @property
+    def metadata(self) -> Mapping[str, object]: ...
+
+    @property
+    def value_content(self) -> str: ...
+
+
+class _GraphEntityEntry(_GraphKVEntry, Protocol):
+    @property
+    def entity_name(self) -> str: ...
+
+    @property
+    def entity_type(self) -> str: ...
+
+
+class _GraphRelationEntry(_GraphKVEntry, Protocol):
+    @property
+    def relation_id(self) -> str: ...
+
+    @property
+    def relation_type(self) -> str: ...
+
+    @property
+    def source_entity(self) -> str: ...
+
+    @property
+    def target_entity(self) -> str: ...
+
+
+class _GraphIndexPort(Protocol):
+    def get_entities_by_key(self, key: str) -> Iterable[_GraphEntityEntry]: ...
+
+    def get_relations_by_key(self, key: str) -> Iterable[_GraphRelationEntry]: ...
 
 
 def _match_score(query_term: str, candidate: str) -> float:
@@ -24,32 +64,36 @@ def _match_score(query_term: str, candidate: str) -> float:
     return 0.0
 
 
-def _richness_factor(kv_entry) -> float:
+def _richness_factor(kv_entry: _GraphKVEntry) -> float:
     content_len = len(getattr(kv_entry, "value_content", ""))
     return 0.2 * (1 - math.exp(-content_len / 300))
 
 
-def _degree_factor(metadata: Dict[str, Any]) -> float:
+def _degree_factor(metadata: Mapping[str, object]) -> float:
     degree = metadata.get("degree", 0) or 0
-    return 0.15 * min(degree / 10, 1.0)
+    try:
+        normalized_degree = float(str(degree))
+    except (TypeError, ValueError):
+        normalized_degree = 0.0
+    return 0.15 * min(normalized_degree / 10, 1.0)
 
 
-def _best_key_score(query_term: str, keys: List[str]) -> float:
+def _best_key_score(query_term: str, keys: Sequence[str]) -> float:
     return max((_match_score(query_term, key) for key in keys or []), default=0.0)
 
 
 class GraphKVRetriever:
     """Two-tier retrieval over the in-memory graph key-value index."""
 
-    def __init__(self, graph_indexing_module):
+    def __init__(self, graph_indexing_module: _GraphIndexPort | None) -> None:
         self.index = graph_indexing_module
 
-    def entity_search(self, keywords: List[str], top_k: int = 5) -> List[EvidenceDocument]:
+    def entity_search(self, keywords: list[str], top_k: int = 5) -> list[EvidenceDocument]:
         if not self.index or not keywords:
             return []
 
-        docs: List[EvidenceDocument] = []
-        seen: set = set()
+        docs: list[EvidenceDocument] = []
+        seen: set[str] = set()
 
         for keyword in keywords:
             entities = self.index.get_entities_by_key(keyword)
@@ -66,7 +110,12 @@ class GraphKVRetriever:
                     continue
 
                 score = round(
-                    min(match_score * 0.6 + _richness_factor(entity) + _degree_factor(entity.metadata), 1.0),
+                    min(
+                        match_score * 0.6
+                        + _richness_factor(entity)
+                        + _degree_factor(entity.metadata),
+                        1.0,
+                    ),
                     4,
                 )
                 metadata = {
@@ -103,12 +152,12 @@ class GraphKVRetriever:
         docs.sort(key=lambda document: document.score, reverse=True)
         return docs[:top_k]
 
-    def topic_search(self, keywords: List[str], top_k: int = 5) -> List[EvidenceDocument]:
+    def topic_search(self, keywords: list[str], top_k: int = 5) -> list[EvidenceDocument]:
         if not self.index or not keywords:
             return []
 
-        docs: List[EvidenceDocument] = []
-        seen: set = set()
+        docs: list[EvidenceDocument] = []
+        seen: set[str] = set()
 
         for keyword in keywords:
             relations = self.index.get_relations_by_key(keyword)
@@ -117,7 +166,9 @@ class GraphKVRetriever:
                     continue
                 seen.add(relation.relation_id)
 
-                best_key_score = max((_match_score(keyword, key) for key in relation.index_keys), default=0.0)
+                best_key_score = max(
+                    (_match_score(keyword, key) for key in relation.index_keys), default=0.0
+                )
                 if best_key_score <= 0:
                     continue
 
@@ -157,10 +208,10 @@ class GraphKVRetriever:
         docs.sort(key=lambda document: document.score, reverse=True)
         return docs[:top_k]
 
-    def search(self, keywords: List[str], top_k: int = 5) -> List[EvidenceDocument]:
+    def search(self, keywords: list[str], top_k: int = 5) -> list[EvidenceDocument]:
         entities = self.entity_search(keywords, top_k=top_k)
         topics = self.topic_search(keywords, top_k=top_k)
-        combined: List[EvidenceDocument] = []
+        combined: list[EvidenceDocument] = []
         entity_index = 0
         topic_index = 0
         while len(combined) < top_k and (entity_index < len(entities) or topic_index < len(topics)):

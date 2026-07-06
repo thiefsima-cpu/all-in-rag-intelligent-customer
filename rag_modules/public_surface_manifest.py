@@ -13,6 +13,16 @@ class PublicSurfaceEntry:
     canonical_module: str
     retirement_phase: str
     notes: str = ""
+    removal_version: str = ""
+    scan_rules: tuple[str, ...] = ()
+
+
+# Package-version milestone for the final public import-facade removal; not API_VERSION.
+LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION = "0.2.0"
+LEGACY_PUBLIC_SURFACE_SCAN_RULES = (
+    "internal_dependency_guard",
+    "thin_wrapper_guard",
+)
 
 
 PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
@@ -63,11 +73,18 @@ PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "public_api",
         "rag_modules.app.providers",
         "canonical",
-        "Public default-provider facade over internal provider components.",
+        "Canonical runtime provider boundary for application assembly.",
     ),
 )
 
 SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
+    PublicSurfaceEntry(
+        "rag_modules.contracts",
+        "service_api",
+        "rag_modules.contracts",
+        "canonical",
+        "Canonical cross-subsystem contract kernel for shared DTOs and query settings.",
+    ),
     PublicSurfaceEntry(
         "rag_modules.app.services",
         "service_api",
@@ -87,7 +104,7 @@ SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "service_api",
         "rag_modules.retrieval",
         "canonical",
-        "Repository-internal retrieval runtime and evidence contracts.",
+        "Repository-internal retrieval runtime. Shared DTOs live in rag_modules.contracts.",
     ),
     PublicSurfaceEntry(
         "rag_modules.generation",
@@ -113,44 +130,11 @@ INTERNAL_ONLY_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "internal_only",
         "Composition-root helpers for runtime assembly. Do not import from feature code.",
     ),
-    PublicSurfaceEntry(
-        "rag_modules.app.provider_components",
-        "internal_only",
-        "rag_modules.app.provider_components",
-        "internal_only",
-        "Provider wiring helpers for assembly internals. Use rag_modules.app.providers instead.",
-    ),
 )
 
-ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
-    PublicSurfaceEntry(
-        "intelligent_query_router",
-        "root_facade",
-        "rag_modules.routing.intelligent_query_router",
-        "external_migration_window",
-    ),
-    PublicSurfaceEntry(
-        "graph_data_preparation",
-        "root_facade",
-        "rag_modules.graph.data_preparation",
-        "external_migration_window",
-    ),
-    PublicSurfaceEntry(
-        "graph_indexing",
-        "root_facade",
-        "rag_modules.graph.indexing",
-        "external_migration_window",
-    ),
-)
+ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
 
-EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
-    PublicSurfaceEntry(
-        "config",
-        "repo_root_facade",
-        "rag_modules.configuration",
-        "external_migration_window",
-    ),
-)
+EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
 
 LEGACY_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     *ROOT_PUBLIC_SURFACE,
@@ -208,6 +192,8 @@ __all__ = [
     "EXTERNAL_PUBLIC_SURFACE",
     "INTERNAL_ONLY_SURFACE",
     "LEGACY_PUBLIC_SURFACE",
+    "LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION",
+    "LEGACY_PUBLIC_SURFACE_SCAN_RULES",
     "PUBLIC_API_SURFACE",
     "ROOT_PUBLIC_SURFACE",
     "SERVICE_API_SURFACE",

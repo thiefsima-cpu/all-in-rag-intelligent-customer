@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from ...runtime import (
+from ...contracts import QuerySemanticRuntimeSettings
+from ...contracts.runtime import (
     GenerationSnapshot,
     GraphRetrievalSnapshot,
     QueryTraceEvent,
     RouteSnapshot,
+    RuntimeErrorDetail,
 )
 from ...runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from ..ports import QueryTracerPort
 from .answer_models import AnswerPipelineState, AnswerTraceBundle
 
 
@@ -22,12 +25,14 @@ class AnswerTraceAssembler:
     def __init__(
         self,
         *,
-        query_tracer,
-        query_router=None,
-        generation_service=None,
+        query_tracer: QueryTracerPort | None,
+        semantic_settings: QuerySemanticRuntimeSettings,
+        query_router: object | None = None,
+        generation_service: object | None = None,
     ) -> None:
         del query_router, generation_service
         self.query_tracer = query_tracer
+        self.semantic_settings = semantic_settings
 
     def record(
         self,
@@ -35,7 +40,7 @@ class AnswerTraceAssembler:
         state: AnswerPipelineState,
         latency_ms: float,
         answer: str | None = None,
-        error: str | None = None,
+        error: RuntimeErrorDetail | None = None,
     ) -> AnswerTraceBundle:
         route_trace = self._state_route_snapshot(state)
         graph_trace = self._state_graph_snapshot(state)
@@ -60,20 +65,24 @@ class AnswerTraceAssembler:
             trace_event=trace_event,
         )
 
-    @staticmethod
-    def _state_route_snapshot(state: AnswerPipelineState) -> RouteSnapshot:
+    def _state_route_snapshot(self, state: AnswerPipelineState) -> RouteSnapshot:
         route_trace = getattr(state, "route_trace", RouteSnapshot())
-        return clone_route_snapshot(route_trace)
+        return clone_route_snapshot(
+            route_trace,
+            semantic_settings=self.semantic_settings,
+        )
 
     @staticmethod
     def _state_generation_snapshot(state: AnswerPipelineState) -> GenerationSnapshot:
         generation_trace = getattr(state, "generation_trace", GenerationSnapshot())
         return clone_generation_snapshot(generation_trace)
 
-    @staticmethod
-    def _state_graph_snapshot(state: AnswerPipelineState) -> GraphRetrievalSnapshot:
+    def _state_graph_snapshot(self, state: AnswerPipelineState) -> GraphRetrievalSnapshot:
         graph_trace = getattr(state, "graph_trace", GraphRetrievalSnapshot())
-        return clone_graph_snapshot(graph_trace)
+        return clone_graph_snapshot(
+            graph_trace,
+            semantic_settings=self.semantic_settings,
+        )
 
 
 __all__ = ["AnswerTraceAssembler"]

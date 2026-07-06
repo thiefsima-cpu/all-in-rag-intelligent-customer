@@ -7,10 +7,18 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
+from ..contracts import (
+    EvidenceDocument,
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+    RetrievalRequest,
+)
+from ..contracts.graph import GraphQuery
+from ..safe_logging import log_failure
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan
-from .retrieval_types import GraphPath, GraphQuery, KnowledgeSubgraph, QueryType
-from ..retrieval.contracts import EvidenceDocument, RetrievalRequest
+from .retrieval_types import GraphPath, KnowledgeSubgraph, QueryType
 
 logger = logging.getLogger(__name__)
 
@@ -46,23 +54,36 @@ class GraphEvidenceOrchestrator:
     ) -> GraphRetrievalPlan:
         return self.graph_plan_builder.build(graph_query, evidence_goals=evidence_goals)
 
-    def execute_graph_plan(self, retrieval_plan: GraphRetrievalPlan) -> List[GraphPath]:
+    def execute_graph_plan(
+        self,
+        retrieval_plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[GraphPath]:
+        if control is not None:
+            control.raise_if_cancelled()
+        query_type = retrieval_plan.query_type
+        source_count = len(retrieval_plan.source_entities or [])
+        target_count = len(retrieval_plan.target_entities or [])
+        linked_count = len(retrieval_plan.linked_sources or [])
         logger.info(
-            "Executing graph retrieval plan: type=%s source=%s target=%s linked_sources=%s",
-            retrieval_plan.query_type,
-            retrieval_plan.source_entities,
-            retrieval_plan.target_entities,
-            [entity.resolved_value for entity in retrieval_plan.linked_sources],
+            "Executing graph retrieval plan: type=%s source_count=%s target_count=%s linked_count=%s",
+            query_type,
+            source_count,
+            target_count,
+            linked_count,
         )
         if retrieval_plan.query_type == QueryType.PATH_FINDING.value:
-            records = self.graph_executor.shortest_paths(retrieval_plan)
+            records = self.graph_executor.shortest_paths(retrieval_plan, control=control)
             path_type = "shortest_path"
         elif retrieval_plan.query_type == QueryType.ENTITY_RELATION.value:
-            records = self.graph_executor.entity_relation_paths(retrieval_plan)
+            records = self.graph_executor.entity_relation_paths(retrieval_plan, control=control)
             path_type = "entity_relation"
         else:
-            records = self.graph_executor.multi_hop_paths(retrieval_plan)
+            records = self.graph_executor.multi_hop_paths(retrieval_plan, control=control)
             path_type = "multi_hop"
+        if control is not None:
+            control.raise_if_cancelled()
 
         paths: List[GraphPath] = []
         for record in records:
@@ -71,28 +92,45 @@ class GraphEvidenceOrchestrator:
                 paths.append(path_data)
         return paths
 
-    def extract_knowledge_subgraph(self, graph_query: Any) -> KnowledgeSubgraph:
+    def extract_knowledge_subgraph(
+        self,
+        graph_query: Any,
+        *,
+        control: RequestControl | None = None,
+    ) -> KnowledgeSubgraph:
+        if control is not None:
+            control.raise_if_cancelled()
         retrieval_plan = (
-            graph_query if isinstance(graph_query, GraphRetrievalPlan)
+            graph_query
+            if isinstance(graph_query, GraphRetrievalPlan)
             else self.build_retrieval_plan(graph_query, evidence_goals=[])
         )
-        logger.info("Extracting knowledge subgraph for %s", retrieval_plan.source_entities)
+        source_count = len(retrieval_plan.source_entities)
+        logger.info("Extracting knowledge subgraph: source_count=%s", source_count)
 
         if not self.graph_executor.driver:
             logger.error("Neo4j is not connected")
             return self.empty_subgraph()
 
         try:
-            records = self.graph_executor.subgraphs(retrieval_plan)
+            records = self.graph_executor.subgraphs(retrieval_plan, control=control)
+            if control is not None:
+                control.raise_if_cancelled()
             subgraphs = [
-                self.postprocessor.build_knowledge_subgraph(record)
-                for record in records
-                if record
+                self.postprocessor.build_knowledge_subgraph(record) for record in records if record
             ]
             if subgraphs:
                 return self.postprocessor.merge_subgraphs(subgraphs)
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
-            logger.error("Subgraph extraction failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
 
         return self.empty_subgraph()
 
@@ -103,17 +141,31 @@ class GraphEvidenceOrchestrator:
         self,
         subgraph: KnowledgeSubgraph,
         query: str,
+        *,
+        control: RequestControl | None = None,
     ) -> GraphReasoningOutcome:
         try:
+            if control is not None:
+                control.raise_if_cancelled()
             outcome = self.reasoning_strategy.reason(subgraph, query)
+            if control is not None:
+                control.raise_if_cancelled()
             logger.info(
                 "Graph reasoning produced %s chains across %s patterns",
                 len(outcome.validated_chains or []),
                 len(outcome.patterns or []),
             )
             return outcome
+        except (RequestCancelled, RequestBudgetExceeded):
+            raise
         except Exception as exc:
-            logger.error("Graph structure reasoning failed: %s", exc)
+            log_failure(
+                logger,
+                logging.ERROR,
+                "graph_operation_failed",
+                code="GRAPH_OPERATION_FAILED",
+                error=exc,
+            )
             return GraphReasoningOutcome()
 
     def retrieve(
@@ -125,6 +177,9 @@ class GraphEvidenceOrchestrator:
         trace,
         record_event: Callable[..., None],
     ) -> GraphEvidenceExecutionResult:
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
         evidence_documents = self._execute_graph_evidence(
             request=request,
             graph_query=graph_query,
@@ -132,11 +187,15 @@ class GraphEvidenceOrchestrator:
             trace=trace,
             record_event=record_event,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         postprocess_start = time.perf_counter()
         ranked_documents = self.postprocessor.to_ranked_evidence_documents(
             evidence_documents,
             request.query,
         )
+        if control is not None:
+            control.raise_if_cancelled()
         final_documents = ranked_documents[: request.top_k]
         evidence_unit_count = sum(len(doc.evidence_units or []) for doc in final_documents)
         record_event(
@@ -211,9 +270,18 @@ class GraphEvidenceOrchestrator:
         trace,
         record_event: Callable[..., None],
     ) -> List[EvidenceDocument]:
-        if graph_query.query_type in {QueryType.MULTI_HOP, QueryType.PATH_FINDING, QueryType.ENTITY_RELATION}:
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
+        if graph_query.query_type in {
+            QueryType.MULTI_HOP,
+            QueryType.PATH_FINDING,
+            QueryType.ENTITY_RELATION,
+        }:
             path_start = time.perf_counter()
-            paths = self.execute_graph_plan(retrieval_plan)
+            paths = self.execute_graph_plan(retrieval_plan, control=control)
+            if control is not None:
+                control.raise_if_cancelled()
             trace.path_count = len(paths)
             record_event(
                 trace,
@@ -227,7 +295,9 @@ class GraphEvidenceOrchestrator:
             return self.paths_to_evidence_documents(paths, request.query)
         if graph_query.query_type in {QueryType.SUBGRAPH, QueryType.CLUSTERING}:
             subgraph_start = time.perf_counter()
-            subgraph = self.extract_knowledge_subgraph(retrieval_plan)
+            subgraph = self.extract_knowledge_subgraph(retrieval_plan, control=control)
+            if control is not None:
+                control.raise_if_cancelled()
             trace.subgraph_count = len(subgraph.central_nodes)
             record_event(
                 trace,
@@ -240,7 +310,13 @@ class GraphEvidenceOrchestrator:
                 },
             )
             reasoning_start = time.perf_counter()
-            reasoning_outcome = self.reason_over_subgraph(subgraph, request.query)
+            reasoning_outcome = self.reason_over_subgraph(
+                subgraph,
+                request.query,
+                control=control,
+            )
+            if control is not None:
+                control.raise_if_cancelled()
             trace.reasoning_patterns = list(reasoning_outcome.patterns or [])
             trace.reasoning_chain_count = len(reasoning_outcome.validated_chains or [])
             record_event(
@@ -255,5 +331,3 @@ class GraphEvidenceOrchestrator:
                 request.query,
             )
         return []
-
-

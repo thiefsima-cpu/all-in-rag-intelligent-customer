@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, List
 
-
 DEFAULT_TEXT_SUFFIXES = {
     ".py",
     ".md",
@@ -35,6 +34,7 @@ DEFAULT_NAMES = {
 
 EXCLUDED_DIRS = {
     ".git",
+    ".worktrees",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
@@ -42,6 +42,12 @@ EXCLUDED_DIRS = {
     ".venv",
     "venv",
     "node_modules",
+    "storage",
+    "volumes",
+}
+
+EXCLUDED_DIR_PATHS = {
+    ("eval", "reports"),
 }
 
 MOJIBAKE_TOKENS = [
@@ -55,6 +61,7 @@ MOJIBAKE_TOKENS = [
     "椋庡懗",
     "鎺ㄨ崘",
     "鍥捐氨",
+    "鐭ヨ瘑瀛愬浘",
 ]
 
 ALLOWLISTED_MOJIBAKE_PATHS = {
@@ -96,11 +103,25 @@ def is_text_candidate(path: Path) -> bool:
     return False
 
 
+def is_excluded_path(path: Path, root: Path) -> bool:
+    parent_parts = path.relative_to(root).parent.parts
+    if any(part in EXCLUDED_DIRS for part in parent_parts):
+        return True
+
+    for excluded_path in EXCLUDED_DIR_PATHS:
+        excluded_length = len(excluded_path)
+        for index in range(len(parent_parts) - excluded_length + 1):
+            if parent_parts[index : index + excluded_length] == excluded_path:
+                return True
+
+    return False
+
+
 def iter_text_files(root: Path) -> Iterable[Path]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in EXCLUDED_DIRS for part in path.parts):
+        if is_excluded_path(path, root):
             continue
         if is_text_candidate(path):
             yield path

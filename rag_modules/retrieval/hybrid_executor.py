@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
-from langchain_core.documents import Document
-
-from ..query_constraints import QueryConstraints, RecipeConstraintMatcher
-from ..query_understanding import QueryPlan
-from .contracts import EvidenceDocument, RetrievalRequest
+from ..contracts import EvidenceDocument, RetrievalRequest
+from ..contracts.runtime import HybridRetrievalOutcome
+from ..kernel.documents import TextDocument
+from .evidence import RecipeConstraintMatcher
 from .keyword_service import QueryKeywordExtractor
 
 
@@ -39,7 +38,7 @@ class HybridRetrievalExecutor:
         return self.runtime.bm25
 
     @property
-    def bm25_corpus_docs(self) -> List[Document]:
+    def bm25_corpus_docs(self) -> List[TextDocument]:
         return self.runtime.bm25_corpus_docs
 
     @property
@@ -47,7 +46,7 @@ class HybridRetrievalExecutor:
         return self.runtime.graph_indexed
 
     @property
-    def parent_doc_map(self) -> Dict[str, Document]:
+    def parent_doc_map(self) -> Dict[str, TextDocument]:
         return self.runtime.parent_doc_map
 
     @property
@@ -62,53 +61,16 @@ class HybridRetrievalExecutor:
     def dual_level_service(self):
         return self.runtime.dual_level_service
 
-    def initialize(self, chunks: List[Document]) -> None:
+    def initialize(self, chunks: List[TextDocument]) -> None:
         self.runtime.initialize(chunks)
 
     def apply_index_artifacts(self, artifacts) -> None:
         self.runtime.apply_index_artifacts(artifacts)
 
-    def build_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-        entity_keywords: Optional[List[str]] = None,
-        topic_keywords: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, object]] = None,
-    ) -> RetrievalRequest:
-        return self.search_service.build_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-            entity_keywords=entity_keywords,
-            topic_keywords=topic_keywords,
-            metadata=metadata,
-        )
+    def prepare_hybrid_request(self, request: RetrievalRequest) -> RetrievalRequest:
+        return self.search_service.prepare_hybrid_request(request)
 
-    def prepare_hybrid_request(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> RetrievalRequest:
-        return self.search_service.prepare_hybrid_request(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
-
-    def cache_signature(self, chunks: List[Document]) -> str:
+    def cache_signature(self, chunks: List[TextDocument]) -> str:
         return self.cache_store.signature(chunks)
 
     def cache_path(self) -> str:
@@ -117,7 +79,7 @@ class HybridRetrievalExecutor:
     def build_graph_index(self) -> None:
         self.runtime.build_graph_index()
 
-    def build_parent_doc_map(self) -> Dict[str, Document]:
+    def build_parent_doc_map(self) -> Dict[str, TextDocument]:
         return self.runtime.build_parent_doc_map()
 
     def get_recipe_matcher(self) -> Optional[RecipeConstraintMatcher]:
@@ -167,37 +129,23 @@ class HybridRetrievalExecutor:
     def constraint_candidates(self, request: RetrievalRequest) -> List[EvidenceDocument]:
         return self.search_service.constraint_candidates(request)
 
-    def hybrid_evidence_search(
-        self,
-        request_or_query: Union[str, RetrievalRequest],
-        *,
-        top_k: int = 5,
-        constraints: Optional[QueryConstraints] = None,
-        candidate_k: Optional[int] = None,
-        query_plan: Optional[QueryPlan] = None,
-    ) -> List[EvidenceDocument]:
-        return self.search_service.hybrid_evidence_search(
-            request_or_query,
-            top_k=top_k,
-            constraints=constraints,
-            candidate_k=candidate_k,
-            query_plan=query_plan,
-        )
+    def hybrid_evidence_search(self, request: RetrievalRequest) -> HybridRetrievalOutcome:
+        return self.search_service.hybrid_evidence_search(request)
 
     def attach_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         *,
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.runtime.attach_parent_documents(docs, top_n=top_n)
 
     def enrich_to_parent_documents(
         self,
-        docs: List[Document],
+        docs: List[TextDocument],
         *,
         top_n: Optional[int] = None,
-    ) -> List[Document]:
+    ) -> List[TextDocument]:
         return self.runtime.enrich_to_parent_documents(docs, top_n=top_n)
 
     def attach_parent_evidence_documents(
@@ -210,17 +158,20 @@ class HybridRetrievalExecutor:
 
     def enrich_to_parent_evidence_documents(
         self,
+        request: RetrievalRequest,
         docs: List[EvidenceDocument],
         *,
         top_n: Optional[int] = None,
     ) -> List[EvidenceDocument]:
+        if request.control is not None:
+            request.control.raise_if_cancelled()
         return self.runtime.enrich_to_parent_evidence_documents(docs, top_n=top_n)
 
     def restore_bm25_retriever(self, payload: Dict[str, object]) -> None:
         self.runtime.restore_bm25_retriever(payload)
 
-    def sync_legacy_bm25_fields(self) -> None:
-        self.runtime.sync_legacy_bm25_fields()
+    def sync_bm25_state(self) -> None:
+        self.runtime.sync_bm25_state()
 
     def tokenize_chinese(self, text: str) -> List[str]:
         return self._bm25_tokenizer(text)

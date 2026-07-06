@@ -8,7 +8,8 @@ import secrets
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .runtime import QueryTraceEvent
+from .contracts import QuerySemanticRuntimeSettings
+from .contracts.runtime import QueryTraceEvent
 
 _CONTENT_KEYS = frozenset(
     {
@@ -74,9 +75,17 @@ class TraceSanitizer:
     def __init__(self, salt: str = "") -> None:
         self._salt = (str(salt or "") or secrets.token_hex(32)).encode("utf-8")
 
-    def sanitize_event(self, event: QueryTraceEvent) -> QueryTraceEvent:
+    def sanitize_event(
+        self,
+        event: QueryTraceEvent,
+        *,
+        semantic_settings: QuerySemanticRuntimeSettings,
+    ) -> QueryTraceEvent:
         payload = self.sanitize_value(event.to_dict())
-        return QueryTraceEvent.from_dict(payload)
+        return QueryTraceEvent.from_dict(
+            payload,
+            semantic_settings=semantic_settings,
+        )
 
     def sanitize_value(
         self,

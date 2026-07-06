@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import atexit
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-import threading
 from typing import Any, Iterator
 
 from opentelemetry import trace
@@ -90,9 +90,7 @@ class RuntimeTelemetry:
         )
         endpoint = _trace_endpoint(identity.otlp_endpoint)
         if endpoint:
-            provider.add_span_processor(
-                BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint))
-            )
+            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
         return provider
 
     @contextmanager
@@ -109,8 +107,8 @@ class RuntimeTelemetry:
             try:
                 yield span
             except Exception as exc:
-                span.record_exception(exc)
-                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.set_attribute("error.type", type(exc).__name__)
+                span.set_status(Status(StatusCode.ERROR, "INTERNAL_ERROR"))
                 raise
 
     def record_answer(self, result) -> None:
@@ -152,9 +150,7 @@ class RuntimeTelemetry:
             float(getattr(generation, "estimated_cost_usd", 0.0) or 0.0),
         )
         if estimated_cost:
-            self.generation_cost.labels(model=self.identity.model_name).inc(
-                estimated_cost
-            )
+            self.generation_cost.labels(model=self.identity.model_name).inc(estimated_cost)
 
     @staticmethod
     def enrich_answer_span(span: Span, result) -> None:
@@ -165,17 +161,15 @@ class RuntimeTelemetry:
             "rag.document.count": int(getattr(result, "doc_count", 0) or 0),
             "rag.latency_ms": float(getattr(result, "latency_ms", 0.0) or 0.0),
             "gen_ai.operation.name": "chat",
-            "gen_ai.usage.input_tokens": int(
-                getattr(generation, "prompt_tokens", 0) or 0
-            ),
-            "gen_ai.usage.output_tokens": int(
-                getattr(generation, "completion_tokens", 0) or 0
-            ),
+            "gen_ai.usage.input_tokens": int(getattr(generation, "prompt_tokens", 0) or 0),
+            "gen_ai.usage.output_tokens": int(getattr(generation, "completion_tokens", 0) or 0),
         }
         for key, value in _span_attributes(attributes).items():
             span.set_attribute(key, value)
-        if getattr(result, "error", ""):
-            span.set_status(Status(StatusCode.ERROR, str(result.error)))
+        error = getattr(result, "error", None)
+        if error:
+            error_code = str(getattr(error, "code", "") or "INTERNAL_ERROR")
+            span.set_status(Status(StatusCode.ERROR, error_code))
 
     def prometheus_payload(self) -> bytes:
         return generate_latest(self.registry)
@@ -199,12 +193,8 @@ def get_runtime_telemetry(config) -> RuntimeTelemetry:
         otlp_endpoint=str(observability.otel_exporter_otlp_endpoint or ""),
         sample_ratio=float(observability.otel_trace_sample_ratio),
         prometheus_enabled=bool(observability.enable_prometheus),
-        input_cost_per_million_tokens=float(
-            models.llm_input_cost_per_million_tokens
-        ),
-        output_cost_per_million_tokens=float(
-            models.llm_output_cost_per_million_tokens
-        ),
+        input_cost_per_million_tokens=float(models.llm_input_cost_per_million_tokens),
+        output_cost_per_million_tokens=float(models.llm_output_cost_per_million_tokens),
     )
     telemetry = _TELEMETRY.get(identity)
     if telemetry is not None:

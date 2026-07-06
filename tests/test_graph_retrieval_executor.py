@@ -3,10 +3,12 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
+from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
+from rag_modules.contracts.runtime.errors import ensure_runtime_error_detail
+from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
+from rag_modules.graph.query_executor import GraphQueryExecutor
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
-from rag_modules.retrieval.contracts import EvidenceDocument, RetrievalRequest
-from rag_modules.runtime.graph_models import GraphRetrievalSnapshot
 
 
 class _FakeGraphRuntime:
@@ -34,10 +36,12 @@ class _FakeGraphRuntime:
         del start_time
         trace.doc_count = doc_count
         trace.evidence_unit_count = evidence_unit_count
-        trace.error = error
+        trace.error = ensure_runtime_error_detail(error)
         return trace
 
-    def record_event(self, trace, name, *, start_time=None, latency_ms=None, status="ok", details=None):
+    def record_event(
+        self, trace, name, *, start_time=None, latency_ms=None, status="ok", details=None
+    ):
         del start_time, latency_ms
         self.events.append((name, status, details or {}))
         trace.add_event(name, status=status, latency_ms=0.0, details=details or {})
@@ -56,12 +60,42 @@ class _FakeGraphRuntime:
 class _FakeRetrievalPlan:
     linked_sources = [SimpleNamespace(resolved_value="水煮肉片")]
     linked_targets = [SimpleNamespace(resolved_value="麻辣鲜香")]
+    source_node_ids = []
+    source_terms = ["tofu"]
+    target_node_ids = []
+    target_terms = []
+    relation_types = []
     max_depth = 3
     max_nodes = 24
 
     @staticmethod
     def to_trace():
         return {"max_depth": 3, "max_nodes": 24}
+
+
+class _RecordingNeo4jSession:
+    def __init__(self) -> None:
+        self.run_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        del exc_type, exc, tb
+        return None
+
+    def run(self, query, parameters=None, **kwargs):
+        self.run_calls.append({"query": query, "parameters": parameters, "kwargs": kwargs})
+        return []
+
+
+class _RecordingNeo4jDriver:
+    def __init__(self) -> None:
+        self.session_obj = _RecordingNeo4jSession()
+
+    def session(self, **kwargs):
+        del kwargs
+        return self.session_obj
 
 
 class _FakeOrchestrator:
@@ -93,6 +127,50 @@ class _FailingNeo4jManager:
 
 
 class GraphRetrievalExecutorTests(unittest.TestCase):
+    def test_graph_query_executor_passes_control_timeout_to_neo4j(self) -> None:
+        driver = _RecordingNeo4jDriver()
+        executor = GraphQueryExecutor(driver, database="neo4j")
+        plan = _FakeRetrievalPlan()
+        request = RetrievalRequest.from_inputs(
+            query="tofu",
+            top_k=2,
+            control=RequestControl.for_timeout(3.0, scope="graph"),
+        )
+
+        executor.multi_hop_paths(plan, control=request.control)
+
+        timeout = driver.session_obj.run_calls[0]["kwargs"]["timeout"]
+        self.assertGreater(timeout, 0)
+        self.assertLessEqual(timeout, 3.0)
+
+    def test_execute_stops_when_control_cancelled_before_retrieve(self) -> None:
+        runtime = _FakeGraphRuntime()
+        control = RequestControl.for_timeout(5.0, scope="graph")
+        control.cancel("combined_branch_timeout")
+        executor = GraphRetrievalExecutor(
+            config=build_test_config(),
+            runtime=runtime,
+            orchestrator=_FakeOrchestrator(
+                [EvidenceDocument(content="should not return", recipe_name="late")]
+            ),
+            cache_warmup=SimpleNamespace(),
+            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
+            entity_linker=SimpleNamespace(driver=None),
+            graph_executor=SimpleNamespace(driver=None),
+            database_name="neo4j",
+        )
+        executor.driver = object()
+        request = RetrievalRequest.from_inputs(query="tofu", top_k=2, control=control)
+
+        results, trace = executor.execute_with_trace(request)
+
+        self.assertEqual(results, [])
+        self.assertEqual(trace.error.detail, "combined_branch_timeout")
+        self.assertIn(
+            ("request_control_cancelled", "error", {"reason": "combined_branch_timeout"}),
+            runtime.events,
+        )
+
     def test_initialize_raises_when_driver_setup_fails(self) -> None:
         runtime = _FakeGraphRuntime()
         executor = GraphRetrievalExecutor(
@@ -185,8 +263,33 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         results, trace = executor.execute_with_trace(request)
 
         self.assertEqual(results, [])
-        self.assertEqual(trace.error, "neo4j_not_connected")
+        self.assertEqual(
+            trace.error.to_dict(),
+            {"code": "GRAPH_OPERATION_FAILED", "detail": "neo4j_not_connected"},
+        )
         self.assertIn("validate_driver", [event.name for event in trace.events])
+
+    def test_graph_runtime_records_policy_metadata_and_policy_sub_questions(self) -> None:
+        from rag_modules.graph.query_resolution import GraphQueryFactory
+        from rag_modules.graph.retrieval_runtime import GraphRetrievalRuntime
+
+        config = build_test_config()
+        runtime = GraphRetrievalRuntime(
+            GraphQueryFactory(semantic_settings=semantic_runtime_settings(config))
+        )
+        request = RetrievalRequest.from_inputs(
+            query="why does sauce affect texture",
+            top_k=2,
+            strategy="graph_rag",
+        )
+
+        graph_query, goals = runtime.resolve_request_context(request)
+        trace = runtime.start_trace(request.query, requested_top_k=2, retrieval_request=request)
+        runtime.populate_trace_context(trace, graph_query=graph_query, evidence_goals=goals)
+
+        self.assertTrue(trace.policy.is_recorded())
+        self.assertTrue(trace.sub_questions)
+        self.assertIn(trace.policy.policy_version, trace.to_dict()["policy"]["policy_version"])
 
 
 if __name__ == "__main__":

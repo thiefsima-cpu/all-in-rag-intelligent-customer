@@ -7,12 +7,10 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
-from .runtime_settings import QuerySemanticRuntimeSettings
-from ..query_understanding import (
-    infer_query_semantic_profile,
-    normalize_graph_sources,
-    relation_index_terms,
-)
+from ..contracts import QuerySemanticRuntimeSettings
+from ..query_understanding.features import normalize_graph_sources
+from ..query_understanding.graph_intent import infer_query_semantic_profile
+from ..query_understanding.registry import relation_index_terms
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +18,8 @@ logger = logging.getLogger(__name__)
 class QueryKeywordExtractor:
     """Extract entity- and topic-level keywords from a user query."""
 
-    def __init__(self, semantic_settings: QuerySemanticRuntimeSettings | None = None):
-        self.semantic_settings = semantic_settings or QuerySemanticRuntimeSettings()
+    def __init__(self, semantic_settings: QuerySemanticRuntimeSettings):
+        self.semantic_settings = semantic_settings
 
     def extract(self, query: str) -> Tuple[List[str], List[str]]:
         profile = infer_query_semantic_profile(query, settings=self.semantic_settings)

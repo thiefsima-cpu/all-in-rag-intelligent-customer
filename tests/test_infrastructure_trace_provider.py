@@ -3,19 +3,16 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from rag_modules.app.provider_components.infrastructure import (
-    DefaultInfrastructureComponentProvider,
-)
-from rag_modules.app.provider_components.diagnostics import DefaultDiagnosticsComponentProvider
-from rag_modules.artifacts import ArtifactManifestStore
+from rag_modules.app.providers import DefaultRuntimeProvider, create_default_runtime_provider
 from rag_modules.build_pipeline.document_artifacts import DocumentIndexCache
 from rag_modules.configuration.testing import build_test_config
-from rag_modules.retrieval.contracts import EvidenceDocument
-from rag_modules.tracing_sinks import (
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.observability.tracing_sinks import (
     AsyncQueryTraceSink,
     JsonlQueryTraceSinkFactory,
     NullQueryTraceSink,
 )
+from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
 class _CapturingSink:
@@ -43,9 +40,7 @@ class _CapturingSinkFactory:
 class InfrastructureTraceProviderTests(unittest.TestCase):
     def test_provider_builds_query_tracer_from_sink_factory(self) -> None:
         sink = _CapturingSink()
-        provider = DefaultInfrastructureComponentProvider(
-            query_trace_sink_factory=_CapturingSinkFactory(sink)
-        )
+        provider = DefaultRuntimeProvider(query_trace_sink_factory=_CapturingSinkFactory(sink))
         config = build_test_config(
             {
                 "observability": {
@@ -55,7 +50,7 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
             }
         )
 
-        tracer = provider.provide_query_tracer(config)
+        tracer = provider.infrastructure.provide_query_tracer(config)
         tracer.record(
             query="trace me",
             analysis=None,
@@ -71,7 +66,7 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
     def test_provider_returns_null_sink_when_tracing_disabled(self) -> None:
         sink = _CapturingSink()
         factory = _CapturingSinkFactory(sink)
-        provider = DefaultInfrastructureComponentProvider(query_trace_sink_factory=factory)
+        provider = DefaultRuntimeProvider(query_trace_sink_factory=factory)
         config = build_test_config(
             {
                 "observability": {
@@ -81,7 +76,7 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
             }
         )
 
-        trace_sink = provider.provide_query_trace_sink(config)
+        trace_sink = provider.infrastructure.provide_query_trace_sink(config)
 
         self.assertIsInstance(trace_sink, NullQueryTraceSink)
         self.assertEqual(factory.paths, [])
@@ -95,7 +90,7 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
         sink.close()
 
     def test_provider_uses_configured_async_trace_sink_by_default(self) -> None:
-        provider = DefaultInfrastructureComponentProvider()
+        provider = create_default_runtime_provider()
         config = build_test_config(
             {
                 "observability": {
@@ -107,13 +102,13 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
             }
         )
 
-        sink = provider.provide_query_trace_sink(config)
+        sink = provider.infrastructure.provide_query_trace_sink(config)
 
         self.assertIsInstance(sink, AsyncQueryTraceSink)
         sink.close()
 
     def test_provider_can_disable_async_trace_sink_from_config(self) -> None:
-        provider = DefaultInfrastructureComponentProvider()
+        provider = create_default_runtime_provider()
         config = build_test_config(
             {
                 "observability": {
@@ -125,13 +120,13 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
             }
         )
 
-        sink = provider.provide_query_trace_sink(config)
+        sink = provider.infrastructure.provide_query_trace_sink(config)
 
         self.assertNotIsInstance(sink, AsyncQueryTraceSink)
         sink.close()
 
     def test_provider_exposes_runtime_artifact_lifecycle_ports(self) -> None:
-        provider = DefaultInfrastructureComponentProvider()
+        provider = create_default_runtime_provider()
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(
                 {
@@ -142,26 +137,34 @@ class InfrastructureTraceProviderTests(unittest.TestCase):
                 }
             )
 
-            manifest_store = provider.provide_artifact_manifest_store(config)
-            cache = provider.provide_document_artifact_cache(
+            manifest_store = provider.infrastructure.provide_artifact_manifest_store(config)
+            cache = provider.infrastructure.provide_document_artifact_cache(
                 config,
                 manifest_store=manifest_store,
             )
-            runtime_artifact_access = provider.provide_runtime_artifact_access(config)
+            runtime_artifact_access = provider.infrastructure.provide_runtime_artifact_access(
+                config
+            )
 
             self.assertIsInstance(manifest_store, ArtifactManifestStore)
             self.assertIsInstance(cache, DocumentIndexCache)
             self.assertIs(cache.manifest_store, manifest_store)
             self.assertTrue(callable(getattr(runtime_artifact_access, "load_graph_data", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "has_vector_collection", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "load_vector_collection", None)))
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "has_vector_collection", None))
+            )
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "load_vector_collection", None))
+            )
             self.assertTrue(callable(getattr(runtime_artifact_access, "build_vector_index", None)))
-            self.assertTrue(callable(getattr(runtime_artifact_access, "delete_vector_collection", None)))
+            self.assertTrue(
+                callable(getattr(runtime_artifact_access, "delete_vector_collection", None))
+            )
 
     def test_diagnostics_provider_exposes_runtime_stats_access(self) -> None:
-        provider = DefaultDiagnosticsComponentProvider()
+        provider = create_default_runtime_provider()
 
-        stats_access = provider.provide_runtime_stats_access(config=build_test_config())
+        stats_access = provider.services.provide_runtime_stats_access(config=build_test_config())
 
         self.assertTrue(callable(getattr(stats_access, "get_graph_data_stats", None)))
         self.assertTrue(callable(getattr(stats_access, "get_vector_collection_stats", None)))

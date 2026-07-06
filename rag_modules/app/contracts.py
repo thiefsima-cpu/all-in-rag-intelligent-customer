@@ -8,12 +8,10 @@ from .composition.contracts import (
     ServingRuntimeFactoryProtocol,
     ServingRuntimeLifecycleServiceProtocol,
     ServingRuntimePreparerProtocol,
-    SystemAnsweringBackendProtocol,
     SystemFacadeSupportProtocol,
-    SystemOperationsBackendProtocol,
     SystemOperationsProtocol,
 )
-from .provider_components.contracts import RuntimeComponentProvider
+from .providers import RuntimeComponentProvider
 from .services.answer_models import QuestionAnswerer
 
 __all__ = [
@@ -24,8 +22,6 @@ __all__ = [
     "ServingRuntimeFactoryProtocol",
     "ServingRuntimeLifecycleServiceProtocol",
     "ServingRuntimePreparerProtocol",
-    "SystemAnsweringBackendProtocol",
     "SystemFacadeSupportProtocol",
-    "SystemOperationsBackendProtocol",
     "SystemOperationsProtocol",
 ]

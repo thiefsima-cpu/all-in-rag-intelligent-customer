@@ -7,15 +7,16 @@ from typing import Iterable
 
 from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.configuration.testing import build_test_config
+from rag_modules.contracts.runtime.generation import GenerationSnapshot
+from rag_modules.contracts.runtime.workflows import AnswerContext
 from rag_modules.generation import (
     GenerationExecutionEngine,
     GenerationPlanner,
     GenerationPromptBuilder,
     GenerationSettings,
 )
-from rag_modules.runtime import AnswerContext, GenerationSnapshot
-from rag_modules.tracing import QueryTracer
-from rag_modules.tracing_sinks import QueryTraceSink
+from rag_modules.observability.tracing import QueryTracer
+from rag_modules.observability.tracing_sinks import QueryTraceSink
 
 
 class CaptureSink(QueryTraceSink):
@@ -37,9 +38,7 @@ class OfflineCompletions:
         if not self.responses:
             raise AssertionError(f"Unexpected completion request for prompt: {prompt[:80]}")
         text = self.responses.pop(0)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
     def stream_prompt(self, **_: object):
         raise AssertionError("Offline answer pipeline smoke does not use streaming.")
@@ -75,13 +74,18 @@ class OfflineGenerationModule:
             empty_evidence_answer="empty",
         )
 
-    def generate_answer_from_context(self, answer_context):
-        answer, _trace = self.generate_answer_with_trace_from_context(answer_context)
+    def generate_answer_from_context(self, answer_context, *, control=None):
+        answer, _trace = self.generate_answer_with_trace_from_context(
+            answer_context,
+            control=control,
+        )
         return answer
 
     def generate_answer_with_trace_from_context(
         self,
         answer_context,
+        *,
+        control=None,
     ) -> tuple[str, GenerationSnapshot]:
         context = (
             answer_context
@@ -94,6 +98,7 @@ class OfflineGenerationModule:
         )
         return self.executor.generate_with_trace(
             answer_context=context.with_evidence_package(package),
+            control=control,
         )
 
 
