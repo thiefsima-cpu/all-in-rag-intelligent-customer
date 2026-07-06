@@ -1,184 +1,168 @@
-# API / Service Oriented Refactor Plan
+# API / Service Oriented Refactor Record
 
-## Goal
-
-Reshape the project around API/service entrypoints without rewriting the
-retrieval core in one step.
-
-The next architecture phase is boundary hardening around the packages that now
-exist in the codebase. It is not a literal migration to new `domain/` or
-`pipelines/` directories. Domain responsibilities stay in the existing
-subsystem packages, and offline pipeline work stays under `build_pipeline/`
-unless a future design explicitly reopens that directory-level migration.
+> Current status: superseded by
+> [architecture.md](architecture.md),
+> [app_composition_maintenance_guide.md](app_composition_maintenance_guide.md),
+> and [public_surface_retirement_plan.md](public_surface_retirement_plan.md).
+> This document records the completed API/service reorganization; do not treat
+> older package names here as a target layout.
 
 ## Current Delivery Split
 
-- `main.py`
-  - serving-only FastAPI entrypoint
-  - owns `/answers`, `/health`, `/stats`, and serving diagnostics/runtime init
-- `main_build_service.py`
-  - build-only FastAPI entrypoint
-  - owns offline build/rebuild and build diagnostics/runtime init
+GraphRAG C9 is API-only at the user-facing boundary. Console entrypoints from
+`pyproject.toml` launch FastAPI factories in `rag_modules.interfaces.api.app`:
 
-The online serving surface does not expose knowledge-base build endpoints. Build
-and rebuild operations are available through the build API only.
+- `graph-rag-api` starts the serving API through `create_serving_api_app`.
+- `graph-rag-build-api` starts the build API through `create_build_api_app`.
 
-## Target Layout
+Both API surfaces share the application assembly path through
+`create_application_system`. The serving API owns versioned answer, health,
+stats, and diagnostics routes. The build API owns versioned build-job submit,
+cancel, retry, list, detail, health, and diagnostics routes. Unversioned serving
+and build routes are retired; new clients must use `/v1`.
+
+## Current Layout
 
 ```text
-main.py
-main_build_service.py
-
 rag_modules/
   configuration/
   interfaces/
     api/
   app/
-    bootstrap.py
-    runtime.py
+    assembly.py
     system.py
+    providers/
     composition/
-    provider_components/
+    build_jobs/
     services/
-      knowledge_base_service.py
-      answer_workflow.py
+    runtime_state.py
+    runtime_view.py
+    runtime_views.py
+  contracts/
+    build_jobs/
+    runtime/
   runtime/
+    artifacts/
+    build_jobs/
   retrieval/
+  routing/
   graph/
   generation/
   query_understanding/
-  routing/
   build_pipeline/
     graph_preparation/
     document_artifacts/
   infra/
-    milvus/
-    semantic_graph_writer.py
-    resilience.py
 ```
 
-`domain/` and `pipelines/` are no longer the next target layout. They are
-deferred naming options only. Creating them should require a separate design
-that proves the benefit over the current package boundaries and includes a
-focused migration plan.
+`domain/` and `pipelines/` are not current target directories. Domain
+responsibilities stay in the existing subsystem packages, and offline build
+work stays under `build_pipeline/` unless a future design explicitly reopens
+that migration with a focused plan.
 
 ## Layer Rules
 
 1. `interfaces`
-   - Only owns API delivery surfaces.
-   - No retrieval, indexing, or model orchestration logic.
+   - Owns API delivery surfaces, DTOs, response mapping, and API-facing service
+     adapters.
+   - Does not own retrieval, indexing, provider selection, or build-job storage.
 
 2. `configuration`
-   - Owns profile loading, environment parsing, typed settings, and section
-     assembly.
-   - Runtime behavior should read configuration through typed settings instead
-     of root-level compatibility modules or ad hoc environment lookups.
+   - Owns profile loading, environment parsing, typed settings, defaults, and
+     section assembly.
+   - Runtime behavior should read typed settings instead of ad hoc environment
+     lookups.
 
 3. `app`
-   - Owns bootstrap, dependency wiring, runtime state, and use-case services.
-   - Coordinates domain modules but does not become a new god object.
+   - Owns application assembly, provider boundaries, lifecycle coordination,
+     runtime state, and use-case services.
+   - `app.providers` is the canonical provider boundary.
+   - `app.composition` is the composition root and lifecycle orchestration
+     layer.
+   - `app.build_jobs` owns build-job application use cases.
 
-4. `runtime`
-   - Owns typed cross-layer contracts, request/response models, trace models,
-     artifact ports, and runtime DTOs.
-   - Should not own orchestration, concrete adapters, or API route behavior.
+4. `contracts`
+   - Owns cross-subsystem DTOs and service contracts that should not belong to
+     a feature package.
+   - `contracts.build_jobs` owns build-job domain models, events, reducer
+     logic, repository/runner ports, and the runtime-hook executor contract.
 
-5. Domain subsystem packages
+5. `runtime`
+   - Owns runtime adapters and runtime-owned support packages, including
+     artifact storage, build-job file persistence, build-job migration,
+     in-process build-job execution, stats adapters, and snapshot utilities.
+   - Does not own HTTP route behavior or application use-case decisions.
+
+6. Domain subsystem packages
    - `query_understanding`, `routing`, `retrieval`, `graph`, and `generation`
-     own query planning, retrieval orchestration, graph reasoning, evidence,
-     and grounded generation policy.
-   - They should stay free of API delivery behavior and infrastructure-specific
-     side effects except through explicit adapters or ports.
+     own query planning, route orchestration, retrieval, graph reasoning,
+     evidence, and grounded generation behavior.
+   - They stay free of API delivery behavior and concrete infrastructure
+     choices except through explicit adapters or ports.
 
-6. `build_pipeline`
-   - Owns offline build workflows such as document artifact preparation, graph
-     preparation, indexing workflow, manifest lifecycle, and build statistics.
-   - This is the canonical pipeline package for the current architecture.
+7. `build_pipeline`
+   - Owns offline knowledge-base build workflows: graph preparation, document
+     artifact preparation, vector artifact reuse/publish/rollback, schema sync,
+     manifest lifecycle, and build statistics.
 
-7. `infra`
-   - Owns concrete adapters for Neo4j, Milvus, model clients, tracing storage,
-     and caches.
+8. `infra`
+   - Owns concrete adapters for Neo4j, Milvus, model providers, semantic graph
+     writing, tracing storage, and resilience helpers.
 
-## Mapping From Current Code
+## Current Mapping
 
-- `main.py`
-  - serving API entrypoint backed by `rag_modules.interfaces.api`.
-- `main_build_service.py`
-  - build API entrypoint backed by `rag_modules.interfaces.api`.
-- `rag_modules.configuration`
-  - typed configuration package for profiles, environment values, defaults, and
-    section loaders.
-- `rag_modules.app.system`
-  - application facade for runtime lifecycle and answering use cases.
+- `rag_modules.interfaces.api`
+  - FastAPI factories, route registration, API DTOs, response builders, error
+    handlers, security, and API-facing service adapters.
+- `rag_modules.app.assembly`
+  - Single application assembly entry and default build-job application
+    assembly hook.
+- `rag_modules.app.providers`
+  - Canonical provider surface: infrastructure, build pipeline,
+    retrieval runtime, top-level generation module, and application services.
 - `rag_modules.app.composition`
-  - composition-root helpers for runtime assembly and lifecycle wiring.
-- `rag_modules.app.provider_components`
-  - provider wiring internals used by assembly code.
+  - Runtime factories, lifecycle services, provider resolution, runtime state
+    store, runtime manager, and build-job adapter composition.
+- `rag_modules.app.build_jobs`
+  - Build-job application service over repository and runner ports.
+- `rag_modules.contracts.build_jobs`
+  - Stable build-job domain and port contracts.
+- `rag_modules.runtime.build_jobs`
+  - V3 file repository, V2-to-V3 migration, interprocess locks, serialization,
+    leases, heartbeat renewal, and local in-process runner.
 - `rag_modules.app.services`
-  - application use-case services, answer workflow, lifecycle diagnostics, and
-    runtime shutdown behavior.
-- `rag_modules.runtime`
-  - shared typed contracts and runtime models.
-- `rag_modules.query_understanding`, `rag_modules.routing`,
-  `rag_modules.retrieval`, `rag_modules.graph`, and `rag_modules.generation`
-  - canonical domain subsystem packages; keep behavior here instead of moving
-    it under a new `domain/` tree.
+  - Application-level answer workflow, knowledge-base service, diagnostics,
+    shutdown, and trace adapters.
 - `rag_modules.build_pipeline`
-  - canonical offline pipeline package; keep indexing and build workflow here
+  - Canonical offline pipeline package; keep indexing and build workflow here
     instead of moving it under a new `pipelines/` tree.
 - `rag_modules.infra`
-  - canonical infrastructure package for concrete storage, graph, model,
+  - Canonical infrastructure package for concrete storage, graph, model,
     tracing, and vector-store adapters.
 
-## Batch Plan
+## Retired Names
 
-### Batch 1 - Complete
+The following names are completed historical stages, not compatibility
+surfaces:
 
-- Introduce `interfaces/` and `app/`.
-- Create `SystemRuntime`, `GraphRAGBootstrapper`, and the new
-  `AdvancedGraphRAGSystem`.
-- Move knowledge-base lifecycle and question-answer orchestration into
-  `app/services/`.
-- Keep old import paths as compatibility wrappers.
+- `main.py`, `main_build_service.py`, `main_qa.py`, and `main_build_kb.py`.
+- `rag_modules.interfaces.cli_console`.
+- `rag_modules.app.runtime`.
+- `rag_modules.app.provider_components`.
+- `rag_modules.interfaces.api.build_job_store`.
+- `rag_modules.interfaces.api.build_jobs`.
+- `ServingRuntimeRefreshService`.
+- Build and serving runtime assembler shims.
+- Late-migration import facades listed in
+  [public_surface_retirement_plan.md](public_surface_retirement_plan.md).
 
-### Batch 2 - Current Next Phase
+Do not recreate these as forwarding wrappers. Code that needs the old
+responsibility should choose the current package from the mapping above.
 
-- Harden the existing domain subsystem packages instead of introducing
-  `domain/`.
-- Keep query planning and semantic analysis in `query_understanding` and
-  `routing`.
-- Keep retrieval orchestration in `retrieval` and graph reasoning in `graph`.
-- Keep generation policy and execution in `generation`.
-- Pull remaining concrete Neo4j, Milvus, model, tracing, and cache integration
-  behind `infra/` adapters or explicit ports.
-- Keep shared cross-layer models in `runtime` or package-local `contracts`
-  modules rather than ad hoc dictionaries.
+## Historical Outcome
 
-### Batch 3 - Pipeline Hardening
-
-- Treat `build_pipeline/` as the canonical offline pipeline package instead of
-  introducing `pipelines/indexing/`.
-- Keep online serving runtime and offline build runtime separate.
-- Keep build workflow dependencies behind build-pipeline ports where practical.
-- Introduce explicit request/response DTOs for future API handlers.
-
-## Batch 1 Design Notes
-
-- `interfaces.api`
-  - owns FastAPI application factories, routes, DTOs, and service adapters.
-- `app.bootstrap`
-  - assembles runtime dependencies.
-- `app.runtime`
-  - stores initialized modules and readiness state.
-- `app.system`
-  - exposes stable application methods for API services.
-- `app.services.*`
-  - contain use-case logic instead of lifecycle logic living in the facade.
-
-## Compatibility Policy
-
-- CLI imports and entrypoints are retired; there is no compatibility alias for
-  `rag_modules.interfaces.cli_console`, `main_qa.py`, or `main_build_kb.py`.
-- New code should import from `rag_modules.app.*` and `rag_modules.interfaces.*`
-  first.
-- Once batch 2 and 3 settle, deprecated wrappers can be removed.
+The original reorganization goal was to separate API delivery, application
+assembly, runtime lifecycle, domain subsystems, build workflows, and concrete
+infrastructure without a broad rewrite. That migration is complete. Current
+work should maintain the converged boundaries documented in
+`docs/architecture.md` and protected by `tests/test_public_surface_boundaries.py`.

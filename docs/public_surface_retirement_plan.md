@@ -55,8 +55,12 @@ their code comments should use canonical facade or export-surface language.
 Current examples include:
 
 - `rag_modules.interfaces.api.answer_models` for answer API DTOs.
-- `rag_modules.interfaces.api.build_job_store` for build-job persistence
-  components used by API services and tests.
+- `rag_modules.contracts.build_jobs` for build-job domain models, events,
+  reducer logic, and repository/runner ports.
+- `rag_modules.app.build_jobs` for the build-job application service and its
+  canonical contract exports.
+- `rag_modules.runtime.build_jobs` for file-backed repository, migration, and
+  in-process runner adapters selected by application composition.
 - `rag_modules.routing.execution_strategies` for route execution strategies.
 - `rag_modules.infra.milvus_index_construction` for Milvus index construction.
 - `rag_modules.graph.data_preparation` for graph data-preparation imports.
@@ -110,6 +114,7 @@ paths are not alternate architecture paths.
 | --- | --- | --- | --- |
 | unversioned HTTP API aliases | `/v1` serving and build routes | unversioned HTTP API aliases are retired | API version `1.0.0` |
 | `rag_modules.routing.IntelligentQueryRouter` | `rag_modules.routing.RoutingWorkflowService` or the routing workflow protocol | `rag_modules.routing.IntelligentQueryRouter` is retired | package version `0.3.0` |
+| `rag_modules.interfaces.api.build_job_store` and `rag_modules.interfaces.api.build_jobs` | `rag_modules.contracts.build_jobs`, `rag_modules.app.build_jobs`, and `rag_modules.runtime.build_jobs` by responsibility | API-owned build-job registry/store facades are retired after the ports/events cutover | package version `0.3.0` |
 
 HTTP clients must use `/v1`. Python routing code must use
 `RoutingWorkflowService` or the routing workflow protocol. Tests may mention the
@@ -159,6 +164,15 @@ replacement policy.
   and build-driven refresh semantics belong to
   `ServingRuntimeLifecycleService`; build/rebuild flows should reach them
   through `BuildRuntimeLifecycleService`.
+- Build-job internals must not import or recreate
+  `rag_modules.interfaces.api.build_job_store` or
+  `rag_modules.interfaces.api.build_jobs`. Use
+  `rag_modules.contracts.build_jobs` for domain events, models, reducer logic,
+  ports, and safe projections; `rag_modules.app.build_jobs` for application
+  use cases; and `rag_modules.runtime.build_jobs` for concrete V3 file
+  persistence, migration, leases, and the in-process runner. FastAPI services
+  should depend on `BuildJobApplicationService`, not storage or executor
+  adapters.
 
 ## Retired Facade Rule
 
@@ -226,6 +240,10 @@ grouped runtime views.
 - `ServingRuntimeRefreshService` retired in favor of
   `ServingRuntimeLifecycleService.refresh_from_build` and
   `prepare_existing`.
+- `rag_modules.interfaces.api.build_job_store` and
+  `rag_modules.interfaces.api.build_jobs` retired in favor of
+  `rag_modules.contracts.build_jobs`, `rag_modules.app.build_jobs`, and
+  `rag_modules.runtime.build_jobs`.
 
 ## 0.2.0 Compatibility Note
 

@@ -17,6 +17,16 @@ entry is `create_application_system`. The assembler hides provider and
 bootstrapper internals behind a small `ApplicationContainer`, while
 `SystemRuntimeManager` owns the active build and serving runtime state.
 
+The provider boundary is intentionally narrow. `RuntimeProviderSurface` exposes
+the current facets only: `infrastructure`, `build_pipeline`,
+`retrieval_runtime`, top-level `provide_generation_module`, and `services`.
+Query understanding belongs to the retrieval-runtime facet because routing
+consumes both; diagnostics, stats, shutdown, knowledge-base, and answer
+workflow construction belong to `services`; lifecycle transitions stay in
+`rag_modules/app/composition`. Do not recreate the retired
+`rag_modules/app/provider_components` package or separate
+`query_understanding`, `lifecycle`, or `diagnostics` provider facets.
+
 ```mermaid
 flowchart TB
   subgraph Entry["API entrypoints"]
@@ -106,6 +116,9 @@ Primary code paths:
 - `rag_modules/app/assembly.py` creates the application container and facade.
 - `rag_modules/app/composition/system_composer.py` resolves providers,
   bootstrappers, lifecycle services, diagnostics, shutdown, and facade support.
+- `rag_modules/app/providers/contracts.py` defines the canonical provider
+  facets, with default implementations split across
+  `rag_modules/app/providers/`.
 - `rag_modules/app/composition/runtime_manager.py` coordinates build and serving
   runtime lifecycle operations.
 - `rag_modules/app/composition/build_runtime_factory.py` and
@@ -207,9 +220,11 @@ Primary code paths:
 
 ## Build Workflow State Machine
 
-The persisted build-job statuses are `queued`, `running`, `cancel_requested`,
-`succeeded`, `failed`, and `cancelled`. The other states below describe HTTP
-submission outcomes or internal work inside a running job.
+Internal persisted build-job snapshots can be `queued`, `claimed`, `running`,
+`cancel_requested`, `succeeded`, `failed`, `cancelled`, or `interrupted`.
+`claimed` is an internal lease state returned publicly as `queued`, and
+`interrupted` is returned publicly as `failed`. The other states below describe
+HTTP submission outcomes or internal work inside a running job.
 
 ```mermaid
 stateDiagram-v2
@@ -218,13 +233,14 @@ stateDiagram-v2
   Submitted --> Replayed: same Idempotency-Key and same job type
   Submitted --> InvalidRequest: invalid Idempotency-Key
   Submitted --> Conflict: key reused for another job type
-  Submitted --> Conflict: active build job or flight lock
-  Submitted --> Queued: create job record and acquire flight lock
+  Submitted --> Conflict: active build job
+  Submitted --> Queued: create job record and schedule runner
 
-  Queued --> Running: BuildJobTask starts
-  Queued --> Cancelled: runner cancels queued future
-  Queued --> Failed: restart recovery when flight lock is gone
-  Running --> Failed: restart recovery when flight lock is gone
+  Queued --> Claimed: runner claims lease
+  Queued --> CancelRequested: POST /v1/jobs/{job_id}/cancel
+  Claimed --> Running: InProcessBuildJobRunner starts
+  Claimed --> Interrupted: restart recovery when lease expires
+  Running --> Interrupted: restart recovery when lease expires
   Running --> CancelRequested: POST /v1/jobs/{job_id}/cancel
   CancelRequested --> Cancelled: progress checkpoint observes control
 
@@ -262,6 +278,7 @@ stateDiagram-v2
 
   Running --> Succeeded: mark_succeeded with diagnostics and stats
   Running --> Failed: exception, rollback/discard vector build, mark_failed
+  Interrupted --> RetrySubmitted: POST /v1/jobs/{job_id}/retry
   Failed --> RetrySubmitted: POST /v1/jobs/{job_id}/retry
   Cancelled --> RetrySubmitted: POST /v1/jobs/{job_id}/retry
   RetrySubmitted --> Queued: create new job with retry_of_job_id
@@ -270,6 +287,7 @@ stateDiagram-v2
   InvalidRequest --> [*]: 400 INVALID_REQUEST
   Conflict --> [*]: 409 BUILD_JOB_CONFLICT
   Succeeded --> [*]
+  Interrupted --> [*]
   Failed --> [*]
   Cancelled --> [*]
 ```
@@ -280,16 +298,28 @@ Primary code paths:
   submit, cancel, retry, list, and detail routes; unversioned HTTP aliases are
   retired.
 - `rag_modules/interfaces/api/services/build.py` is the thin HTTP-facing
-  orchestration boundary. It resolves request IDs, maps runner exceptions to
-  API errors, and supplies runtime hooks.
-- `rag_modules/interfaces/api/build_jobs/runner.py` owns submission,
-  cancellation, retry creation, progress events, executor backend lifecycle,
-  future/control tracking, and `BuildJobTask` execution.
-- `rag_modules/interfaces/api/build_jobs/repository.py` owns durable job
-  records, retry links, cancellation states, idempotency indexes, retention,
-  recovery, pagination, and corruption warnings.
+  boundary. It resolves request IDs, maps typed build-job exceptions to API
+  errors, and delegates use cases to `BuildJobApplicationService`.
+- `rag_modules/app/assembly.py` exposes `assemble_build_job_application`;
+  `rag_modules/app/composition/build_jobs.py` is the only production
+  composition point that chooses the V3 file repository, migrator,
+  `BuildJobExecutor`, and in-process runner.
+- `rag_modules/contracts/build_jobs/` owns the stable build-job domain models,
+  versioned events, reducer, repository/runner ports, safe public projection,
+  and runtime-hook executor contract.
+- `rag_modules/app/build_jobs/service.py` owns application use cases:
+  submit/replay, list/read, cancel, retry, startup recovery, diagnostics, and
+  shutdown. It depends on `BuildJobRepositoryPort` and `BuildJobRunnerPort`,
+  not concrete storage or thread-pool details.
+- `rag_modules/runtime/build_jobs/` owns concrete adapters: V3 event-envelope
+  file persistence, V2-to-V3 migration, interprocess locks, lease records,
+  heartbeat renewal, and the local `InProcessBuildJobRunner`.
 - `rag_modules/app/composition/build_runtime_lifecycle_service.py` executes
   build/rebuild and refreshes serving runtime state from a completed build.
 - `rag_modules/build_pipeline/knowledge_base_workflow.py` owns artifact reuse,
   rebuild, vector publish/rollback, schema sync, manifest transitions, and
   build statistics.
+- The old `rag_modules/interfaces/api/build_job_store.py` and
+  `rag_modules/interfaces/api/build_jobs/` facades are retired. Do not
+  reintroduce them as import aliases; choose the contract, app, or runtime
+  build-job package according to the responsibility above.
