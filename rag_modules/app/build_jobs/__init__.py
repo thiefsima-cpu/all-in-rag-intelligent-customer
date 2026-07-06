@@ -51,10 +51,12 @@ from .models import (
 )
 from .ports import BuildJobRepositoryPort, BuildJobRunnerPort
 from .reducer import reduce_build_job
+from .service import BuildJobApplicationService
 
 __all__ = [
     "BUILD_JOB_EVENT_SCHEMA_VERSION",
     "BUILD_JOB_LOG_LIMIT",
+    "BuildJobApplicationService",
     "BuildJobConcurrentUpdateError",
     "BuildJobConflictError",
     "BuildJobDispatchError",
