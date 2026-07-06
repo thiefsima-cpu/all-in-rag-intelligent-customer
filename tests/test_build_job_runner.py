@@ -257,7 +257,12 @@ class BuildJobRunnerTests(unittest.TestCase):
                 self.assertTrue(system.started.wait(timeout=1.0))
 
                 cancel_result = service.cancel(submitted.job_id)
-                cancelled = _wait_for_status(service, submitted.job_id, BuildJobStatus.CANCELLED)
+                cancelled = _wait_for_status(
+                    service,
+                    submitted.job_id,
+                    BuildJobStatus.CANCELLED,
+                    timeout=5.0,
+                )
             finally:
                 runner.shutdown()
 

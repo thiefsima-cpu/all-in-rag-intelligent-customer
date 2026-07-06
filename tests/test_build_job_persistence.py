@@ -238,9 +238,7 @@ class BuildJobPersistenceTests(unittest.TestCase):
             first = service.submit_build_job(idempotency_key="client-secret-key")
             completed = _wait_for_service_job_status(service, first["job_id"], "succeeded")
             replayed = service.submit_build_job(idempotency_key="client-secret-key")
-            stored_text = _repository_job_path(path, first["job_id"]).read_text(
-                encoding="utf-8"
-            )
+            stored_text = _repository_job_path(path, first["job_id"]).read_text(encoding="utf-8")
             service.shutdown()
 
             self.assertEqual(completed["job_id"], first["job_id"])

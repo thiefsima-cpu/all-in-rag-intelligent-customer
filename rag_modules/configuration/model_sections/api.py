@@ -40,8 +40,7 @@ class ApiSettings(ConfigSection):
             )
         if self.build_job_heartbeat_seconds >= self.build_job_lease_seconds:
             raise ValueError(
-                "api.build_job_heartbeat_seconds must be less than "
-                "api.build_job_lease_seconds."
+                "api.build_job_heartbeat_seconds must be less than api.build_job_lease_seconds."
             )
         return self
 

@@ -28,7 +28,7 @@ def compose_build_job_application(
     if api_settings.build_job_runner_backend != "in_process":
         raise ValueError(
             f"Unsupported build job runner backend: {api_settings.build_job_runner_backend!r}"
-    )
+        )
     store_path = default_build_job_store_path(config)
     runtime_build_jobs = _runtime_build_jobs_module()
     runtime_build_jobs.BuildJobStoreMigrator(store_path, now=_utc_now).migrate()
