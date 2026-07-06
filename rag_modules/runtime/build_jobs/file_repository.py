@@ -85,6 +85,7 @@ class FileBuildJobRepository:
         self._store_lock_path = f"{self.path}.lock"
         self._lock = threading.RLock()
         self._warnings: list[BuildJobRepositoryWarning] = []
+        self._ensure_v3_repository_or_empty()
         self._ensure_directories()
         self._write_metadata_if_missing()
 
@@ -306,6 +307,26 @@ class FileBuildJobRepository:
         os.makedirs(self.jobs_dir, exist_ok=True)
         os.makedirs(self.idempotency_dir, exist_ok=True)
         os.makedirs(self.leases_dir, exist_ok=True)
+
+    def _ensure_v3_repository_or_empty(self) -> None:
+        if not os.path.exists(self.repository_dir):
+            return
+        if not os.path.exists(self.metadata_path):
+            if any(Path(self.repository_dir).iterdir()):
+                raise BuildJobRepositoryError(
+                    "Build job store must be migrated to V3 before repository use."
+                )
+            return
+        try:
+            with open(self.metadata_path, "r", encoding="utf-8") as file:
+                metadata = json.load(file)
+            if (
+                not isinstance(metadata, Mapping)
+                or int(metadata.get("schema_version", 0)) != BUILD_JOB_ENVELOPE_SCHEMA_VERSION
+            ):
+                raise ValueError
+        except (OSError, TypeError, ValueError) as exc:
+            raise BuildJobRepositoryError("Invalid build job V3 metadata.") from exc
 
     def _write_metadata_if_missing(self) -> None:
         if os.path.exists(self.metadata_path):
