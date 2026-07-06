@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,9 +13,13 @@ from typing import Any
 
 from rag_modules.app.build_jobs import (
     BuildJobApplicationService,
+    BuildJobEvent,
+    BuildJobEventType,
     BuildJobExecutor,
     BuildJobId,
+    BuildJobLease,
     BuildJobRuntimeHooks,
+    BuildJobSnapshot,
     BuildJobStatus,
 )
 from rag_modules.runtime.build_jobs import FileBuildJobRepository, InProcessBuildJobRunner
@@ -151,15 +156,45 @@ class _BlockedProgressSystem(_RunnerSystem):
             self.finished.set()
 
 
+class _CancelBeforeProgressApplyRepository:
+    def __init__(self, inner: FileBuildJobRepository) -> None:
+        self.inner = inner
+        self.cancel: Callable[[BuildJobId], BuildJobSnapshot] | None = None
+        self.cancel_triggered = threading.Event()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    def apply(
+        self,
+        event: BuildJobEvent,
+        *,
+        expected_revision: int,
+        lease: BuildJobLease | None = None,
+    ) -> BuildJobSnapshot:
+        if (
+            event.event_type is BuildJobEventType.PROGRESS_RECORDED
+            and not self.cancel_triggered.is_set()
+        ):
+            self.cancel_triggered.set()
+            assert self.cancel is not None
+            self.cancel(event.job_id)
+        return self.inner.apply(event, expected_revision=expected_revision, lease=lease)
+
+
 def _stack(
     root: Path,
     system: _RunnerSystem,
     *,
     clock: MutableClock | None = None,
     heartbeat_trigger: threading.Event | None = None,
-) -> tuple[FileBuildJobRepository, InProcessBuildJobRunner, BuildJobApplicationService]:
+    repository_factory: Callable[[FileBuildJobRepository], Any] | None = None,
+) -> tuple[Any, InProcessBuildJobRunner, BuildJobApplicationService]:
     resolved_clock = clock or MutableClock()
     repository = FileBuildJobRepository(str(root / "build_jobs.json"), now=resolved_clock.now)
+    build_job_repository = (
+        repository_factory(repository) if repository_factory is not None else repository
+    )
     hooks = BuildJobRuntimeHooks(
         system=system,
         lifecycle_operation=_lifecycle_operation,
@@ -175,7 +210,7 @@ def _stack(
     )
     executor = BuildJobExecutor(hooks=hooks)
     runner = InProcessBuildJobRunner(
-        repository=repository,
+        repository=build_job_repository,
         executor=executor,
         max_workers=1,
         worker_id="test-worker",
@@ -184,12 +219,12 @@ def _stack(
     )
     ids = iter(["a" * 32, "b" * 32, "c" * 32])
     service = BuildJobApplicationService(
-        repository=repository,
+        repository=build_job_repository,
         runner=runner,
         new_id=lambda: next(ids),
         now=resolved_clock.now,
     )
-    return repository, runner, service
+    return build_job_repository, runner, service
 
 
 def _wait_for_status(
@@ -269,6 +304,40 @@ class BuildJobRunnerTests(unittest.TestCase):
         self.assertIn(
             cancel_result.status, {BuildJobStatus.CANCEL_REQUESTED, BuildJobStatus.CANCELLED}
         )
+        self.assertEqual(cancelled.message, "Build cancelled.")
+        self.assertIn("Build cancellation requested.", cancelled.logs)
+        self.assertIn("Build cancelled.", cancelled.logs)
+
+    def test_cancel_race_during_progress_cas_finishes_cancelled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            system = _BlockedProgressSystem()
+            repository, runner, service = _stack(
+                Path(temp_dir),
+                system,
+                repository_factory=_CancelBeforeProgressApplyRepository,
+            )
+            assert isinstance(repository, _CancelBeforeProgressApplyRepository)
+            repository.cancel = service.cancel
+            try:
+                service.startup()
+                submitted = service.submit(
+                    rebuild=False,
+                    request_id="cancel-race-request",
+                    idempotency_key="",
+                )
+                self.assertTrue(system.started.wait(timeout=1.0))
+
+                system.allow_progress.set()
+                cancelled = _wait_for_status(
+                    service,
+                    submitted.job_id,
+                    BuildJobStatus.CANCELLED,
+                    timeout=5.0,
+                )
+            finally:
+                runner.shutdown()
+
+        self.assertTrue(repository.cancel_triggered.is_set())
         self.assertEqual(cancelled.message, "Build cancelled.")
         self.assertIn("Build cancellation requested.", cancelled.logs)
         self.assertIn("Build cancelled.", cancelled.logs)

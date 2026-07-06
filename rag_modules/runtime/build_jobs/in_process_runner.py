@@ -163,7 +163,9 @@ class InProcessBuildJobRunner:
             handle.snapshot = current
         except RequestCancelled:
             self._append_cancelled(handle)
-        except (BuildJobLeaseLostError, BuildJobConcurrentUpdateError):
+        except BuildJobConcurrentUpdateError:
+            self._append_cancelled_if_requested(handle)
+        except BuildJobLeaseLostError:
             return
         except Exception:
             self._append_failed(handle)
@@ -197,6 +199,17 @@ class InProcessBuildJobRunner:
             handle.snapshot = cancelled
         except (BuildJobLeaseLostError, BuildJobConcurrentUpdateError):
             return
+
+    def _append_cancelled_if_requested(self, handle: _RunningJob) -> None:
+        latest = self._repository.get(handle.lease.job_id)
+        if latest is None:
+            return
+        handle.snapshot = latest
+        handle.lease = self._lease_for_revision(handle.lease, latest.revision)
+        if latest.status is BuildJobStatus.CANCELLED:
+            return
+        if latest.status is BuildJobStatus.CANCEL_REQUESTED:
+            self._append_cancelled(handle)
 
     def _append_failed(self, handle: _RunningJob) -> None:
         current = self._repository.get(handle.lease.job_id) or handle.snapshot
