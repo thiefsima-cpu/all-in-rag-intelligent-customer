@@ -31,6 +31,12 @@ PublicSurfaceBoundaryTestCase = h.PublicSurfaceBoundaryTestCase
 class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
     """Public manifest, version governance, and retired facade boundaries."""
 
+    def test_package_version_parser_accepts_release_candidate_and_development_versions(
+        self,
+    ) -> None:
+        self.assertEqual(self._version_tuple("0.4.0rc1"), (0, 4, 0))
+        self.assertEqual(self._version_tuple("0.4.0.dev0"), (0, 4, 0))
+
     def assert_document_contains_any(
         self,
         document: str,
