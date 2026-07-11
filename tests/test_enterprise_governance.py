@@ -122,6 +122,20 @@ def test_branch_governance_documents_promotion_and_synchronization() -> None:
     assert "previous final tag" in governance
 
 
+def test_release_workflow_validates_and_archives_without_pypi_publish() -> None:
+    workflow = _read(".github/workflows/release.yml")
+
+    assert "tags:" in workflow
+    assert '"v*"' in workflow
+    assert "scripts/validate_release_tag.py" in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "scripts/verify_distribution_metadata.py" in workflow
+    assert "anchore/sbom-action" in workflow
+    assert "actions/upload-artifact" in workflow
+    assert "pypa/gh-action-pypi-publish" not in workflow
+    assert "id-token: write" not in workflow
+
+
 def test_agent_config_template_does_not_contain_credentials() -> None:
     gitignore = _read(".gitignore")
     template = json.loads(_read("agent/config.example.json"))
