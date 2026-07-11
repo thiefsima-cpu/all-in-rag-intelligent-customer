@@ -279,25 +279,28 @@ the `0.4.0` cycle.
 
 Neither branch is created from an existing `codex/*` branch.
 
-### 8.3 Migrate the Latest Refactor
+### 8.3 Activate Governance
+
+1. Create the three branch rulesets in `evaluate` mode.
+2. Exercise valid and invalid promotion PR paths.
+3. Enable strict branch-flow enforcement on `development` without adding business changes.
+4. Promote that governance-only change `development` to `production` to `main` with merge commits.
+5. Confirm all required check names are stable and visible on both protected targets.
+6. Switch the three branch rulesets from `evaluate` to `active`.
+7. Re-run the path tests against active enforcement.
+
+### 8.4 Migrate the Latest Refactor
+
+Only after governance is active on all three long-lived branches:
 
 1. Extract from `6d1995b9bb816a14887ee125e043e702e2f2dedb` only the `rag_modules/` module moves and
    `tests/test_dependency_isolation.py`.
 2. Exclude `agent/config.json` and every other local credential file.
 3. Apply the extracted change to `development` as a new clean commit.
 4. Set the development version to `0.4.0.dev0` in a focused commit.
-5. Enable strict branch-flow enforcement on `development`.
-6. Run focused dependency-isolation tests, the complete local gate, and Gitleaks.
-7. Push `development` and require its GitHub CI to pass.
-
-### 8.4 Activate Governance
-
-1. Create the three branch rulesets in `evaluate` mode.
-2. Exercise valid and invalid promotion PR paths.
-3. Promote the governance changes `development` to `production` to `main` with merge commits.
-4. Confirm all required check names are stable and visible on both protected targets.
-5. Switch the three branch rulesets from `evaluate` to `active`.
-6. Re-run the path tests against active enforcement.
+5. Run focused dependency-isolation tests, the complete local gate, and Gitleaks.
+6. Push `development` and require its GitHub CI to pass.
+7. Do not promote this business refactor to `production` until the first `0.4.0` RC is prepared.
 
 ### 8.5 Retire Obsolete Branches
 
