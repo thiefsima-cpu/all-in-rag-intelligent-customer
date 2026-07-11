@@ -4,7 +4,7 @@
 
 **Goal:** Establish `development`, `production`, and `main` as governed long-lived branches, add reproducible CI/release controls, and migrate the latest refactor safely to `development` without changing the existing `0.3.0rc1` release.
 
-**Architecture:** Bootstrap repository-side policy and tests on `main`, create clean long-lived branches from that verified baseline, activate GitHub rulesets through an evaluate phase, then migrate the local refactor as a clean development-only commit. Promotion merge commits are synchronized back to their source branches so all three branches retain shared ancestry.
+**Architecture:** Bootstrap repository-side policy and tests on `main`, create clean long-lived branches from that verified baseline, create GitHub rulesets disabled before the first promotion and activate them after verified promotion, then migrate the local refactor as a clean development-only commit. Promotion merge commits are synchronized back to their source branches so all three branches retain shared ancestry.
 
 **Tech Stack:** Python 3.11, pytest, GitHub Actions, GitHub repository rulesets REST API, PowerShell, Git, PEP 440 package versions, setuptools/build, CycloneDX SBOM.
 
@@ -248,7 +248,8 @@ git commit -m "feat: enforce governed branch flows"
 
 **Interfaces:**
 - Consumes: GitHub repository rulesets REST API request schema.
-- Produces: three version-controlled target-state payloads used first with `evaluate`, then `active` enforcement.
+- Produces: three version-controlled active target-state payloads; bootstrap creation temporarily
+  overrides enforcement to `disabled`, then activation applies the committed `active` state.
 
 - [ ] **Step 1: Write the failing manifest tests**
 
@@ -1152,11 +1153,12 @@ git commit -m "ci: verify protected release artifacts"
 
 **Files:**
 - No additional repository file changes.
-- External state: governance PR, `production`, `development`, and three evaluate-mode rulesets.
+- External state: governance PR, `production`, `development`, and three disabled rulesets.
 
 **Interfaces:**
 - Consumes: all repository-side governance commits from Tasks 1–5.
-- Produces: a verified governance baseline on `main`, two clean branches at the same SHA, and ruleset IDs in `evaluate` mode.
+- Produces: a verified governance baseline on `main`, two clean branches at the same SHA, and
+  ruleset IDs in `disabled` mode.
 
 - [ ] **Step 1: Run the complete local gate and verify a clean diff**
 
@@ -1218,7 +1220,10 @@ git rev-parse origin/main origin/production origin/development
 
 Expected: all three printed SHAs are identical.
 
-- [ ] **Step 5: Create the three rulesets in evaluate mode from the committed manifests**
+- [x] **Step 5: Create the three rulesets in disabled mode from the committed manifests**
+
+GitHub returned HTTP 422 for `evaluate` because that enforcement level is unavailable on the
+repository's plan. The user approved the one-time `disabled` to `active` alternative.
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -1242,14 +1247,15 @@ foreach ($path in @(
 )) {
   $payload = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
   if ($existing.name -contains $payload.name) { throw "ruleset already exists: $($payload.name)" }
-  $payload.enforcement = "evaluate"
+  $payload.enforcement = "disabled"
   $body = $payload | ConvertTo-Json -Depth 20
   $created = Invoke-RestMethod -Method Post -Headers $headers -Uri $endpoint -Body $body -ContentType "application/json"
   [pscustomobject]@{ id = $created.id; name = $created.name; enforcement = $created.enforcement }
 }
 ```
 
-Expected: `Protect main`, `Protect production`, and `Protect development` are returned with unique IDs and `evaluate` enforcement. The existing `Protect release tags v*` remains active.
+Expected: `Protect main`, `Protect production`, and `Protect development` are returned with unique
+IDs and `disabled` enforcement. The existing `Protect release tags v*` remains active.
 
 - [ ] **Step 6: Record the verified baseline**
 
@@ -1270,7 +1276,7 @@ Expected: all branch refs exist; `v0.3.0-rc.1` is unchanged.
 - External state: promotion/synchronization PRs and active rulesets.
 
 **Interfaces:**
-- Consumes: report-only branch policy and evaluate-mode rulesets.
+- Consumes: report-only branch policy and disabled rulesets.
 - Produces: strict policy on all branches, synchronized merge ancestry, and active enforcement.
 
 - [ ] **Step 1: Switch to development and write the failing strict-mode assertion**
