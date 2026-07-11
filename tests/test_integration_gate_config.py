@@ -38,6 +38,16 @@ def test_default_policy_has_three_unique_dependency_covering_cases() -> None:
     }
     assert all(case.generation_required for case in policy.live_cases)
 
+    combined_case = next(
+        case for case in policy.live_cases if case.case_id == "combined_constrained_recommendation"
+    )
+    assert combined_case.required_sources == ["traditional", "graph_rag"]
+
+    combined_case = next(
+        case for case in policy.live_cases if case.case_id == "combined_constrained_recommendation"
+    )
+    assert combined_case.required_sources == ["traditional", "graph_rag"]
+
 
 def test_policy_rejects_duplicate_live_case_ids() -> None:
     payload = _default_policy_payload()

@@ -9,6 +9,7 @@ from rag_modules.app.composition import (
     AdvancedGraphRAGBootstrapperSurface,
     AdvancedGraphRAGSystemComponents,
     AdvancedGraphRAGSystemComposer,
+    AdvancedGraphRAGSystemOverrides,
     RuntimeComponentProviderResolver,
     RuntimeLifecycleServiceBundle,
     RuntimeProviderSurface,
@@ -16,10 +17,13 @@ from rag_modules.app.composition import (
     RuntimeReadinessService,
     RuntimeStateStore,
     SystemAnsweringService,
+    SystemBootstrapperOverrides,
     SystemBootstrapperSurfaceComposer,
+    SystemFacadeOverrides,
     SystemFacadeSupport,
     SystemRuntimeInfrastructureComposer,
     SystemRuntimeManager,
+    SystemRuntimeOverrides,
 )
 from rag_modules.app.providers import (
     DefaultRuntimeProvider,
@@ -266,6 +270,18 @@ def _serving_runtime(config) -> ServingRuntime:
     )
 
 
+def _system_bootstrapper_overrides(
+    build_runtime: BuildRuntime,
+    serving_runtime: ServingRuntime,
+) -> AdvancedGraphRAGSystemOverrides:
+    return AdvancedGraphRAGSystemOverrides(
+        bootstrapper=SystemBootstrapperOverrides(
+            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
+            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+        )
+    )
+
+
 def _provider_stub(name: str = "provider"):
     def _stats_access(*, config, existing=None):
         del config, existing
@@ -457,8 +473,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = AdvancedGraphRAGSystemComposer().compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertIsInstance(components.operations_service, SystemRuntimeManager)
@@ -477,6 +492,63 @@ class AppSystemRuntimeTests(unittest.TestCase):
             components.facade_support.runtime_state_store,
             components.runtime_state_store,
         )
+
+    def test_system_composer_accepts_grouped_override_bundle(self) -> None:
+        build_runtime = _build_runtime()
+        serving_runtime = _serving_runtime(build_runtime.config)
+        runtime_state_store = RuntimeStateStore()
+        operations_service = SimpleNamespace(name="operations-service")
+        answering_service = SimpleNamespace(name="answering-service")
+        facade_support = SimpleNamespace(name="facade-support")
+
+        components = AdvancedGraphRAGSystemComposer().compose(
+            config=build_runtime.config,
+            overrides=AdvancedGraphRAGSystemOverrides(
+                bootstrapper=SystemBootstrapperOverrides(
+                    build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
+                    serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+                ),
+                runtime=SystemRuntimeOverrides(
+                    runtime_state_store=runtime_state_store,
+                ),
+                facade=SystemFacadeOverrides(
+                    operations_service=operations_service,
+                    answering_service=answering_service,
+                    facade_support=facade_support,
+                ),
+            ),
+        )
+
+        self.assertIs(components.runtime_state_store, runtime_state_store)
+        self.assertIs(components.operations_service, operations_service)
+        self.assertIs(components.answering_service, answering_service)
+        self.assertIs(components.facade_support, facade_support)
+
+    def test_system_composer_rejects_legacy_flat_overrides(self) -> None:
+        build_runtime = _build_runtime()
+        serving_runtime = _serving_runtime(build_runtime.config)
+
+        with self.assertRaisesRegex(TypeError, "build_bootstrapper"):
+            AdvancedGraphRAGSystemComposer().compose(
+                config=build_runtime.config,
+                build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
+                serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            )
+
+    def test_legacy_system_composer_adapter_accepts_flat_overrides(self) -> None:
+        from tests.system_composer_compat import LegacySystemComposerAdapter
+
+        build_runtime = _build_runtime()
+        serving_runtime = _serving_runtime(build_runtime.config)
+
+        components = LegacySystemComposerAdapter().compose(
+            config=build_runtime.config,
+            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
+            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+        )
+
+        self.assertIsInstance(components.operations_service, SystemRuntimeManager)
+        self.assertIsInstance(components.answering_service, SystemAnsweringService)
 
     def test_system_answering_service_does_not_refresh_runtime_after_answer(self) -> None:
         answer_workflow = SimpleNamespace(
@@ -543,7 +615,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         )
         composer = SystemBootstrapperSurfaceComposer()
 
-        surface = composer.compose(bootstrapper=bootstrapper)
+        surface = composer.compose(overrides=SystemBootstrapperOverrides(bootstrapper=bootstrapper))
 
         self.assertIsInstance(surface, AdvancedGraphRAGBootstrapperSurface)
         self.assertIs(surface.provider_surface.provider, provider)
@@ -582,7 +654,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
         composer = AdvancedGraphRAGSystemComposer()
 
         surface = composer.resolve_bootstrapper_surface(
-            bootstrapper=bootstrapper,
+            overrides=SystemBootstrapperOverrides(bootstrapper=bootstrapper),
             bootstrapper_surface_composer=_StubBootstrapperSurfaceComposer(),
         )
 
@@ -651,8 +723,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = composer.compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertIsInstance(components.facade_support, SystemFacadeSupport)
@@ -667,8 +738,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = composer.compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertIsInstance(components.runtime_state_store, RuntimeStateStore)
@@ -686,8 +756,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = composer.compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertIsInstance(components.operations_service, SystemRuntimeManager)
@@ -702,8 +771,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = composer.compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertIsInstance(components.answering_service, SystemAnsweringService)
@@ -719,8 +787,7 @@ class AppSystemRuntimeTests(unittest.TestCase):
 
         components = composer.compose(
             config=build_runtime.config,
-            build_bootstrapper=_FakeBuildBootstrapper(build_runtime),
-            serving_bootstrapper=_FakeServingBootstrapper(serving_runtime),
+            overrides=_system_bootstrapper_overrides(build_runtime, serving_runtime),
         )
 
         self.assertFalse(hasattr(components, "interactive_service"))

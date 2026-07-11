@@ -31,6 +31,18 @@ PublicSurfaceBoundaryTestCase = h.PublicSurfaceBoundaryTestCase
 class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
     """Public manifest, version governance, and retired facade boundaries."""
 
+    def assert_document_contains_any(
+        self,
+        document: str,
+        expected_options: tuple[str, ...],
+        *,
+        context: str,
+    ) -> None:
+        if any(expected in document for expected in expected_options):
+            return
+
+        self.fail(f"{context} must contain one of: {expected_options!r}")
+
     def test_retirement_plan_document_states_current_policy(self) -> None:
         plan_path = ROOT / "docs" / "public_surface_retirement_plan.md"
         self.assertTrue(plan_path.exists())
@@ -39,6 +51,7 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
         for heading in (
             "## Current Policy",
             "## Canonical Packages",
+            "## Root Package Exports",
             "## Legacy Bridge Status",
             "## Compatibility Closure",
             "## Scan Rules",
@@ -86,6 +99,10 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
             "contract kernel",
             "must not recreate",
             "will fail instead of forwarding",
+            "Root package exports are public API",
+            "rag_modules.__all__",
+            "ROOT_PACKAGE_EXPORTS",
+            "root wrapper modules remain retired",
         ):
             self.assertIn(expected, content)
 
@@ -97,16 +114,42 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
         normalized_readme = " ".join(readme.split())
         normalized_policy = " ".join(policy.split())
 
-        for expected in (
-            "## Version Governance",
-            f"Package version: `{package_version}`",
-            f"API version: `{API_VERSION}`",
-            f"API prefix: `{API_PREFIX}`",
-            f"Compatibility removal version: `{LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}`",
-            "Package releases can keep the same API version",
-            "Compatibility removals must name their version axis",
+        for context, expected_options in (
+            ("version governance heading", ("## Version Governance", "## 版本治理")),
+            (
+                "package version",
+                (f"Package version: `{package_version}`", f"包版本：`{package_version}`"),
+            ),
+            ("API version", (f"API version: `{API_VERSION}`", f"API 版本：`{API_VERSION}`")),
+            ("API prefix", (f"API prefix: `{API_PREFIX}`", f"API 前缀是 `{API_PREFIX}`")),
+            (
+                "compatibility removal version",
+                (
+                    f"Compatibility removal version: `{LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}`",
+                    f"兼容性移除版本：`{LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION}`",
+                ),
+            ),
+            (
+                "package/API version independence",
+                (
+                    "Package releases can keep the same API version",
+                    "包发布可以保持相同 API 版本",
+                ),
+            ),
+            (
+                "compatibility removal axis",
+                (
+                    "Compatibility removals must name their version axis",
+                    "必须明确版本轴",
+                ),
+            ),
         ):
-            self.assertIn(expected, normalized_readme)
+            with self.subTest(context=context):
+                self.assert_document_contains_any(
+                    normalized_readme,
+                    expected_options,
+                    context=context,
+                )
 
         for expected in (
             "## Version Governance",
@@ -171,10 +214,26 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
     def test_active_compatibility_layers_are_retired_in_docs(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
+        normalized_readme = " ".join(readme.split())
 
-        self.assertIn("Use `/v1` for new API clients", readme)
-        self.assertIn("Unversioned serving and build routes are retired", readme)
-        self.assertNotIn("compatibility aliases during the migration window", readme)
+        self.assert_document_contains_any(
+            normalized_readme,
+            ("Use `/v1` for new API clients", "新 API client 应使用 `/v1`"),
+            context="new clients use versioned API prefix",
+        )
+        self.assert_document_contains_any(
+            normalized_readme,
+            (
+                "Unversioned serving and build routes are retired",
+                "未版本化的服务和构建路由已经退役",
+            ),
+            context="unversioned serving and build routes are retired",
+        )
+        for retired_phrase in (
+            "compatibility aliases during the migration window",
+            "迁移窗口期间的兼容性别名",
+        ):
+            self.assertNotIn(retired_phrase, readme)
 
         for expected in (
             "## Compatibility Closure",

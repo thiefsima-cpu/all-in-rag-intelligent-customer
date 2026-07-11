@@ -16,10 +16,12 @@ from .runtime_models import JudgeRunResult, JudgeVerdict, LiveQualityObservation
 
 _JUDGE_SYSTEM_PROMPT = (
     "You are an independent RAG quality judge. Evaluate only the provided packet. "
-    "Return a single JSON object with case_id, scores, passed, and rationale."
+    "Return valid JSON only: one object with case_id (string), scores (an object containing "
+    "every requested score as a number from 0 to 1), passed (boolean), and rationale "
+    "(non-empty string). Do not use Markdown fences or add other fields outside the JSON object."
 )
 _MAX_EVIDENCE_ITEMS = 6
-_MAX_SNIPPET_CHARS = 240
+_MAX_SNIPPET_CHARS = 1_800
 
 
 class JudgeHttpSession(Protocol):
@@ -132,26 +134,30 @@ def _request_judge_content(
     session: JudgeHttpSession,
 ) -> str:
     packet = build_judge_packet(case, observation)
+    request_payload: dict[str, Any] = {
+        "model": settings.model,
+        "messages": [
+            {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "packet": packet,
+                        "expected_score_names": list(expected_score_names),
+                    },
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ),
+            },
+        ],
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+    if settings.enable_thinking is not None:
+        request_payload["enable_thinking"] = settings.enable_thinking
     response = session.post(
         settings.api_url,
-        json={
-            "model": settings.model,
-            "messages": [
-                {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "packet": packet,
-                            "expected_score_names": list(expected_score_names),
-                        },
-                        ensure_ascii=False,
-                        allow_nan=False,
-                    ),
-                },
-            ],
-            "temperature": 0,
-        },
+        json=request_payload,
         headers={"Authorization": f"Bearer {settings.api_key}"},
         timeout=settings.timeout_seconds,
     )

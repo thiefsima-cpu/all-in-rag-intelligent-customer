@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class _MilvusClientOperations(MilvusOperationHost):
-    def _setup_client(self):
+    def _setup_client(self) -> None:
         """初始化Milvus客户端"""
         try:
             self.client = MilvusClient(uri=f"http://{self.host}:{self.port}")
@@ -35,7 +35,7 @@ class _MilvusClientOperations(MilvusOperationHost):
             )
             raise
 
-    def _setup_embeddings(self):
+    def _setup_embeddings(self) -> None:
         """初始化嵌入模型"""
         logger.info("Initializing embedding model")
 
@@ -122,7 +122,7 @@ class _MilvusClientOperations(MilvusOperationHost):
             target_collection = collection_name or self.collection_name
             if target_collection == self.collection_alias:
                 return bool(self.alias_target())
-            return self.client.has_collection(target_collection)
+            return bool(self.client.has_collection(target_collection))
         except Exception as exc:
             log_failure(
                 logger,
@@ -167,12 +167,12 @@ class _MilvusClientOperations(MilvusOperationHost):
             )
             return False
 
-    def close(self):
+    def close(self) -> None:
         """关闭连接"""
         if hasattr(self, "client") and self.client:
             # Milvus客户端不需要显式关闭
             logger.info("Milvus连接已关闭")
 
-    def __del__(self):
+    def __del__(self) -> None:
         """析构函数"""
         self.close()

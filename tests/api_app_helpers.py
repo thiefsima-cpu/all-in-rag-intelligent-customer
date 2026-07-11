@@ -52,7 +52,13 @@ from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALT
 from rag_modules.runtime.build_jobs import InProcessBuildJobRunner
 
 _API_TOKEN = "test-api-access-token"
-_API_CONFIG = build_test_config({"api": {"access_token": _API_TOKEN}})
+
+
+def _api_test_config():
+    return build_test_config({"api": {"access_token": _API_TOKEN}})
+
+
+_API_CONFIG = _api_test_config()
 
 
 def _client(app: object) -> TestClient:
@@ -345,8 +351,8 @@ class _FailedAnswerResponse(_DummyAnswerResponse):
 
 
 class _FakeApiSystem:
-    def __init__(self) -> None:
-        self.config = _API_CONFIG
+    def __init__(self, config=None) -> None:
+        self.config = config or _api_test_config()
         self.system_ready = False
         self.build_initialized = False
         self.serving_initialized = False

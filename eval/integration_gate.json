@@ -37,7 +37,7 @@
       "case_id": "combined_constrained_recommendation",
       "question": "推荐带豆腐、口味清淡的家常菜，并解释食材、风味和减脂条件之间的关系。",
       "allowed_strategies": ["combined"],
-      "required_sources": ["vector", "graph_rag"],
+      "required_sources": ["traditional", "graph_rag"],
       "minimum_evidence_count": 1,
       "generation_required": true,
       "timeout_seconds": 90

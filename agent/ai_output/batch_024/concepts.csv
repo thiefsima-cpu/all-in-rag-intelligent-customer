@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001359,Recipe,烙饼,烙饼 (Recipe),烙饼,[],其他,4,,,,,,dishes\staple\烙饼\烙饼.md
+201001360,Recipe,芝麻烧饼,芝麻烧饼 (Recipe),芝麻烧饼,[],其他,3,,,,,,dishes\staple\烧饼\芝麻烧饼.md
+201001361,Recipe,电饭煲三文鱼炊饭,电饭煲三文鱼炊饭 (Recipe),电饭煲三文鱼炊饭,[],荤菜,2,,,,,,dishes\staple\电饭煲三文鱼炊饭\电饭煲三文鱼炊饭.md
+201001362,Recipe,空气炸锅照烧鸡饭,空气炸锅照烧鸡饭 (Recipe),空气炸锅照烧鸡饭,"[{'term': '空气deep-fried锅照烧鸡饭', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '空气油炸锅照烧鸡饭', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,4,,,,,,dishes\staple\空气炸锅照烧鸡饭\空气炸锅照烧鸡饭.md
+201001363,Recipe,煮锅蒸米饭,煮锅蒸米饭 (Recipe),煮锅蒸米饭,"[{'term': '煮锅steamed米饭', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '煮锅清蒸米饭', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,2,,,,,,dishes\staple\米饭\煮锅蒸米饭.md
+201001364,Recipe,电饭煲蒸米饭,电饭煲蒸米饭 (Recipe),电饭煲蒸米饭,"[{'term': '电饭煲清蒸米饭', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '电饭煲steamed米饭', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,1,,,,,,dishes\staple\米饭\电饭煲蒸米饭.md
+201001365,Recipe,老友猪肉粉,老友猪肉粉 (Recipe),老友猪肉粉,[],荤菜,3,,,,,,dishes\staple\老友猪肉粉\老友猪肉粉.md
+201001366,Recipe,茄子肉煎饼,茄子肉煎饼 (Recipe),茄子肉煎饼,"[{'term': '青茄子肉煎饼', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '紫茄子肉煎饼', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '茄子肉pan-fried饼', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'eggplant肉煎饼', 'language': 'en', 'language_code': 'en-US'}]",荤菜,3,,,,,,dishes\staple\茄子肉煎饼\茄子肉煎饼.md
+201001367,Recipe,西红柿鸡蛋挂面,西红柿鸡蛋挂面 (Recipe),西红柿鸡蛋挂面,"[{'term': '番茄鸡蛋挂面', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'tomato鸡蛋挂面', 'language': 'zh', 'language_code': 'zh-CN'}]",素菜,2,,,,,,dishes\staple\西红柿鸡蛋挂面\西红柿鸡蛋挂面.md
+201001368,Recipe,豆角焖面,豆角焖面 (Recipe),豆角焖面,"[{'term': '豆角闷面', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '豆角braised面', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,3,,,,,,dishes\staple\豆角焖面\豆角焖面.md

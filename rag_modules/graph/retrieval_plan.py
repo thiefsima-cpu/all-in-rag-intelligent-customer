@@ -8,9 +8,11 @@ executor should query Neo4j, including linked entities and evidence goals.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import List
 
-from ..entity_linker import EntityLinkContext, LinkedEntity
+from ..contracts.graph import GraphQuery
+from ..entity_linker import EntityLinkContext, EntityLinker, LinkedEntity
+from ..kernel.json_types import JsonObject, coerce_json_object
 
 
 @dataclass
@@ -21,7 +23,7 @@ class GraphRetrievalPlan:
     relation_types: List[str] = field(default_factory=list)
     max_depth: int = 2
     max_nodes: int = 50
-    constraints: Dict[str, Any] = field(default_factory=dict)
+    constraints: JsonObject = field(default_factory=dict)
     linked_sources: List[LinkedEntity] = field(default_factory=list)
     linked_targets: List[LinkedEntity] = field(default_factory=list)
     evidence_goals: List[str] = field(default_factory=list)
@@ -50,27 +52,29 @@ class GraphRetrievalPlan:
         ]
         return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
 
-    def to_trace(self) -> Dict[str, Any]:
-        return {
-            "query_type": self.query_type,
-            "source_entities": self.source_entities,
-            "target_entities": self.target_entities,
-            "relation_types": self.relation_types,
-            "max_depth": self.max_depth,
-            "max_nodes": self.max_nodes,
-            "linked_sources": [entity.to_dict() for entity in self.linked_sources],
-            "linked_targets": [entity.to_dict() for entity in self.linked_targets],
-            "evidence_goals": self.evidence_goals,
-        }
+    def to_trace(self) -> JsonObject:
+        return coerce_json_object(
+            {
+                "query_type": self.query_type,
+                "source_entities": self.source_entities,
+                "target_entities": self.target_entities,
+                "relation_types": self.relation_types,
+                "max_depth": self.max_depth,
+                "max_nodes": self.max_nodes,
+                "linked_sources": [entity.to_dict() for entity in self.linked_sources],
+                "linked_targets": [entity.to_dict() for entity in self.linked_targets],
+                "evidence_goals": self.evidence_goals,
+            }
+        )
 
 
 class GraphPlanBuilder:
     """Build executable graph retrieval plans from graph query intent."""
 
-    def __init__(self, entity_linker):
+    def __init__(self, entity_linker: EntityLinker) -> None:
         self.entity_linker = entity_linker
 
-    def build(self, graph_query, evidence_goals: List[str]) -> GraphRetrievalPlan:
+    def build(self, graph_query: GraphQuery, evidence_goals: List[str]) -> GraphRetrievalPlan:
         source_entities = list(dict.fromkeys(graph_query.source_entities or []))
         target_entities = list(dict.fromkeys(graph_query.target_entities or []))
         source_context = EntityLinkContext(

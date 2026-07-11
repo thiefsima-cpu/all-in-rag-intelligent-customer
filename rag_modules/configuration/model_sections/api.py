@@ -21,8 +21,9 @@ class ApiSettings(ConfigSection):
     answer_acquire_timeout_seconds: float = Field(default=0.25, ge=0.0)
     stream_executor_max_workers: int = Field(default=4, ge=1)
     stream_queue_max_size: int = Field(default=64, ge=1)
-    build_job_runner_backend: Literal["in_process"] = "in_process"
+    build_job_runner_backend: Literal["in_process", "external_worker"] = "in_process"
     build_job_runner_max_workers: int = Field(default=1, ge=1)
+    build_job_worker_poll_interval_seconds: float = Field(default=1.0, ge=0.1)
     build_job_lease_seconds: float = Field(default=30.0, ge=1.0)
     build_job_heartbeat_seconds: float = Field(default=10.0, ge=0.1)
     build_job_retention_limit: int = Field(default=100, ge=1)

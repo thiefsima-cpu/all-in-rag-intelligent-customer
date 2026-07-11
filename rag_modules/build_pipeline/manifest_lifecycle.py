@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import Optional, cast
 
 from ..kernel.artifacts import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
@@ -132,7 +133,10 @@ class KnowledgeBaseManifestLifecycle:
     def _save_candidate(self, manifest: ArtifactManifest) -> ArtifactManifest:
         save_candidate = getattr(self.manifest_store, "save_candidate", None)
         if callable(save_candidate):
-            return save_candidate(manifest)
+            save_candidate_func = cast(
+                Callable[[ArtifactManifest], ArtifactManifest], save_candidate
+            )
+            return save_candidate_func(manifest)
         return manifest
 
 

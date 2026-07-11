@@ -191,6 +191,10 @@ def test_default_live_quality_policy_has_required_seed_coverage() -> None:
     assert response_counts["grounded_answer"] >= 10
     assert response_counts["no_evidence"] >= 3
 
+    combined_cases = [case for case in policy.cases if case.allowed_strategies == ["combined"]]
+    assert combined_cases
+    assert all(case.required_sources == ["traditional"] for case in combined_cases)
+
 
 def test_package_exports_complete_policy_surface() -> None:
     assert set(live_quality_exports) == {
@@ -726,6 +730,27 @@ def test_judge_timeout_defaults_to_45_seconds() -> None:
     settings = LiveQualityGateSettings.from_environ(runtime_environment())
 
     assert settings.judge.timeout_seconds == 45.0
+    assert settings.judge.enable_thinking is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
+def test_judge_thinking_uses_optional_boolean_environment_override(
+    value: str,
+    expected: bool,
+) -> None:
+    settings = LiveQualityGateSettings.from_environ(
+        runtime_environment(LIVE_QUALITY_JUDGE_ENABLE_THINKING=value)
+    )
+
+    assert settings.judge.enable_thinking is expected
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "off", "", "not-a-bool"])
+def test_judge_thinking_rejects_invalid_environment_values(value: str) -> None:
+    with pytest.raises(ValueError, match="LIVE_QUALITY_JUDGE_ENABLE_THINKING"):
+        LiveQualityGateSettings.from_environ(
+            runtime_environment(LIVE_QUALITY_JUDGE_ENABLE_THINKING=value)
+        )
 
 
 @pytest.mark.parametrize("timeout_value", ["1", "30.5"])

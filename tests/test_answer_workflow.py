@@ -10,7 +10,6 @@ from rag_modules.app.services.answer_models import (
     AnswerTraceBundle,
     QuestionAnswerResult,
 )
-from rag_modules.app.services.answer_pipeline import NO_EVIDENCE_ANSWER
 from rag_modules.app.services.answer_result_factory import QuestionAnswerResultFactory
 from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
@@ -30,6 +29,40 @@ from rag_modules.contracts.runtime import (
 from rag_modules.contracts.runtime.errors import routing_error_detail
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.observability.tracing import QueryTracer
+from rag_modules.query_policy.models import AnswerWorkflowCopyPolicy
+
+
+def _answer_copy(**overrides: str) -> AnswerWorkflowCopyPolicy:
+    values = {
+        "no_evidence_answer": (
+            "Sorry, I could not find enough relevant retrieval evidence to answer that question."
+        ),
+        "answer_failed": "The answer could not be generated.",
+        "user_question_template": "\nUser question: {question}",
+        "query_routing_started": "Running query routing...",
+        "answer_generation_started": "Generating answer...",
+        "streaming_interrupted_fallback": (
+            "\n[WARN] Streaming output interrupted. Falling back to standard mode..."
+        ),
+        "answer_complete_template": "\nAnswer complete in {latency_seconds:.2f}s",
+        "strategy_summary_template": (
+            "{strategy_icon} Strategy: {strategy}\n"
+            "Complexity: {complexity:.2f}, "
+            "Relationship intensity: {relationship_intensity:.2f}"
+        ),
+        "strategy_icon_hybrid_traditional": "[HYBRID]",
+        "strategy_icon_graph_rag": "[GRAPH]",
+        "strategy_icon_combined": "[COMBINED]",
+        "strategy_icon_default": "[ROUTE]",
+        "document_summary_template": (
+            "Found {document_count} relevant documents: {document_summaries}"
+        ),
+        "document_summary_total_template": "\n    Total results: {document_count}",
+        "unknown_recipe_name": "unknown",
+        "unknown_search_type": "unknown",
+    }
+    values.update(overrides)
+    return AnswerWorkflowCopyPolicy(**values)
 
 
 def _build_resolution(
@@ -255,7 +288,16 @@ class AnswerWorkflowTests(unittest.TestCase):
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = AnswerWorkflow(
+            self.config,
+            router,
+            generation,
+            tracer,
+            answer_workflow_copy=_answer_copy(
+                no_evidence_answer="CUSTOM_NO_EVIDENCE",
+                query_routing_started="CUSTOM_ROUTING",
+            ),
+        )
 
         result = service.answer_question(
             question,
@@ -263,12 +305,13 @@ class AnswerWorkflowTests(unittest.TestCase):
             message_callback=messages.append,
         )
 
-        self.assertEqual(result.answer, NO_EVIDENCE_ANSWER)
+        self.assertEqual(result.answer, "CUSTOM_NO_EVIDENCE")
         self.assertEqual(generation.direct_calls, 0)
         self.assertEqual(len(tracer.calls), 1)
         self.assertEqual(result.graph_trace.doc_count, 0)
         self.assertEqual(result.trace_event.query, question)
-        self.assertIn("Running query routing...", messages)
+        self.assertIn("CUSTOM_ROUTING", messages)
+        self.assertNotIn("Running query routing...", messages)
 
     def test_successful_answer_captures_route_graph_and_generation_traces(self) -> None:
         question = "Trace the ingredient substitution path for mapo tofu."
@@ -597,7 +640,15 @@ class AnswerWorkflowTests(unittest.TestCase):
         )
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = AnswerWorkflow(
+            self.config,
+            router,
+            generation,
+            tracer,
+            answer_workflow_copy=_answer_copy(
+                streaming_interrupted_fallback="CUSTOM_STREAM_FALLBACK",
+            ),
+        )
 
         result = service.answer_question(
             question,
@@ -608,7 +659,8 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertEqual(result.answer, "fallback answer")
         self.assertEqual(generation.stream_calls, 1)
         self.assertEqual(generation.direct_calls, 1)
-        self.assertTrue(any("Falling back to standard mode" in message for message in messages))
+        self.assertIn("CUSTOM_STREAM_FALLBACK", messages)
+        self.assertFalse(any("Falling back to standard mode" in message for message in messages))
 
     def test_concurrent_requests_keep_all_traces_request_scoped(self) -> None:
         route_barrier = threading.Barrier(2)
@@ -769,14 +821,16 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_result_factory_from_error_does_not_place_raw_exception_in_answer(self) -> None:
         secret = "raw provider payload"
-        result = QuestionAnswerResultFactory().from_error(
+        result = QuestionAnswerResultFactory(
+            answer_workflow_copy=_answer_copy(answer_failed="CUSTOM_FAILED"),
+        ).from_error(
             AnswerPipelineState(question="safe question"),
             latency_ms=12.5,
             trace_bundle=AnswerTraceBundle(),
             error=RuntimeError(secret),
         )
 
-        self.assertEqual(result.answer, "The answer could not be generated.")
+        self.assertEqual(result.answer, "CUSTOM_FAILED")
         self.assertNotIn(secret, result.answer)
 
 

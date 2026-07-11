@@ -26,8 +26,6 @@ class ArtifactManifestStore:
         storage = getattr(config, "storage")
         self.manifest_path = str(getattr(storage, "artifact_manifest_path"))
         parent_dir = os.path.dirname(self.manifest_path)
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
         filename = os.path.basename(self.manifest_path)
         stem, _ = os.path.splitext(filename)
         self.candidate_path = os.path.join(

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..contracts.query_constraints import QueryConstraints
 from ..contracts.runtime import HybridRetrievalOutcome
@@ -18,7 +19,7 @@ from .hybrid_components import (
 )
 from .hybrid_executor import HybridRetrievalExecutor
 from .hybrid_index_service import HybridIndexArtifacts
-from .ports import Neo4jManagerPort
+from .ports import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_adapter_factory import HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 
@@ -30,15 +31,15 @@ class HybridRetrievalService:
 
     def __init__(
         self,
-        config,
-        milvus_module,
-        data_module,
-        llm_client,
+        config: GraphRAGConfig,
+        milvus_module: VectorIndexModulePort,
+        data_module: GraphDataModulePort,
+        llm_client: object,
         neo4j_manager: Optional[Neo4jManagerPort] = None,
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
         component_factory: Optional[HybridRetrievalComponentFactory] = None,
         adapter_factory: Optional[HybridRuntimeAdapterFactory] = None,
-    ):
+    ) -> None:
         self.config = config
         self.milvus_module = milvus_module
         self.data_module = data_module
@@ -70,11 +71,11 @@ class HybridRetrievalService:
         return self._executor
 
     @property
-    def driver(self):
+    def driver(self) -> object | None:
         return self._executor.driver
 
     @property
-    def bm25(self):
+    def bm25(self) -> object | None:
         return self._executor.bm25
 
     @property
@@ -94,14 +95,14 @@ class HybridRetrievalService:
         return self._executor.recipe_matcher
 
     @property
-    def vector_retriever(self):
+    def vector_retriever(self) -> object | None:
         return self._executor.vector_retriever
 
     @property
-    def dual_level_service(self):
+    def dual_level_service(self) -> object | None:
         return self._executor.dual_level_service
 
-    def initialize(self, chunks: List[TextDocument]):
+    def initialize(self, chunks: List[TextDocument]) -> None:
         self._executor.initialize(chunks)
 
     def _apply_index_artifacts(self, artifacts: HybridIndexArtifacts) -> None:
@@ -110,7 +111,7 @@ class HybridRetrievalService:
     def _get_recipe_matcher(self) -> Optional[RecipeConstraintMatcher]:
         return self._executor.get_recipe_matcher()
 
-    def _ensure_dual_level_service(self):
+    def _ensure_dual_level_service(self) -> object:
         return self._executor.ensure_dual_level_service()
 
     def _build_request(
@@ -123,7 +124,7 @@ class HybridRetrievalService:
         *,
         entity_keywords: Optional[List[str]] = None,
         topic_keywords: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, object]] = None,
     ) -> RetrievalRequest:
         return RetrievalRequest.from_inputs(
             query=query,
@@ -150,10 +151,10 @@ class HybridRetrievalService:
     def _sync_bm25_state(self) -> None:
         self._executor.sync_bm25_state()
 
-    def _restore_bm25_retriever(self, payload: Dict[str, Any]) -> None:
+    def _restore_bm25_retriever(self, payload: Dict[str, object]) -> None:
         self._executor.restore_bm25_retriever(payload)
 
-    def _build_graph_index(self):
+    def _build_graph_index(self) -> None:
         self._executor.build_graph_index()
 
     def _build_parent_doc_map(self) -> Dict[str, TextDocument]:
@@ -262,7 +263,7 @@ class HybridRetrievalService:
         outcome = self.hybrid_evidence_search(request)
         return list(outcome.documents)
 
-    def close(self):
+    def close(self) -> None:
         self._executor.close()
 
 

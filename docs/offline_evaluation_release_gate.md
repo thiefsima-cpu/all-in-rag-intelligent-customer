@@ -45,14 +45,16 @@ from quality regressions through `failure_type`.
 Thresholds live in `eval/release_gate.json`. The release policy requires:
 
 - all six suites, including `quality_eval`, to be available;
-- 57 or more total cases;
+- 69 or more total cases;
 - 100% overall and per-suite pass rate;
 - at least 24 route-semantics cases;
 - all 9 required route categories;
-- at least 18 quality-eval cases.
+- at least 30 quality-eval cases.
 
 The `quality_eval` policy also requires at least two cases for each required
-quality dimension:
+quality dimension. The first six dimensions cover the baseline deterministic
+quality risks; the last five add enterprise long-tail and governance-oriented
+coverage:
 
 - `no_evidence`
 - `ambiguity`
@@ -60,6 +62,11 @@ quality dimension:
 - `constraint_conflict`
 - `long_query`
 - `colloquial_zh`
+- `long_tail`
+- `adversarial`
+- `permission_privacy`
+- `dependency_anomaly`
+- `low_quality_evidence`
 
 The gate checks these counts from `quality_eval.metrics.dimension_counts`, not
 from corpus size alone.
@@ -84,6 +91,13 @@ recipe must appear in the fixture evidence. Abstention cases (`no_evidence`,
 `clarification`, and `constraint_conflict`) must have no evidence and no recipe
 expectations. A successful abstention is a primary expected outcome, not a
 fallback.
+
+The checked-in corpus contains 30 cases. The enterprise expansion keeps the
+original deterministic recipe-domain shape while adding long-tail phrasing,
+adversarial instruction pressure, permission/privacy boundaries, dependency
+anomaly questions, and low-quality-evidence scenarios. These scenarios use
+synthetic data only; they must not contain real secrets, real customer data,
+real employee data, or live system identifiers.
 
 ## Quality Metrics
 

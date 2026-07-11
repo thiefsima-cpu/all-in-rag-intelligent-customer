@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, Protocol
 
 from ..contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from ..kernel.documents import TextDocument
 from ..kernel.json_types import JsonObject
 
 if TYPE_CHECKING:
-    from ..build_pipeline.graph_preparation.models import GraphLoadCounts
+    from ..build_pipeline.graph_preparation.models import GraphLoadCounts, GraphNode
     from ..build_pipeline.graph_preparation.statistics import GraphPreparationStats
+
+
+class Neo4jRecordPort(Protocol):
+    """Neo4j record behavior consumed by retrieval adapters."""
+
+    def __getitem__(self, key: str) -> object: ...
+
+    def get(self, key: str, default: object | None = None) -> object: ...
+
+
+class Neo4jResultPort(Protocol):
+    """Neo4j result behavior consumed by retrieval adapters."""
+
+    def __iter__(self) -> Iterator[Neo4jRecordPort]: ...
 
 
 class Neo4jSessionPort(Protocol):
@@ -21,11 +35,26 @@ class Neo4jSessionPort(Protocol):
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
-    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> Any: ...
+    def run(
+        self,
+        query: str,
+        parameters: object | None = None,
+        **kwargs: object,
+    ) -> Neo4jResultPort: ...
 
-    def execute_read(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_read(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
-    def execute_write(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_write(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
 
 class Neo4jDriverPort(Protocol):
@@ -77,6 +106,9 @@ class GraphDataModulePort(Protocol):
 
     documents: list[TextDocument]
     chunks: list[TextDocument]
+    recipes: list[GraphNode]
+    ingredients: list[GraphNode]
+    cooking_steps: list[GraphNode]
 
     def load_graph_data(self) -> GraphLoadCounts | JsonObject: ...
 
@@ -122,6 +154,8 @@ __all__ = [
     "HybridCandidateRuntimePort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",
+    "Neo4jRecordPort",
+    "Neo4jResultPort",
     "Neo4jSessionPort",
     "RerankClientPort",
     "VectorIndexModulePort",

@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001269,Recipe,羊排焖面,羊排焖面 (Recipe),羊排焖面,"[{'term': '羊排闷面', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '羊排braised面', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,4,,,,,,dishes\meat_dish\羊排焖面\羊排焖面.md
+201001270,Recipe,老妈蹄花,老妈蹄花 (Recipe),老妈蹄花,[],其他,4,,,,,,dishes\meat_dish\老妈蹄花\老妈蹄花.md
+201001271,Recipe,老式锅包肉,老式锅包肉 (Recipe),老式锅包肉,[],荤菜,4,,,,,,dishes\meat_dish\老式锅包肉\老式锅包肉.md
+201001272,Recipe,芥末罗氏虾,芥末罗氏虾 (Recipe),芥末罗氏虾,[],荤菜,3,,,,,,dishes\meat_dish\芥末罗氏虾\芥末罗氏虾.md
+201001273,Recipe,茭白炒肉,茭白炒肉 (Recipe),茭白炒肉,[],荤菜,3,,,,,,dishes\meat_dish\茭白炒肉\茭白炒肉.md
+201001274,Recipe,荔枝肉,荔枝肉 (Recipe),荔枝肉,[],荤菜,4,,,,,,dishes\meat_dish\荔枝肉\荔枝肉.md
+201001275,Recipe,荷兰豆炒腊肠,荷兰豆炒腊肠 (Recipe),荷兰豆炒腊肠,[],其他,2,,,,,,dishes\meat_dish\荷兰豆炒腊肠\荷兰豆炒腊肠.md
+201001276,Recipe,血浆鸭,血浆鸭 (Recipe),血浆鸭,[],其他,5,,,,,,dishes\meat_dish\血浆鸭\血浆鸭.md
+201001277,Recipe,西红柿土豆炖牛肉,西红柿土豆炖牛肉 (Recipe),西红柿土豆炖牛肉,"[{'term': '西红柿potato炖牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '西红柿土豆stewed牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '西红柿洋芋炖牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '番茄土豆炖牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'tomato土豆炖牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '西红柿马铃薯炖牛肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '西红柿土豆煲牛肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,4,,,,,,dishes\meat_dish\西红柿土豆炖牛肉\西红柿土豆炖牛肉.md
+201001278,Recipe,西红柿牛腩,西红柿牛腩 (Recipe),西红柿牛腩,"[{'term': '番茄牛腩', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'tomato牛腩', 'language': 'en', 'language_code': 'en-US'}]",其他,5,,,,,,dishes\meat_dish\西红柿牛腩\西红柿牛腩.md

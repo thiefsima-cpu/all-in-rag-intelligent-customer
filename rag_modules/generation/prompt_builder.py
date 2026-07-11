@@ -131,7 +131,10 @@ class GenerationPromptBuilder:
 
     def build_plan_prompt(self, question: str, package: AnswerEvidencePackage) -> str:
         evidence_summary = json.dumps(
-            package.summarize_for_plan(max_items=self.settings.plan_max_evidence_items),
+            package.summarize_for_plan(
+                max_items=self.settings.plan_max_evidence_items,
+                max_claim_chars=self.evidence_max_chars,
+            ),
             ensure_ascii=False,
             indent=2,
         )

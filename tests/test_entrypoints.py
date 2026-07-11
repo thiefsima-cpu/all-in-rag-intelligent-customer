@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib
+import os
 import subprocess
 import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -9,6 +12,7 @@ from unittest.mock import patch
 
 import main
 import main_build_service
+import main_build_worker
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,10 +26,10 @@ class _ReconfigurableStream:
 
 
 class EntrypointTests(unittest.TestCase):
-    def test_runtime_entrypoints_are_api_only(self) -> None:
+    def test_runtime_entrypoints_include_api_and_build_worker(self) -> None:
         self.assertEqual(
             {path.name for path in ROOT.glob("main*.py")},
-            {"main.py", "main_build_service.py"},
+            {"main.py", "main_build_service.py", "main_build_worker.py"},
         )
 
     def test_console_runtime_configures_stdout_and_stderr_as_utf8(self) -> None:
@@ -51,6 +55,26 @@ class EntrypointTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
 
+    def test_build_worker_entrypoint_returns_nonzero_when_worker_fails(self) -> None:
+        with patch("main_build_worker.run_build_job_worker", side_effect=RuntimeError("boom")):
+            exit_code = main_build_worker.main()
+
+        self.assertEqual(exit_code, 1)
+
+    def test_build_entrypoint_import_does_not_construct_build_app(self) -> None:
+        previous_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                os.chdir(temp_dir)
+                with patch("rag_modules.interfaces.api.create_build_api_app") as create_mock:
+                    importlib.reload(main_build_service)
+
+                create_mock.assert_not_called()
+                self.assertFalse((Path(temp_dir) / "storage").exists())
+            finally:
+                os.chdir(previous_cwd)
+                importlib.reload(main_build_service)
+
     def test_integration_gate_console_script_is_registered(self) -> None:
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -65,6 +89,14 @@ class EntrypointTests(unittest.TestCase):
         self.assertEqual(
             pyproject["project"]["scripts"]["graph-rag-live-quality-gate"],
             "scripts.live_quality_gate.cli:main",
+        )
+
+    def test_build_worker_console_script_is_registered(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            pyproject["project"]["scripts"]["graph-rag-build-worker"],
+            "main_build_worker:main",
         )
 
     def test_integration_gate_module_help_exposes_command_arguments(self) -> None:

@@ -18,7 +18,7 @@ from .ports import LLMClientPort, Neo4jManagerPort
 from .query_executor import GraphQueryExecutor
 from .query_resolution import GraphQueryFactory
 from .reasoning_strategy import GraphReasoningStrategy
-from .retrieval_executor import GraphRetrievalExecutor
+from .retrieval_executor import GraphRetrievalExecutor, GraphRetrievalExecutorServices
 from .retrieval_plan import GraphPlanBuilder
 from .retrieval_postprocess import GraphRetrievalPostProcessor
 from .retrieval_runtime import GraphRetrievalRuntime
@@ -95,7 +95,7 @@ class DefaultGraphRetrievalComponentFactory:
         )
         graph_cache_stats_store = GraphCacheStatsStore(config)
         cache_warmup = GraphCacheWarmupService(graph_cache_stats_store)
-        executor = GraphRetrievalExecutor(
+        services = GraphRetrievalExecutorServices(
             config=config,
             runtime=runtime,
             orchestrator=orchestrator,
@@ -105,6 +105,9 @@ class DefaultGraphRetrievalComponentFactory:
             graph_executor=graph_executor,
             neo4j_manager=neo4j_manager,
             database_name=database_name,
+        )
+        executor = GraphRetrievalExecutor(
+            services=services,
         )
         return GraphRetrievalComponents(
             query_factory=query_factory,

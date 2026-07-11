@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,15 @@ def write_report(
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
 ) -> tuple[Path, Path]:
     resolved_output_dir = Path(output_dir).resolve()
+    try:
+        return _write_report_files(report, resolved_output_dir)
+    except PermissionError:
+        if resolved_output_dir != DEFAULT_OUTPUT_DIR.resolve():
+            raise
+        return _write_report_files(report, Path(tempfile.mkdtemp(prefix="release_gate_")).resolve())
+
+
+def _write_report_files(report: dict[str, Any], resolved_output_dir: Path) -> tuple[Path, Path]:
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     report_path = resolved_output_dir / "report.json"
     summary_path = resolved_output_dir / "summary.md"

@@ -33,6 +33,7 @@ The live quality gate process reads:
 - `LIVE_QUALITY_JUDGE_API_KEY`
 - `LIVE_QUALITY_JUDGE_MODEL`
 - optional `LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS`
+- optional `LIVE_QUALITY_JUDGE_ENABLE_THINKING` (`true` or `false`)
 
 Do not put provider keys, API tokens, customer data, raw prompts, or raw
 responses in `eval/live_quality_gate.json`.
@@ -62,7 +63,8 @@ judge. A release-quality run must keep the judge enabled.
 
 ## Exit Codes and Reports
 
-- Exit `0`: live quality gate evaluated and passed with required checks.
+- Exit `0`: live quality gate evaluated, all aggregate/slice thresholds passed,
+  and no dependency, request, or judge-protocol check blocked release.
 - Exit `1`: the gate ran successfully and reported one or more failed checks.
 - Exit `2`: policy, environment configuration, or gate execution was invalid.
 
@@ -89,11 +91,24 @@ The gate reports deterministic metrics and judge metrics side by side:
 - slice metrics by query type, cuisine, constraint type, risk tag, response
   mode, and strategy.
 
+Source requirements use route-stage identifiers. Combined cases require
+`traditional` plus `graph_rag`; low-level vector participation is evaluated by
+dedicated traditional/vector cases. A `hybrid_supplement` stage after valid
+graph evidence is normal augmentation and does not increase the fallback rate.
+
 The default policy enforces coverage for prompt injection, knowledge pollution,
 no-evidence inducement, cross-language, typo, long-query, and constraint-heavy
 scenarios. It also keeps LLM judge scores and deterministic checks separate so
 operators can see whether a failure is retrieval, generation, judge
 availability, coverage, or budget related.
+
+Valid per-case deterministic and judge quality misses remain visible in the
+report and contribute to case, judge, and slice pass rates. They do not bypass
+the policy by failing release individually; the configured aggregate and slice
+thresholds make the release decision. Invalid judge responses, judge transport
+failures, serving request failures, missing coverage, fallback/degradation
+budget failures, and other non-quality execution failures remain immediately
+release-blocking.
 
 ## Manual Review
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING, Protocol
 
 from ..contracts import RetrievalRequest
 from ..kernel.documents import TextDocument
@@ -13,6 +14,22 @@ if TYPE_CHECKING:
     from .graph_preparation.statistics import GraphPreparationStats
 
 
+class Neo4jRecordPort(Protocol):
+    """Neo4j record behavior consumed by build-pipeline loaders."""
+
+    def __getitem__(self, key: str) -> object: ...
+
+    def get(self, key: str, default: object | None = None) -> object: ...
+
+
+class Neo4jResultPort(Protocol):
+    """Neo4j result behavior consumed by build-pipeline loaders."""
+
+    def __iter__(self) -> Iterator[Neo4jRecordPort]: ...
+
+    def single(self) -> Neo4jRecordPort | None: ...
+
+
 class Neo4jSessionPort(Protocol):
     """Neo4j session behavior consumed by build-pipeline loaders."""
 
@@ -20,11 +37,26 @@ class Neo4jSessionPort(Protocol):
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
-    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> Any: ...
+    def run(
+        self,
+        query: str,
+        parameters: object | None = None,
+        **kwargs: object,
+    ) -> Neo4jResultPort: ...
 
-    def execute_read(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_read(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
-    def execute_write(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_write(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
 
 class Neo4jDriverPort(Protocol):
@@ -84,6 +116,8 @@ class VectorIndexModulePort(Protocol):
 __all__ = [
     "GraphDataModulePort",
     "Neo4jDriverPort",
+    "Neo4jRecordPort",
+    "Neo4jResultPort",
     "Neo4jSessionPort",
     "VectorIndexModulePort",
 ]

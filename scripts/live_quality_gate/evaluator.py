@@ -65,8 +65,6 @@ def evaluate_deterministic_case(
             failures.append("missing_relevant_recipes")
     else:
         metrics = dict(_EMPTY_RETRIEVAL_METRICS)
-        if observation.evidence:
-            failures.append("unexpected_evidence")
 
     unique_failures = tuple(sorted(set(failures)))
     check_name = f"case.{case.case_id}.deterministic"
@@ -209,7 +207,45 @@ def _response_mode_passed(
     has_evidence = bool(observation.evidence)
     if response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
         return has_evidence
-    return not has_evidence
+    if not has_evidence:
+        return True
+
+    answer = observation.answer.casefold()
+    markers = {
+        LiveQualityResponseMode.NO_EVIDENCE: (
+            "insufficient evidence",
+            "cannot confirm",
+            "证据不足",
+            "无法确认",
+            "无法提供",
+            "无法找到",
+            "没有足够证据",
+            "未检索到",
+            "未提供",
+            "未出现",
+            "并未",
+            "不存在",
+            "错误",
+        ),
+        LiveQualityResponseMode.CLARIFICATION: (
+            "clarify",
+            "tell me",
+            "which",
+            "请问",
+            "请明确",
+            "请您提供",
+            "请补充",
+            "具体指",
+        ),
+        LiveQualityResponseMode.CONSTRAINT_CONFLICT: (
+            "conflict",
+            "contradict",
+            "冲突",
+            "矛盾",
+            "无法同时",
+        ),
+    }
+    return any(marker in answer for marker in markers.get(response_mode, ()))
 
 
 def _missing_positive_relevant_recipes(

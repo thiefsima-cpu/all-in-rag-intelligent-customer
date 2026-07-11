@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import tests.api_app_helpers as h
 
 json = h.json
@@ -29,7 +31,13 @@ class ApiSseTests(unittest.TestCase):
 
     def test_sse_error_uses_common_contract_and_request_id(self) -> None:
         secret = "stream-provider-secret"
-        app = create_serving_api_app(system=_FailedAnswerSystem(secret))
+        system = _FailedAnswerSystem(secret)
+        system.serving_runtime = SimpleNamespace(
+            answer_workflow=SimpleNamespace(
+                answer_workflow_copy=SimpleNamespace(answer_failed="CUSTOM_FAILED")
+            )
+        )
+        app = create_serving_api_app(system=system)
 
         with _client(app) as client:
             with client.stream(
@@ -44,6 +52,8 @@ class ApiSseTests(unittest.TestCase):
         self.assertIn("event: error", body)
         self.assertIn('"code": "ANSWER_FAILED"', body)
         self.assertIn('"request_id": "stream-failed-42"', body)
+        error_payload = _parse_sse_events(body)["error"][0]
+        self.assertEqual(error_payload["error"]["message"], "CUSTOM_FAILED")
         self.assertNotIn("error_type", body)
         self.assertNotIn(secret, body)
         self.assertIn("event: done", body)
@@ -422,4 +432,3 @@ class ApiSseTests(unittest.TestCase):
         self.assertEqual(events[1].data.content, "chunk-1")
         self.assertEqual(events[3].data.response.summary.answer, "answer:Typed stream")
         self.assertTrue(events[4].data.ok)
-

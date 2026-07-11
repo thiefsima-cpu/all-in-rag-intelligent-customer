@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from ...build_pipeline.contracts import DocumentArtifactBuilderPort, SemanticGraphSchemaSyncPort
 from ...build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from ...configuration.models import GraphRAGConfig
 from ...kernel.artifacts import ArtifactManifest
+from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
 from ...runtime.stats_ports import RuntimeStatsAccessPort
+from ..ports import (
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    ServingGraphRAGRetrievalPort,
+    ServingHybridRetrievalPort,
+    VectorIndexModulePort,
+)
 
 ProgressCallback = Optional[Callable[[str], None]]
 
@@ -20,18 +28,19 @@ class KnowledgeBaseService:
     def __init__(
         self,
         config: GraphRAGConfig,
-        neo4j_manager: Any,
-        data_module: Any,
-        index_module: Any,
-        traditional_retrieval: Any | None = None,
-        graph_rag_retrieval: Any | None = None,
-        query_router: Any | None = None,
+        neo4j_manager: Neo4jManagerPort,
+        data_module: GraphDataModulePort,
+        index_module: VectorIndexModulePort,
+        traditional_retrieval: ServingHybridRetrievalPort | None = None,
+        graph_rag_retrieval: ServingGraphRAGRetrievalPort | None = None,
+        query_router: RoutingWorkflowProtocol | None = None,
         manifest_store: ArtifactManifestStorePort | None = None,
         runtime_artifact_access: RuntimeArtifactAccessPort | None = None,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
         document_artifact_builder: DocumentArtifactBuilderPort | None = None,
         semantic_graph_schema_sync: SemanticGraphSchemaSyncPort | None = None,
     ) -> None:
+        del traditional_retrieval, graph_rag_retrieval
         self.config = config
         self.neo4j_manager = neo4j_manager
         self.data_module = data_module

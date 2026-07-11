@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ...configuration import get_default_config
 from ...configuration.models import GraphRAGConfig
+from ..ports import RuntimeDiagnosticsServicePort, RuntimeShutdownServicePort
 from ..services.answer_models import QuestionAnswerer
-from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from ..services.runtime_shutdown_service import RuntimeShutdownService
 from .bootstrapper_composer import GraphRAGBootstrapperComposer
 from .contracts import (
     SystemFacadeSupportProtocol,
@@ -43,21 +42,34 @@ class AdvancedGraphRAGBootstrapperSurface:
     serving_bootstrapper: "ServingBootstrapper"
 
 
+@dataclass(frozen=True)
+class SystemBootstrapperOverrides:
+    """Optional bootstrapper-facing collaborators for system assembly."""
+
+    provider: "RuntimeComponentProvider" | None = None
+    bootstrapper: "GraphRAGBootstrapper" | None = None
+    build_bootstrapper: "BuildBootstrapper" | None = None
+    serving_bootstrapper: "ServingBootstrapper" | None = None
+    bootstrapper_composer: GraphRAGBootstrapperComposer | None = None
+    provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None
+
+
 class SystemBootstrapperSurfaceComposer:
     """Resolve or compose the public bootstrapper surface."""
 
     def compose(
         self,
         *,
-        provider: "RuntimeComponentProvider" | None = None,
-        bootstrapper=None,
-        build_bootstrapper=None,
-        serving_bootstrapper=None,
-        bootstrapper_composer: GraphRAGBootstrapperComposer | None = None,
-        provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None,
+        overrides: SystemBootstrapperOverrides | None = None,
     ) -> AdvancedGraphRAGBootstrapperSurface:
-        provider_surface = (provider_surface_resolver or RuntimeProviderSurfaceResolver()).resolve(
-            provider=provider,
+        resolved_overrides = overrides or SystemBootstrapperOverrides()
+        bootstrapper = resolved_overrides.bootstrapper
+        build_bootstrapper = resolved_overrides.build_bootstrapper
+        serving_bootstrapper = resolved_overrides.serving_bootstrapper
+        provider_surface = (
+            resolved_overrides.provider_surface_resolver or RuntimeProviderSurfaceResolver()
+        ).resolve(
+            provider=resolved_overrides.provider,
             bootstrapper=bootstrapper,
             build_bootstrapper=build_bootstrapper,
             serving_bootstrapper=serving_bootstrapper,
@@ -69,7 +81,7 @@ class SystemBootstrapperSurfaceComposer:
                 provider=provider_surface.provider,
                 build_bootstrapper=build_bootstrapper,
                 serving_bootstrapper=serving_bootstrapper,
-                bootstrapper_composer=bootstrapper_composer,
+                bootstrapper_composer=resolved_overrides.bootstrapper_composer,
             )
         return AdvancedGraphRAGBootstrapperSurface(
             provider_surface=provider_surface,
@@ -83,8 +95,8 @@ class SystemBootstrapperSurfaceComposer:
 class SystemRuntimeInfrastructure:
     """Runtime infrastructure resolved for the application system facade."""
 
-    diagnostics_service: RuntimeDiagnosticsService
-    shutdown_service: RuntimeShutdownService
+    diagnostics_service: RuntimeDiagnosticsServicePort
+    shutdown_service: RuntimeShutdownServicePort
     runtime_state_store: RuntimeStateStore
     runtime_manager: SystemRuntimeManager
 
@@ -98,8 +110,8 @@ class SystemRuntimeInfrastructureComposer:
         config: GraphRAGConfig,
         provider_surface: RuntimeProviderSurface,
         lifecycle_services: RuntimeLifecycleServiceBundle,
-        diagnostics_service: RuntimeDiagnosticsService | None = None,
-        shutdown_service: RuntimeShutdownService | None = None,
+        diagnostics_service: RuntimeDiagnosticsServicePort | None = None,
+        shutdown_service: RuntimeShutdownServicePort | None = None,
         runtime_state_store: RuntimeStateStore | None = None,
         runtime_manager: SystemRuntimeManager | None = None,
     ) -> SystemRuntimeInfrastructure:
@@ -132,6 +144,38 @@ class SystemRuntimeInfrastructureComposer:
 
 
 @dataclass(frozen=True)
+class SystemRuntimeOverrides:
+    """Optional runtime infrastructure collaborators for system assembly."""
+
+    lifecycle_services: RuntimeLifecycleServiceBundle | None = None
+    diagnostics_service: RuntimeDiagnosticsServicePort | None = None
+    shutdown_service: RuntimeShutdownServicePort | None = None
+    runtime_state_store: RuntimeStateStore | None = None
+    runtime_manager: SystemRuntimeManager | None = None
+
+
+@dataclass(frozen=True)
+class SystemFacadeOverrides:
+    """Optional facade-level collaborators for system assembly."""
+
+    operations_service: SystemOperationsProtocol | None = None
+    answering_service: QuestionAnswerer | None = None
+    facade_support: SystemFacadeSupportProtocol | None = None
+
+
+@dataclass(frozen=True)
+class AdvancedGraphRAGSystemOverrides:
+    """Grouped override bundle for composing an application system."""
+
+    bootstrapper: SystemBootstrapperOverrides = field(default_factory=SystemBootstrapperOverrides)
+    runtime: SystemRuntimeOverrides = field(default_factory=SystemRuntimeOverrides)
+    facade: SystemFacadeOverrides = field(default_factory=SystemFacadeOverrides)
+    bootstrapper_surface_composer: SystemBootstrapperSurfaceComposer | None = None
+    lifecycle_service_composer: RuntimeLifecycleServiceComposer | None = None
+    runtime_infrastructure_composer: SystemRuntimeInfrastructureComposer | None = None
+
+
+@dataclass(frozen=True)
 class AdvancedGraphRAGSystemComponents:
     """Resolved collaborators for the application system facade."""
 
@@ -141,8 +185,8 @@ class AdvancedGraphRAGSystemComponents:
     bootstrapper: "GraphRAGBootstrapper"
     build_bootstrapper: "BuildBootstrapper"
     serving_bootstrapper: "ServingBootstrapper"
-    diagnostics_service: RuntimeDiagnosticsService
-    shutdown_service: RuntimeShutdownService
+    diagnostics_service: RuntimeDiagnosticsServicePort
+    shutdown_service: RuntimeShutdownServicePort
     lifecycle_services: RuntimeLifecycleServiceBundle
     runtime_state_store: RuntimeStateStore
     operations_service: SystemOperationsProtocol
@@ -156,83 +200,57 @@ class AdvancedGraphRAGSystemComposer:
     def resolve_bootstrapper_surface(
         self,
         *,
-        provider: RuntimeComponentProvider | None = None,
-        bootstrapper=None,
-        build_bootstrapper=None,
-        serving_bootstrapper=None,
-        bootstrapper_composer: GraphRAGBootstrapperComposer | None = None,
-        provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None,
+        overrides: SystemBootstrapperOverrides | None = None,
         bootstrapper_surface_composer: SystemBootstrapperSurfaceComposer | None = None,
     ) -> AdvancedGraphRAGBootstrapperSurface:
+        resolved_overrides = overrides or SystemBootstrapperOverrides()
         return (bootstrapper_surface_composer or SystemBootstrapperSurfaceComposer()).compose(
-            provider=provider,
-            bootstrapper=bootstrapper,
-            build_bootstrapper=build_bootstrapper,
-            serving_bootstrapper=serving_bootstrapper,
-            bootstrapper_composer=bootstrapper_composer,
-            provider_surface_resolver=provider_surface_resolver,
+            overrides=resolved_overrides,
         )
 
     def compose(
         self,
         config: GraphRAGConfig | None = None,
         *,
-        provider: RuntimeComponentProvider | None = None,
-        bootstrapper=None,
-        build_bootstrapper=None,
-        serving_bootstrapper=None,
-        bootstrapper_composer: GraphRAGBootstrapperComposer | None = None,
-        provider_surface_resolver: RuntimeProviderSurfaceResolver | None = None,
-        bootstrapper_surface_composer: SystemBootstrapperSurfaceComposer | None = None,
-        diagnostics_service: RuntimeDiagnosticsService | None = None,
-        shutdown_service: RuntimeShutdownService | None = None,
-        lifecycle_services: RuntimeLifecycleServiceBundle | None = None,
-        lifecycle_service_composer: RuntimeLifecycleServiceComposer | None = None,
-        runtime_infrastructure_composer: SystemRuntimeInfrastructureComposer | None = None,
-        runtime_state_store: RuntimeStateStore | None = None,
-        operations_service: SystemOperationsProtocol | None = None,
-        answering_service: QuestionAnswerer | None = None,
-        facade_support: SystemFacadeSupportProtocol | None = None,
-        runtime_manager: SystemRuntimeManager | None = None,
+        overrides: AdvancedGraphRAGSystemOverrides | None = None,
     ) -> AdvancedGraphRAGSystemComponents:
         resolved_config = config or get_default_config()
+        resolved_overrides = overrides or AdvancedGraphRAGSystemOverrides()
+        runtime_overrides = resolved_overrides.runtime
+        facade_overrides = resolved_overrides.facade
         bootstrapper_surface = self.resolve_bootstrapper_surface(
-            provider=provider,
-            bootstrapper=bootstrapper,
-            build_bootstrapper=build_bootstrapper,
-            serving_bootstrapper=serving_bootstrapper,
-            bootstrapper_composer=bootstrapper_composer,
-            provider_surface_resolver=provider_surface_resolver,
-            bootstrapper_surface_composer=bootstrapper_surface_composer,
+            overrides=resolved_overrides.bootstrapper,
+            bootstrapper_surface_composer=resolved_overrides.bootstrapper_surface_composer,
         )
-        lifecycle_services = lifecycle_services or (
-            lifecycle_service_composer or RuntimeLifecycleServiceComposer()
+        lifecycle_services = runtime_overrides.lifecycle_services or (
+            resolved_overrides.lifecycle_service_composer or RuntimeLifecycleServiceComposer()
         ).compose(
             config=resolved_config,
             build_bootstrapper=bootstrapper_surface.build_bootstrapper,
             serving_bootstrapper=bootstrapper_surface.serving_bootstrapper,
         )
         runtime_infrastructure = (
-            runtime_infrastructure_composer or SystemRuntimeInfrastructureComposer()
+            resolved_overrides.runtime_infrastructure_composer
+            or SystemRuntimeInfrastructureComposer()
         ).compose(
             config=resolved_config,
             provider_surface=bootstrapper_surface.provider_surface,
             lifecycle_services=lifecycle_services,
-            diagnostics_service=diagnostics_service,
-            shutdown_service=shutdown_service,
-            runtime_state_store=runtime_state_store,
-            runtime_manager=runtime_manager,
+            diagnostics_service=runtime_overrides.diagnostics_service,
+            shutdown_service=runtime_overrides.shutdown_service,
+            runtime_state_store=runtime_overrides.runtime_state_store,
+            runtime_manager=runtime_overrides.runtime_manager,
         )
         runtime_backend = runtime_infrastructure.runtime_manager
         resolved_operations_service: SystemOperationsProtocol = (
-            operations_service or runtime_backend
+            facade_overrides.operations_service or runtime_backend
         )
-        resolved_answering_service = answering_service or SystemAnsweringService(
+        resolved_answering_service = facade_overrides.answering_service or SystemAnsweringService(
             backend=runtime_backend,
             runtime_state_store=runtime_infrastructure.runtime_state_store,
         )
         resolved_facade_support: SystemFacadeSupportProtocol = (
-            facade_support
+            facade_overrides.facade_support
             or SystemFacadeSupport(
                 runtime_state_store=runtime_infrastructure.runtime_state_store,
             )
@@ -258,7 +276,11 @@ __all__ = [
     "AdvancedGraphRAGBootstrapperSurface",
     "AdvancedGraphRAGSystemComponents",
     "AdvancedGraphRAGSystemComposer",
+    "AdvancedGraphRAGSystemOverrides",
+    "SystemBootstrapperOverrides",
     "SystemBootstrapperSurfaceComposer",
+    "SystemFacadeOverrides",
     "SystemRuntimeInfrastructure",
     "SystemRuntimeInfrastructureComposer",
+    "SystemRuntimeOverrides",
 ]

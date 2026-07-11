@@ -79,6 +79,31 @@ class GenerationClientAdapterTests(unittest.TestCase):
                 "token_usage_source": "provider",
             },
         )
+        self.assertNotIn("extra_body", adapter.client.completions.calls[0])
+
+    def test_completion_forwards_explicit_thinking_mode_setting(self) -> None:
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+        client = _FakeClient([response])
+        adapter = GenerationClientAdapter(
+            client=client,
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=1,
+            stream_timeout_seconds=5,
+            enable_thinking=False,
+        )
+
+        adapter.create_completion(
+            prompt="test",
+            temperature=0.0,
+            max_tokens=10,
+            timeout=2,
+        )
+
+        self.assertEqual(
+            {"enable_thinking": False},
+            client.completions.calls[0]["extra_body"],
+        )
 
     def test_completion_timeout_is_capped_by_request_control(self) -> None:
         response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
@@ -141,6 +166,32 @@ class GenerationClientAdapterTests(unittest.TestCase):
 
         self.assertEqual(chunks, ["hello"])
         self.assertEqual(len(client.completions.calls), 1)
+
+    def test_stream_forwards_explicit_thinking_mode_setting(self) -> None:
+        client = _FakeClient([[_stream_chunk("hello")]])
+        adapter = GenerationClientAdapter(
+            client=client,
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=1,
+            stream_timeout_seconds=5,
+            enable_thinking=False,
+        )
+
+        chunks = list(
+            adapter.stream_prompt(
+                prompt="test",
+                max_tokens=10,
+                retries=1,
+                timeout_seconds=2,
+            )
+        )
+
+        self.assertEqual(chunks, ["hello"])
+        self.assertEqual(
+            {"enable_thinking": False},
+            client.completions.calls[0]["extra_body"],
+        )
 
     def test_stream_stops_when_control_cancelled_between_chunks(self) -> None:
         control = RequestControl.for_timeout(5.0, scope="generation")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import tomllib
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from rag_modules.public_surface_manifest import (
     LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION,
     LEGACY_PUBLIC_SURFACE_SCAN_RULES,
     PUBLIC_API_SURFACE,
+    ROOT_PACKAGE_EXPORTS,
     ROOT_PUBLIC_SURFACE,
     SERVICE_API_SURFACE,
     canonical_surface_by_module,
@@ -22,6 +24,7 @@ from rag_modules.public_surface_manifest import (
     public_surface_by_module,
     repo_root_facade_module_names,
     root_facade_module_names,
+    root_package_exports_by_name,
     surface_by_kind,
 )
 
@@ -76,6 +79,26 @@ class PublicApiManifestTests(unittest.TestCase):
         self.assertEqual("service_api", surface["rag_modules.contracts"].kind)
         self.assertEqual("rag_modules.contracts", surface["rag_modules.contracts"].canonical_module)
         self.assertIn("contract kernel", surface["rag_modules.contracts"].notes)
+
+    def test_root_package_exports_are_public_api_contracts(self) -> None:
+        import rag_modules
+
+        root_surface = canonical_surface_by_module()["rag_modules"]
+        self.assertEqual("public_api", root_surface.kind)
+        self.assertIn("root package", root_surface.notes)
+
+        exports_by_name = root_package_exports_by_name()
+        self.assertEqual(set(rag_modules.__all__), set(exports_by_name))
+        self.assertEqual({entry.kind for entry in ROOT_PACKAGE_EXPORTS}, {"public_api"})
+
+        for export_name, entry in exports_by_name.items():
+            with self.subTest(export_name=export_name):
+                self.assertEqual("rag_modules", entry.module_name)
+                target_module = importlib.import_module(entry.canonical_module)
+                self.assertTrue(hasattr(target_module, export_name))
+                self.assertIs(
+                    getattr(rag_modules, export_name), getattr(target_module, export_name)
+                )
 
     def test_legacy_surface_is_empty_after_final_retirement(self) -> None:
         self.assertEqual((), LEGACY_PUBLIC_SURFACE)

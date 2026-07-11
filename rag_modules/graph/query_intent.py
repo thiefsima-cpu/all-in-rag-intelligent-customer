@@ -9,9 +9,10 @@ signals.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import List
 
 from ..contracts import GraphQueryType, QuerySemanticRuntimeSettings
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..query_policy.models import QueryPolicyBundle
 from ..query_understanding.graph_intent import infer_graph_max_depth, infer_query_semantic_profile
 from ..query_understanding.registry import QueryUnderstandingRegistry
@@ -24,7 +25,7 @@ class GraphQueryIntent:
     target_entities: List[str] = field(default_factory=list)
     relation_types: List[str] = field(default_factory=list)
     max_depth: int = 2
-    constraints: Dict[str, Any] = field(default_factory=dict)
+    constraints: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if isinstance(self.query_type, GraphQueryType):
@@ -42,15 +43,17 @@ class GraphQueryIntent:
             else str(self.query_type or "")
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "query_type": self.query_type_value,
-            "source_entities": self.source_entities,
-            "target_entities": self.target_entities,
-            "relation_types": self.relation_types,
-            "max_depth": self.max_depth,
-            "constraints": self.constraints,
-        }
+    def to_dict(self) -> JsonObject:
+        return coerce_json_object(
+            {
+                "query_type": self.query_type_value,
+                "source_entities": self.source_entities,
+                "target_entities": self.target_entities,
+                "relation_types": self.relation_types,
+                "max_depth": self.max_depth,
+                "constraints": self.constraints,
+            }
+        )
 
 
 def infer_graph_query_intent(

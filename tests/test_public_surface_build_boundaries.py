@@ -127,4 +127,3 @@ class PublicSurfaceBuildBoundaryTests(PublicSurfaceBoundaryTestCase):
             "Found build workflow dependencies that should be behind build-pipeline ports:\n"
             + "\n".join(violations),
         )
-

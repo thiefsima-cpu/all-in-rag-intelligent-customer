@@ -198,6 +198,30 @@ class HybridSearchServiceTests(unittest.TestCase):
         )
         self.assertEqual(outcome.to_stage_details()["candidate_counts"]["vector"], 1)
 
+    def test_candidate_view_methods_return_named_generator_documents(self) -> None:
+        config = build_test_config()
+        generator = _StubCandidateGenerator()
+        service = HybridSearchService(
+            config=config,
+            retrieval_profile=_FakeRetrievalProfile(),
+            runtime=_FakeRuntime(),
+            fusion_ranker=_FakeFusionRanker(),
+            constraint_retriever=SimpleNamespace(),
+            candidate_generator=generator,
+        )
+        request = RetrievalRequest.from_inputs(query="recommend tofu dishes", top_k=2)
+
+        constraint_docs = service.constraint_candidates(request)
+        vector_docs = service.vector_candidates(request)
+        dual_docs = service.dual_level_candidates(request)
+        bm25_docs = service.bm25_candidates(request)
+
+        self.assertEqual([doc.recipe_name for doc in constraint_docs], ["C"])
+        self.assertEqual([doc.recipe_name for doc in vector_docs], ["V"])
+        self.assertEqual(dual_docs, [])
+        self.assertEqual(bm25_docs, [])
+        self.assertEqual([seen.candidate_k for seen in generator.requests], [3, 3, 3, 3])
+
     def test_candidate_source_factory_is_used_when_generator_not_injected(self) -> None:
         config = build_test_config()
         runtime = _FakeRuntime()

@@ -152,6 +152,26 @@ class GraphPolicy:
 
 
 @dataclass(frozen=True)
+class AnswerWorkflowCopyPolicy:
+    no_evidence_answer: str
+    answer_failed: str
+    user_question_template: str
+    query_routing_started: str
+    answer_generation_started: str
+    streaming_interrupted_fallback: str
+    answer_complete_template: str
+    strategy_summary_template: str
+    strategy_icon_hybrid_traditional: str
+    strategy_icon_graph_rag: str
+    strategy_icon_combined: str
+    strategy_icon_default: str
+    document_summary_template: str
+    document_summary_total_template: str
+    unknown_recipe_name: str
+    unknown_search_type: str
+
+
+@dataclass(frozen=True)
 class GenerationAnswerTypePolicy:
     markers: tuple[str, ...] = ()
 
@@ -192,6 +212,7 @@ class GenerationPolicy:
     rule_plan: GenerationRulePlanPolicy
     decision: GenerationDecisionPolicy
     fallback_answer: dict[str, str]
+    answer_workflow_copy: AnswerWorkflowCopyPolicy
 
 
 @dataclass(frozen=True)

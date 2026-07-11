@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001399,Recipe,凉拌木耳,凉拌木耳 (Recipe),凉拌木耳,[],其他,2,,,,,,dishes\vegetable_dish\凉拌木耳\凉拌木耳.md
+201001400,Recipe,凉拌莴笋,凉拌莴笋 (Recipe),凉拌莴笋,[],其他,2,,,,,,dishes\vegetable_dish\凉拌莴笋\凉拌莴笋.md
+201001401,Recipe,包菜炒鸡蛋粉丝,包菜炒鸡蛋粉丝 (Recipe),包菜炒鸡蛋粉丝,[],素菜,3,,,,,,dishes\vegetable_dish\包菜炒鸡蛋粉丝\包菜炒鸡蛋粉丝.md
+201001402,Recipe,小炒藕丁,小炒藕丁 (Recipe),小炒藕丁,[],其他,3,,,,,,dishes\vegetable_dish\小炒藕丁\小炒藕丁.md
+201001403,Recipe,干锅花菜,干锅花菜 (Recipe),干锅花菜,[],其他,3,,,,,,dishes\vegetable_dish\干锅花菜\干锅花菜.md
+201001404,Recipe,手撕包菜,手撕包菜 (Recipe),手撕包菜,[],其他,3,,,,,,dishes\vegetable_dish\手撕包菜\手撕包菜.md
+201001405,Recipe,拔丝土豆,拔丝土豆 (Recipe),拔丝土豆,"[{'term': '拔丝马铃薯', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '拔丝洋芋', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '拔丝potato', 'language': 'en', 'language_code': 'en-US'}]",其他,3,,,,,,dishes\vegetable_dish\拔丝土豆\拔丝土豆.md
+201001406,Recipe,椒盐玉米,椒盐玉米 (Recipe),椒盐玉米,[],其他,3,,,,,,dishes\vegetable_dish\椒盐玉米\椒盐玉米.md
+201001407,Recipe,榄菜肉末四季豆,榄菜肉末四季豆 (Recipe),榄菜肉末四季豆,[],荤菜,3,,,,,,dishes\vegetable_dish\榄菜肉末四季豆\榄菜肉末四季豆.md
+201001408,Recipe,洋葱炒鸡蛋,洋葱炒鸡蛋 (Recipe),洋葱炒鸡蛋,[],素菜,2,,,,,,dishes\vegetable_dish\洋葱炒鸡蛋\洋葱炒鸡蛋.md

@@ -50,6 +50,7 @@ class RoutingPublicSurfaceBoundaryTests(unittest.TestCase):
             RAG_MODULES_DIR / "graph" / "retrieval_runtime.py",
             RAG_MODULES_DIR / "routing" / "strategies" / "graph.py",
             RAG_MODULES_DIR / "routing" / "strategies" / "combined.py",
+            RAG_MODULES_DIR / "routing" / "strategies" / "combined_executor.py",
         ]
         source = "\n".join(path.read_text(encoding="utf-8-sig") for path in files)
 
@@ -58,9 +59,12 @@ class RoutingPublicSurfaceBoundaryTests(unittest.TestCase):
         self.assertNotIn("graph_rag_evidence_search(", source)
 
     def test_combined_route_reports_control_cancellation_not_future_cancellation(self) -> None:
-        source = (RAG_MODULES_DIR / "routing" / "strategies" / "combined.py").read_text(
-            encoding="utf-8-sig"
-        )
+        files = [
+            RAG_MODULES_DIR / "routing" / "strategies" / "combined.py",
+            RAG_MODULES_DIR / "routing" / "strategies" / "combined_executor.py",
+            RAG_MODULES_DIR / "routing" / "strategies" / "combined_merger.py",
+        ]
+        source = "\n".join(path.read_text(encoding="utf-8-sig") for path in files)
 
         self.assertIn("cancel_observed_branches", source)
         self.assertNotIn('"cancelled_branches"', source)

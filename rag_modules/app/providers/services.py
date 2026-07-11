@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from ...build_pipeline.contracts import (
     DocumentArtifactBuilderPort,
     SemanticGraphSchemaSyncPort,
 )
 from ...configuration.models import GraphRAGConfig
-from ...generation.service import GenerationWorkflowService
+from ...generation.ports import GenerationWorkflowPort
+from ...query_policy.models import QueryPolicyBundle
 from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import ArtifactManifestStorePort, RuntimeArtifactAccessPort
 from ...runtime.stats_adapters import DefaultRuntimeStatsAccess
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..ports import (
+    AnswerWorkflowPort,
     GraphDataModulePort,
+    KnowledgeBaseServicePort,
     Neo4jManagerPort,
     QueryTracerPort,
+    RuntimeDiagnosticsServicePort,
+    RuntimeShutdownServicePort,
     VectorIndexModulePort,
 )
+from ..services.answer_copy import AnswerWorkflowCopy
 from ..services.answer_workflow import AnswerWorkflow
 from ..services.knowledge_base_service import KnowledgeBaseService
 from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
@@ -42,9 +50,9 @@ class _DefaultApplicationServiceProvider:
         self,
         *,
         config: GraphRAGConfig,
-        existing: RuntimeDiagnosticsService | None = None,
+        existing: RuntimeDiagnosticsServicePort | None = None,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
-    ) -> RuntimeDiagnosticsService:
+    ) -> RuntimeDiagnosticsServicePort:
         if existing is not None:
             return existing
         return RuntimeDiagnosticsService(
@@ -56,8 +64,8 @@ class _DefaultApplicationServiceProvider:
         self,
         *,
         config: GraphRAGConfig,
-        existing: RuntimeShutdownService | None = None,
-    ) -> RuntimeShutdownService:
+        existing: RuntimeShutdownServicePort | None = None,
+    ) -> RuntimeShutdownServicePort:
         del config
         if existing is not None:
             return existing
@@ -75,7 +83,7 @@ class _DefaultApplicationServiceProvider:
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
         document_artifact_builder: DocumentArtifactBuilderPort | None = None,
         semantic_graph_schema_sync: SemanticGraphSchemaSyncPort | None = None,
-    ) -> KnowledgeBaseService:
+    ) -> KnowledgeBaseServicePort:
         return KnowledgeBaseService(
             config=config,
             neo4j_manager=neo4j_manager,
@@ -93,14 +101,22 @@ class _DefaultApplicationServiceProvider:
         *,
         config: GraphRAGConfig,
         query_router: RoutingWorkflowProtocol,
-        generation_module: GenerationWorkflowService,
+        generation_module: GenerationWorkflowPort,
         query_tracer: QueryTracerPort,
-    ) -> AnswerWorkflow:
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> AnswerWorkflowPort:
+        answer_workflow_copy = None
+        if policy_bundle is not None:
+            answer_workflow_copy = cast(
+                AnswerWorkflowCopy,
+                policy_bundle.generation.answer_workflow_copy,
+            )
         return AnswerWorkflow(
             config=config,
             query_router=query_router,
             generation_module=generation_module,
             query_tracer=query_tracer,
+            answer_workflow_copy=answer_workflow_copy,
         )
 
 

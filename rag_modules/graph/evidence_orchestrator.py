@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional
+from typing import Callable, List, Optional, Protocol
 
 from ..contracts import (
     EvidenceDocument,
@@ -15,7 +15,9 @@ from ..contracts import (
     RetrievalRequest,
 )
 from ..contracts.graph import GraphQuery
+from ..kernel.json_types import JsonObject
 from ..safe_logging import log_failure
+from .ports import Neo4jRecordPort
 from .reasoning_strategy import GraphReasoningOutcome, GraphReasoningStrategy
 from .retrieval_plan import GraphRetrievalPlan
 from .retrieval_types import GraphPath, KnowledgeSubgraph, QueryType
@@ -30,15 +32,98 @@ class GraphEvidenceExecutionResult:
     evidence_unit_count: int = 0
 
 
+class GraphRetrievalPlanBuilderPort(Protocol):
+    def build(
+        self,
+        graph_query: GraphQuery,
+        *,
+        evidence_goals: List[str],
+    ) -> GraphRetrievalPlan: ...
+
+
+class GraphQueryExecutorPort(Protocol):
+    @property
+    def driver(self) -> object | None: ...
+
+    def shortest_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Neo4jRecordPort]: ...
+
+    def entity_relation_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Neo4jRecordPort]: ...
+
+    def multi_hop_paths(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Neo4jRecordPort]: ...
+
+    def subgraphs(
+        self,
+        plan: GraphRetrievalPlan,
+        *,
+        control: RequestControl | None = None,
+    ) -> List[Neo4jRecordPort]: ...
+
+
+class GraphEvidencePostProcessorPort(Protocol):
+    def parse_neo4j_path(
+        self,
+        record: Neo4jRecordPort,
+        path_type: str = "multi_hop",
+    ) -> GraphPath | None: ...
+
+    def build_knowledge_subgraph(self, record: Neo4jRecordPort) -> KnowledgeSubgraph: ...
+
+    def merge_subgraphs(self, subgraphs: List[KnowledgeSubgraph]) -> KnowledgeSubgraph: ...
+
+    def to_ranked_evidence_documents(
+        self,
+        documents: List[EvidenceDocument],
+        query: str,
+    ) -> List[EvidenceDocument]: ...
+
+    def paths_to_evidence_documents(
+        self,
+        paths: List[GraphPath],
+        query: str,
+    ) -> List[EvidenceDocument]: ...
+
+    def subgraph_to_evidence_documents(
+        self,
+        subgraph: KnowledgeSubgraph,
+        reasoning_chains: List[str],
+        query: str,
+    ) -> List[EvidenceDocument]: ...
+
+    def build_path_description(self, path: GraphPath) -> str: ...
+
+    def build_subgraph_description(self, subgraph: KnowledgeSubgraph) -> str: ...
+
+    def summarize_subgraph_evidence(self, subgraph: KnowledgeSubgraph) -> JsonObject: ...
+
+    def relationship_lines(self, subgraph: KnowledgeSubgraph, limit: int = 30) -> List[str]: ...
+
+    def empty_subgraph(self) -> KnowledgeSubgraph: ...
+
+
 class GraphEvidenceOrchestrator:
     """Own graph plan execution, subgraph reasoning, and final ranking."""
 
     def __init__(
         self,
         *,
-        graph_plan_builder,
-        graph_executor,
-        postprocessor,
+        graph_plan_builder: GraphRetrievalPlanBuilderPort,
+        graph_executor: GraphQueryExecutorPort,
+        postprocessor: GraphEvidencePostProcessorPort,
         reasoning_strategy: GraphReasoningStrategy,
     ) -> None:
         self.graph_plan_builder = graph_plan_builder
@@ -94,7 +179,7 @@ class GraphEvidenceOrchestrator:
 
     def extract_knowledge_subgraph(
         self,
-        graph_query: Any,
+        graph_query: GraphQuery | GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
     ) -> KnowledgeSubgraph:
@@ -236,10 +321,10 @@ class GraphEvidenceOrchestrator:
     def build_subgraph_description(self, subgraph: KnowledgeSubgraph) -> str:
         return self.postprocessor.build_subgraph_description(subgraph)
 
-    def summarize_subgraph_evidence(self, subgraph: KnowledgeSubgraph):
+    def summarize_subgraph_evidence(self, subgraph: KnowledgeSubgraph) -> JsonObject:
         return self.postprocessor.summarize_subgraph_evidence(subgraph)
 
-    def relationship_lines(self, subgraph: KnowledgeSubgraph, limit: int = 30):
+    def relationship_lines(self, subgraph: KnowledgeSubgraph, limit: int = 30) -> List[str]:
         return self.postprocessor.relationship_lines(subgraph, limit=limit)
 
     def identify_reasoning_patterns(self, subgraph: KnowledgeSubgraph) -> List[str]:

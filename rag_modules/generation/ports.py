@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Protocol
 
 from ..contracts import RequestControl
+from ..contracts.runtime import AnswerContext, GenerationSnapshot
 
 
 class LLMCompletionMessagePort(Protocol):
@@ -82,6 +83,43 @@ class StreamingLLMClientPort(LLMClientPort, Protocol):
     ) -> Iterator[str]: ...
 
 
+class GenerationWorkflowPort(Protocol):
+    """Generation workflow behavior consumed by app composition and answering."""
+
+    llm_client: LLMClientPort
+
+    def generate_answer_from_context(
+        self,
+        answer_context: AnswerContext | dict,
+        *,
+        control: RequestControl | None = None,
+    ) -> str: ...
+
+    def generate_answer_with_trace_from_context(
+        self,
+        answer_context: AnswerContext | dict,
+        *,
+        control: RequestControl | None = None,
+    ) -> tuple[str, GenerationSnapshot]: ...
+
+    def generate_answer_stream_from_context(
+        self,
+        answer_context: AnswerContext | dict,
+        max_retries: int | None = None,
+        *,
+        control: RequestControl | None = None,
+    ) -> Iterable[object]: ...
+
+    def generate_answer_stream_with_trace_from_context(
+        self,
+        answer_context: AnswerContext | dict,
+        *,
+        max_retries: int | None = None,
+        chunk_callback: object = None,
+        control: RequestControl | None = None,
+    ) -> tuple[str, GenerationSnapshot]: ...
+
+
 __all__ = [
     "LLMChatPort",
     "LLMClientPort",
@@ -89,6 +127,7 @@ __all__ = [
     "LLMCompletionMessagePort",
     "LLMCompletionResponsePort",
     "LLMCompletionsPort",
+    "GenerationWorkflowPort",
     "OpenAICompatibleLLMClientPort",
     "StreamingLLMClientPort",
 ]

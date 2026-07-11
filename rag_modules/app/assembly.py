@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 
 from ..configuration import get_default_config
 from ..configuration.models import GraphRAGConfig
-from .composition import AdvancedGraphRAGSystemComposer
+from .composition import (
+    AdvancedGraphRAGSystemComposer,
+    AdvancedGraphRAGSystemOverrides,
+    SystemBootstrapperOverrides,
+)
 from .contracts import (
     QuestionAnswerer,
     RuntimeComponentProvider,
@@ -18,6 +22,7 @@ from .runtime_operations import RuntimeOperationCoordinator
 
 if TYPE_CHECKING:
     from .bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
+    from .composition.build_jobs import BuildJobWorkerRunnerPort
     from .system import AdvancedGraphRAGSystem
 
 
@@ -56,10 +61,14 @@ class ApplicationAssembler:
     ) -> ApplicationContainer:
         components = self.system_composer.compose(
             config=config or get_default_config(),
-            provider=provider,
-            bootstrapper=bootstrapper,
-            build_bootstrapper=build_bootstrapper,
-            serving_bootstrapper=serving_bootstrapper,
+            overrides=AdvancedGraphRAGSystemOverrides(
+                bootstrapper=SystemBootstrapperOverrides(
+                    provider=provider,
+                    bootstrapper=bootstrapper,
+                    build_bootstrapper=build_bootstrapper,
+                    serving_bootstrapper=serving_bootstrapper,
+                ),
+            ),
         )
         return ApplicationContainer(
             config=components.config,
@@ -130,10 +139,30 @@ def assemble_build_job_application(
     return compose_build_job_application(system=system, config=config, coordinator=coordinator)
 
 
+def compose_build_job_worker(
+    *,
+    system,
+    config: GraphRAGConfig,
+    coordinator: RuntimeOperationCoordinator,
+    worker_id: str = "external-worker",
+) -> BuildJobWorkerRunnerPort:
+    """Compose the default external build-job worker runner."""
+
+    from .composition.build_jobs import compose_build_job_worker as _compose_build_job_worker
+
+    return _compose_build_job_worker(
+        system=system,
+        config=config,
+        coordinator=coordinator,
+        worker_id=worker_id,
+    )
+
+
 __all__ = [
     "ApplicationAssembler",
     "ApplicationContainer",
     "assemble_application_container",
     "assemble_build_job_application",
+    "compose_build_job_worker",
     "create_application_system",
 ]

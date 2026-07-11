@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -121,7 +122,7 @@ def test_build_judge_packet_limits_evidence_items_and_snippet_length() -> None:
 
     assert len(packet["evidence"]) == 6
     assert packet["evidence"][0]["recipe_name"] == "Recipe 0"
-    assert len(packet["evidence"][0]["snippet"]) == 240
+    assert len(packet["evidence"][0]["snippet"]) == 300
 
 
 def test_run_judge_posts_openai_compatible_request_and_parses_verdict() -> None:
@@ -138,8 +139,25 @@ def test_run_judge_posts_openai_compatible_request_and_parses_verdict() -> None:
     assert http.posts[0]["headers"] == {"Authorization": "Bearer judge-key"}
     assert http.posts[0]["json"]["model"] == "judge.model-v1"
     assert http.posts[0]["json"]["temperature"] == 0
+    assert http.posts[0]["json"]["response_format"] == {"type": "json_object"}
     assert http.posts[0]["timeout"] == 45.0
     assert http.closed is False
+
+
+def test_run_judge_forwards_explicit_thinking_mode() -> None:
+    http = FakeJudgeSession(FakeJudgeResponse(verdict_payload()))
+
+    result = run_judge(
+        settings=replace(settings().judge, enable_thinking=False),
+        case=case(),
+        observation=make_observation(),
+        expected_score_names=("faithfulness", "answer_relevance"),
+        minimum_score=0.8,
+        http_session=http,
+    )
+
+    assert result.verdict is not None
+    assert http.posts[0]["json"]["enable_thinking"] is False
 
 
 def test_judge_verdict_copies_and_freezes_scores() -> None:

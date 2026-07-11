@@ -31,6 +31,7 @@ class RequestControl:
     scope: str = "request"
     cancel_event: threading.Event = field(default_factory=threading.Event)
     _reason: str = ""
+    _parent: RequestControl | None = field(default=None, repr=False)
 
     @classmethod
     def for_timeout(cls, timeout_seconds: float, *, scope: str = "request") -> "RequestControl":
@@ -39,11 +40,14 @@ class RequestControl:
 
     @property
     def cancelled(self) -> bool:
-        return self.cancel_event.is_set()
+        return self.cancel_event.is_set() or bool(self._parent and self._parent.cancelled)
 
     @property
     def reason(self) -> str:
-        return self._reason or str(getattr(self.cancel_event, _REASON_ATTR, "") or "")
+        own_reason = self._reason or str(getattr(self.cancel_event, _REASON_ATTR, "") or "")
+        if own_reason:
+            return own_reason
+        return self._parent.reason if self._parent is not None else ""
 
     @property
     def budget_exhausted(self) -> bool:
@@ -69,6 +73,17 @@ class RequestControl:
             scope=str(scope or self.scope),
             cancel_event=self.cancel_event,
             _reason=self.reason,
+        )
+
+    def isolated_child(self, timeout_seconds: float, *, scope: str) -> "RequestControl":
+        """Create a child whose local cancellation does not cancel its parent."""
+
+        timeout = max(_MIN_TIMEOUT_SECONDS, float(timeout_seconds or _MIN_TIMEOUT_SECONDS))
+        child_deadline = min(self.deadline, time.perf_counter() + timeout)
+        return RequestControl(
+            deadline=child_deadline,
+            scope=str(scope or self.scope),
+            _parent=self,
         )
 
     def raise_if_cancelled(self) -> None:

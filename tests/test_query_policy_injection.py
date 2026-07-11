@@ -23,6 +23,33 @@ PRODUCTION_PACKAGE = Path("rag_modules")
 QUERY_SETTINGS_MODULE = Path("rag_modules/contracts/query_settings.py")
 
 
+def _answer_workflow_copy_payload() -> dict[str, str]:
+    return {
+        "no_evidence_answer": "No evidence.",
+        "answer_failed": "Answer failed.",
+        "user_question_template": "Question: {question}",
+        "query_routing_started": "Routing started.",
+        "answer_generation_started": "Generation started.",
+        "streaming_interrupted_fallback": "Stream interrupted.",
+        "answer_complete_template": "Done in {latency_seconds:.2f}s",
+        "strategy_summary_template": (
+            "{strategy_icon} Strategy: {strategy}\n"
+            "Complexity: {complexity:.2f}, "
+            "Relationship intensity: {relationship_intensity:.2f}"
+        ),
+        "strategy_icon_hybrid_traditional": "[HYBRID]",
+        "strategy_icon_graph_rag": "[GRAPH]",
+        "strategy_icon_combined": "[COMBINED]",
+        "strategy_icon_default": "[ROUTE]",
+        "document_summary_template": (
+            "Found {document_count} relevant documents: {document_summaries}"
+        ),
+        "document_summary_total_template": "\n    Total results: {document_count}",
+        "unknown_recipe_name": "unknown",
+        "unknown_search_type": "unknown",
+    }
+
+
 def _policy_payload() -> dict:
     return {
         "lexicon": {
@@ -168,6 +195,7 @@ def _policy_payload() -> dict:
                 "boundary": "Evidence-only boundary.",
                 "model_unavailable": "Model unavailable.",
             },
+            "answer_workflow_copy": _answer_workflow_copy_payload(),
         },
         "runtime_defaults": {
             "planner": {"model_name": "test-policy-model"},

@@ -5,7 +5,8 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import cast
 
 from ...kernel.artifacts import (
     ARTIFACT_STAGE_DOCUMENTS_READY,
@@ -170,7 +171,10 @@ class DocumentIndexCache:
         )
         save_candidate = getattr(self.manifest_store, "save_candidate", None)
         if callable(save_candidate):
-            saved_manifest = save_candidate(manifest)
+            save_candidate_func = cast(
+                Callable[[ArtifactManifest], ArtifactManifest], save_candidate
+            )
+            saved_manifest = save_candidate_func(manifest)
             logger.info("Document artifact candidate manifest saved")
         else:
             saved_manifest = self.manifest_store.save(manifest)

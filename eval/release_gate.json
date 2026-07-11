@@ -8,7 +8,7 @@
     "generation_prompts",
     "quality_eval"
   ],
-  "minimum_total_cases": 57,
+  "minimum_total_cases": 69,
   "minimum_overall_pass_rate": 1.0,
   "suite_minimum_cases": {
     "route_semantics": 24,
@@ -16,7 +16,7 @@
     "answer_pipeline_real_route": 3,
     "generation_plans": 3,
     "generation_prompts": 6,
-    "quality_eval": 18
+    "quality_eval": 30
   },
   "suite_minimum_pass_rate": {
     "route_semantics": 1.0,
@@ -33,7 +33,12 @@
     "multi_hop": 2,
     "constraint_conflict": 2,
     "long_query": 2,
-    "colloquial_zh": 2
+    "colloquial_zh": 2,
+    "long_tail": 2,
+    "adversarial": 2,
+    "permission_privacy": 2,
+    "dependency_anomaly": 2,
+    "low_quality_evidence": 2
   },
   "required_route_categories": [
     "single_recipe",

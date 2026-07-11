@@ -12,6 +12,13 @@ import sys
 from recipe_ai_agent import KimiRecipeAgent, RecipeKnowledgeGraphBuilder
 
 
+def configure_utf8_stdio():
+    """Keep Windows consoles from failing on Unicode status output."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def load_config():
     """加载配置文件"""
     config_file = "config.json"
@@ -116,7 +123,14 @@ def merge_batches(output_dir: str):
         return
 
     try:
-        ai_agent = KimiRecipeAgent(api_key)
+        ai_agent = KimiRecipeAgent(
+            api_key,
+            config["kimi"].get("base_url"),
+            config["kimi"].get("model", "qwen3.7-plus"),
+            config["kimi"].get("max_retries", 3),
+            config["kimi"].get("timeout", 30),
+            config["kimi"].get("max_tokens", 8192),
+        )
         builder = RecipeKnowledgeGraphBuilder(ai_agent, output_dir)
 
         print("合并批次数据...")
@@ -146,7 +160,14 @@ def continue_processing(recipe_dir: str, output_dir: str):
         return
 
     try:
-        ai_agent = KimiRecipeAgent(api_key)
+        ai_agent = KimiRecipeAgent(
+            api_key,
+            config["kimi"].get("base_url"),
+            config["kimi"].get("model", "qwen3.7-plus"),
+            config["kimi"].get("max_retries", 3),
+            config["kimi"].get("timeout", 30),
+            config["kimi"].get("max_tokens", 8192),
+        )
         batch_size = config.get("processing", {}).get("batch_size", 20)
         builder = RecipeKnowledgeGraphBuilder(ai_agent, output_dir, batch_size)
 
@@ -288,4 +309,5 @@ def main():
 
 
 if __name__ == "__main__":
+    configure_utf8_stdio()
     main()

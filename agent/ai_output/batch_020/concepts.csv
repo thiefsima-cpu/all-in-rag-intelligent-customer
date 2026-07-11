@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001319,Recipe,朱雀汤,朱雀汤 (Recipe),朱雀汤,[],其他,1,,,,,,dishes\soup\朱雀汤\朱雀汤.md
+201001320,Recipe,玉米排骨汤,玉米排骨汤 (Recipe),玉米排骨汤,[],其他,3,,,,,,dishes\soup\玉米排骨汤\玉米排骨汤.md
+201001321,Recipe,羊肉汤,羊肉汤 (Recipe),羊肉汤,[],荤菜,3,,,,,,dishes\soup\羊肉汤\羊肉汤.md
+201001322,Recipe,菌菇炖乳鸽,菌菇炖乳鸽 (Recipe),菌菇炖乳鸽,"[{'term': '菌菇煲乳鸽', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '菌菇stewed乳鸽', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,4,,,,,,dishes\soup\菌菇炖乳鸽\菌菇炖乳鸽.md
+201001323,Recipe,银耳莲子粥,银耳莲子粥 (Recipe),银耳莲子粥,[],其他,4,,,,,,dishes\soup\银耳莲子粥\银耳莲子粥.md
+201001324,Recipe,陈皮排骨汤,陈皮排骨汤 (Recipe),陈皮排骨汤,[],其他,3,,,,,,dishes\soup\陈皮排骨汤\陈皮排骨汤.md
+201001325,Recipe,手工水饺,手工水饺 (Recipe),手工水饺,[],其他,5,,,,,,dishes\staple\手工水饺.md
+201001326,Recipe,汤面,汤面 (Recipe),汤面,[],其他,2,,,,,,dishes\staple\汤面.md
+201001327,Recipe,炒年糕,炒年糕 (Recipe),炒年糕,[],其他,3,,,,,,dishes\staple\炒年糕.md
+201001328,Recipe,炒方便面,炒方便面 (Recipe),炒方便面,[],其他,2,,,,,,dishes\staple\炒方便面.md

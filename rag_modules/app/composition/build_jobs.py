@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
+from datetime import datetime, timezone
 from importlib import import_module
-from typing import Any
+from typing import Protocol, cast
 
 from ...configuration.models import GraphRAGConfig
 from ...kernel.json_types import coerce_json_object
@@ -12,10 +14,76 @@ from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
     BuildJobApplicationService,
     BuildJobExecutor,
+    BuildJobRepositoryPort,
     BuildJobRepositorySettings,
+    BuildJobRunnerPort,
     BuildJobRuntimeHooks,
 )
 from ..runtime_operations import RuntimeOperationCoordinator
+
+_Clock = Callable[[], datetime]
+
+
+class _BuildJobStoreMigrator(Protocol):
+    def migrate(self) -> None: ...
+
+
+class _BuildJobStoreMigratorFactory(Protocol):
+    def __call__(self, path: str, *, now: _Clock) -> _BuildJobStoreMigrator: ...
+
+
+class _FileBuildJobRepositoryFactory(Protocol):
+    def __call__(
+        self,
+        path: str,
+        *,
+        now: _Clock,
+        settings: BuildJobRepositorySettings,
+    ) -> BuildJobRepositoryPort: ...
+
+
+class _InProcessBuildJobRunnerFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        repository: BuildJobRepositoryPort,
+        executor: BuildJobExecutor,
+        max_workers: int,
+        worker_id: str,
+        heartbeat_seconds: float,
+    ) -> BuildJobRunnerPort: ...
+
+
+class _ExternalBuildJobQueueRunnerFactory(Protocol):
+    def __call__(self) -> BuildJobRunnerPort: ...
+
+
+class BuildJobWorkerRunnerPort(BuildJobRunnerPort, Protocol):
+    backend: str
+    poll_interval_seconds: float
+
+    def poll_once(self) -> None: ...
+
+
+class _ExternalBuildJobWorkerRunnerFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        repository: BuildJobRepositoryPort,
+        executor: BuildJobExecutor,
+        max_workers: int,
+        worker_id: str,
+        heartbeat_seconds: float,
+        poll_interval_seconds: float,
+    ) -> BuildJobWorkerRunnerPort: ...
+
+
+class _RuntimeBuildJobsModule(Protocol):
+    BuildJobStoreMigrator: _BuildJobStoreMigratorFactory
+    FileBuildJobRepository: _FileBuildJobRepositoryFactory
+    InProcessBuildJobRunner: _InProcessBuildJobRunnerFactory
+    ExternalBuildJobQueueRunner: _ExternalBuildJobQueueRunnerFactory
+    ExternalBuildJobWorkerRunner: _ExternalBuildJobWorkerRunnerFactory
 
 
 def compose_build_job_application(
@@ -25,14 +93,57 @@ def compose_build_job_application(
     coordinator: RuntimeOperationCoordinator,
 ) -> BuildJobApplicationService:
     api_settings = config.api
-    if api_settings.build_job_runner_backend != "in_process":
-        raise ValueError(
-            f"Unsupported build job runner backend: {api_settings.build_job_runner_backend!r}"
-        )
-    store_path = default_build_job_store_path(config)
     runtime_build_jobs = _runtime_build_jobs_module()
+    repository = _compose_repository(
+        runtime_build_jobs=runtime_build_jobs,
+        config=config,
+    )
+    runner = _compose_api_runner(
+        runtime_build_jobs=runtime_build_jobs,
+        backend=str(api_settings.build_job_runner_backend),
+        repository=repository,
+        executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
+        max_workers=int(api_settings.build_job_runner_max_workers),
+        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+    )
+    return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+
+
+def compose_build_job_worker(
+    *,
+    system: GraphRAGApplication,
+    config: GraphRAGConfig,
+    coordinator: RuntimeOperationCoordinator,
+    worker_id: str = "external-worker",
+) -> BuildJobWorkerRunnerPort:
+    """Compose a long-running external build-job worker runner."""
+
+    api_settings = config.api
+    runtime_build_jobs = _runtime_build_jobs_module()
+    repository = _compose_repository(
+        runtime_build_jobs=runtime_build_jobs,
+        config=config,
+    )
+    executor = _compose_executor(system=system, coordinator=coordinator)
+    return runtime_build_jobs.ExternalBuildJobWorkerRunner(
+        repository=repository,
+        executor=executor,
+        max_workers=int(api_settings.build_job_runner_max_workers),
+        worker_id=worker_id,
+        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+        poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
+    )
+
+
+def _compose_repository(
+    *,
+    runtime_build_jobs: _RuntimeBuildJobsModule,
+    config: GraphRAGConfig,
+) -> BuildJobRepositoryPort:
+    api_settings = config.api
+    store_path = default_build_job_store_path(config)
     runtime_build_jobs.BuildJobStoreMigrator(store_path, now=_utc_now).migrate()
-    repository = runtime_build_jobs.FileBuildJobRepository(
+    return runtime_build_jobs.FileBuildJobRepository(
         store_path,
         now=_utc_now,
         settings=BuildJobRepositorySettings(
@@ -42,6 +153,35 @@ def compose_build_job_application(
             lease_seconds=float(api_settings.build_job_lease_seconds),
         ),
     )
+
+
+def _compose_api_runner(
+    *,
+    runtime_build_jobs: _RuntimeBuildJobsModule,
+    backend: str,
+    repository: BuildJobRepositoryPort,
+    executor_factory: Callable[[], BuildJobExecutor],
+    max_workers: int,
+    heartbeat_seconds: float,
+) -> BuildJobRunnerPort:
+    if backend == "external_worker":
+        return runtime_build_jobs.ExternalBuildJobQueueRunner()
+    if backend == "in_process":
+        return runtime_build_jobs.InProcessBuildJobRunner(
+            repository=repository,
+            executor=executor_factory(),
+            max_workers=max_workers,
+            worker_id="in_process",
+            heartbeat_seconds=heartbeat_seconds,
+        )
+    raise ValueError(f"Unsupported build job runner backend: {backend!r}")
+
+
+def _compose_executor(
+    *,
+    system: GraphRAGApplication,
+    coordinator: RuntimeOperationCoordinator,
+) -> BuildJobExecutor:
     hooks = BuildJobRuntimeHooks(
         system=system,
         lifecycle_operation=coordinator.lifecycle_operation,
@@ -52,28 +192,20 @@ def compose_build_job_application(
         ),
         failure_snapshot=lambda: _failure_snapshot(system, coordinator),
     )
-    executor = BuildJobExecutor(hooks=hooks)
-    runner = runtime_build_jobs.InProcessBuildJobRunner(
-        repository=repository,
-        executor=executor,
-        max_workers=int(api_settings.build_job_runner_max_workers),
-        worker_id="in_process",
-        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
-    )
-    return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+    return BuildJobExecutor(hooks=hooks)
 
 
-def _runtime_build_jobs_module():
-    return import_module("rag_modules.runtime.build_jobs")
+def _runtime_build_jobs_module() -> _RuntimeBuildJobsModule:
+    return cast(_RuntimeBuildJobsModule, import_module("rag_modules.runtime.build_jobs"))
 
 
-def default_build_job_store_path(config: Any) -> str:
-    storage = getattr(config, "storage", None)
-    configured_path = str(getattr(storage, "build_job_store_path", "") or "")
+def default_build_job_store_path(config: GraphRAGConfig) -> str:
+    storage = config.storage
+    configured_path = str(storage.build_job_store_path or "")
     if configured_path:
         return configured_path
     manifest_path = str(
-        getattr(storage, "artifact_manifest_path", "")
+        storage.artifact_manifest_path
         or os.path.join("storage", "indexes", "artifact_manifest.json")
     )
     return os.path.join(os.path.dirname(manifest_path), "build_jobs.json")
@@ -106,10 +238,12 @@ def _failure_snapshot(
     return diagnostics, stats
 
 
-def _utc_now():
-    from datetime import datetime, timezone
-
+def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-__all__ = ["compose_build_job_application", "default_build_job_store_path"]
+__all__ = [
+    "compose_build_job_application",
+    "compose_build_job_worker",
+    "default_build_job_store_path",
+]

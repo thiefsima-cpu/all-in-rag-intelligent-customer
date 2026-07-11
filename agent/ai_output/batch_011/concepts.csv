@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001229,Recipe,麻辣香锅,麻辣香锅 (Recipe),麻辣香锅,[],其他,3,,,,,,dishes\meat_dish\麻辣香锅.md
+201001230,Recipe,黄焖鸡,黄焖鸡 (Recipe),黄焖鸡,"[{'term': '黄闷鸡', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '黄braised鸡', 'language': 'en', 'language_code': 'en-US'}]",荤菜,3,,,,,,dishes\meat_dish\黄焖鸡.md
+201001231,Recipe,黄瓜炒肉,黄瓜炒肉 (Recipe),黄瓜炒肉,[],荤菜,3,,,,,,dishes\meat_dish\黄瓜炒肉.md
+201001232,Recipe,农家一碗香,农家一碗香 (Recipe),农家一碗香,[],其他,3,,,,,,dishes\meat_dish\农家一碗香\农家一碗香.md
+201001233,Recipe,冬瓜酿肉,冬瓜酿肉 (Recipe),冬瓜酿肉,[],荤菜,4,,,,,,dishes\meat_dish\冬瓜酿肉\冬瓜酿肉.md
+201001234,Recipe,凉拌鸡丝,凉拌鸡丝 (Recipe),凉拌鸡丝,[],荤菜,3,,,,,,dishes\meat_dish\凉拌鸡丝\凉拌鸡丝.md
+201001235,Recipe,卤菜,卤菜 (Recipe),卤菜,[],其他,3,,,,,,dishes\meat_dish\卤菜\卤菜.md
+201001236,Recipe,口水鸡,口水鸡 (Recipe),口水鸡,[],荤菜,3,,,,,,dishes\meat_dish\口水鸡\口水鸡.md
+201001237,Recipe,台式卤肉饭,台式卤肉饭 (Recipe),台式卤肉饭,[],荤菜,5,,,,,,dishes\meat_dish\台式卤肉饭\台式卤肉饭.md
+201001238,Recipe,咖喱肥牛,咖喱肥牛 (Recipe),咖喱肥牛,[],其他,4,,,,,,dishes\meat_dish\咖喱肥牛\咖喱肥牛.md

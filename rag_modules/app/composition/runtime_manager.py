@@ -5,10 +5,9 @@ from __future__ import annotations
 from ...configuration.models import GraphRAGConfig
 from ...kernel.artifacts import ArtifactManifest
 from ...kernel.json_types import JsonObject
+from ..ports import RuntimeDiagnosticsServicePort, RuntimeShutdownServicePort
 from ..runtime_state import BuildRuntime, ServingRuntime
 from ..runtime_view import SystemRuntime
-from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from ..services.runtime_shutdown_service import RuntimeShutdownService
 from .runtime_lifecycle_service_composer import RuntimeLifecycleServiceBundle
 from .runtime_state_store import RuntimeStateStore
 from .shared import ProgressCallback
@@ -21,8 +20,8 @@ class SystemRuntimeManager:
         self,
         *,
         config: GraphRAGConfig,
-        diagnostics_service: RuntimeDiagnosticsService,
-        shutdown_service: RuntimeShutdownService,
+        diagnostics_service: RuntimeDiagnosticsServicePort,
+        shutdown_service: RuntimeShutdownServicePort,
         lifecycle_services: RuntimeLifecycleServiceBundle,
         runtime_state_store: RuntimeStateStore | None = None,
     ) -> None:

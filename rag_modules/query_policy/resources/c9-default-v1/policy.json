@@ -1314,6 +1314,24 @@
       "constraint_reasons": "约束提示：{constraint_reasons}",
       "boundary": "当前回答为证据保底版，未补充证据之外的信息。",
       "model_unavailable": "生成模型暂时不可用，已自动切换为证据保底回答。"
+    },
+    "answer_workflow_copy": {
+      "no_evidence_answer": "Sorry, I could not find enough relevant retrieval evidence to answer that question.",
+      "answer_failed": "The answer could not be generated.",
+      "user_question_template": "\nUser question: {question}",
+      "query_routing_started": "Running query routing...",
+      "answer_generation_started": "Generating answer...",
+      "streaming_interrupted_fallback": "\n[WARN] Streaming output interrupted. Falling back to standard mode...",
+      "answer_complete_template": "\nAnswer complete in {latency_seconds:.2f}s",
+      "strategy_summary_template": "{strategy_icon} Strategy: {strategy}\nComplexity: {complexity:.2f}, Relationship intensity: {relationship_intensity:.2f}",
+      "strategy_icon_hybrid_traditional": "[HYBRID]",
+      "strategy_icon_graph_rag": "[GRAPH]",
+      "strategy_icon_combined": "[COMBINED]",
+      "strategy_icon_default": "[ROUTE]",
+      "document_summary_template": "Found {document_count} relevant documents: {document_summaries}",
+      "document_summary_total_template": "\n    Total results: {document_count}",
+      "unknown_recipe_name": "unknown",
+      "unknown_search_type": "unknown"
     }
   },
   "runtime_defaults": {

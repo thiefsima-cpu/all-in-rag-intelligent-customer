@@ -7,11 +7,13 @@ from typing import cast
 from ...configuration.models import GraphRAGConfig
 from ...generation.ports import LLMClientPort
 from ...graph.ports import Neo4jManagerPort as GraphNeo4jManagerPort
-from ...graph.retrieval import GraphRAGRetrieval
+from ...graph.rag_retrieval import GraphRAGRetrieval
 from ...infra.providers.dashscope import DashScopeRerankClient
 from ...query_policy.models import QueryPolicyBundle
+from ...query_understanding.ports import QueryUnderstandingPort
 from ...query_understanding.service import QueryUnderstandingService
-from ...retrieval import HybridRetrievalService
+from ...retrieval.hybrid_service import HybridRetrievalService
+from ...retrieval.ports import Neo4jManagerPort as RetrievalNeo4jManagerPort
 from ...retrieval.ports import RerankClientPort
 from ...retrieval.post_processor import RetrievalPostProcessor
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile, RetrievalRuntimeProfileFactory
@@ -19,6 +21,8 @@ from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
 from ..ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
+    ServingGraphRAGRetrievalPort,
+    ServingHybridRetrievalPort,
     VectorIndexModulePort,
 )
 
@@ -49,7 +53,7 @@ class _DefaultRetrievalRuntimeProvider:
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> QueryUnderstandingService:
+    ) -> QueryUnderstandingPort:
         return QueryUnderstandingService(
             llm_client=llm_client,
             config=config,
@@ -68,14 +72,14 @@ class _DefaultRetrievalRuntimeProvider:
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> HybridRetrievalService:
+    ) -> ServingHybridRetrievalPort:
         del policy_bundle
         return HybridRetrievalService(
             config=config,
             milvus_module=milvus_module,
             data_module=data_module,
             llm_client=llm_client,
-            neo4j_manager=neo4j_manager,
+            neo4j_manager=cast(RetrievalNeo4jManagerPort, neo4j_manager),
             retrieval_profile=retrieval_profile,
         )
 
@@ -87,7 +91,7 @@ class _DefaultRetrievalRuntimeProvider:
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> GraphRAGRetrieval:
+    ) -> ServingGraphRAGRetrievalPort:
         return GraphRAGRetrieval(
             config=config,
             llm_client=llm_client,
@@ -100,11 +104,11 @@ class _DefaultRetrievalRuntimeProvider:
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalService,
-        graph_rag_retrieval: GraphRAGRetrieval,
+        traditional_retrieval: ServingHybridRetrievalPort,
+        graph_rag_retrieval: ServingGraphRAGRetrievalPort,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
-        query_understanding_service: QueryUnderstandingService,
+        query_understanding_service: QueryUnderstandingPort,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> RoutingWorkflowProtocol:
         post_processor = RetrievalPostProcessor(

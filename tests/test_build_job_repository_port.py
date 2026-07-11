@@ -111,7 +111,7 @@ def _succeed(
     )
 
 
-class BuildJobRepositoryPortTests(unittest.TestCase):
+class BuildJobRepositorySubmissionTests(unittest.TestCase):
     def test_submit_replays_idempotency_key_and_reloads_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -175,6 +175,8 @@ class BuildJobRepositoryPortTests(unittest.TestCase):
                 {"schema_version", "revision", "baseline", "snapshot", "events"},
             )
 
+
+class BuildJobRepositoryLeaseTests(unittest.TestCase):
     def test_claim_next_renews_matching_token_and_rejects_stale_token(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             clock = MutableClock()
@@ -226,6 +228,8 @@ class BuildJobRepositoryPortTests(unittest.TestCase):
             self.assertEqual(recovered[0].status.value, "interrupted")
             self.assertEqual(recovered[0].to_public_dict()["status"], "failed")
 
+
+class BuildJobRepositoryListingTests(unittest.TestCase):
     def test_find_dispatchable_returns_queued_ids_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = _repository(Path(temp_dir))
@@ -270,6 +274,8 @@ class BuildJobRepositoryPortTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "invalid build job cursor"):
                 repository.list_page(BuildJobListQuery(cursor="not-valid"))
 
+
+class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
     def test_retention_removes_oldest_terminal_jobs_but_never_nonterminal_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

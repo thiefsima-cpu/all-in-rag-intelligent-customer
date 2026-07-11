@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001309,Recipe,米粥,米粥 (Recipe),米粥,[],其他,2,,,,,,dishes\soup\米粥.md
+201001310,Recipe,紫菜蛋花汤,紫菜蛋花汤 (Recipe),紫菜蛋花汤,[],素菜,2,,,,,,dishes\soup\紫菜蛋花汤.md
+201001311,Recipe,罗宋汤,罗宋汤 (Recipe),罗宋汤,[],其他,4,,,,,,dishes\soup\罗宋汤.md
+201001312,Recipe,腊八粥,腊八粥 (Recipe),腊八粥,[],其他,4,,,,,,dishes\soup\腊八粥.md
+201001313,Recipe,西红柿鸡蛋汤,西红柿鸡蛋汤 (Recipe),西红柿鸡蛋汤,"[{'term': 'tomato鸡蛋汤', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '番茄鸡蛋汤', 'language': 'zh', 'language_code': 'zh-CN'}]",素菜,2,,,,,,dishes\soup\西红柿鸡蛋汤.md
+201001314,Recipe,金针菇汤,金针菇汤 (Recipe),金针菇汤,[],其他,2,,,,,,dishes\soup\金针菇汤.md
+201001315,Recipe,陈皮排骨汤,陈皮排骨汤 (Recipe),陈皮排骨汤,[],其他,4,,,,,,dishes\soup\陈皮排骨汤.md
+201001316,Recipe,勾芡香菇汤,勾芡香菇汤 (Recipe),勾芡香菇汤,[],其他,3,,,,,,dishes\soup\勾芡香菇汤\勾芡香菇汤.md
+201001317,Recipe,排骨苦瓜汤,排骨苦瓜汤 (Recipe),排骨苦瓜汤,[],其他,4,,,,,,dishes\soup\排骨苦瓜汤\排骨苦瓜汤.md
+201001318,Recipe,昂刺鱼豆腐汤,昂刺鱼豆腐汤 (Recipe),昂刺鱼豆腐汤,"[{'term': '昂刺鱼嫩豆腐汤', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '昂刺鱼tofu汤', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '昂刺鱼老豆腐汤', 'language': 'zh', 'language_code': 'zh-CN'}]",素菜,3,,,,,,dishes\soup\昂刺鱼豆腐汤\昂刺鱼豆腐汤.md

@@ -17,6 +17,33 @@ GRAPH_PACKAGE = Path("rag_modules/graph")
 LEGACY_PREFERRED_RELATION_TYPES = frozenset({"REQUIRES", "BELONGS_TO_CATEGORY", "CONTAINS_STEP"})
 
 
+def _answer_workflow_copy_payload() -> dict[str, str]:
+    return {
+        "no_evidence_answer": "No evidence.",
+        "answer_failed": "Answer failed.",
+        "user_question_template": "Question: {question}",
+        "query_routing_started": "Routing started.",
+        "answer_generation_started": "Generation started.",
+        "streaming_interrupted_fallback": "Stream interrupted.",
+        "answer_complete_template": "Done in {latency_seconds:.2f}s",
+        "strategy_summary_template": (
+            "{strategy_icon} Strategy: {strategy}\n"
+            "Complexity: {complexity:.2f}, "
+            "Relationship intensity: {relationship_intensity:.2f}"
+        ),
+        "strategy_icon_hybrid_traditional": "[HYBRID]",
+        "strategy_icon_graph_rag": "[GRAPH]",
+        "strategy_icon_combined": "[COMBINED]",
+        "strategy_icon_default": "[ROUTE]",
+        "document_summary_template": (
+            "Found {document_count} relevant documents: {document_summaries}"
+        ),
+        "document_summary_total_template": "\n    Total results: {document_count}",
+        "unknown_recipe_name": "unknown",
+        "unknown_search_type": "unknown",
+    }
+
+
 def _minimal_policy_payload() -> dict:
     return {
         "lexicon": {
@@ -135,6 +162,7 @@ def _minimal_policy_payload() -> dict:
                 "boundary": "Evidence-only boundary.",
                 "model_unavailable": "Model unavailable.",
             },
+            "answer_workflow_copy": _answer_workflow_copy_payload(),
         },
         "runtime_defaults": {
             "planner": {"model_name": "test"},
@@ -300,6 +328,16 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertIn("relation_markers", bundle.lexicon.term_sets)
         self.assertIn("CONTRIBUTES_TO", bundle.relations.graph_relation_types)
 
+    def test_default_runtime_model_is_qwen_3_7_plus(self) -> None:
+        bundle = get_query_policy()
+
+        self.assertEqual("qwen3.7-plus", bundle.runtime_defaults.planner.model_name)
+
+    def test_default_runtime_reranker_is_qwen_3_vl(self) -> None:
+        bundle = get_query_policy()
+
+        self.assertEqual("qwen3-vl-rerank", bundle.runtime_defaults.postprocess.rerank_model)
+
     def test_policy_bundle_preserves_structured_policy_sections(self) -> None:
         bundle = get_query_policy()
 
@@ -336,6 +374,20 @@ class QueryPolicyTests(unittest.TestCase):
             bundle.generation.fallback_answer["heading"],
         )
 
+    def test_policy_bundle_exposes_answer_workflow_copy(self) -> None:
+        copy = get_query_policy().generation.answer_workflow_copy
+
+        self.assertEqual(
+            copy.no_evidence_answer,
+            "Sorry, I could not find enough relevant retrieval evidence to answer that question.",
+        )
+        self.assertEqual(copy.answer_failed, "The answer could not be generated.")
+        self.assertEqual(copy.user_question_template, "\nUser question: {question}")
+        self.assertEqual(copy.query_routing_started, "Running query routing...")
+        self.assertEqual(copy.answer_generation_started, "Generating answer...")
+        self.assertEqual(copy.strategy_icon_graph_rag, "[GRAPH]")
+        self.assertEqual(copy.unknown_recipe_name, "unknown")
+
     def test_policy_uses_clean_utf8_terms(self) -> None:
         policy = get_query_policy().lexicon
 
@@ -366,6 +418,17 @@ class QueryPolicyTests(unittest.TestCase):
         prompts.answer_plan.format(question="q", evidence_summary="e")
         prompts.answer_compose.format(question="q", plan_json="p", evidence_text="e")
         prompts.answer_direct.format(question="q", evidence_text="e")
+
+    def test_answer_prompts_honor_explicit_language_and_clarification_requests(self) -> None:
+        prompts = get_query_policy().prompts
+
+        for template in (prompts.answer_direct, prompts.answer_compose):
+            self.assertIn("用户明确指定回答语言时，使用该语言", template)
+            self.assertIn("只提出必要的澄清问题", template)
+            self.assertIn("不猜测菜名或给出菜谱", template)
+            self.assertIn("整个回答只能包含一个问句", template)
+            self.assertIn("不得添加解释、证据摘要或候选项", template)
+            self.assertIn("声称证据缺失前，先核对全部可见证据", template)
 
     def test_registry_reads_terms_from_typed_policy_bundle(self) -> None:
         from rag_modules.query_understanding.registry import POLICY, RELATION_MARKERS
@@ -469,6 +532,43 @@ def test_policy_runtime_defaults_are_typed_sections(tmp_path: Path) -> None:
     assert bundle.runtime_defaults.semantics.default_max_depth == 2
 
 
+def test_policy_loader_migrates_additive_v1_fields_for_custom_bundle(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import load_policy_bundle
+
+    _write_bundle(tmp_path)
+    load_policy_bundle.cache_clear()
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    generation = policy["generation"]
+    generation["decision"]["reasons"].pop("simple")
+    generation["fallback_answer"].pop("model_unavailable")
+    answer_workflow_copy = generation["answer_workflow_copy"]
+    for field_name in (
+        "query_routing_started",
+        "answer_generation_started",
+        "streaming_interrupted_fallback",
+        "unknown_recipe_name",
+        "unknown_search_type",
+    ):
+        answer_workflow_copy.pop(field_name)
+    graph_reasoning = policy["graph"]["reasoning"]
+    graph_reasoning.pop("comparison_markers")
+    graph_reasoning.pop("semantic_relation_key_specs")
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    bundle = load_policy_bundle(tmp_path)
+
+    assert bundle.generation.answer_workflow_copy.no_evidence_answer == "No evidence."
+    assert (
+        bundle.generation.answer_workflow_copy.query_routing_started == "Running query routing..."
+    )
+    assert bundle.generation.answer_workflow_copy.unknown_recipe_name == "unknown"
+    assert bundle.generation.decision.reasons.simple == "simple"
+    assert bundle.generation.fallback_answer["model_unavailable"] == "Model unavailable."
+    assert bundle.graph.reasoning.comparison_markers == ()
+    assert bundle.graph.reasoning.semantic_relation_key_specs == {}
+
+
 def test_policy_loader_delegates_to_focused_section_parsers() -> None:
     parser_dir = Path("rag_modules/query_policy/parsers")
     parser_modules = {path.name for path in parser_dir.glob("*.py")}
@@ -517,6 +617,40 @@ def test_policy_loader_rejects_legacy_generation_policy(tmp_path: Path) -> None:
         load_policy_bundle(tmp_path)
 
 
+def test_policy_loader_rejects_malformed_answer_workflow_copy_section(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["generation"]["answer_workflow_copy"] = []
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(
+        PolicyLoadError,
+        match="generation.answer_workflow_copy",
+    ):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_unknown_answer_workflow_template_variable(
+    tmp_path: Path,
+) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["generation"]["answer_workflow_copy"]["answer_complete_template"] = "Done in {seconds}s"
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(
+        PolicyLoadError,
+        match="generation.answer_workflow_copy.answer_complete_template.seconds",
+    ):
+        load_policy_bundle(tmp_path)
+
+
 def test_policy_loader_rejects_unknown_graph_sub_question_condition(
     tmp_path: Path,
 ) -> None:
@@ -538,10 +672,10 @@ def test_policy_loader_rejects_incomplete_graph_reasoning_policy(tmp_path: Path)
     _write_bundle(tmp_path)
     policy_path = tmp_path / "policy.json"
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
-    policy["graph"]["reasoning"].pop("comparison_markers")
+    policy["graph"]["reasoning"].pop("causal_relation_types")
     policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises(PolicyLoadError, match="graph.reasoning.comparison_markers"):
+    with pytest.raises(PolicyLoadError, match="graph.reasoning.causal_relation_types"):
         load_policy_bundle(tmp_path)
 
 

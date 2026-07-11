@@ -283,4 +283,3 @@ class PublicSurfaceAnswerBoundaryTests(PublicSurfaceBoundaryTestCase):
             violations,
             "Found retired legacy flat runtime attribute support:\n" + "\n".join(violations),
         )
-

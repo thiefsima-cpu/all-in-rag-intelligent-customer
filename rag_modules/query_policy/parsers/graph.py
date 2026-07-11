@@ -33,18 +33,16 @@ _SUB_QUESTION_CONDITION_KEYS = {
     "fallback",
 }
 
-_REASONING_KEYS = (
+_REQUIRED_REASONING_KEYS = (
     "causal_relation_types",
     "compositional_relation_types",
-    "comparison_markers",
-    "semantic_relation_key_specs",
 )
 
 
 def parse_graph(policy_payload: Mapping[str, object], root: Path) -> GraphPolicy:
     payload = required_mapping(policy_payload, "graph", root)
     reasoning = required_mapping(payload, "reasoning", root, field_path="graph.reasoning")
-    require_keys(reasoning, _REASONING_KEYS, root, "graph.reasoning")
+    require_keys(reasoning, _REQUIRED_REASONING_KEYS, root, "graph.reasoning")
     return GraphPolicy(
         max_depth=to_int_map(payload.get("max_depth"), root, "graph.max_depth"),
         max_nodes=to_int_map(payload.get("max_nodes"), root, "graph.max_nodes"),
@@ -137,7 +135,7 @@ def _to_graph_reasoning_policy(
             root,
             "graph.reasoning.compositional_relation_types",
         ),
-        comparison_markers=required_str_tuple(
+        comparison_markers=_optional_str_tuple(
             value.get("comparison_markers"),
             root,
             "graph.reasoning.comparison_markers",
@@ -154,6 +152,8 @@ def _to_semantic_relation_key_specs(
     root: Path,
 ) -> dict[str, SemanticRelationKeySpec]:
     field_path = "graph.reasoning.semantic_relation_key_specs"
+    if value is None:
+        return {}
     payload = mapping(value, root, field_path)
 
     specs: dict[str, SemanticRelationKeySpec] = {}
@@ -187,3 +187,9 @@ def _to_semantic_relation_key_specs(
             key_fields=key_fields,
         )
     return specs
+
+
+def _optional_str_tuple(value: object, root: Path, field_path: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    return required_str_tuple(value, root, field_path)

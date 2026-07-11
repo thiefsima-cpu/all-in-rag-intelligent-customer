@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import JsonValue
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .answer_copy import answer_failed_message_from_system
 from .error_models import ErrorCode, build_error_response
 from .request_context import current_request_id
 from .services import (
@@ -80,10 +81,13 @@ def register_api_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AnswerFailedError)
-    async def answer_failed(_: Request, __: AnswerFailedError) -> JSONResponse:
+    async def answer_failed(request: Request, __: AnswerFailedError) -> JSONResponse:
+        api_service = getattr(request.app.state, "api_service", None)
+        message = answer_failed_message_from_system(getattr(api_service, "system", None))
         return build_error_response(
             ErrorCode.ANSWER_FAILED,
             request_id=current_request_id(),
+            message=message,
         )
 
     @app.exception_handler(RequestValidationError)

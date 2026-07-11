@@ -9,6 +9,8 @@ from typing import Any
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from ...query_policy import get_query_policy
+
 
 class ErrorCode(str, Enum):
     INVALID_REQUEST = "INVALID_REQUEST"
@@ -37,12 +39,21 @@ ERROR_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.REQUEST_TOO_LARGE: "The request body is too large.",
     ErrorCode.VALIDATION_ERROR: "The request is invalid.",
     ErrorCode.RATE_LIMITED: "The service is currently at its answer concurrency limit.",
-    ErrorCode.ANSWER_FAILED: "The answer could not be generated.",
     ErrorCode.BUILD_FAILED: "The knowledge-base build failed.",
     ErrorCode.INTERNAL_ERROR: "An unexpected internal error occurred.",
     ErrorCode.SERVICE_MISCONFIGURED: "The service is not configured correctly.",
     ErrorCode.SERVICE_UNAVAILABLE: "A required service is unavailable.",
 }
+
+
+def _default_error_message(code: ErrorCode) -> str:
+    if code == ErrorCode.ANSWER_FAILED:
+        try:
+            return get_query_policy().generation.answer_workflow_copy.answer_failed
+        except Exception:
+            return str(code.value)
+    return ERROR_MESSAGES[code]
+
 
 ERROR_STATUS_CODES: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -82,9 +93,13 @@ def build_error_model(
     *,
     request_id: str,
     details: JsonValue | None = None,
+    message: str | None = None,
 ) -> ErrorResponseModel:
+    resolved_message = (
+        message if message is not None and message.strip() else _default_error_message(code)
+    )
     return ErrorResponseModel(
-        error=ErrorInfoModel(code=code, message=ERROR_MESSAGES[code], details=details),
+        error=ErrorInfoModel(code=code, message=resolved_message, details=details),
         request_id=request_id,
     )
 
@@ -94,8 +109,14 @@ def build_error_payload(
     *,
     request_id: str,
     details: JsonValue | None = None,
+    message: str | None = None,
 ) -> dict[str, Any]:
-    return build_error_model(code, request_id=request_id, details=details).model_dump(
+    return build_error_model(
+        code,
+        request_id=request_id,
+        details=details,
+        message=message,
+    ).model_dump(
         mode="json",
         exclude_none=True,
     )
@@ -106,11 +127,17 @@ def build_error_response(
     *,
     request_id: str,
     details: JsonValue | None = None,
+    message: str | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=ERROR_STATUS_CODES[code],
-        content=build_error_payload(code, request_id=request_id, details=details),
+        content=build_error_payload(
+            code,
+            request_id=request_id,
+            details=details,
+            message=message,
+        ),
         headers=headers,
     )
 

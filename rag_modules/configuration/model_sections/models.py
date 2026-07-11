@@ -19,6 +19,7 @@ class ModelSettings(ConfigSection):
     )
     embedding_model: str = "qwen3-vl-embedding"
     llm_model: str
+    llm_enable_thinking: bool | None = None
     rerank_model: str = "qwen3-vl-rerank"
     embedding_dimension: int = Field(default=1024, ge=1)
     embedding_batch_size: int = 10

@@ -95,7 +95,6 @@ class GraphRouteStrategy:
                 )
             )
             supplement_docs = list(supplement_outcome.documents)
-            fallbacks.append("graph_insufficient_hybrid_supplement")
             stages.append(
                 RouteExecutionStageResult(
                     name="hybrid_supplement",

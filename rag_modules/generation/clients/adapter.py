@@ -42,6 +42,7 @@ class GenerationClientAdapter:
         default_temperature: float,
         request_retries: int,
         stream_timeout_seconds: int,
+        enable_thinking: bool | None = None,
         circuit_breaker: CircuitBreaker | None = None,
         circuit_breaker_failure_threshold: int = 5,
         circuit_breaker_recovery_seconds: float = 30.0,
@@ -51,6 +52,7 @@ class GenerationClientAdapter:
         self.default_temperature = default_temperature
         self.request_retries = max(1, int(request_retries or 1))
         self.stream_timeout_seconds = max(1, int(stream_timeout_seconds or 45))
+        self.enable_thinking = enable_thinking
         self.circuit_breaker = circuit_breaker or CircuitBreaker(
             failure_threshold=circuit_breaker_failure_threshold,
             recovery_timeout_seconds=circuit_breaker_recovery_seconds,
@@ -103,6 +105,7 @@ class GenerationClientAdapter:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     timeout=max(0.1, remaining),
+                    **self._provider_request_options(),
                 )
                 if not self._record_token_usage(response):
                     self._record_estimated_usage(
@@ -178,6 +181,7 @@ class GenerationClientAdapter:
                     max_tokens=max_tokens,
                     stream=True,
                     timeout=max(0.1, remaining),
+                    **self._provider_request_options(),
                 )
                 reported_usage = False
                 emitted_chunks: list[str] = []
@@ -237,6 +241,11 @@ class GenerationClientAdapter:
 
     def _record_estimated_usage(self, *, prompt: str, completion: str) -> None:
         self._token_usage.record_estimated(prompt=prompt, completion=completion)
+
+    def _provider_request_options(self) -> dict[str, Any]:
+        if self.enable_thinking is None:
+            return {}
+        return {"extra_body": {"enable_thinking": bool(self.enable_thinking)}}
 
     _response_content = staticmethod(response_content)
     _estimate_tokens = staticmethod(estimate_tokens)

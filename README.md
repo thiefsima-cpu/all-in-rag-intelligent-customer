@@ -61,13 +61,14 @@ graph-rag-verify-env
 ## 架构说明
 
 运行时装配、从 query 到 answer 的流程，以及构建工作流状态机，请先阅读
-[docs/architecture.md](docs/architecture.md)。
+[docs/architecture.md](docs/architecture.md)。如果只想快速跟完一次 `/v1/answers` 请求，先看其中的
+“请求生命周期最短阅读路线”。
 
 ## 版本治理
 
 GraphRAG C9 同时跟踪三个版本轴：
 
-- 包版本：`0.3.0`，来源于 `pyproject.toml` 的 `[project].version`。它是 Python 分发包和发布版本，
+- 包版本：`0.3.0rc1`，来源于 `pyproject.toml` 的 `[project].version`。它是 Python 分发包和发布版本，
   用于包发布、发布说明和客户升级指引。
 - API 版本：`1.0.0`，来源于 `API_VERSION`，API 前缀是 `/v1`。它是服务 API 和构建 API 共享的
   HTTP/OpenAPI 契约版本。
@@ -94,6 +95,9 @@ python scripts/pressure_api_service.py --json
 发布前的最终本地门禁优先使用 `python scripts/local_gate.py`。它会按顺序串联
 `pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
 `python scripts/release_gate.py`，并在第一个失败点停止。
+
+API capacity formulas and pressure threshold interpretation are documented in
+[docs/api_capacity_and_pressure_thresholds.md](docs/api_capacity_and_pressure_thresholds.md).
 
 质量门禁分为三层，彼此独立：
 
@@ -183,15 +187,17 @@ curl.exe -H "Authorization: Bearer $env:API_ACCESS_TOKEN" `
 永远不会被裁剪。如果本地 job storage 中存在损坏记录，`/v1/diagnostics` 会报告安全的
 `build_job_store.warning_count` 和稳定 warning code，不会暴露原始文件内容。
 
-默认执行后端由 `API_BUILD_JOB_RUNNER_BACKEND=in_process` 配置。本地 executor 并发由
-`API_BUILD_JOB_RUNNER_MAX_WORKERS` 控制，默认值为 `1`。已接受的排队 job 会先持久化再分发，并在构建 API
-重启时重新分发。已认领 job 由 lease 保护，`API_BUILD_JOB_LEASE_SECONDS` 默认 `30`；in-process runner
+默认执行后端由 `API_BUILD_JOB_RUNNER_BACKEND` 配置。本地开发默认是 `in_process`；生产部署可切换为
+`external_worker`，此时 Build API 只持久化 queued job，独立的 `graph-rag-build-worker` 进程轮询、认领
+并执行任务。executor 并发由 `API_BUILD_JOB_RUNNER_MAX_WORKERS` 控制，默认值为 `1`；worker 空闲轮询间隔由
+`API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS` 控制，默认值为 `1`。已接受的排队 job 会先持久化再分发，并在
+worker 启动或重启时重新认领。已认领 job 由 lease 保护，`API_BUILD_JOB_LEASE_SECONDS` 默认 `30`；worker
 heartbeat 由 `API_BUILD_JOB_HEARTBEAT_SECONDS` 控制，默认 `10`。如果进程在持有 job 时停止，下一次启动会让
 lease 过期，并将 job 报告为安全的 failed/interrupted build，而不是让它永久处于 running。
 
 构建任务存储会从旧 V2 文件一次性迁移为配置的 `BUILD_JOB_STORE_PATH` 目录下的 V3 event envelope，并保留原始
-V2 目录为 `build_jobs.v2.backup`。未来的后端必须实现构建任务 repository 和 runner ports，并在 composition
-中选择；当前 release 不包含外部 worker backend。
+V2 目录为 `build_jobs.v2.backup`。当前 release 包含 `in_process` 和 `external_worker` 两个 runner backend；
+未来的 repository backend 仍必须实现构建任务 repository port，并在 composition 中选择。
 
 在构建 API 生成 ready artifact manifest、cached documents 和 Milvus vector collection 前，`/v1/answers`
 会返回 `409 Conflict`。

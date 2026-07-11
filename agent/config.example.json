@@ -1,10 +1,11 @@
 {
   "kimi": {
-    "api_key": "sk-xxx",
-    "base_url": "https://api.moonshot.cn/v1",
-    "model": "kimi-k2-0711-preview",
-    "max_retries": 3,
-    "timeout": 30
+    "api_key": "",
+    "base_url": "https://ws-bsk91pgzyknokc56.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3.7-plus",
+    "max_retries": 1,
+    "timeout": 90,
+    "max_tokens": 4096
   },
   "processing": {
     "batch_size": 10,
@@ -20,7 +21,7 @@
   },
   "categories": {
     "素菜": "710000000",
-    "荤菜": "720000000", 
+    "荤菜": "720000000",
     "水产": "730000000",
     "早餐": "740000000",
     "主食": "750000000",
@@ -32,8 +33,8 @@
   "difficulty_mapping": {
     "1": "610000000",
     "2": "620000000",
-    "3": "630000000", 
+    "3": "630000000",
     "4": "640000000",
     "5": "650000000"
   }
-} 
+}

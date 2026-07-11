@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001279,Recipe,豆豉鲮鱼油麦菜,豆豉鲮鱼油麦菜 (Recipe),豆豉鲮鱼油麦菜,[],荤菜,2,,,,,,dishes\meat_dish\豆豉鲮鱼油麦菜\豆豉鲮鱼油麦菜.md
+201001280,Recipe,豉汁蒸白鱔,豉汁蒸白鱔 (Recipe),豉汁蒸白鱔,"[{'term': '豉汁steamed白鱔', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '豉汁清蒸白鱔', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,3,,,,,,dishes\meat_dish\豉汁蒸白鱔\豉汁蒸白鱔食谱.md
+201001281,Recipe,贵州辣子鸡,贵州辣子鸡 (Recipe),贵州辣子鸡,[],荤菜,4,,,,,,dishes\meat_dish\贵州辣子鸡\贵州辣子鸡.md
+201001282,Recipe,酱排骨,酱排骨 (Recipe),酱排骨,[],其他,4,,,,,,dishes\meat_dish\酱排骨\酱排骨.md
+201001283,Recipe,酱牛肉,酱牛肉 (Recipe),酱牛肉,[],荤菜,5,,,,,,dishes\meat_dish\酱牛肉\酱牛肉.md
+201001284,Recipe,醉排骨,醉排骨 (Recipe),醉排骨,[],其他,4,,,,,,dishes\meat_dish\醉排骨\醉排骨.md
+201001285,Recipe,青椒土豆炒肉,青椒土豆炒肉 (Recipe),青椒土豆炒肉,"[{'term': 'bell pepper土豆炒肉', 'language': 'en', 'language_code': 'en-US'}, {'term': '彩椒土豆炒肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '青椒洋芋炒肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '青椒马铃薯炒肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '青椒potato炒肉', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '甜椒土豆炒肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\青椒土豆炒肉\青椒土豆炒肉.md
+201001286,Recipe,香干芹菜炒肉,香干芹菜炒肉 (Recipe),香干芹菜炒肉,[],荤菜,3,,,,,,dishes\meat_dish\香干芹菜炒肉\香干芹菜炒肉.md
+201001287,Recipe,香煎五花肉,香煎五花肉 (Recipe),香煎五花肉,"[{'term': '香pan-fried五花肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\香煎五花肉\香煎五花肉.md
+201001288,Recipe,香菇滑鸡,香菇滑鸡 (Recipe),香菇滑鸡,[],荤菜,3,,,,,,dishes\meat_dish\香菇滑鸡\香菇滑鸡.md

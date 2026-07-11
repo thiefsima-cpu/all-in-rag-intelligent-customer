@@ -4,9 +4,11 @@ import io
 import json
 import math
 import tempfile
+import unicodedata
 import unittest
 from collections import Counter
 from contextlib import redirect_stdout
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -73,6 +75,19 @@ def _load_temporary_eval_text(payload: str):
         path = Path(temp_dir) / "quality-eval.json"
         path.write_text(payload, encoding="utf-8")
         return load_eval_cases(path)
+
+
+def _iter_strings(value: object):
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_strings(item)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _iter_strings(item)
 
 
 def _eval_case(
@@ -841,26 +856,45 @@ class EvalQueriesTests(unittest.TestCase):
 
         cases = load_eval_cases(DEFAULT_CORPUS_PATH)
 
-        self.assertEqual(len(cases), 18)
-        self.assertEqual(len({case.case_id for case in cases}), 18)
-        self.assertFalse(any("\ufffd" in case.query for case in cases))
+        self.assertEqual(len(cases), 30)
+        self.assertEqual(len({case.case_id for case in cases}), 30)
+        mojibake_markers = ("\ufffd", "€", "锛", "銆")
+        corrupt_text = []
+        for case in cases:
+            for text in _iter_strings(asdict(case)):
+                if any(marker in text for marker in mojibake_markers) or any(
+                    unicodedata.category(character) == "Co" for character in text
+                ):
+                    corrupt_text.append(f"{case.case_id}: {text[:48]}")
+        self.assertFalse(corrupt_text, "\n".join(corrupt_text[:12]))
         dimension_counts = Counter(dimension for case in cases for dimension in case.dimensions)
-        for dimension in {
+        required_dimensions = {
             "no_evidence",
             "ambiguity",
             "multi_hop",
             "constraint_conflict",
             "long_query",
             "colloquial_zh",
-        }:
+            "long_tail",
+            "adversarial",
+            "permission_privacy",
+            "dependency_anomaly",
+            "low_quality_evidence",
+        }
+        for dimension in required_dimensions:
             self.assertGreaterEqual(dimension_counts[dimension], 2)
+        self.assertEqual(dimension_counts["long_tail"], 3)
+        self.assertEqual(dimension_counts["adversarial"], 2)
+        self.assertEqual(dimension_counts["permission_privacy"], 2)
+        self.assertEqual(dimension_counts["dependency_anomaly"], 3)
+        self.assertEqual(dimension_counts["low_quality_evidence"], 4)
         self.assertEqual(
             Counter(case.expectation.response_mode.value for case in cases),
             {
-                "grounded_answer": 12,
-                "no_evidence": 2,
-                "clarification": 2,
-                "constraint_conflict": 2,
+                "grounded_answer": 18,
+                "no_evidence": 4,
+                "clarification": 4,
+                "constraint_conflict": 4,
             },
         )
 
@@ -874,8 +908,33 @@ class EvalQueriesTests(unittest.TestCase):
 
         system.assert_not_called()
         metrics = report["metrics"]
-        self.assertGreaterEqual(metrics["case_count"], 9)
+        self.assertEqual(metrics["case_count"], 30)
         self.assertEqual(metrics["pass_rate"], 1.0)
+        self.assertEqual(metrics["response_mode_accuracy"], 1.0)
+        self.assertEqual(metrics["abstention_accuracy"], 1.0)
+        self.assertEqual(
+            metrics["response_mode_counts"],
+            {
+                "clarification": 4,
+                "constraint_conflict": 4,
+                "grounded_answer": 18,
+                "no_evidence": 4,
+            },
+        )
+        for dimension in {
+            "no_evidence",
+            "ambiguity",
+            "multi_hop",
+            "constraint_conflict",
+            "long_query",
+            "colloquial_zh",
+            "long_tail",
+            "adversarial",
+            "permission_privacy",
+            "dependency_anomaly",
+            "low_quality_evidence",
+        }:
+            self.assertGreaterEqual(metrics["dimension_counts"][dimension], 2)
         self.assertGreaterEqual(metrics["recall_at_k"], 0.8)
         self.assertGreaterEqual(metrics["faithfulness"], 0.8)
         self.assertGreaterEqual(metrics["citation_accuracy"], 0.8)

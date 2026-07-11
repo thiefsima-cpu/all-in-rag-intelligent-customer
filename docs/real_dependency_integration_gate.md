@@ -88,6 +88,20 @@ Reports contain stable check codes, aggregate metrics, case IDs, and sanitized
 host identities. They do not contain questions, prompts, raw responses, raw
 exceptions, credentials, authorization headers, or credential-bearing URLs.
 
+`required_sources` uses the public route-stage vocabulary. A combined request
+therefore proves participation with `traditional` and `graph_rag`; the
+traditional branch may internally fuse vector, BM25, and graph-derived
+candidates. A normal hybrid supplement after a non-empty graph result remains
+visible as a `hybrid_supplement` stage but is not counted as a fallback. Only a
+graph miss or execution/generation recovery contributes to the fallback rate.
+
+`required_sources` uses the public route-stage vocabulary. A combined request
+therefore proves participation with `traditional` and `graph_rag`; the
+traditional branch may internally fuse vector, BM25, and graph-derived
+candidates. A normal hybrid supplement after a non-empty graph result remains
+visible as a `hybrid_supplement` stage but is not counted as a fallback. Only a
+graph miss or execution/generation recovery contributes to the fallback rate.
+
 ## Failure Types
 
 - `dependency-unavailable`: Neo4j, Milvus, the serving API, authentication, or

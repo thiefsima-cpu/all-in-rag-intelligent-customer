@@ -26,7 +26,12 @@ pip install -r requirements.txt
 export KIMI_API_KEY="your_api_key_here"
 ```
 
-方法二：编辑config.json
+方法二：复制示例配置，再编辑仅保留在本地的 `config.json`
+
+```bash
+cp config.example.json config.json
+```
+
 ```json
 {
   "kimi": {
@@ -59,7 +64,8 @@ cook-rag-example/
 ├── run_ai_agent.py            # 简化运行脚本
 ├── batch_manager.py           # 批次管理工具
 ├── amount_normalizer.py       # 用量标准化工具
-├── config.json                # 配置文件
+├── config.example.json        # 不含凭证的配置模板
+├── config.json                # 本地配置文件（不提交）
 ├── requirements.txt           # 依赖列表
 └── ai_output/                 # AI输出目录
     ├── nodes.csv              # Neo4j节点数据

@@ -79,6 +79,7 @@ class GenerationWorkflowService:
         generation = config.generation
         settings = GenerationSettings(
             model_name=models.llm_model,
+            enable_thinking=models.llm_enable_thinking,
             temperature=generation.temperature,
             max_tokens=generation.max_tokens,
             timeout_seconds=generation.generation_timeout_seconds,

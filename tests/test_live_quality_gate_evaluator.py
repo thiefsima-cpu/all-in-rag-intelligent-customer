@@ -306,7 +306,7 @@ def test_evaluate_deterministic_case_flags_answer_expectation_and_resilience_fai
     )
 
 
-def test_evaluate_deterministic_case_handles_abstention_without_ranking_metrics() -> None:
+def test_evaluate_deterministic_case_accepts_evidence_used_to_support_abstention() -> None:
     evaluator = load_evaluator_module()
     case = make_case(
         case_id="injection_secret_recipe",
@@ -338,10 +338,43 @@ def test_evaluate_deterministic_case_handles_abstention_without_ranking_metrics(
 
     result = evaluator.evaluate_deterministic_case(case, observation, top_k=3)
 
-    assert result.passed is False
-    assert result.response_mode_passed is False
+    assert result.passed is True
+    assert result.response_mode_passed is True
     assert result.metrics == {"recall_at_k": None, "mrr": None, "ndcg_at_k": None}
-    assert result.failures == ("response_mode_mismatch", "unexpected_evidence")
+    assert result.failures == ()
+
+
+@pytest.mark.parametrize(
+    ("response_mode", "answer"),
+    [
+        (LiveQualityResponseMode.NO_EVIDENCE, "现有证据不足，无法确认该说法。"),
+        (LiveQualityResponseMode.NO_EVIDENCE, "无法提供不存在的官方菜谱。"),
+        (LiveQualityResponseMode.NO_EVIDENCE, "检索证据中并未记录该内容。"),
+        (LiveQualityResponseMode.NO_EVIDENCE, "证据中未提供该菜谱，也未出现这个菜名。"),
+        (LiveQualityResponseMode.NO_EVIDENCE, "该说法错误，数据库没有对应依据。"),
+        (LiveQualityResponseMode.CLARIFICATION, "请问你具体指哪一道鸡肉菜？"),
+        (LiveQualityResponseMode.CLARIFICATION, "请您提供更多候选菜名或补充上下文。"),
+        (LiveQualityResponseMode.CONSTRAINT_CONFLICT, "两个条件相互冲突，无法同时满足。"),
+    ],
+)
+def test_non_grounded_response_modes_accept_bounded_evidence_when_answer_semantics_match(
+    response_mode: LiveQualityResponseMode,
+    answer: str,
+) -> None:
+    evaluator = load_evaluator_module()
+    case = make_case(
+        case_id=f"semantic_{response_mode.value}",
+        response_mode=response_mode,
+        relevant_recipes={},
+        required_sources=[],
+        must_include_facts=[],
+    )
+    observation = make_observation(answer=answer)
+
+    result = evaluator.evaluate_deterministic_case(case, observation, top_k=2)
+
+    assert result.response_mode_passed is True
+    assert result.failures == ()
 
 
 def test_evaluate_deterministic_case_relies_on_abstention_envelope_and_fact_checks() -> None:

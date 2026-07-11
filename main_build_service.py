@@ -2,6 +2,7 @@
 
 import logging
 import os
+from typing import Any
 
 from rag_modules.interfaces.api import create_build_api_app
 from rag_modules.interfaces.console_runtime import configure_utf8_stdio
@@ -12,7 +13,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = create_build_api_app()
+
+class _LazyBuildApiApp:
+    def __init__(self) -> None:
+        self._app: Any | None = None
+
+    def _resolve(self) -> Any:
+        if self._app is None:
+            self._app = create_build_api_app()
+        return self._app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        await self._resolve()(scope, receive, send)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+
+app = _LazyBuildApiApp()
 
 
 def _env_flag(name: str, default: bool = False) -> bool:

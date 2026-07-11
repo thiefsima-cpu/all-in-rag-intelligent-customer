@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001299,Recipe,懒人蛋挞,懒人蛋挞 (Recipe),懒人蛋挞,[],素菜,3,,,,,,dishes\semi-finished\懒人蛋挞\懒人蛋挞.md
+201001300,Recipe,炸薯条,炸薯条 (Recipe),炸薯条,"[{'term': 'deep-fried薯条', 'language': 'en', 'language_code': 'en-US'}, {'term': '油炸薯条', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,2,,,,,,dishes\semi-finished\炸薯条\炸薯条.md
+201001301,Recipe,空气炸锅羊排,空气炸锅羊排 (Recipe),空气炸锅羊排,"[{'term': '空气deep-fried锅羊排', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '空气油炸锅羊排', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,3,,,,,,dishes\semi-finished\空气炸锅羊排\空气炸锅羊排.md
+201001302,Recipe,空气炸锅鸡翅中,空气炸锅鸡翅中 (Recipe),空气炸锅鸡翅中,"[{'term': '空气deep-fried锅鸡翅中', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '空气油炸锅鸡翅中', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,2,,,,,,dishes\semi-finished\空气炸锅鸡翅中\空气炸锅鸡翅中.md
+201001303,Recipe,速冻汤圆,速冻汤圆 (Recipe),速冻汤圆,[],其他,1,,,,,,dishes\semi-finished\速冻汤圆\速冻汤圆.md
+201001304,Recipe,奶油蘑菇汤,奶油蘑菇汤 (Recipe),奶油蘑菇汤,[],其他,1,,,,,,dishes\soup\奶油蘑菇汤.md
+201001305,Recipe,小米粥,小米粥 (Recipe),小米粥,[],其他,2,,,,,,dishes\soup\小米粥.md
+201001306,Recipe,生汆丸子汤,生汆丸子汤 (Recipe),生汆丸子汤,[],其他,4,,,,,,dishes\soup\生汆丸子汤.md
+201001307,Recipe,番茄牛肉蛋花汤,番茄牛肉蛋花汤 (Recipe),番茄牛肉蛋花汤,[],素菜,3,,,,,,dishes\soup\番茄牛肉蛋花汤.md
+201001308,Recipe,皮蛋瘦肉粥,皮蛋瘦肉粥 (Recipe),皮蛋瘦肉粥,[],素菜,3,,,,,,dishes\soup\皮蛋瘦肉粥.md

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+
 import tests.api_app_helpers as h
+from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner
 
 json = h.json
 tempfile = h.tempfile
@@ -25,6 +28,18 @@ _FailOnceBuildApiSystem = h._FailOnceBuildApiSystem
 
 class ApiBuildTests(unittest.TestCase):
     """Build API job, runtime, idempotency, and diagnostics behavior."""
+
+    def test_build_app_default_test_config_does_not_create_checkout_storage(self) -> None:
+        previous_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                os.chdir(temp_dir)
+
+                create_build_api_app(system=_FakeApiSystem())
+
+                self.assertFalse((Path(temp_dir) / "storage" / "indexes").exists())
+            finally:
+                os.chdir(previous_cwd)
 
     def test_build_readiness_requires_initialized_build_runtime(self) -> None:
         system = _FakeApiSystem()
@@ -657,6 +672,37 @@ class ApiBuildTests(unittest.TestCase):
         self.assertEqual(runner.backend, "in_process")
         self.assertEqual(runner._max_workers, 3)
 
+    def test_build_service_external_worker_backend_queues_without_local_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = build_test_config(
+                {
+                    "api": {
+                        "access_token": _API_TOKEN,
+                        "build_job_runner_backend": "external_worker",
+                    },
+                    "storage": {
+                        "artifact_manifest_path": str(Path(temp_dir) / "manifest.json"),
+                        "build_job_store_path": str(Path(temp_dir) / "jobs.json"),
+                    },
+                }
+            )
+            system = _FakeApiSystem()
+            system.config = config
+            app = create_build_api_app(system=system, config=config)
+
+            with _client(app) as client:
+                response = client.post("/v1/jobs/build")
+                job = response.json()["job"]
+                detail_response = client.get(f"/v1/jobs/{job['job_id']}")
+                runner = app.state.api_service._build_jobs._runner
+
+        self.assertEqual(response.status_code, 202)
+        self.assertIsInstance(runner, ExternalBuildJobQueueRunner)
+        self.assertEqual(job["status"], "queued")
+        self.assertEqual(detail_response.json()["job"]["status"], "queued")
+        self.assertEqual(system.build_calls, 0)
+        self.assertEqual(system.initialize_build_calls, 0)
+
     def test_build_diagnostics_use_cached_snapshot_while_build_is_in_flight(self) -> None:
         system = _BlockingBuildApiSystem()
         app = create_build_api_app(system=system)
@@ -693,4 +739,3 @@ class ApiBuildTests(unittest.TestCase):
                 "succeeded",
             )
             self.assertEqual(completed_job["status"], "succeeded")
-
