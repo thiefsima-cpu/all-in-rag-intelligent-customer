@@ -86,7 +86,9 @@ Normal allowed pull-request paths are:
 
 - `feature/*` or `fix/*` to `development`;
 - `development` to `production`; and
-- `production` to `main`.
+- `production` to `main`;
+- `main` to `production` after a formal or hotfix merge; and
+- `production` to `development` when a pull request is preferred over a direct fast-forward.
 
 The following are prohibited:
 
@@ -96,6 +98,17 @@ The following are prohibited:
 - force-pushes to any long-lived branch; and
 - squash or rebase promotion between long-lived branches.
 
+Every promotion must return the target's merge commit to its source before new work continues:
+
+- after `development` is merged to `production`, fast-forward `development` to the new
+  `production` merge commit; and
+- after `production` is merged to `main`, merge `main` back to `production` through a PR, then
+  fast-forward `development` to the synchronized `production` tip.
+
+This synchronization is part of the normal flow, not only the hotfix flow. It keeps all three
+branches on a shared ancestry chain while retaining the merge commits required for promotion
+auditability.
+
 ### 4.3 Hotfix Flow
 
 1. Create `hotfix/X.Y.Z` from the currently deployed final tag on `main`.
@@ -103,8 +116,7 @@ The following are prohibited:
 3. Merge `hotfix/X.Y.Z` to `main` through a PR and a merge commit.
 4. Create and deploy the immutable patch tag from the new `main` tip.
 5. Back-merge `main` to `production` through a PR.
-6. Back-merge `production` to `development`, normally through a PR even though direct pushes are
-   permitted on `development`.
+6. Fast-forward `development` to the synchronized `production` tip.
 
 The back-merges preserve ancestry and prevent the next normal promotion from dropping the hotfix.
 
@@ -132,7 +144,7 @@ The back-merges preserve ancestry and prevent the next normal promotion from dro
 The rule configuration matches `Protect main`. The branch-flow check allows only:
 
 - `development` to `production` for normal promotion; and
-- `main` to `production` for hotfix back-synchronization.
+- `main` to `production` for post-release synchronization, including hotfixes.
 
 ### 5.3 `Protect development`
 
@@ -226,6 +238,7 @@ version, for example `0.4.0.dev0`. Individual development builds are distinguish
 4. Run the complete CI and acceptance process.
 5. Create `vX.Y.Z-rc.1` at the accepted `production` tip.
 6. Create a GitHub prerelease and deploy that exact tag to pre-production.
+7. Fast-forward `development` to the `production` merge commit before accepting more RC fixes.
 
 If acceptance finds a defect, fix it first on `development`, promote again, increment the version
 to `rc.N+1`, and create a new immutable RC tag. An existing RC tag is never moved or reused.
@@ -238,7 +251,9 @@ to `rc.N+1`, and create a new immutable RC tag. An existing RC tag is never move
 4. Create `vX.Y.Z` at the resulting `main` tip.
 5. Create the formal GitHub Release.
 6. Deploy production only from that final tag.
-7. Advance `development` to the next planned development version.
+7. Merge `main` back to `production` through a synchronization PR.
+8. Fast-forward `development` to the synchronized `production` tip.
+9. Advance `development` to the next planned development version.
 
 ### 7.4 Tag Validation Workflow
 
@@ -284,10 +299,13 @@ Neither branch is created from an existing `codex/*` branch.
 1. Create the three branch rulesets in `evaluate` mode.
 2. Exercise valid and invalid promotion PR paths.
 3. Enable strict branch-flow enforcement on `development` without adding business changes.
-4. Promote that governance-only change `development` to `production` to `main` with merge commits.
-5. Confirm all required check names are stable and visible on both protected targets.
-6. Switch the three branch rulesets from `evaluate` to `active`.
-7. Re-run the path tests against active enforcement.
+4. Promote that governance-only change from `development` to `production` with a merge commit.
+5. Fast-forward `development` to the resulting `production` merge commit.
+6. Promote `production` to `main` with a merge commit.
+7. Synchronize `main` back to `production`, then fast-forward `development` to `production`.
+8. Confirm all required check names are stable and visible on both protected targets.
+9. Switch the three branch rulesets from `evaluate` to `active`.
+10. Re-run the path tests against active enforcement.
 
 ### 8.4 Migrate the Latest Refactor
 
