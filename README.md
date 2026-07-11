@@ -68,7 +68,7 @@ graph-rag-verify-env
 
 GraphRAG C9 同时跟踪三个版本轴：
 
-- 包版本：`0.3.0rc1`，来源于 `pyproject.toml` 的 `[project].version`。它是 Python 分发包和发布版本，
+- 包版本：`0.4.0.dev0`，来源于 `pyproject.toml` 的 `[project].version`。它是 Python 分发包和发布版本，
   用于包发布、发布说明和客户升级指引。
 - API 版本：`1.0.0`，来源于 `API_VERSION`，API 前缀是 `/v1`。它是服务 API 和构建 API 共享的
   HTTP/OpenAPI 契约版本。
