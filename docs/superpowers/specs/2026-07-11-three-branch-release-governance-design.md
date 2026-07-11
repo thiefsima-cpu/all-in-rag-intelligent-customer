@@ -296,15 +296,16 @@ Neither branch is created from an existing `codex/*` branch.
 
 ### 8.3 Activate Governance
 
-1. Create the three branch rulesets in `evaluate` mode.
-2. Exercise valid and invalid promotion PR paths.
+1. Create the three branch rulesets in `disabled` mode because the repository's GitHub plan does
+   not support `evaluate` enforcement.
+2. Exercise valid promotion PR paths while the repository-side policy remains the safety gate.
 3. Enable strict branch-flow enforcement on `development` without adding business changes.
 4. Promote that governance-only change from `development` to `production` with a merge commit.
 5. Fast-forward `development` to the resulting `production` merge commit.
 6. Promote `production` to `main` with a merge commit.
 7. Synchronize `main` back to `production`, then fast-forward `development` to `production`.
 8. Confirm all required check names are stable and visible on both protected targets.
-9. Switch the three branch rulesets from `evaluate` to `active`.
+9. Switch the three branch rulesets from `disabled` to `active`.
 10. Re-run the path tests against active enforcement.
 
 ### 8.4 Migrate the Latest Refactor
