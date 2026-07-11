@@ -4,32 +4,33 @@ GraphRAG C9 releases are package-versioned from `[project].version` in
 `pyproject.toml`. API and compatibility-removal versions remain separate axes and
 must be called out explicitly when they change.
 
+## Branch Promotion
+
+The governed flow is `development -> production -> main`. Promotions use merge commits. After
+each promotion, synchronize the target merge commit back into its source branch as documented in
+`docs/branch_governance.md`.
+
 ## Release Candidates
 
-Release candidates use PEP 440 package versions and human-readable Git tags. For this release,
-package version `0.3.0rc1` maps to Git tag `v0.3.0-rc.1`.
+Release candidates use PEP 440 package versions and protected Git tags. Package version
+`0.4.0rc1` maps to `v0.4.0-rc.1`. The RC tag must point to the accepted production tip and the
+GitHub Release must be marked as a prerelease.
 
-Every release candidate must:
+`0.3.0rc1` and `v0.3.0-rc.1` are a historical exception created before the three-branch model.
+They remain immutable and are not recreated.
 
-- pass the complete release checklist through a pull request targeting `main`;
-- create its signed or protected tag only after the checked pull request is merged;
-- point the tag at the resulting `main` commit, never at the release branch;
-- create a GitHub Release with the prerelease flag enabled; and
-- keep the RC tag immutable when preparing the later final release.
+## Formal Releases
 
-The final `v0.3.0` release is a separate release operation. It must not move, replace, or reuse
-`v0.3.0-rc.1`.
+After acceptance, finalize the package version on development, promote it to production, then
+promote production to main. A final tag such as `v0.4.0` points to the resulting main commit and
+is the only formal deployment source. The final tag is never reused for an RC.
 
 ## Required GitHub Enforcement
 
-Repository administrators should protect `main` with these required checks:
-
-- `Quality Gates`
-- `Secret Scan`
-- `SBOM`
-
-Enable "Require review from Code Owners" so `.github/CODEOWNERS` forces review
-for public API contracts, quality corpus assets, and governance files.
+Main and production require pull requests, merge commits, resolved conversations, and these
+checks: `Branch Flow Policy`, `Quality Gates`, `Secret Scan`, and `SBOM`. Required approvals are
+zero for the single-maintainer repository. Development permits direct pushes but blocks deletion
+and force-push.
 
 ## Release Checklist
 
@@ -42,11 +43,11 @@ for public API contracts, quality corpus assets, and governance files.
 4. Local verification: run `python scripts/local_gate.py`.
 5. CI verification: require pytest coverage, incremental coverage, mypy, Ruff,
    `python scripts/release_gate.py`, `pip-audit`, secret scanning, and SBOM
-   generation to pass on the release pull request.
+   generation to pass on each promotion pull request.
 6. Release artifact review: download and retain the CI SBOM artifact
    `graph-rag-c9-sbom`.
-7. Tagging: create a signed or protected tag for the package version on the checked `main`
-   commit. Final releases use tags such as `v0.3.0`; release-candidate mapping is defined above.
+7. Tagging: create a protected RC tag on the checked `production` commit or a protected final tag
+   on the checked `main` commit. The release-candidate and final mappings are defined above.
 8. GitHub Release: create release notes from `CHANGELOG.md` and enable the prerelease flag for
    release candidates.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -43,6 +44,24 @@ def test_ci_workflow_enforces_coverage_security_and_sbom_gates() -> None:
         assert fragment in workflow
 
 
+def test_ci_targets_all_long_lived_branches() -> None:
+    workflow = _read(".github/workflows/ci.yml")
+
+    assert workflow.count("      - development") == 2
+    assert workflow.count("      - production") == 2
+    assert workflow.count("      - main") == 2
+
+
+def test_ci_exposes_stable_branch_flow_check_in_report_mode() -> None:
+    workflow = _read(".github/workflows/ci.yml")
+
+    assert "name: Branch Flow Policy" in workflow
+    assert "python scripts/check_branch_flow.py" in workflow
+    assert "github.base_ref" in workflow
+    assert "github.head_ref" in workflow
+    assert "--mode report" in workflow
+
+
 def test_codeowners_protect_public_contracts_and_quality_corpus() -> None:
     owners = _read(".github/CODEOWNERS")
 
@@ -74,16 +93,33 @@ def test_security_changelog_and_release_process_are_documented() -> None:
     assert "SBOM" in release_process
 
 
-def test_release_candidate_metadata_is_consistent() -> None:
-    pyproject = tomllib.loads(_read("pyproject.toml"))
+def test_historical_release_candidate_metadata_is_consistent() -> None:
     changelog = _read("CHANGELOG.md")
     release_process = _read("docs/release_process.md")
 
-    assert pyproject["project"]["version"] == "0.3.0rc1"
     assert "## 0.3.0rc1 - 2026-07-11" in changelog
     assert "`0.3.0rc1`" in release_process
     assert "`v0.3.0-rc.1`" in release_process
-    assert "prerelease" in release_process.lower()
+    assert "historical exception" in release_process.lower()
+
+
+def test_project_version_uses_supported_pep440_shape() -> None:
+    pyproject = tomllib.loads(_read("pyproject.toml"))
+    version = pyproject["project"]["version"]
+
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:rc\d+|\.dev\d+)?", version)
+
+
+def test_branch_governance_documents_promotion_and_synchronization() -> None:
+    governance = _read("docs/branch_governance.md")
+
+    assert "development -> production -> main" in governance
+    assert "merge commit" in governance
+    assert "fast-forward development" in governance
+    assert "main -> production" in governance
+    assert "v0.4.0-rc.1" in governance
+    assert "v0.4.0" in governance
+    assert "previous final tag" in governance
 
 
 def test_agent_config_template_does_not_contain_credentials() -> None:
