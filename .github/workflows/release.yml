@@ -76,7 +76,7 @@ jobs:
           output-file: sbom.cdx.json
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: graph-rag-c9-${{ github.ref_name }}
           path: |
