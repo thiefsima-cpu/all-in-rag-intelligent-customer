@@ -123,6 +123,29 @@ def test_branch_governance_documents_promotion_and_synchronization() -> None:
     assert "previous final tag" in governance
 
 
+def test_production_direct_push_requires_ci_and_development_back_sync() -> None:
+    governance = _read("docs/branch_governance.md")
+    release_process = _read("docs/release_process.md")
+
+    for fragment in (
+        "local `production`",
+        "direct fast-forward push",
+        "production -> development",
+        "administrator bypass",
+        "Protect production history",
+        "never force-push",
+    ):
+        assert fragment in governance
+
+    for fragment in (
+        "production push CI",
+        "development -> production",
+        "merge commit",
+        "Do not create an RC tag",
+    ):
+        assert fragment in release_process
+
+
 def test_release_workflow_validates_and_archives_without_pypi_publish() -> None:
     workflow = _read(".github/workflows/release.yml")
 
