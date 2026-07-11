@@ -9,11 +9,11 @@ import logging
 import os
 from typing import Any, Dict, List, Mapping, Optional
 
-from .graph_index.snapshot import GRAPH_INDEX_VERSION
-from .kernel.documents import TextDocument
-from .kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
-from .runtime.artifacts import write_json_atomic
-from .safe_logging import log_failure
+from ..graph_index.snapshot import GRAPH_INDEX_VERSION
+from ..kernel.documents import TextDocument
+from ..kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from ..runtime.artifacts import write_json_atomic
+from ..safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 

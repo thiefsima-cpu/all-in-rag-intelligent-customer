@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Generator
 
-from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...contracts.runtime import (
     AnalysisInput,
@@ -14,6 +13,7 @@ from ...contracts.runtime import (
     RetrievalOutcome,
     ensure_optional_query_analysis,
 )
+from ...evidence_processing.answer_builder import AnswerEvidencePackage
 from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter

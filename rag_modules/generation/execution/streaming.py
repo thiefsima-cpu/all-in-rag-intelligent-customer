@@ -7,9 +7,9 @@ import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 
-from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...contracts.runtime import AnswerContext, GenerationSnapshot
+from ...evidence_processing.answer_builder import AnswerEvidencePackage
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode

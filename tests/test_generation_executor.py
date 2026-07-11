@@ -3,9 +3,9 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.contracts import RequestControl
 from rag_modules.contracts.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis
+from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation import (
     AnswerPlan,
     GenerationDecision,

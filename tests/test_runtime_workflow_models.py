@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.answer_evidence_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, QueryPlan
 from rag_modules.contracts.runtime import (
@@ -11,6 +10,7 @@ from rag_modules.contracts.runtime import (
     RetrievalOutcome,
     RouteResolution,
 )
+from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.observability.tracing import QueryTracer
 

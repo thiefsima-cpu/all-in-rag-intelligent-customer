@@ -6,12 +6,11 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 
 from ..configuration.models import GraphRAGConfig
-from ..fusion import FusionRanker
 from ..graph_index import GraphIndexingModule
-from ..parent_doc_enricher import ParentDocumentEnricher
-from ..retrieval_cache import RetrievalCacheStore
 from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever, tokenize_chinese
+from .cache import RetrievalCacheStore
 from .candidate_sources import DefaultHybridCandidateSourceFactory
+from .fusion import FusionRanker
 from .hybrid_driver_service import HybridDriverService
 from .hybrid_executor import HybridRetrievalExecutor
 from .hybrid_index_service import HybridIndexService
@@ -19,6 +18,7 @@ from .hybrid_parent_document_service import HybridParentDocumentService
 from .hybrid_runtime import HybridRetrievalRuntime
 from .hybrid_search_service import HybridSearchService
 from .keyword_service import QueryKeywordExtractor
+from .parent_doc_enricher import ParentDocumentEnricher
 from .ports import (
     GraphDataModulePort,
     Neo4jManagerPort,

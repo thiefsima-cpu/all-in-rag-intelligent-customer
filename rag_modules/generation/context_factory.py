@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import List
 
-from ..answer_evidence_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
 from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
 from ..contracts.runtime import (
     AnalysisInput,
@@ -12,6 +11,7 @@ from ..contracts.runtime import (
     RetrievalOutcome,
     ensure_optional_query_analysis,
 )
+from ..evidence_processing.answer_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
 from .models import AnswerPlan
 
 

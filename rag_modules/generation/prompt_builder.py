@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..answer_evidence_builder import AnswerEvidencePackage
 from ..contracts.runtime import AnswerContext, PolicySnapshot
+from ..evidence_processing.answer_builder import AnswerEvidencePackage
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
 from .models import AnswerPlan, GenerationSettings, RenderedPrompt

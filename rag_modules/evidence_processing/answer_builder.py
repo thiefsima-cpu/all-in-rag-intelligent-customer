@@ -14,8 +14,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Dict, List, cast
 
-from .contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
-from .evidence_processing import aggregate_recipe_evidence
+from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+from .aggregation import aggregate_recipe_evidence
 
 
 def _float_value(value: object, default: float = 0.0) -> float:

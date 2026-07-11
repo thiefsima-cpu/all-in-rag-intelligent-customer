@@ -8,10 +8,10 @@ from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..contracts.query_constraints import QueryConstraints
 from ..contracts.runtime import HybridRetrievalOutcome
-from ..fusion import FusionRanker
 from ..kernel.documents import TextDocument
 from .adapters import tokenize_chinese
 from .evidence import RecipeConstraintMatcher
+from .fusion import FusionRanker
 from .hybrid_components import (
     DefaultHybridRetrievalComponentFactory,
     HybridRetrievalComponentFactory,

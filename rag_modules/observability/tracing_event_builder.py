@@ -29,12 +29,12 @@ from ..contracts.runtime import (
 )
 from ..contracts.runtime.errors import ensure_runtime_error_detail
 from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
-from ..retrieval_observability import summarize_documents
 from ..runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from .retrieval_snapshots import summarize_documents
 
 
 class _TraceModelSettings(Protocol):

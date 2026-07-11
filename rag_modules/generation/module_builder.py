@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ..answer_evidence_builder import AnswerEvidenceBuilder
+from ..evidence_processing.answer_builder import AnswerEvidenceBuilder
 from ..query_policy.models import QueryPolicyBundle
 from .clients import GenerationClientAdapter, build_openai_client, resolve_api_key
 from .execution import GenerationExecutionEngine

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ..answer_evidence_builder import AnswerEvidencePackage
 from ..contracts import RequestControl
 from ..contracts.runtime import AnalysisInput, AnswerContext, analysis_strategy_name
+from ..evidence_processing.answer_builder import AnswerEvidencePackage
 from ..kernel.json_types import JsonObject
 from .clients import GenerationClientAdapter
 from .models import AnswerPlan, GenerationPlannerMode, GenerationSettings

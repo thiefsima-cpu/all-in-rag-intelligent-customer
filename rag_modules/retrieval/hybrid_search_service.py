@@ -6,13 +6,13 @@ import logging
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import HybridRetrievalOutcome
-from ..fusion import FusionRanker
 from .adapters import ConstraintRetriever
 from .candidate_generator import CandidateSet, RetrievalCandidateGenerator
 from .candidate_sources import (
     DefaultHybridCandidateSourceFactory,
     HybridCandidateSourceFactory,
 )
+from .fusion import FusionRanker
 from .runtime_profile import RetrievalRuntimeProfile
 
 logger = logging.getLogger(__name__)

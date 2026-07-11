@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...answer_evidence_builder import AnswerEvidencePackage
+from ...evidence_processing.answer_builder import AnswerEvidencePackage
 from ..fallback import build_evidence_only_fallback_answer, should_skip_model_fallback
 from ..models import GenerationSettings
 

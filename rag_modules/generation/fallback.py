@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..answer_evidence_builder import AnswerEvidencePackage
+from ..evidence_processing.answer_builder import AnswerEvidencePackage
 from ..query_policy import get_query_policy
 from .clients import generation_failure_code
 

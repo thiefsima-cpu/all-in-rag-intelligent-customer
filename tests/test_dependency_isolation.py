@@ -1,9 +1,44 @@
 from __future__ import annotations
 
+import ast
+import importlib
 import tempfile
 import tomllib
 import unittest
+from importlib.util import resolve_name
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+ROOT_FEATURE_HELPER_OWNERS = {
+    "answer_evidence_builder.py": (
+        "rag_modules.evidence_processing.answer_builder",
+        "AnswerEvidenceBuilder",
+    ),
+    "entity_linker.py": ("rag_modules.graph.entity_linker", "EntityLinker"),
+    "fusion.py": ("rag_modules.retrieval.fusion", "FusionRanker"),
+    "parent_doc_enricher.py": (
+        "rag_modules.retrieval.parent_doc_enricher",
+        "ParentDocumentEnricher",
+    ),
+    "retrieval_cache.py": ("rag_modules.retrieval.cache", "RetrievalCacheStore"),
+    "retrieval_observability.py": (
+        "rag_modules.observability.retrieval_snapshots",
+        "DocumentEvidenceSnapshot",
+    ),
+}
+
+
+def _resolved_import_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    package = ".".join(path.relative_to(ROOT).parent.parts)
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            relative_name = "." * node.level + (node.module or "")
+            modules.add(resolve_name(relative_name, package) if node.level else relative_name)
+    return modules
 
 
 def _requirement_names(entries: list[str]) -> set[str]:
@@ -33,6 +68,31 @@ def _pinned_requirement_version(entries: list[str], package_name: str) -> str:
 
 
 class DependencyIsolationTests(unittest.TestCase):
+    def test_root_feature_helpers_have_canonical_ownership(self) -> None:
+        root_package = ROOT / "rag_modules"
+
+        for retired_filename, (owner_module, symbol_name) in ROOT_FEATURE_HELPER_OWNERS.items():
+            with self.subTest(retired_filename=retired_filename):
+                owner_path = ROOT / Path(*owner_module.split(".")).with_suffix(".py")
+                self.assertFalse((root_package / retired_filename).exists())
+                self.assertTrue(owner_path.exists())
+
+                owner = importlib.import_module(owner_module)
+                self.assertEqual(getattr(owner, symbol_name).__module__, owner_module)
+
+    def test_production_imports_do_not_reference_retired_root_feature_helpers(self) -> None:
+        retired_modules = {
+            f"rag_modules.{Path(filename).stem}" for filename in ROOT_FEATURE_HELPER_OWNERS
+        }
+        violations: list[str] = []
+
+        for path in sorted((ROOT / "rag_modules").rglob("*.py")):
+            imported_modules = _resolved_import_modules(path)
+            for module_name in sorted(imported_modules & retired_modules):
+                violations.append(f"{path.relative_to(ROOT).as_posix()}: imports {module_name}")
+
+        self.assertEqual(violations, [])
+
     def test_runtime_lock_rejects_development_only_packages(self) -> None:
         from scripts.verify_environment import find_runtime_lock_violations
 

@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from typing import List
 
 from ..contracts.graph import GraphQuery
-from ..entity_linker import EntityLinkContext, EntityLinker, LinkedEntity
 from ..kernel.json_types import JsonObject, coerce_json_object
+from .entity_linker import EntityLinkContext, EntityLinker, LinkedEntity
 
 
 @dataclass

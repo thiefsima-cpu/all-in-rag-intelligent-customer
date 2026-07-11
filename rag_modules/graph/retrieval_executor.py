@@ -18,11 +18,11 @@ from ..contracts import (
 from ..contracts.graph import GraphQuery
 from ..contracts.runtime import GraphRetrievalSnapshot
 from ..contracts.runtime.errors import graph_error_detail
-from ..entity_linker import EntityLinker
 from ..kernel.json_types import JsonObject, coerce_json_object
 from ..safe_logging import log_failure
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
+from .entity_linker import EntityLinker
 from .evidence_orchestrator import GraphEvidenceOrchestrator
 from .ports import Neo4jDriverPort, Neo4jManagerPort
 from .query_executor import GraphQueryExecutor

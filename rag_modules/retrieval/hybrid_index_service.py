@@ -14,11 +14,11 @@ from rank_bm25 import BM25Okapi
 from ..configuration.models import GraphRAGConfig
 from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
-from ..parent_doc_enricher import ParentDocumentEnricher
-from ..retrieval_cache import RetrievalCacheStore
 from ..safe_logging import log_failure
 from .adapters import BM25Retriever
+from .cache import RetrievalCacheStore
 from .evidence import RecipeConstraintMatcher
+from .parent_doc_enricher import ParentDocumentEnricher
 from .ports import GraphDataModulePort, Neo4jDriverPort
 
 logger = logging.getLogger(__name__)

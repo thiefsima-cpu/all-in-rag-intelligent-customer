@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, Iterable, List, Optional
 
-from .contracts import EvidenceDocument
-from .kernel.documents import TextDocument
+from ..contracts import EvidenceDocument
+from ..kernel.documents import TextDocument
 
 logger = logging.getLogger(__name__)
 

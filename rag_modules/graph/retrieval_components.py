@@ -7,10 +7,10 @@ from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import QuerySemanticRuntimeSettings
-from ..entity_linker import EntityLinker
 from ..query_policy.models import QueryPolicyBundle
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
+from .entity_linker import EntityLinker
 from .evidence_builder import GraphEvidenceBuilder
 from .evidence_orchestrator import GraphEvidenceOrchestrator
 from .path_ranker import GraphDocumentRanker

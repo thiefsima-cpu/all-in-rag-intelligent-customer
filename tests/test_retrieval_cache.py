@@ -7,7 +7,7 @@ from pathlib import Path
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.documents import TextDocument
-from rag_modules.retrieval_cache import (
+from rag_modules.retrieval.cache import (
     HYBRID_CACHE_SCHEMA_VERSION,
     RetrievalCacheStore,
 )

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ...answer_evidence_builder import AnswerEvidencePackage
 from ...contracts.runtime import GenerationSnapshot, PolicySnapshot
 from ...contracts.runtime.errors import generation_error_detail
+from ...evidence_processing.answer_builder import AnswerEvidencePackage
 from ..clients import generation_failure_code
 from ..models import GenerationDecision, GenerationMode
 from ..prompt_builder import GenerationPromptBuilder

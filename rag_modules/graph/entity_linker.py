@@ -12,13 +12,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
-from .configuration.models import GraphSettings
-from .query_understanding.registry import (
+from ..configuration.models import GraphSettings
+from ..query_understanding.registry import (
     DEFAULT_ENTITY_LINKER_PREFERRED_LABELS,
     default_entity_linker_query_type_priorities,
     default_entity_linker_relation_priorities,
 )
-from .safe_logging import log_failure
+from ..safe_logging import log_failure
 
 logger = logging.getLogger(__name__)
 
