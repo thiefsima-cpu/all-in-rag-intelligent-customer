@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.validate_release_tag import parse_release_tag, validate_release_tag
+from scripts.validate_release_tag import main, parse_release_tag, validate_release_tag
 
 
 def test_parse_release_candidate_tag() -> None:
@@ -56,3 +56,59 @@ def test_validate_accepts_matching_tag_version_and_branch() -> None:
         branch_commit="a" * 40,
     )
     assert errors == []
+
+
+def test_cli_accepts_matching_final_release(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(
+        [
+            "--tag",
+            "v0.4.0",
+            "--package-version",
+            "0.4.0",
+            "--tag-commit",
+            "a" * 40,
+            "--branch-commit",
+            "a" * 40,
+        ]
+    )
+
+    assert exit_code == 0
+    assert capsys.readouterr().out.strip() == "validated final v0.4.0 from main"
+
+
+def test_cli_reports_validation_errors(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(
+        [
+            "--tag",
+            "v0.4.0-rc.1",
+            "--package-version",
+            "0.4.0rc2",
+            "--tag-commit",
+            "a" * 40,
+            "--branch-commit",
+            "b" * 40,
+        ]
+    )
+
+    assert exit_code == 1
+    output = capsys.readouterr().out
+    assert "requires package version 0.4.0rc1" in output
+    assert "must point to current production tip" in output
+
+
+def test_cli_rejects_invalid_tag(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(
+        [
+            "--tag",
+            "v0.4",
+            "--package-version",
+            "0.4.0",
+            "--tag-commit",
+            "a" * 40,
+            "--branch-commit",
+            "a" * 40,
+        ]
+    )
+
+    assert exit_code == 1
+    assert capsys.readouterr().out.strip() == "invalid release tag: v0.4"
