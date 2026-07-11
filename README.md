@@ -124,6 +124,9 @@ API capacity formulas and pressure threshold interpretation are documented in
 - [docs/release_process.md](docs/release_process.md) 定义发布 checklist、必需 GitHub checks、coverage 策略、
   SBOM 留存和版本 bump 流程。
 
+- [Branch governance](docs/branch_governance.md) defines development, pre-production, formal
+  release, synchronization, and hotfix flows.
+
 ## Docker
 
 根目录的 `docker-compose.yml` 将基础设施和 API 表面分开。启动 API profile：

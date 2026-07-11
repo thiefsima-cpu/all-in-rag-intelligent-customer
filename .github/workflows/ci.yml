@@ -3,9 +3,13 @@ name: CI
 on:
   pull_request:
     branches:
+      - development
+      - production
       - main
   push:
     branches:
+      - development
+      - production
       - main
   workflow_dispatch:
 
@@ -17,6 +21,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-flow-policy:
+    name: Branch Flow Policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate branch flow
+        run: >
+          python scripts/check_branch_flow.py
+          --base "${{ github.base_ref }}"
+          --head "${{ github.head_ref }}"
+          --mode report
+
   quality-gates:
     name: Quality Gates
     runs-on: ubuntu-latest
