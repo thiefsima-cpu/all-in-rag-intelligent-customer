@@ -10,6 +10,16 @@ The governed flow is `development -> production -> main`. Promotions use merge c
 each promotion, synchronize the target merge commit back into its source branch as documented in
 `docs/branch_governance.md`.
 
+### Production Direct-Push Exception
+
+The single maintainer may direct fast-forward push a commit created on local `production`.
+Production push CI must pass before synchronization or RC tagging. Every such change is merged
+back through a `production -> development` pull request. `development -> production` remains a
+checked pull request with a merge commit.
+
+Do not create an RC tag when production push CI is pending or failed. Repair or revert with a new
+commit; production history is never rewritten.
+
 ## Release Candidates
 
 Release candidates use PEP 440 package versions and protected Git tags. Package version
@@ -27,10 +37,12 @@ is the only formal deployment source. The final tag is never reused for an RC.
 
 ## Required GitHub Enforcement
 
-Main and production require pull requests, merge commits, resolved conversations, and these
-checks: `Branch Flow Policy`, `Quality Gates`, `Secret Scan`, and `SBOM`. Required approvals are
-zero for the single-maintainer repository. Development permits direct pushes but blocks deletion
-and force-push.
+Main requires pull requests and all four checks without bypass. Production uses two active
+rulesets: `Protect production history` blocks deletion and non-fast-forward updates without
+bypass, while `Protect production` requires pull requests and the four checks but grants the
+repository administrator an `always` bypass for local production fast-forward pushes. Required
+approvals remain zero for the single-maintainer repository. Development permits direct pushes but
+blocks deletion and force-push.
 
 ## Release Checklist
 
