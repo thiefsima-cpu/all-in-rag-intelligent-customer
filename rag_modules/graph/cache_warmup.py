@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Dict, List
 
 from .cache_stats import GraphCacheEntityStats, GraphCacheStats, GraphCacheStatsStore
+from .ports import Neo4jDriverPort, Neo4jRecordPort
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GraphWarmupResult:
     stats: GraphCacheStats = field(default_factory=GraphCacheStats)
-    entity_cache: Dict[str, dict] = field(default_factory=dict)
+    entity_cache: Dict[str, Mapping[str, object]] = field(default_factory=dict)
     relation_cache: Dict[str, int] = field(default_factory=dict)
 
 
@@ -24,9 +26,9 @@ class GraphCacheWarmupService:
     def __init__(self, store: GraphCacheStatsStore) -> None:
         self.store = store
 
-    def warm(self, driver, *, database_name: str) -> GraphWarmupResult:
+    def warm(self, driver: Neo4jDriverPort, *, database_name: str) -> GraphWarmupResult:
         stats = self._load_or_build_graph_stats(driver, database_name=database_name)
-        entity_cache = {
+        entity_cache: Dict[str, Mapping[str, object]] = {
             item.node_id: {
                 "labels": list(item.labels),
                 "name": item.name,
@@ -45,7 +47,12 @@ class GraphCacheWarmupService:
             relation_cache=relation_cache,
         )
 
-    def _load_or_build_graph_stats(self, driver, *, database_name: str) -> GraphCacheStats:
+    def _load_or_build_graph_stats(
+        self,
+        driver: Neo4jDriverPort,
+        *,
+        database_name: str,
+    ) -> GraphCacheStats:
         expected_signature = self.store.expected_graph_signature()
         cached = self.store.load()
         if (
@@ -63,7 +70,7 @@ class GraphCacheWarmupService:
 
     def _collect_graph_stats(
         self,
-        driver,
+        driver: Neo4jDriverPort,
         *,
         database_name: str,
         expected_signature: str = "",
@@ -91,7 +98,7 @@ class GraphCacheWarmupService:
                        degree
                 ORDER BY node_id
                 """
-                page_records = list(
+                page_records: list[Neo4jRecordPort] = list(
                     session.run(
                         entity_query,
                         {"after_node_id": page_cursor, "limit": max(1, int(page_size))},
@@ -103,10 +110,10 @@ class GraphCacheWarmupService:
                     entities.append(
                         GraphCacheEntityStats(
                             node_id=str(record["node_id"] or ""),
-                            labels=tuple(str(label) for label in (record["node_labels"] or [])),
+                            labels=_string_tuple(record["node_labels"]),
                             name=str(record["name"] or ""),
                             category=str(record["category"] or ""),
-                            degree=int(record["degree"] or 0),
+                            degree=_int_value(record["degree"]),
                         )
                     )
                 page_cursor = str(page_records[-1]["node_id"] or "")
@@ -117,7 +124,9 @@ class GraphCacheWarmupService:
             ORDER BY frequency DESC
             """
             for record in session.run(relation_query):
-                relation_frequencies[str(record["rel_type"] or "")] = int(record["frequency"] or 0)
+                relation_frequencies[str(record["rel_type"] or "")] = _int_value(
+                    record["frequency"]
+                )
 
         entities.sort(key=lambda item: (-int(item.degree or 0), item.node_id))
         return GraphCacheStats(
@@ -129,3 +138,20 @@ class GraphCacheWarmupService:
             page_size=max(1, int(page_size)),
             source="paged_warmup",
         )
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,) if value.strip() else ()
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        return tuple(str(item) for item in value if str(item).strip())
+    return ()
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, (int, float, str, bytes, bytearray)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    return 0

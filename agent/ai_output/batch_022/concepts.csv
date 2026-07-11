@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001339,Recipe,蛋炒饭,蛋炒饭 (Recipe),蛋炒饭,[],素菜,3,,,,,,dishes\staple\蛋炒饭.md
+201001340,Recipe,螺蛳粉,螺蛳粉 (Recipe),螺蛳粉,[],其他,1,,,,,,dishes\staple\螺蛳粉.md
+201001341,Recipe,酸辣蕨根粉,酸辣蕨根粉 (Recipe),酸辣蕨根粉,[],其他,2,,,,,,dishes\staple\酸辣蕨根粉.md
+201001342,Recipe,醪糟小汤圆,醪糟小汤圆 (Recipe),醪糟小汤圆,[],其他,2,,,,,,dishes\staple\醪糟小汤圆.md
+201001343,Recipe,韭菜盒子,韭菜盒子 (Recipe),韭菜盒子,[],其他,3,,,,,,dishes\staple\韭菜盒子.md
+201001344,Recipe,麻油拌面,麻油拌面 (Recipe),麻油拌面,[],其他,1,,,,,,dishes\staple\麻油拌面.md
+201001345,Recipe,麻辣减脂荞麦面,麻辣减脂荞麦面 (Recipe),麻辣减脂荞麦面,[],其他,2,,,,,,dishes\staple\麻辣减脂荞麦面.md
+201001346,Recipe,中式馅饼,中式馅饼 (Recipe),中式馅饼,[],其他,4,,,,,,dishes\staple\中式馅饼\中式馅饼.md
+201001347,Recipe,凉粉,凉粉 (Recipe),凉粉,[],其他,3,,,,,,dishes\staple\凉粉\凉粉.md
+201001348,Recipe,基础牛奶面包,基础牛奶面包 (Recipe),基础牛奶面包,[],其他,5,,,,,,dishes\staple\基础牛奶面包\基础牛奶面包.md

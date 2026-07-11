@@ -85,10 +85,11 @@ class AnswerStreamEventModel(BaseModel):
         *,
         code: ErrorCode,
         request_id: str,
+        message: str | None = None,
     ) -> "AnswerStreamEventModel":
         return cls(
             event=AnswerStreamEventType.error,
-            data=build_error_model(code, request_id=request_id),
+            data=build_error_model(code, request_id=request_id, message=message),
         )
 
     @classmethod

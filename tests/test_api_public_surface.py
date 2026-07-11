@@ -242,4 +242,3 @@ class ApiPublicSurfaceTests(unittest.TestCase):
         self.assertIn("/v1/jobs/{job_id}/cancel", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/retry", schema["paths"])
         self.assertIn("/v1/jobs/build", schema["paths"])
-

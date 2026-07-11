@@ -3,6 +3,43 @@
 本文档梳理 GraphRAG C9 的主要运行时边界。它面向新贡献者和 reviewer，作为阅读指南使用；
 当行为发生变化时，代码仍然是最终准绳。
 
+## 请求生命周期最短阅读路线
+
+如果目标只是理解一次 `/v1/answers` 请求如何穿过系统，先按下面顺序阅读。它刻意绕开
+composition/provider/factory/lifecycle 的完整展开，等请求主线建立起来后再回头看装配细节。
+
+1. `rag_modules/interfaces/api/app.py`：确认 FastAPI app factory 如何创建
+   `GraphRAGServingApiService`、注册 middleware、错误处理和 serving routes。
+2. `rag_modules/interfaces/api/serving_routes.py` 和 `rag_modules/interfaces/api/route_handlers.py`：
+   从 `/v1/answers`、`/v1/answers/stream`、`/v1/debug/answers` 看 HTTP route 如何选择普通、
+   streaming、public 或 debug 响应。
+3. `rag_modules/interfaces/api/services/serving.py`：看 HTTP-facing 服务如何做 serving runtime
+   初始化校验、hot refresh、`system_ready` 检查、answer admission lock 和 SSE runner 分发。
+4. `rag_modules/app/system.py` 和 `rag_modules/app/composition/system_answering_service.py`：
+   看应用 facade 如何把请求转给当前 serving runtime 上的 `AnswerWorkflow`。
+5. `rag_modules/app/services/answer_workflow.py` 和
+   `rag_modules/app/services/answer_pipeline.py`：这是请求主干。这里创建 request control，
+   包住 telemetry/error boundary，执行 routing、generation、trace capture 和 result factory。
+6. `rag_modules/routing/workflow_service.py`：理解 query understanding、route execution request、
+   hybrid/graph/combined 检索、post-processing 和 route trace 是如何组成 `RouteResolution` 的。
+7. `rag_modules/generation/service.py` 和 `rag_modules/generation/execution/engine.py`：
+   看 `AnswerContext` 如何进入 direct、two-stage 或 streaming generation，以及 provider 失败时如何
+   fallback。
+8. `rag_modules/interfaces/api/response_builder.py` 和
+   `rag_modules/interfaces/api/answer_*_models.py`：最后看 debug payload 如何被压成 public response，
+   或被编码为 SSE events。
+
+读完这条路径后，再根据问题类型补读装配层：
+
+- 想知道某个 collaborator 从哪里来，读 `rag_modules/app/providers/`。
+- 想知道 serving runtime 对象图怎么拼出来，读
+  `rag_modules/app/composition/serving_runtime_factory.py`。
+- 想知道 artifacts 如何让 runtime 变 ready，读
+  `rag_modules/app/composition/serving_runtime_lifecycle_service.py` 和
+  `rag_modules/app/composition/serving_runtime_preparer.py`。
+- 想判断一次改动该落在哪个 provider、factory 或 lifecycle 文件，读
+  `docs/app_composition_maintenance_guide.md`。
+
 三个图分别关注：
 
 - 运行时装配：API 表面如何解析 providers、生命周期和活跃 runtime；
@@ -196,7 +233,9 @@ flowchart TD
 
 主要代码路径：
 
-- `rag_modules/interfaces/api/routes.py` 负责 HTTP routes，以及 public/debug/SSE 响应选择。
+- `rag_modules/interfaces/api/serving_routes.py` 负责 serving HTTP routes，以及 public/debug/SSE 响应选择。
+- `rag_modules/interfaces/api/operational_routes.py` 负责 health、readiness、stats、diagnostics
+  和 runtime operation routes。
 - `rag_modules/interfaces/api/services/serving.py` 负责 readiness checks、hot-refresh checks、
   backpressure 和 streaming event coordination。
 - `rag_modules/app/composition/system_answering_service.py` 将应用 facade 连接到已初始化的 `AnswerWorkflow`。
@@ -225,7 +264,7 @@ stateDiagram-v2
 
   Queued --> Claimed: runner 认领 lease
   Queued --> CancelRequested: POST /v1/jobs/{job_id}/cancel
-  Claimed --> Running: InProcessBuildJobRunner 启动
+  Claimed --> Running: in-process 或 external worker runner 启动
   Claimed --> Interrupted: lease 过期后的 restart recovery
   Running --> Interrupted: lease 过期后的 restart recovery
   Running --> CancelRequested: POST /v1/jobs/{job_id}/cancel
@@ -281,20 +320,21 @@ stateDiagram-v2
 
 主要代码路径：
 
-- `rag_modules/interfaces/api/routes.py` 注册规范的 submit、cancel、retry、list 和 detail routes；
+- `rag_modules/interfaces/api/build_routes.py` 注册规范的 submit、cancel、retry、list 和 detail routes；
   未版本化 HTTP aliases 已退役。
 - `rag_modules/interfaces/api/services/build.py` 是薄 HTTP-facing 边界。它解析 request IDs，将 typed
   build-job exceptions 映射为 API errors，并将 use cases 委托给 `BuildJobApplicationService`。
-- `rag_modules/app/assembly.py` 暴露 `assemble_build_job_application`；
+- `rag_modules/app/assembly.py` 暴露 `assemble_build_job_application` 和 `compose_build_job_worker`；
   `rag_modules/app/composition/build_jobs.py` 是唯一的生产 composition point，负责选择 V3 file repository、
-  migrator、`BuildJobExecutor` 和 in-process runner。
+  migrator、`BuildJobExecutor`、in-process runner 或 external-worker queue/worker runner。
 - `rag_modules/contracts/build_jobs/` 负责稳定的 build-job domain models、versioned events、reducer、
   repository/runner ports、安全 public projection 和 runtime-hook executor contract。
 - `rag_modules/app/build_jobs/service.py` 负责应用 use cases：submit/replay、list/read、cancel、retry、
   startup recovery、diagnostics 和 shutdown。它依赖 `BuildJobRepositoryPort` 和 `BuildJobRunnerPort`，
   不依赖具体 storage 或 thread-pool 细节。
 - `rag_modules/runtime/build_jobs/` 负责具体 adapters：V3 event-envelope file persistence、V2-to-V3 migration、
-  interprocess locks、lease records、heartbeat renewal 和本地 `InProcessBuildJobRunner`。
+  interprocess locks、lease records、heartbeat renewal、本地 `InProcessBuildJobRunner`，以及
+  `ExternalBuildJobQueueRunner`/`ExternalBuildJobWorkerRunner` 组成的独立 worker backend。
 - `rag_modules/app/composition/build_runtime_lifecycle_service.py` 执行 build/rebuild，并根据完成后的 build
   刷新 serving runtime 状态。
 - `rag_modules/build_pipeline/knowledge_base_workflow.py` 负责 artifact reuse、rebuild、vector publish/rollback、

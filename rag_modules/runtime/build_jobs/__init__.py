@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .external_worker_runner import ExternalBuildJobQueueRunner, ExternalBuildJobWorkerRunner
 from .file_repository import (
     FileBuildJobRepository,
     hash_idempotency_key,
@@ -23,6 +24,8 @@ __all__ = [
     "BUILD_JOB_ENVELOPE_SCHEMA_VERSION",
     "BuildJobEnvelope",
     "BuildJobStoreMigrator",
+    "ExternalBuildJobQueueRunner",
+    "ExternalBuildJobWorkerRunner",
     "FileBuildJobRepository",
     "InProcessBuildJobRunner",
     "envelope_from_dict",

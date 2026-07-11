@@ -11,6 +11,13 @@ import sys
 from recipe_ai_agent import KimiRecipeAgent, RecipeKnowledgeGraphBuilder
 
 
+def configure_utf8_stdio():
+    """Keep Windows consoles from failing on Unicode status output."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def load_config():
     """加载配置文件"""
     config_file = "config.json"
@@ -88,7 +95,14 @@ def test_single_recipe():
         api_key = setup_api_key()
 
     try:
-        agent = KimiRecipeAgent(api_key)
+        agent = KimiRecipeAgent(
+            api_key,
+            config["kimi"].get("base_url"),
+            config["kimi"].get("model", "qwen3.7-plus"),
+            config["kimi"].get("max_retries", 3),
+            config["kimi"].get("timeout", 30),
+            config["kimi"].get("max_tokens", 8192),
+        )
         recipe_info = agent.extract_recipe_info(test_recipe, "dishes/vegetable_dish/红烧茄子.md")
 
         print(
@@ -137,7 +151,14 @@ def main():
     try:
         # 创建AI agent
         print("\n🤖 初始化AI Agent...")
-        ai_agent = KimiRecipeAgent(api_key, config["kimi"].get("base_url"))
+        ai_agent = KimiRecipeAgent(
+            api_key,
+            config["kimi"].get("base_url"),
+            config["kimi"].get("model", "qwen3.7-plus"),
+            config["kimi"].get("max_retries", 3),
+            config["kimi"].get("timeout", 30),
+            config["kimi"].get("max_tokens", 8192),
+        )
 
         # 创建知识图谱构建器
         output_dir = config["output"].get("directory", "./ai_output")
@@ -206,6 +227,7 @@ def show_help():
 
 
 if __name__ == "__main__":
+    configure_utf8_stdio()
     if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
         show_help()
     else:

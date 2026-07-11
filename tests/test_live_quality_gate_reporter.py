@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.gates import GateFailureType
+from scripts.gates import GateCheckResult, GateFailureType
 from scripts.live_quality_gate.evaluator import (
     evaluate_deterministic_case,
     evaluate_policy_thresholds,
@@ -151,3 +151,46 @@ def test_report_writes_safe_json_markdown_and_manual_review_sample(tmp_path: Pat
     assert "serving-token" not in combined
     assert "judge-key" not in combined
     assert "Authorization" not in combined
+
+
+def test_report_uses_aggregate_thresholds_for_valid_case_quality_failures() -> None:
+    result = scored_result().with_judge_result(
+        passed=False,
+        scores={"faithfulness": 1.0, "answer_relevance": 0.7},
+    )
+    report = build_live_quality_report(
+        policy=policy(),
+        settings=settings(),
+        metrics=passing_metrics(),
+        checks=(
+            GateCheckResult.fail_check(
+                "case.grounded_mapo_tofu.judge",
+                failure_type=GateFailureType.QUALITY_REGRESSION,
+                code="JUDGE_QUALITY_FAILED",
+            ),
+            GateCheckResult.pass_check("metrics.judge_pass_rate"),
+        ),
+        results=(result,),
+    )
+
+    assert report["passed"] is True
+    assert report["cases"][0]["passed"] is False
+
+
+def test_report_still_blocks_invalid_judge_protocol() -> None:
+    result = scored_result()
+    report = build_live_quality_report(
+        policy=policy(),
+        settings=settings(),
+        metrics=passing_metrics(),
+        checks=(
+            GateCheckResult.fail_check(
+                "case.grounded_mapo_tofu.judge",
+                failure_type=GateFailureType.JUDGE_UNAVAILABLE,
+                code="JUDGE_RESPONSE_INVALID",
+            ),
+        ),
+        results=(result,),
+    )
+
+    assert report["passed"] is False

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -55,7 +56,7 @@ def _real_route_suite_report(case_count: int, metric_value: float = 1.0) -> dict
 
 def _quality_metrics() -> dict:
     return {
-        "case_count": 18,
+        "case_count": 30,
         "pass_rate": 1.0,
         "recall_at_k": 0.8,
         "faithfulness": 0.8,
@@ -63,18 +64,29 @@ def _quality_metrics() -> dict:
         "response_mode_accuracy": 1.0,
         "abstention_accuracy": 1.0,
         "response_mode_counts": {
-            "clarification": 2,
-            "constraint_conflict": 2,
-            "grounded_answer": 12,
-            "no_evidence": 2,
+            "clarification": 4,
+            "constraint_conflict": 4,
+            "grounded_answer": 18,
+            "no_evidence": 4,
         },
         "dimension_counts": {
-            "ambiguity": 2,
-            "colloquial_zh": 4,
-            "constraint_conflict": 2,
-            "long_query": 4,
-            "multi_hop": 3,
-            "no_evidence": 2,
+            "adversarial": 2,
+            "ambiguity": 4,
+            "colloquial_zh": 5,
+            "complex_relation": 2,
+            "constrained_recommendation": 5,
+            "constraint_conflict": 4,
+            "dependency_anomaly": 3,
+            "long_query": 5,
+            "long_tail": 3,
+            "low_quality_evidence": 4,
+            "multi_hop": 4,
+            "no_evidence": 4,
+            "permission_privacy": 2,
+            "recommendation": 2,
+            "semantic_flavor": 1,
+            "single_recipe": 5,
+            "subgraph": 2,
         },
         "fallback_rate": 0.0,
         "fallback_case_count": 0,
@@ -90,10 +102,10 @@ def _quality_metrics() -> dict:
 
 def _quality_suite_report() -> dict:
     return {
-        "case_count": 18,
-        "passed_count": 18,
+        "case_count": 30,
+        "passed_count": 30,
         "metrics": _quality_metrics(),
-        "results": [{"query": str(index), "passed": True} for index in range(18)],
+        "results": [{"query": str(index), "passed": True} for index in range(30)],
         "failures": [],
     }
 
@@ -133,8 +145,8 @@ class ReleaseGateTests(unittest.TestCase):
         report = evaluate_gate(policy, _passing_reports_for_policy(policy))
 
         self.assertTrue(report["passed"])
-        self.assertEqual(report["metrics"]["case_count"], 57)
-        self.assertEqual(report["metrics"]["passed_count"], 57)
+        self.assertEqual(report["metrics"]["case_count"], 69)
+        self.assertEqual(report["metrics"]["passed_count"], 69)
         self.assertEqual(report["metrics"]["route_category_count"], 9)
         self.assertFalse(report["failed_checks"])
 
@@ -149,18 +161,23 @@ class ReleaseGateTests(unittest.TestCase):
         policy = load_policy(DEFAULT_POLICY_PATH)
 
         self.assertIn("quality_eval", policy["required_suites"])
-        self.assertEqual(policy["minimum_total_cases"], 57)
-        self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 18)
+        self.assertEqual(policy["minimum_total_cases"], 69)
+        self.assertEqual(policy["suite_minimum_cases"]["quality_eval"], 30)
         self.assertEqual(policy["suite_minimum_pass_rate"]["quality_eval"], 1.0)
         self.assertEqual(
             policy["quality_dimension_minimum_cases"],
             {
+                "adversarial": 2,
                 "ambiguity": 2,
                 "colloquial_zh": 2,
                 "constraint_conflict": 2,
+                "dependency_anomaly": 2,
                 "long_query": 2,
+                "long_tail": 2,
+                "low_quality_evidence": 2,
                 "multi_hop": 2,
                 "no_evidence": 2,
+                "permission_privacy": 2,
             },
         )
         self.assertEqual(
@@ -191,7 +208,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_quality_runner_normalizes_structured_eval_report(self) -> None:
         eval_report = {
             "metrics": _quality_metrics(),
-            "results": [{"query": str(index), "passed": True} for index in range(18)],
+            "results": [{"query": str(index), "passed": True} for index in range(30)],
             "failures": [],
             "profile": {"name": "eval_quality"},
         }
@@ -208,8 +225,8 @@ class ReleaseGateTests(unittest.TestCase):
             generate=True,
             profile="eval_quality",
         )
-        self.assertEqual(report["case_count"], 18)
-        self.assertEqual(report["passed_count"], 18)
+        self.assertEqual(report["case_count"], 30)
+        self.assertEqual(report["passed_count"], 30)
         self.assertEqual(report["metrics"]["recall_at_k"], 0.8)
         self.assertEqual(report["profile"], {"name": "eval_quality"})
 
@@ -284,7 +301,7 @@ class ReleaseGateTests(unittest.TestCase):
             },
         )
         self.assertEqual(report["metrics"]["suite_count"], 6)
-        self.assertEqual(report["metrics"]["case_count"], 57)
+        self.assertEqual(report["metrics"]["case_count"], 69)
         self.assertEqual(report["query_policy"]["policy_version"], "c9-default-policy-v1")
         self.assertEqual(report["query_policy"]["prompt_version"], "c9-default-prompts-v1")
         self.assertTrue(report["passed"])
@@ -392,7 +409,7 @@ class ReleaseGateTests(unittest.TestCase):
             ("schema_version_bool", ("schema_version",), True),
             ("schema_version_string", ("schema_version",), "1"),
             ("minimum_total_cases_bool", ("minimum_total_cases",), False),
-            ("minimum_total_cases_string", ("minimum_total_cases",), "57"),
+            ("minimum_total_cases_string", ("minimum_total_cases",), "69"),
             ("suite_minimum_cases_list", ("suite_minimum_cases",), []),
             ("suite_minimum_cases_bool_value", ("suite_minimum_cases", "quality_eval"), True),
             ("minimum_overall_pass_rate_string", ("minimum_overall_pass_rate",), "1.0"),
@@ -452,6 +469,16 @@ class ReleaseGateTests(unittest.TestCase):
         failed = {item["name"]: item for item in report["failed_checks"]}
         self.assertEqual(failed["quality_dimension:no_evidence"]["expected"], ">=2")
         self.assertEqual(failed["quality_dimension:no_evidence"]["actual"], 1)
+
+        reports = _passing_reports_for_policy(policy)
+        reports["quality_eval"]["metrics"]["dimension_counts"]["permission_privacy"] = 1
+
+        report = evaluate_gate(policy, reports)
+
+        self.assertFalse(report["passed"])
+        failed = {item["name"]: item for item in report["failed_checks"]}
+        self.assertEqual(failed["quality_dimension:permission_privacy"]["expected"], ">=2")
+        self.assertEqual(failed["quality_dimension:permission_privacy"]["actual"], 1)
 
     def test_gate_marks_quality_threshold_failure_as_quality_regression(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -640,6 +667,12 @@ class ReleaseGateTests(unittest.TestCase):
             "Exit `2` can occur before report artifacts are created",
             combined_documentation,
         )
+        self.assertIn("at least 30 quality-eval cases", combined_documentation)
+        self.assertIn("long_tail", combined_documentation)
+        self.assertIn("adversarial", combined_documentation)
+        self.assertIn("permission_privacy", combined_documentation)
+        self.assertIn("dependency_anomaly", combined_documentation)
+        self.assertIn("low_quality_evidence", combined_documentation)
         self.assertNotIn("include-" + "quality-eval", combined_documentation)
         self.assertNotIn("RELEASE_GATE_" + "INCLUDE_QUALITY_EVAL", combined_documentation)
 
@@ -786,6 +819,40 @@ class ReleaseGateTests(unittest.TestCase):
                 "status: PASS",
                 summary_path.read_text(encoding="utf-8"),
             )
+
+    def test_gate_report_falls_back_to_temp_when_default_output_dir_is_not_writable(
+        self,
+    ) -> None:
+        policy = load_policy(DEFAULT_POLICY_PATH)
+        suite_reports = _passing_reports_for_policy(policy)
+        report = evaluate_gate(policy, suite_reports)
+        default_output_dir = ROOT / "eval" / "reports" / "release_gate"
+        denied_report_path = (default_output_dir / "report.json").resolve()
+        original_write_text = Path.write_text
+        fallback_dir: Path | None = None
+
+        def reject_default_report_path(
+            path: Path,
+            data: str,
+            *args,
+            **kwargs,
+        ) -> int:
+            if path.resolve() == denied_report_path:
+                raise PermissionError("Access is denied")
+            return original_write_text(path, data, *args, **kwargs)
+
+        try:
+            with patch.object(Path, "write_text", reject_default_report_path):
+                report_path, summary_path = write_report(report)
+            fallback_dir = report_path.parent
+
+            self.assertNotEqual(report_path.parent, default_output_dir.resolve())
+            self.assertTrue(report_path.exists())
+            self.assertTrue(summary_path.exists())
+            self.assertIn("release_gate_", report_path.parent.name)
+        finally:
+            if fallback_dir is not None:
+                shutil.rmtree(fallback_dir, ignore_errors=True)
 
     def test_gate_fails_when_real_route_contract_metric_regresses(self) -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)

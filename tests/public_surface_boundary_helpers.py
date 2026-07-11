@@ -373,7 +373,10 @@ class PublicSurfaceBoundaryTestCase(unittest.TestCase):
 
     @staticmethod
     def _version_tuple(version: str) -> tuple[int, int, int]:
-        major, minor, patch = (int(part) for part in version.split("."))
+        match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:rc\d+)?", version)
+        if match is None:
+            raise ValueError(f"Unsupported package version: {version!r}")
+        major, minor, patch = (int(part) for part in match.groups())
         return major, minor, patch
 
     @classmethod

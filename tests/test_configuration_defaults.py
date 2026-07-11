@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -93,6 +95,22 @@ class ConfigurationDefaultTests(unittest.TestCase):
             os.path.join("storage/override-indexes", "build_jobs.json"),
         )
 
+    def test_test_config_defaults_build_job_store_to_unique_temp_path(self) -> None:
+        first = build_test_config()
+        second = build_test_config()
+
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        first_store = Path(first.storage.build_job_store_path).resolve()
+        second_store = Path(second.storage.build_job_store_path).resolve()
+
+        self.assertIn(temp_root, first_store.parents)
+        self.assertIn(temp_root, second_store.parents)
+        self.assertNotEqual(first_store, second_store)
+        self.assertNotEqual(
+            os.path.normpath(first.storage.build_job_store_path),
+            os.path.normpath(os.path.join("storage", "indexes", "build_jobs.json")),
+        )
+
     def test_default_management_surfaces_are_production_safe(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
 
@@ -102,11 +120,23 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertFalse(config.api.openapi_public)
         self.assertFalse(config.observability.prometheus_public)
 
+    def test_default_retrieval_models_use_requested_qwen_versions(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        self.assertEqual(config.models.embedding_model, "qwen3-vl-embedding")
+        self.assertEqual(config.models.embedding_dimension, 1024)
+        self.assertEqual(config.models.rerank_model, "qwen3-vl-rerank")
+        self.assertEqual(
+            config.models.rerank_base_url,
+            "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
+        )
+
     def test_default_build_job_history_limits_are_bounded(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
 
         self.assertEqual(config.api.build_job_runner_backend, "in_process")
         self.assertEqual(config.api.build_job_runner_max_workers, 1)
+        self.assertEqual(config.api.build_job_worker_poll_interval_seconds, 1.0)
         self.assertEqual(config.api.build_job_retention_limit, 100)
         self.assertEqual(config.api.build_job_list_default_limit, 50)
         self.assertEqual(config.api.build_job_list_max_limit, 100)

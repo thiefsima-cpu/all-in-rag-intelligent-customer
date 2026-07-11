@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001329,Recipe,炒河粉,炒河粉 (Recipe),炒河粉,[],其他,4,,,,,,dishes\staple\炒河粉.md
+201001330,Recipe,炒馍,炒馍 (Recipe),炒馍,[],其他,3,,,,,,dishes\staple\炒馍.md
+201001331,Recipe,炸酱面,炸酱面 (Recipe),炸酱面,"[{'term': '油炸酱面', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'deep-fried酱面', 'language': 'en', 'language_code': 'en-US'}]",其他,3,,,,,,dishes\staple\炸酱面.md
+201001332,Recipe,热干面,热干面 (Recipe),热干面,[],其他,3,,,,,,dishes\staple\热干面.md
+201001333,Recipe,煮泡面加蛋,煮泡面加蛋 (Recipe),煮泡面加蛋,[],素菜,1,,,,,,dishes\staple\煮泡面加蛋.md
+201001334,Recipe,老干妈拌面,老干妈拌面 (Recipe),老干妈拌面,[],其他,1,,,,,,dishes\staple\老干妈拌面.md
+201001335,Recipe,肉蛋盖饭,肉蛋盖饭 (Recipe),肉蛋盖饭,[],素菜,3,,,,,,dishes\staple\肉蛋盖饭.md
+201001336,Recipe,葱油拌面,葱油拌面 (Recipe),葱油拌面,[],其他,2,,,,,,dishes\staple\葱油拌面.md
+201001337,Recipe,蒸卤面,蒸卤面 (Recipe),蒸卤面,"[{'term': '清蒸卤面', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'steamed卤面', 'language': 'en', 'language_code': 'en-US'}]",其他,4,,,,,,dishes\staple\蒸卤面.md
+201001338,Recipe,蛋包饭,蛋包饭 (Recipe),蛋包饭,[],素菜,3,,,,,,dishes\staple\蛋包饭.md

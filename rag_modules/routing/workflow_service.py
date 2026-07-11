@@ -19,6 +19,7 @@ from ..contracts.runtime.errors import routing_error_detail
 from ..kernel.json_types import JsonObject
 from ..kernel.routing import RouteStatistics
 from ..query_policy.models import QueryPolicyBundle
+from ..query_understanding.ports import QueryUnderstandingPort
 from ..query_understanding.service import QueryUnderstandingService
 from ..retrieval.post_processor import RetrievalPostProcessor
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
@@ -39,7 +40,7 @@ class RoutingWorkflowService:
         llm_client,
         config,
         retrieval_profile: Optional[RetrievalRuntimeProfile] = None,
-        query_understanding_service: Optional[QueryUnderstandingService] = None,
+        query_understanding_service: Optional[QueryUnderstandingPort] = None,
         post_processor: Optional[RetrievalPostProcessor] = None,
         route_stats: Optional[RouteStatistics] = None,
         search_orchestrator: Optional[RouteSearchOrchestrator] = None,
@@ -60,7 +61,6 @@ class RoutingWorkflowService:
                 policy_bundle=policy_bundle,
             )
         self.query_understanding_service = query_understanding_service
-        self.query_planner = self.query_understanding_service.query_planner
         self.post_processor = post_processor or RetrievalPostProcessor(
             config,
             settings=self.retrieval_profile.postprocess,

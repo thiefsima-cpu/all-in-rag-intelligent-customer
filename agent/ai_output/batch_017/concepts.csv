@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001289,Recipe,香辣鸡爪煲,香辣鸡爪煲 (Recipe),香辣鸡爪煲,[],荤菜,4,,,,,,dishes\meat_dish\香辣鸡爪煲\香辣鸡爪煲.md
+201001290,Recipe,鱼香茄子,鱼香茄子 (Recipe),鱼香茄子,"[{'term': '鱼香紫茄子', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '鱼香青茄子', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '鱼香eggplant', 'language': 'en', 'language_code': 'en-US'}]",荤菜,3,,,,,,dishes\meat_dish\鱼香茄子\鱼香茄子.md
+201001291,Recipe,麻婆豆腐,麻婆豆腐 (Recipe),麻婆豆腐,"[{'term': '麻婆tofu', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '麻婆老豆腐', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '麻婆嫩豆腐', 'language': 'zh', 'language_code': 'zh-CN'}]",素菜,3,,,,,,dishes\meat_dish\麻婆豆腐\麻婆豆腐.md
+201001292,Recipe,黑椒牛柳,黑椒牛柳 (Recipe),黑椒牛柳,[],其他,4,,,,,,dishes\meat_dish\黑椒牛柳\黑椒牛柳.md
+201001293,Recipe,黔式腊肠娃娃菜,黔式腊肠娃娃菜 (Recipe),黔式腊肠娃娃菜,[],其他,1,,,,,,dishes\meat_dish\黔式腊肠娃娃菜\黔式腊肠娃娃菜.md
+201001294,Recipe,凉皮,凉皮 (Recipe),凉皮,[],其他,3,,,,,,dishes\semi-finished\凉皮.md
+201001295,Recipe,半成品意面,半成品意面 (Recipe),半成品意面,[],其他,1,,,,,,dishes\semi-finished\半成品意面.md
+201001296,Recipe,牛油火锅底料,牛油火锅底料 (Recipe),牛油火锅底料,[],其他,5,,,,,,dishes\semi-finished\牛油火锅底料.md
+201001297,Recipe,速冻水饺,速冻水饺 (Recipe),速冻水饺,[],其他,1,,,,,,dishes\semi-finished\速冻水饺.md
+201001298,Recipe,速冻馄饨,速冻馄饨 (Recipe),速冻馄饨,[],其他,2,,,,,,dishes\semi-finished\速冻馄饨.md

@@ -25,7 +25,7 @@ class MilvusOperationHost:
     dimension: int
     embedding_base_url: str
     embedding_batch_size: int
-    embedding_client: EmbeddingClientPort | None
+    embedding_client: EmbeddingClientPort
     embedding_timeout_seconds: int
     embeddings: EmbeddingClientPort
     host: str

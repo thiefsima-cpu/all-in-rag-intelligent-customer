@@ -7,6 +7,7 @@
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +15,13 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 from openai import OpenAI
+
+
+def configure_utf8_stdio():
+    """Keep Windows consoles from failing on Unicode status output."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 @dataclass
@@ -68,10 +76,22 @@ class RecipeInfo:
 class KimiRecipeAgent:
     """Kimi菜谱解析AI Agent"""
 
-    def __init__(self, api_key: str, base_url: str = "https://api.moonshot.cn/v1"):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.moonshot.cn/v1",
+        model: str = "qwen3.7-plus",
+        max_retries: int = 3,
+        timeout: float = 30,
+        max_tokens: int = 8192,
+    ):
         self.api_key = api_key
         self.base_url = base_url
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.max_tokens = max_tokens
+        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 
         # 目录名到分类的映射
         self.directory_category_mapping = {
@@ -116,16 +136,18 @@ class KimiRecipeAgent:
         # 预定义的工具
         self.cooking_tools = ["炒锅", "平底锅", "蒸锅", "刀", "案板", "筷子", "锅铲", "勺子"]
 
-    def call_kimi_api(self, messages: List[Dict], max_retries: int = 3) -> str:
+    def call_kimi_api(self, messages: List[Dict], max_retries: int | None = None) -> str:
         """调用Kimi API"""
+        max_retries = self.max_retries if max_retries is None else max_retries
         for attempt in range(max_retries):
             try:
                 response = self.client.chat.completions.create(
-                    model="kimi-k2-0711-preview",
+                    model=self.model,
                     messages=messages,
                     temperature=0.3,
-                    max_tokens=2048,
+                    max_tokens=self.max_tokens,
                     stream=False,
+                    timeout=self.timeout,
                 )
 
                 return response.choices[0].message.content
@@ -1005,6 +1027,7 @@ class RecipeKnowledgeGraphBuilder:
                         content = f.read()
 
                     relative_path = os.path.relpath(recipe_file, recipe_dir)
+                    print(f"处理: {relative_path}", flush=True)
 
                     # 处理菜谱
                     self.process_recipe(content, relative_path)
@@ -1393,6 +1416,7 @@ def main():
 
 
 if __name__ == "__main__":
+    configure_utf8_stdio()
     # 测试用例
     if len(os.sys.argv) == 1:
         print("AI菜谱解析器测试模式")

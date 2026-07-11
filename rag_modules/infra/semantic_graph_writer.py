@@ -9,9 +9,11 @@ can use them directly instead of relying only on virtual in-memory relations.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Iterable, List
+from collections.abc import Mapping
+from typing import Any, Dict, Iterable, List, cast
 
 from ..kernel.documents import TextDocument
+from ..kernel.json_types import coerce_json_int
 from ..kernel.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
@@ -99,7 +101,7 @@ class SemanticGraphSchemaWriter:
         try:
             with driver.session(database=self.storage.neo4j_database) as session:
                 self._ensure_constraints(session)
-                result = session.execute_write(self._write_rows, rows)
+                result = cast(Dict[str, int], session.execute_write(self._write_rows, rows))
             logger.info("Semantic graph schema sync complete: %s", result)
             return result
         finally:
@@ -189,158 +191,190 @@ class SemanticGraphSchemaWriter:
     @staticmethod
     def _write_rows(tx, rows: List[Dict[str, Any]]) -> Dict[str, int]:
         counters = {"recipes": len(rows), "nodes": 0, "relationships": 0}
-        flat_rows = [
-            {
-                "recipe_id": row["recipe_id"],
-                "name": relation["name"],
-                "rel_type": relation["rel_type"],
-            }
-            for row in rows
-            for relation in row.get("relations", [])
-            if relation.get("rel_type")
-            not in {"CONTRIBUTES_TO", "INGREDIENT_CONTRIBUTES_TO", "TECHNIQUE_MODIFIES_TEXTURE"}
-        ]
+        counters["relationships"] += _write_simple_semantic_relations(tx, rows)
+        counters["relationships"] += _write_contribution_relations(tx, rows)
+        counters["relationships"] += _write_fine_grained_relations(tx, rows)
+        counters["nodes"] = _count_semantic_schema_nodes(tx)
+        return counters
 
-        simple_specs = [
-            ("HAS_FLAVOR", "Flavor", "semantic:flavor:", "HAS_FLAVOR"),
-            ("USES_TECHNIQUE", "Technique", "semantic:technique:", "USES_TECHNIQUE"),
-            ("HAS_DIET_TAG", "DietTag", "semantic:diet:", "HAS_DIET_TAG"),
-            ("HAS_HEALTH_TAG", "HealthTag", "semantic:health:", "HAS_HEALTH_TAG"),
-            ("HAS_CUISINE_STYLE", "CuisineStyle", "semantic:cuisine:", "HAS_CUISINE_STYLE"),
-            (
-                "HAS_INGREDIENT_CATEGORY",
-                "IngredientCategory",
-                "semantic:ingredient-category:",
-                "HAS_INGREDIENT_CATEGORY",
-            ),
-            ("HAS_TIME_PROFILE", "TimeProfile", "semantic:time-profile:", "HAS_TIME_PROFILE"),
-            (
-                "HAS_DIFFICULTY_LEVEL",
-                "DifficultyLevel",
-                "semantic:difficulty:",
-                "HAS_DIFFICULTY_LEVEL",
-            ),
-        ]
-        for rel_type, label, node_prefix, edge_type in simple_specs:
-            rel_rows = [row for row in flat_rows if row["rel_type"] == rel_type]
-            if not rel_rows:
-                continue
-            query = f"""
-            UNWIND $rows AS row
-            MATCH (recipe:Recipe {{nodeId: row.recipe_id}})
-            MERGE (target:{label} {{name: row.name}})
-            ON CREATE SET target.nodeId = $node_prefix + row.name
-            SET target.schemaVersion = $schema_version,
-                target.createdFrom = 'semantic_schema'
-            MERGE (recipe)-[edge:{edge_type}]->(target)
-            SET edge.schemaVersion = $schema_version,
-                edge.createdFrom = 'semantic_schema'
-            RETURN count(edge) AS relationships
-            """
-            result = tx.run(
-                query,
-                rows=rel_rows,
-                node_prefix=node_prefix,
-                schema_version=SEMANTIC_SCHEMA_VERSION,
-            ).single()
-            counters["relationships"] += int((result or {}).get("relationships") or 0)
 
-        contribution_query = """
+_SIMPLE_RELATION_SPECS = (
+    ("HAS_FLAVOR", "Flavor", "semantic:flavor:", "HAS_FLAVOR"),
+    ("USES_TECHNIQUE", "Technique", "semantic:technique:", "USES_TECHNIQUE"),
+    ("HAS_DIET_TAG", "DietTag", "semantic:diet:", "HAS_DIET_TAG"),
+    ("HAS_HEALTH_TAG", "HealthTag", "semantic:health:", "HAS_HEALTH_TAG"),
+    ("HAS_CUISINE_STYLE", "CuisineStyle", "semantic:cuisine:", "HAS_CUISINE_STYLE"),
+    (
+        "HAS_INGREDIENT_CATEGORY",
+        "IngredientCategory",
+        "semantic:ingredient-category:",
+        "HAS_INGREDIENT_CATEGORY",
+    ),
+    ("HAS_TIME_PROFILE", "TimeProfile", "semantic:time-profile:", "HAS_TIME_PROFILE"),
+    (
+        "HAS_DIFFICULTY_LEVEL",
+        "DifficultyLevel",
+        "semantic:difficulty:",
+        "HAS_DIFFICULTY_LEVEL",
+    ),
+)
+
+_SIMPLE_RELATION_EXCLUDED_TYPES = frozenset(
+    {"CONTRIBUTES_TO", "INGREDIENT_CONTRIBUTES_TO", "TECHNIQUE_MODIFIES_TEXTURE"}
+)
+
+_CONTRIBUTION_RELATION_QUERY = """
+UNWIND $rows AS row
+MATCH (recipe:Recipe {nodeId: row.recipe_id})
+UNWIND row.relations AS rel
+WITH recipe, rel
+WHERE rel.rel_type = 'CONTRIBUTES_TO'
+MERGE (target:SemanticEffect {name: rel.name})
+ON CREATE SET target.nodeId = 'semantic:effect:' + rel.name
+SET target.schemaVersion = $schema_version,
+    target.createdFrom = 'semantic_schema'
+MERGE (recipe)-[edge:CONTRIBUTES_TO]->(target)
+SET edge.causes = rel.causes,
+    edge.schemaVersion = $schema_version,
+    edge.createdFrom = 'semantic_schema'
+RETURN count(edge) AS relationships
+"""
+
+_FINE_GRAINED_RELATION_QUERY = """
+UNWIND $rows AS row
+MATCH (recipe:Recipe {nodeId: row.recipe_id})
+UNWIND row.relations AS rel
+WITH recipe, row, rel
+WHERE rel.rel_type IN ['INGREDIENT_CONTRIBUTES_TO', 'TECHNIQUE_MODIFIES_TEXTURE']
+CALL (recipe, row, rel) {
+  WITH recipe, row, rel WHERE rel.rel_type = 'INGREDIENT_CONTRIBUTES_TO'
+  OPTIONAL MATCH (existing:Ingredient)<-[:REQUIRES]-(recipe)
+  WHERE existing.name = rel.source
+  WITH recipe, row, rel, collect(existing)[0] AS matched_source
+  CALL (matched_source, rel) {
+    WITH matched_source, rel WHERE matched_source IS NULL
+    MERGE (source:Ingredient {nodeId: 'semantic:ingredient:' + rel.source})
+    ON CREATE SET source.name = rel.source
+    SET source.schemaVersion = $schema_version,
+        source.createdFrom = 'semantic_schema'
+    RETURN source
+    UNION ALL
+    WITH matched_source, rel WHERE matched_source IS NOT NULL
+    RETURN matched_source AS source
+  }
+  WITH recipe, row, rel, source
+  MERGE (effect:SemanticEffect {name: rel.name})
+  ON CREATE SET effect.nodeId = 'semantic:effect:' + rel.name
+  SET effect.schemaVersion = $schema_version,
+      effect.createdFrom = 'semantic_schema'
+  MERGE (recipe)-[context:USES_SEMANTIC_SOURCE]->(source)
+  SET context.schemaVersion = $schema_version,
+      context.createdFrom = 'semantic_schema'
+  MERGE (source)-[edge:INGREDIENT_CONTRIBUTES_TO]->(effect)
+  SET edge.causes = rel.causes,
+      edge.recipeId = row.recipe_id,
+      edge.recipeName = row.recipe_name,
+      edge.schemaVersion = $schema_version,
+      edge.createdFrom = 'semantic_schema'
+  RETURN count(edge) + count(context) AS relationships
+  UNION ALL
+  WITH recipe, row, rel
+  WITH recipe, row, rel WHERE rel.rel_type = 'TECHNIQUE_MODIFIES_TEXTURE'
+  MERGE (source:Technique {name: rel.source})
+  ON CREATE SET source.nodeId = 'semantic:technique:' + rel.source
+  SET source.schemaVersion = $schema_version,
+      source.createdFrom = 'semantic_schema'
+  MERGE (effect:TextureEffect {name: rel.name})
+  ON CREATE SET effect.nodeId = 'semantic:texture:' + rel.name
+  SET effect.schemaVersion = $schema_version,
+      effect.createdFrom = 'semantic_schema'
+  MERGE (recipe)-[context:USES_TECHNIQUE]->(source)
+  SET context.schemaVersion = $schema_version,
+      context.createdFrom = 'semantic_schema'
+  MERGE (source)-[edge:TECHNIQUE_MODIFIES_TEXTURE]->(effect)
+  SET edge.causes = rel.causes,
+      edge.recipeId = row.recipe_id,
+      edge.recipeName = row.recipe_name,
+      edge.schemaVersion = $schema_version,
+      edge.createdFrom = 'semantic_schema'
+  RETURN count(edge) + count(context) AS relationships
+}
+RETURN sum(relationships) AS relationships
+"""
+
+_SEMANTIC_NODE_COUNT_QUERY = """
+MATCH (n)
+WHERE n.createdFrom = 'semantic_schema' AND n.schemaVersion = $schema_version
+RETURN count(n) AS nodes
+"""
+
+
+def _simple_relation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "recipe_id": row["recipe_id"],
+            "name": relation["name"],
+            "rel_type": relation["rel_type"],
+        }
+        for row in rows
+        for relation in row.get("relations", [])
+        if relation.get("rel_type") not in _SIMPLE_RELATION_EXCLUDED_TYPES
+    ]
+
+
+def _write_simple_semantic_relations(tx, rows: List[Dict[str, Any]]) -> int:
+    relationships = 0
+    flat_rows = _simple_relation_rows(rows)
+    for rel_type, label, node_prefix, edge_type in _SIMPLE_RELATION_SPECS:
+        rel_rows = [row for row in flat_rows if row["rel_type"] == rel_type]
+        if not rel_rows:
+            continue
+        query = f"""
         UNWIND $rows AS row
-        MATCH (recipe:Recipe {nodeId: row.recipe_id})
-        UNWIND row.relations AS rel
-        WITH recipe, rel
-        WHERE rel.rel_type = 'CONTRIBUTES_TO'
-        MERGE (target:SemanticEffect {name: rel.name})
-        ON CREATE SET target.nodeId = 'semantic:effect:' + rel.name
+        MATCH (recipe:Recipe {{nodeId: row.recipe_id}})
+        MERGE (target:{label} {{name: row.name}})
+        ON CREATE SET target.nodeId = $node_prefix + row.name
         SET target.schemaVersion = $schema_version,
             target.createdFrom = 'semantic_schema'
-        MERGE (recipe)-[edge:CONTRIBUTES_TO]->(target)
-        SET edge.causes = rel.causes,
-            edge.schemaVersion = $schema_version,
+        MERGE (recipe)-[edge:{edge_type}]->(target)
+        SET edge.schemaVersion = $schema_version,
             edge.createdFrom = 'semantic_schema'
         RETURN count(edge) AS relationships
         """
-        contribution_result = tx.run(
-            contribution_query,
-            rows=rows,
+        result = tx.run(
+            query,
+            rows=rel_rows,
+            node_prefix=node_prefix,
             schema_version=SEMANTIC_SCHEMA_VERSION,
         ).single()
-        counters["relationships"] += int((contribution_result or {}).get("relationships") or 0)
+        relationships += _count_result_value(result, "relationships")
+    return relationships
 
-        fine_grained_query = """
-        UNWIND $rows AS row
-        MATCH (recipe:Recipe {nodeId: row.recipe_id})
-        UNWIND row.relations AS rel
-        WITH recipe, row, rel
-        WHERE rel.rel_type IN ['INGREDIENT_CONTRIBUTES_TO', 'TECHNIQUE_MODIFIES_TEXTURE']
-        CALL (recipe, row, rel) {
-          WITH recipe, row, rel WHERE rel.rel_type = 'INGREDIENT_CONTRIBUTES_TO'
-          OPTIONAL MATCH (existing:Ingredient)<-[:REQUIRES]-(recipe)
-          WHERE existing.name = rel.source
-          WITH recipe, row, rel, collect(existing)[0] AS matched_source
-          CALL (matched_source, rel) {
-            WITH matched_source, rel WHERE matched_source IS NULL
-            MERGE (source:Ingredient {nodeId: 'semantic:ingredient:' + rel.source})
-            ON CREATE SET source.name = rel.source
-            SET source.schemaVersion = $schema_version,
-                source.createdFrom = 'semantic_schema'
-            RETURN source
-            UNION ALL
-            WITH matched_source, rel WHERE matched_source IS NOT NULL
-            RETURN matched_source AS source
-          }
-          WITH recipe, row, rel, source
-          MERGE (effect:SemanticEffect {name: rel.name})
-          ON CREATE SET effect.nodeId = 'semantic:effect:' + rel.name
-          SET effect.schemaVersion = $schema_version,
-              effect.createdFrom = 'semantic_schema'
-          MERGE (recipe)-[context:USES_SEMANTIC_SOURCE]->(source)
-          SET context.schemaVersion = $schema_version,
-              context.createdFrom = 'semantic_schema'
-          MERGE (source)-[edge:INGREDIENT_CONTRIBUTES_TO]->(effect)
-          SET edge.causes = rel.causes,
-              edge.recipeId = row.recipe_id,
-              edge.recipeName = row.recipe_name,
-              edge.schemaVersion = $schema_version,
-              edge.createdFrom = 'semantic_schema'
-          RETURN count(edge) + count(context) AS relationships
-          UNION ALL
-          WITH recipe, row, rel
-          WITH recipe, row, rel WHERE rel.rel_type = 'TECHNIQUE_MODIFIES_TEXTURE'
-          MERGE (source:Technique {name: rel.source})
-          ON CREATE SET source.nodeId = 'semantic:technique:' + rel.source
-          SET source.schemaVersion = $schema_version,
-              source.createdFrom = 'semantic_schema'
-          MERGE (effect:TextureEffect {name: rel.name})
-          ON CREATE SET effect.nodeId = 'semantic:texture:' + rel.name
-          SET effect.schemaVersion = $schema_version,
-              effect.createdFrom = 'semantic_schema'
-          MERGE (recipe)-[context:USES_TECHNIQUE]->(source)
-          SET context.schemaVersion = $schema_version,
-              context.createdFrom = 'semantic_schema'
-          MERGE (source)-[edge:TECHNIQUE_MODIFIES_TEXTURE]->(effect)
-          SET edge.causes = rel.causes,
-              edge.recipeId = row.recipe_id,
-              edge.recipeName = row.recipe_name,
-              edge.schemaVersion = $schema_version,
-              edge.createdFrom = 'semantic_schema'
-          RETURN count(edge) + count(context) AS relationships
-        }
-        RETURN sum(relationships) AS relationships
-        """
-        fine_grained_result = tx.run(
-            fine_grained_query,
-            rows=rows,
-            schema_version=SEMANTIC_SCHEMA_VERSION,
-        ).single()
-        counters["relationships"] += int((fine_grained_result or {}).get("relationships") or 0)
 
-        node_count_query = """
-        MATCH (n)
-        WHERE n.createdFrom = 'semantic_schema' AND n.schemaVersion = $schema_version
-        RETURN count(n) AS nodes
-        """
-        node_count = tx.run(node_count_query, schema_version=SEMANTIC_SCHEMA_VERSION).single()
-        counters["nodes"] = int((node_count or {}).get("nodes") or 0)
-        return counters
+def _write_contribution_relations(tx, rows: List[Dict[str, Any]]) -> int:
+    result = tx.run(
+        _CONTRIBUTION_RELATION_QUERY,
+        rows=rows,
+        schema_version=SEMANTIC_SCHEMA_VERSION,
+    ).single()
+    return _count_result_value(result, "relationships")
+
+
+def _write_fine_grained_relations(tx, rows: List[Dict[str, Any]]) -> int:
+    result = tx.run(
+        _FINE_GRAINED_RELATION_QUERY,
+        rows=rows,
+        schema_version=SEMANTIC_SCHEMA_VERSION,
+    ).single()
+    return _count_result_value(result, "relationships")
+
+
+def _count_semantic_schema_nodes(tx) -> int:
+    result = tx.run(_SEMANTIC_NODE_COUNT_QUERY, schema_version=SEMANTIC_SCHEMA_VERSION).single()
+    return _count_result_value(result, "nodes")
+
+
+def _count_result_value(result: object, key: str) -> int:
+    if not isinstance(result, Mapping):
+        return 0
+    return coerce_json_int(result.get(key))

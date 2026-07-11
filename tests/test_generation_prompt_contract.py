@@ -94,6 +94,68 @@ class GenerationPromptContractTests(unittest.TestCase):
         self.assertEqual(rendered.evidence_item_count, 1)
         self.assertIn("Recipe Evidence 1", rendered.evidence_citations)
 
+    def test_plan_prompt_bounds_oversized_structured_claims(self) -> None:
+        oversized_claim = "graph-claim-" * 10_000
+        package = AnswerEvidencePackage(
+            question="explain the relationship",
+            items=[
+                AnswerEvidenceItem(
+                    citation="Recipe Evidence 1",
+                    recipe_id="recipe-1",
+                    recipe_name="dish A",
+                    confidence=0.92,
+                    evidence_units=[
+                        {
+                            "claim": oversized_claim,
+                            "is_graph_evidence": True,
+                        }
+                    ],
+                )
+            ],
+        )
+        builder = GenerationPromptBuilder(
+            settings=GenerationSettings(),
+            evidence_max_chars=700,
+        )
+
+        rendered = builder.render_plan_prompt("explain the relationship", package)
+
+        self.assertLess(len(rendered.text), 5_000)
+        self.assertNotIn(oversized_claim, rendered.text)
+        self.assertIn("graph-claim-", rendered.text)
+
+    def test_compose_prompt_bounds_oversized_graph_paths(self) -> None:
+        oversized_path = {
+            "nodes": [{"name": "graph-node-" * 1_000} for _ in range(100)],
+            "relationships": [{"type": "RELATED_TO"} for _ in range(100)],
+        }
+        package = AnswerEvidencePackage(
+            question="explain the relationship",
+            items=[
+                AnswerEvidenceItem(
+                    citation="Recipe Evidence 1",
+                    recipe_id="recipe-1",
+                    recipe_name="dish A",
+                    confidence=0.92,
+                    graph_paths=[oversized_path],
+                )
+            ],
+        )
+        builder = GenerationPromptBuilder(
+            settings=GenerationSettings(
+                compose_include_content=False,
+                max_graph_paths_per_item=1,
+            ),
+            evidence_max_chars=700,
+        )
+        plan = AnswerPlan(answer_type="explanation", reasoning_mode="grounded")
+
+        rendered = builder.render_compose_prompt("explain the relationship", package, plan)
+
+        self.assertLess(len(rendered.text), 5_000)
+        self.assertNotIn("graph-node-" * 1_000, rendered.text)
+        self.assertIn("graph-node-", rendered.text)
+
 
 if __name__ == "__main__":
     unittest.main()

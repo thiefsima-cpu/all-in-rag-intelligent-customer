@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from ..contracts import RetrievalRequest
+from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import HybridRetrievalOutcome
 from ..fusion import FusionRanker
 from .adapters import ConstraintRetriever
-from .candidate_generator import RetrievalCandidateGenerator
+from .candidate_generator import CandidateSet, RetrievalCandidateGenerator
 from .candidate_sources import (
     DefaultHybridCandidateSourceFactory,
     HybridCandidateSourceFactory,
@@ -71,6 +71,28 @@ class HybridSearchService:
                 )
             )
         return request
+
+    def _generate_candidate_set(self, request: RetrievalRequest) -> CandidateSet:
+        request = self.prepare_hybrid_request(request)
+        control = request.control
+        if control is not None:
+            control.raise_if_cancelled()
+        candidates = self.candidate_generator.generate(request)
+        if control is not None:
+            control.raise_if_cancelled()
+        return candidates
+
+    def dual_level_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]:
+        return self._generate_candidate_set(request).dual_docs
+
+    def vector_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]:
+        return self._generate_candidate_set(request).vector_docs
+
+    def bm25_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]:
+        return self._generate_candidate_set(request).bm25_docs
+
+    def constraint_candidates(self, request: RetrievalRequest) -> list[EvidenceDocument]:
+        return self._generate_candidate_set(request).constraint_docs
 
     def hybrid_evidence_search(self, request: RetrievalRequest) -> HybridRetrievalOutcome:
         request = self.prepare_hybrid_request(request)

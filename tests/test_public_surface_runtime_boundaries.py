@@ -550,4 +550,3 @@ class PublicSurfaceRuntimeBoundaryTests(PublicSurfaceBoundaryTestCase):
             "Found runtime-manager shutdown access that should go through RuntimeShutdownService:\n"
             + "\n".join(violations),
         )
-

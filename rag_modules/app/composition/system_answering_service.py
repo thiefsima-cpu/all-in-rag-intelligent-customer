@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...contracts import RequestControl
+from ..ports import AnswerWorkflowPort
 from ..services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from .contracts import SystemOperationsProtocol
 from .runtime_state_store import RuntimeStateStore
@@ -62,7 +63,7 @@ class SystemAnsweringService:
         )
         return response
 
-    def require_answer_workflow(self):
+    def require_answer_workflow(self) -> AnswerWorkflowPort:
         if not self.backend.is_serving_initialized():
             self.backend.initialize_serving_runtime()
         self.backend.require_ready()

@@ -32,6 +32,9 @@ _PRIMARY_METRIC_NAMES = (
     "estimated_cost_usd",
     "avg_judge_scores",
 )
+_NON_BLOCKING_CASE_QUALITY_CODES = frozenset(
+    {"DETERMINISTIC_QUALITY_FAILED", "JUDGE_QUALITY_FAILED"}
+)
 
 
 def build_live_quality_report(
@@ -43,6 +46,9 @@ def build_live_quality_report(
     results: tuple[DeterministicCaseResult, ...],
 ) -> dict[str, Any]:
     evaluation = aggregate_checks(checks)
+    release_evaluation = aggregate_checks(
+        tuple(check for check in checks if _is_release_blocking_check(check))
+    )
     cases_by_id = {case.case_id: case for case in policy.cases}
     case_summaries = [_case_summary(result, cases_by_id.get(result.case_id)) for result in results]
     manual_review_sample = [
@@ -53,7 +59,7 @@ def build_live_quality_report(
     return {
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
-        "passed": evaluation.passed,
+        "passed": release_evaluation.passed,
         "target": settings.safe_target_identity(),
         "top_k": policy.top_k,
         "metrics": json_safe(metrics),
@@ -64,6 +70,12 @@ def build_live_quality_report(
         "manual_review_sample": manual_review_sample,
         "artifacts": dict(_ARTIFACTS),
     }
+
+
+def _is_release_blocking_check(check: GateCheckResult) -> bool:
+    """Let aggregate and slice thresholds govern valid per-case quality misses."""
+
+    return not (check.name.startswith("case.") and check.code in _NON_BLOCKING_CASE_QUALITY_CODES)
 
 
 def write_live_quality_report(

@@ -16,6 +16,7 @@ from ..kernel.json_types import (
 from ..safe_logging import log_failure
 from .evidence_builder import GraphEvidenceBuilder
 from .path_ranker import GraphDocumentRanker
+from .ports import Neo4jRecordPort
 from .retrieval_types import (
     GraphNodeSnapshot,
     GraphPath,
@@ -38,7 +39,7 @@ class GraphRetrievalPostProcessor:
         self.ranker = ranker
 
     def parse_neo4j_path(
-        self, record: Mapping[str, object], path_type: str = "multi_hop"
+        self, record: Neo4jRecordPort, path_type: str = "multi_hop"
     ) -> GraphPath | None:
         try:
             path_nodes = [_node_snapshot(node) for node in _sequence(record.get("path_nodes"))]
@@ -61,7 +62,7 @@ class GraphRetrievalPostProcessor:
             )
             return None
 
-    def build_knowledge_subgraph(self, record: Mapping[str, object]) -> KnowledgeSubgraph:
+    def build_knowledge_subgraph(self, record: Neo4jRecordPort) -> KnowledgeSubgraph:
         try:
             central_nodes = [_node_snapshot(record["source"])]
             connected_nodes = [_node_snapshot(node) for node in _sequence(record.get("nodes"))]

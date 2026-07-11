@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +72,26 @@ def test_security_changelog_and_release_process_are_documented() -> None:
     assert "Version bump" in release_process
     assert "CHANGELOG.md" in release_process
     assert "SBOM" in release_process
+
+
+def test_release_candidate_metadata_is_consistent() -> None:
+    pyproject = tomllib.loads(_read("pyproject.toml"))
+    changelog = _read("CHANGELOG.md")
+    release_process = _read("docs/release_process.md")
+
+    assert pyproject["project"]["version"] == "0.3.0rc1"
+    assert "## 0.3.0rc1 - 2026-07-11" in changelog
+    assert "`0.3.0rc1`" in release_process
+    assert "`v0.3.0-rc.1`" in release_process
+    assert "prerelease" in release_process.lower()
+
+
+def test_agent_config_template_does_not_contain_credentials() -> None:
+    gitignore = _read(".gitignore")
+    template = json.loads(_read("agent/config.example.json"))
+
+    assert "/agent/config.json" in gitignore.splitlines()
+    assert template["kimi"]["api_key"] == ""
 
 
 def test_pyproject_declares_ci_quality_tooling() -> None:

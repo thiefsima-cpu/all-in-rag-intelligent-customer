@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001219,Recipe,粉蒸肉,粉蒸肉 (Recipe),粉蒸肉,"[{'term': '粉steamed肉', 'language': 'en', 'language_code': 'en-US'}, {'term': '粉清蒸肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,4,,,,,,dishes\meat_dish\粉蒸肉.md
+201001220,Recipe,糖醋里脊,糖醋里脊 (Recipe),糖醋里脊,"[{'term': 'sweet and sour里脊', 'language': 'en', 'language_code': 'en-US'}]",其他,4,,,,,,dishes\meat_dish\糖醋里脊.md
+201001221,Recipe,肉饼炖蛋,肉饼炖蛋 (Recipe),肉饼炖蛋,"[{'term': '肉饼煲蛋', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '肉饼stewed蛋', 'language': 'zh', 'language_code': 'zh-CN'}]",素菜,3,,,,,,dishes\meat_dish\肉饼炖蛋.md
+201001222,Recipe,萝卜炖羊排,萝卜炖羊排 (Recipe),萝卜炖羊排,"[{'term': '胡萝卜炖羊排', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '萝卜煲羊排', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': 'radish炖羊排', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '萝卜stewed羊排', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '白萝卜炖羊排', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,4,,,,,,dishes\meat_dish\萝卜炖羊排.md
+201001223,Recipe,蒜苔炒肉末,蒜苔炒肉末 (Recipe),蒜苔炒肉末,[],荤菜,2,,,,,,dishes\meat_dish\蒜苔炒肉末.md
+201001224,Recipe,虎皮肘子,虎皮肘子 (Recipe),虎皮肘子,[],其他,5,,,,,,dishes\meat_dish\虎皮肘子.md
+201001225,Recipe,蚂蚁上树,蚂蚁上树 (Recipe),蚂蚁上树,[],其他,3,,,,,,dishes\meat_dish\蚂蚁上树.md
+201001226,Recipe,辣椒炒肉,辣椒炒肉 (Recipe),辣椒炒肉,[],荤菜,3,,,,,,dishes\meat_dish\辣椒炒肉.md
+201001227,Recipe,香干肉丝,香干肉丝 (Recipe),香干肉丝,[],荤菜,3,,,,,,dishes\meat_dish\香干肉丝.md
+201001228,Recipe,鱼香肉丝,鱼香肉丝 (Recipe),鱼香肉丝,[],荤菜,4,,,,,,dishes\meat_dish\鱼香肉丝.md

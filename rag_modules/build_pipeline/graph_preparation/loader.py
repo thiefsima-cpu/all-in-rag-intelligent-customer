@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
 from ...kernel.json_types import coerce_json_object, coerce_json_value
-from ..ports import Neo4jDriverPort
+from ..ports import Neo4jDriverPort, Neo4jRecordPort
 from .models import GraphLoadCounts, GraphNode
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,8 @@ class Neo4jSessionLike(Protocol):
     def run(
         self,
         query: str,
-        parameters: Mapping[str, object] | None = None,
-    ) -> Iterable[Mapping[str, object]]: ...
+        parameters: object | None = None,
+    ) -> Iterable[Neo4jRecordPort]: ...
 
 
 class Neo4jGraphDataLoader:

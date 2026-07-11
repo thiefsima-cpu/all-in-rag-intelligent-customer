@@ -5,13 +5,11 @@ Neo4j execution layer for GraphRAG retrieval.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
-from typing import cast
 
 from ..contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from ..safe_logging import log_failure
-from .ports import Neo4jDriverPort
+from .ports import Neo4jDriverPort, Neo4jRecordPort
 from .retrieval_plan import GraphRetrievalPlan
 
 logger = logging.getLogger(__name__)
@@ -29,7 +27,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> list[Mapping[str, object]]:
+    ) -> list[Neo4jRecordPort]:
         if not self.driver:
             return []
         if control is not None:
@@ -77,7 +75,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> list[Mapping[str, object]]:
+    ) -> list[Neo4jRecordPort]:
         if not self.driver:
             return []
         if control is not None:
@@ -118,7 +116,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> list[Mapping[str, object]]:
+    ) -> list[Neo4jRecordPort]:
         if not self.driver:
             return []
         if control is not None:
@@ -161,7 +159,7 @@ class GraphQueryExecutor:
         plan: GraphRetrievalPlan,
         *,
         control: RequestControl | None = None,
-    ) -> list[Mapping[str, object]]:
+    ) -> list[Neo4jRecordPort]:
         if not self.driver:
             return []
         if control is not None:
@@ -198,10 +196,7 @@ class GraphQueryExecutor:
         params["max_nodes"] = plan.max_nodes
         try:
             with driver.session(database=self.database) as session:
-                records = cast(
-                    Iterable[Mapping[str, object]],
-                    session.run(query, params, **self._run_kwargs(control)),
-                )
+                records = session.run(query, params, **self._run_kwargs(control))
                 if control is not None:
                     control.raise_if_cancelled()
                 return list(records)
@@ -250,16 +245,13 @@ class GraphQueryExecutor:
         params: dict[str, object],
         *,
         control: RequestControl | None = None,
-    ) -> list[Mapping[str, object]]:
+    ) -> list[Neo4jRecordPort]:
         if self.driver is None:
             return []
         driver = self.driver
         try:
             with driver.session(database=self.database) as session:
-                records = cast(
-                    Iterable[Mapping[str, object]],
-                    session.run(query, params, **self._run_kwargs(control)),
-                )
+                records = session.run(query, params, **self._run_kwargs(control))
                 if control is not None:
                     control.raise_if_cancelled()
                 return list(records)

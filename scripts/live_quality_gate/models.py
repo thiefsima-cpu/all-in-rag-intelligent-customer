@@ -278,6 +278,7 @@ class JudgeSettings:
     api_key: str = field(repr=False)
     model: str
     timeout_seconds: float
+    enable_thinking: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -306,6 +307,10 @@ class LiveQualityGateSettings:
                 env.get("LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS"),
                 default=45.0,
                 name="LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS",
+            ),
+            enable_thinking=_optional_bool(
+                env.get("LIVE_QUALITY_JUDGE_ENABLE_THINKING"),
+                name="LIVE_QUALITY_JUDGE_ENABLE_THINKING",
             ),
         )
 
@@ -387,6 +392,17 @@ def _optional_positive_float(value: str | None, *, default: float, name: str) ->
     if not math.isfinite(parsed) or parsed <= 0:
         raise ValueError(f"Invalid live quality environment variable: {name}")
     return parsed
+
+
+def _optional_bool(value: str | None, *, name: str) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().casefold()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(f"Invalid live quality environment variable: {name}")
 
 
 def _canonical_http_url(value: str, name: str) -> str:

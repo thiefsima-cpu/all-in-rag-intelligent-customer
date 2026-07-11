@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001349,Recipe,微波炉腊肠煲仔饭,微波炉腊肠煲仔饭 (Recipe),微波炉腊肠煲仔饭,[],其他,2,,,,,,dishes\staple\微波炉腊肠煲仔饭\微波炉腊肠煲仔饭.md
+201001350,Recipe,意式肉酱面,意式肉酱面 (Recipe),意式肉酱面,[],荤菜,1,,,,,,dishes\staple\意式肉酱面\意式肉酱面.md
+201001351,Recipe,扬州炒饭,扬州炒饭 (Recipe),扬州炒饭,[],其他,4,,,,,,dishes\staple\扬州炒饭\扬州炒饭.md
+201001352,Recipe,披萨饼皮,披萨饼皮 (Recipe),披萨饼皮,[],其他,4,,,,,,dishes\staple\披萨饼皮\披萨饼皮.md
+201001353,Recipe,日式咖喱饭,日式咖喱饭 (Recipe),日式咖喱饭,[],其他,4,,,,,,dishes\staple\日式咖喱饭\日式咖喱饭.md
+201001354,Recipe,日式肥牛丼饭,日式肥牛丼饭 (Recipe),日式肥牛丼饭,[],其他,4,,,,,,dishes\staple\日式肥牛丼饭\日式肥牛丼饭.md
+201001355,Recipe,河南蒸面条,河南蒸面条 (Recipe),河南蒸面条,"[{'term': '河南清蒸面条', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '河南steamed面条', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,4,,,,,,dishes\staple\河南蒸面条\河南蒸面条.md
+201001356,Recipe,火腿饭团,火腿饭团 (Recipe),火腿饭团,[],其他,4,,,,,,dishes\staple\火腿饭团\火腿饭团.md
+201001357,Recipe,炒凉粉,炒凉粉 (Recipe),炒凉粉,[],其他,3,,,,,,dishes\staple\炒凉粉\炒凉粉.md
+201001358,Recipe,炒意大利面,炒意大利面 (Recipe),炒意大利面,[],其他,3,,,,,,dishes\staple\炒意大利面\炒意大利面.md

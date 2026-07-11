@@ -7,6 +7,7 @@ from rag_modules.contracts.runtime import GenerationSnapshot
 from rag_modules.generation.models import AnswerPlan, GenerationSettings, RenderedPrompt
 from rag_modules.generation.service import GenerationWorkflowService
 from rag_modules.query_policy.models import (
+    AnswerWorkflowCopyPolicy,
     GenerationPolicy,
     GraphPolicy,
     GraphReasoningPolicy,
@@ -135,6 +136,31 @@ class _StubPromptBuilder:
         )
 
 
+def _answer_workflow_copy() -> AnswerWorkflowCopyPolicy:
+    return AnswerWorkflowCopyPolicy(
+        no_evidence_answer="No evidence.",
+        answer_failed="Answer failed.",
+        user_question_template="Question: {question}",
+        query_routing_started="Routing started.",
+        answer_generation_started="Generation started.",
+        streaming_interrupted_fallback="Stream interrupted.",
+        answer_complete_template="Done in {latency_seconds:.2f}s",
+        strategy_summary_template=(
+            "{strategy_icon} Strategy: {strategy}\n"
+            "Complexity: {complexity:.2f}, "
+            "Relationship intensity: {relationship_intensity:.2f}"
+        ),
+        strategy_icon_hybrid_traditional="[HYBRID]",
+        strategy_icon_graph_rag="[GRAPH]",
+        strategy_icon_combined="[COMBINED]",
+        strategy_icon_default="[ROUTE]",
+        document_summary_template="Found {document_count} relevant documents: {document_summaries}",
+        document_summary_total_template="\n    Total results: {document_count}",
+        unknown_recipe_name="unknown",
+        unknown_search_type="unknown",
+    )
+
+
 def _policy_bundle(*, policy_version: str = "test-policy-v1") -> QueryPolicyBundle:
     return QueryPolicyBundle(
         metadata=PolicyMetadata(
@@ -188,6 +214,7 @@ def _policy_bundle(*, policy_version: str = "test-policy-v1") -> QueryPolicyBund
             rule_plan={},
             decision={"default_answer_type": "direct_answer"},
             fallback_answer={},
+            answer_workflow_copy=_answer_workflow_copy(),
         ),
         runtime_defaults={},
         prompts=PromptTemplates(
@@ -247,6 +274,7 @@ class GenerationWorkflowServiceContextTests(unittest.TestCase):
                 "models": {
                     "llm_model": "config-model",
                     "llm_base_url": "https://config.example/v1",
+                    "llm_enable_thinking": False,
                     "circuit_breaker_failure_threshold": 9,
                     "circuit_breaker_recovery_seconds": 15.0,
                     "llm_input_cost_per_million_tokens": 0.5,
@@ -275,6 +303,7 @@ class GenerationWorkflowServiceContextTests(unittest.TestCase):
         self.assertEqual(service.settings.timeout_seconds, 12)
         self.assertEqual(service.settings.stream_timeout_seconds, 13)
         self.assertEqual(service.settings.request_retries, 4)
+        self.assertIs(service.settings.enable_thinking, False)
         self.assertEqual(service.settings.input_cost_per_million_tokens, 0.5)
         self.assertEqual(service.settings.output_cost_per_million_tokens, 1.5)
         self.assertIs(service.client, client)

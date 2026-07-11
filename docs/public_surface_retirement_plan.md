@@ -10,6 +10,11 @@ compatibility modules are not an alternate architecture.
 
 The machine-readable source of truth is
 [`rag_modules/public_surface_manifest.py`](../rag_modules/public_surface_manifest.py).
+Root package exports are public API too: names exposed through
+`rag_modules.__all__` are governed by `ROOT_PACKAGE_EXPORTS` in the manifest.
+This does not reopen the retired root-facade migration window; root wrapper
+modules remain retired unless the manifest explicitly registers a future
+bridge.
 
 ## Version Governance
 
@@ -46,6 +51,23 @@ it does not imply API version `2.0.0` or package version `1.0.0`.
 - Graph retrieval: `rag_modules.graph.*`
 - Build/document artifacts: `rag_modules.build_pipeline.document_artifacts.*`
 - Infra adapters: `rag_modules.infra.*`
+
+## Root Package Exports
+
+`rag_modules.__all__` is a public API contract for external Python callers.
+Each exported name must be recorded in `ROOT_PACKAGE_EXPORTS`, must point to an
+importable canonical module, and must resolve to the same object exposed by the
+root package lazy export. Adding, removing, or retargeting one of these names is
+a public API change and must update the manifest and focused public-surface
+tests in the same patch.
+
+Root package exports are intentionally separate from `ROOT_PUBLIC_SURFACE`.
+`ROOT_PUBLIC_SURFACE` tracks legacy wrapper module files under `rag_modules/`,
+and it remains empty after the import-facade retirement. In other words,
+`from rag_modules import AdvancedGraphRAGSystem` is supported by the root
+package export contract, while recreating a retired module such as
+`rag_modules.graph_indexing` is still prohibited.
+The root wrapper modules remain retired.
 
 ## Canonical Internal Facades
 

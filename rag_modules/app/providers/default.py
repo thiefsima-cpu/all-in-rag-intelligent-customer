@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-from ...generation.service import GenerationWorkflowService
+from ...generation.ports import GenerationWorkflowPort
 from ...observability.tracing_sinks import QueryTraceSinkFactory
 from ...query_policy.models import QueryPolicyBundle
 from ...retrieval.runtime_profile import RetrievalRuntimeProfileFactory
@@ -49,7 +49,7 @@ class DefaultRuntimeProvider:
         config: GraphRAGConfig,
         *,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> GenerationWorkflowService:
+    ) -> GenerationWorkflowPort:
         return self._generation.provide_generation_module(
             config,
             policy_bundle=policy_bundle,

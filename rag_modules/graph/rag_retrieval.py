@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
+from ..configuration.models import GraphRAGConfig
 from ..contracts import EvidenceDocument, QueryPlan, QuerySemanticRuntimeSettings, RetrievalRequest
 from ..contracts.graph import GraphQuery
 from ..contracts.runtime import GraphRetrievalSnapshot
 from ..query_policy.models import QueryPolicyBundle
-from .ports import Neo4jManagerPort
+from ..retrieval.runtime_profile import RetrievalRuntimeProfile
+from .ports import LLMClientPort, Neo4jManagerPort
 from .retrieval_components import (
     DefaultGraphRetrievalComponentFactory,
     GraphRetrievalComponentFactory,
@@ -21,21 +21,21 @@ class GraphRAGRetrieval:
 
     def __init__(
         self,
-        config,
-        llm_client,
+        config: GraphRAGConfig,
+        llm_client: LLMClientPort,
         neo4j_manager: Neo4jManagerPort | None = None,
-        retrieval_profile: Optional[object] = None,
-        component_factory: Optional[GraphRetrievalComponentFactory] = None,
+        retrieval_profile: RetrievalRuntimeProfile | None = None,
+        component_factory: GraphRetrievalComponentFactory | None = None,
         policy_bundle: QueryPolicyBundle | None = None,
-    ):
+    ) -> None:
         self.config = config
         self.llm_client = llm_client
         self.neo4j_manager = neo4j_manager
-        self.semantic_settings = getattr(
-            retrieval_profile,
-            "semantics",
-            None,
-        ) or QuerySemanticRuntimeSettings.from_config(config)
+        self.semantic_settings = (
+            retrieval_profile.semantics
+            if retrieval_profile is not None
+            else QuerySemanticRuntimeSettings.from_config(config)
+        )
         self.policy_bundle = policy_bundle
         self.component_factory = component_factory or DefaultGraphRetrievalComponentFactory()
         self._components = self.component_factory.build(
@@ -48,7 +48,7 @@ class GraphRAGRetrieval:
         )
         self._executor = self._components.executor
 
-    def initialize(self):
+    def initialize(self) -> None:
         self._executor.initialize()
 
     def graph_query_from_plan(self, plan: QueryPlan) -> GraphQuery:
@@ -60,7 +60,7 @@ class GraphRAGRetrieval:
     ) -> tuple[list[EvidenceDocument], GraphRetrievalSnapshot]:
         return self._executor.execute_with_trace(request)
 
-    def close(self):
+    def close(self) -> None:
         self._executor.close()
 
 

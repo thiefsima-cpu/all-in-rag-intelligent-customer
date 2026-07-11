@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from typing import List
 
 from ...contracts import EvidenceDocument, QuerySemanticRuntimeSettings, RequestControl
 from ...contracts.runtime import (
@@ -15,6 +14,7 @@ from ...contracts.runtime import (
 )
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry
+from .answer_copy import AnswerWorkflowCopy
 from .answer_models import AnswerPipelineState, ChunkCallback, MessageCallback
 from .trace_adapters import (
     ExplainableQueryRouterProtocol,
@@ -25,10 +25,6 @@ from .trace_adapters import (
 )
 
 logger = logging.getLogger(__name__)
-
-NO_EVIDENCE_ANSWER = (
-    "Sorry, I could not find enough relevant retrieval evidence to answer that question."
-)
 
 
 class AnswerPipelineService:
@@ -41,6 +37,7 @@ class AnswerPipelineService:
         generation_service: GenerationServiceSource,
         semantic_settings: QuerySemanticRuntimeSettings,
         top_k: int,
+        answer_workflow_copy: AnswerWorkflowCopy,
         telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.query_router = query_router
@@ -48,13 +45,17 @@ class AnswerPipelineService:
         self.router_traces = QueryRouterTraceAdapter(query_router, semantic_settings)
         self.generation_traces = GenerationTraceAdapter(generation_service)
         self.top_k = max(0, int(top_k or 0))
+        self.answer_workflow_copy = answer_workflow_copy
         self.telemetry = telemetry
 
     def execute(self, state: AnswerPipelineState) -> AnswerPipelineState:
         control = state.request_control
         if control is not None:
             control.raise_if_cancelled()
-        self._emit(state.message_callback, f"\nUser question: {state.question}")
+        self._emit(
+            state.message_callback,
+            self.answer_workflow_copy.user_question_template.format(question=state.question),
+        )
         if state.explain_routing and isinstance(
             self.query_router,
             ExplainableQueryRouterProtocol,
@@ -64,7 +65,7 @@ class AnswerPipelineService:
                 self.query_router.explain_routing_decision(state.question),
             )
 
-        self._emit(state.message_callback, "Running query routing...")
+        self._emit(state.message_callback, self.answer_workflow_copy.query_routing_started)
         retrieval_span = (
             self.telemetry.span(
                 "rag.retrieval",
@@ -111,11 +112,11 @@ class AnswerPipelineService:
                 total_evidence_items=0,
                 selected_evidence_items=0,
             )
-            state.answer = NO_EVIDENCE_ANSWER
+            state.answer = self.answer_workflow_copy.no_evidence_answer
             return state
 
         self._emit(state.message_callback, self._format_document_summary(state.evidence_documents))
-        self._emit(state.message_callback, "Generating answer...")
+        self._emit(state.message_callback, self.answer_workflow_copy.answer_generation_started)
         generation_span = (
             self.telemetry.span(
                 "rag.generation",
@@ -161,7 +162,12 @@ class AnswerPipelineService:
         return state
 
     def emit_completion(self, callback: MessageCallback, latency_ms: float) -> None:
-        self._emit(callback, f"\nAnswer complete in {latency_ms / 1000:.2f}s")
+        self._emit(
+            callback,
+            self.answer_workflow_copy.answer_complete_template.format(
+                latency_seconds=latency_ms / 1000,
+            ),
+        )
 
     def _generate_answer(
         self,
@@ -197,43 +203,58 @@ class AnswerPipelineService:
             )
             self._emit(
                 message_callback,
-                "\n[WARN] Streaming output interrupted. Falling back to standard mode...",
+                self.answer_workflow_copy.streaming_interrupted_fallback,
             )
             return self.generation_traces.generate_answer_with_trace_from_context(
                 answer_context,
                 control=control,
             )
 
-    @staticmethod
-    def _format_strategy_summary(analysis: QueryAnalysis) -> str:
+    def _format_strategy_summary(self, analysis: QueryAnalysis) -> str:
         strategy_icons = {
-            "hybrid_traditional": "[HYBRID]",
-            "graph_rag": "[GRAPH]",
-            "combined": "[COMBINED]",
+            "hybrid_traditional": self.answer_workflow_copy.strategy_icon_hybrid_traditional,
+            "graph_rag": self.answer_workflow_copy.strategy_icon_graph_rag,
+            "combined": self.answer_workflow_copy.strategy_icon_combined,
         }
-        strategy_icon = strategy_icons.get(analysis.recommended_strategy.value, "[ROUTE]")
-        return (
-            f"{strategy_icon} Strategy: {analysis.recommended_strategy.value}\n"
-            f"Complexity: {analysis.query_complexity:.2f}, "
-            f"Relationship intensity: {analysis.relationship_intensity:.2f}"
+        strategy_icon = strategy_icons.get(
+            analysis.recommended_strategy.value,
+            self.answer_workflow_copy.strategy_icon_default,
+        )
+        return self.answer_workflow_copy.strategy_summary_template.format(
+            strategy_icon=strategy_icon,
+            strategy=analysis.recommended_strategy.value,
+            complexity=analysis.query_complexity,
+            relationship_intensity=analysis.relationship_intensity,
         )
 
-    @staticmethod
-    def _format_document_summary(documents: List[EvidenceDocument]) -> str:
+    def _format_document_summary(self, documents: list[EvidenceDocument]) -> str:
         doc_info = []
         for doc in documents:
             metadata = doc.metadata or {}
-            recipe_name = doc.recipe_name or metadata.get("recipe_name") or "unknown"
-            search_type = doc.search_type or metadata.get("route_strategy") or "unknown"
+            recipe_name = (
+                doc.recipe_name
+                or metadata.get("recipe_name")
+                or self.answer_workflow_copy.unknown_recipe_name
+            )
+            search_type = (
+                doc.search_type
+                or metadata.get("route_strategy")
+                or self.answer_workflow_copy.unknown_search_type
+            )
             score = metadata.get("final_score", metadata.get("relevance_score", doc.score))
             try:
                 score_text = f"{float(score):.3f}"
             except (TypeError, ValueError):
                 score_text = str(score)
             doc_info.append(f"{recipe_name}({search_type}, {score_text})")
-        summary = f"Found {len(documents)} relevant documents: {', '.join(doc_info[:3])}"
+        summary = self.answer_workflow_copy.document_summary_template.format(
+            document_count=len(documents),
+            document_summaries=", ".join(doc_info[:3]),
+        )
         if len(doc_info) > 3:
-            summary += f"\n    Total results: {len(documents)}"
+            summary += self.answer_workflow_copy.document_summary_total_template.format(
+                document_count=len(documents),
+            )
         return summary
 
     @staticmethod
@@ -242,4 +263,4 @@ class AnswerPipelineService:
             callback(message)
 
 
-__all__ = ["AnswerPipelineService", "NO_EVIDENCE_ANSWER"]
+__all__ = ["AnswerPipelineService"]

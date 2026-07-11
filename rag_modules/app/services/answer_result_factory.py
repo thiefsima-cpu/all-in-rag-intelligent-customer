@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from .answer_copy import AnswerWorkflowCopy
 from .answer_models import AnswerPipelineState, AnswerTraceBundle, QuestionAnswerResult
 
 
 class QuestionAnswerResultFactory:
     """Create stable question-answer responses from pipeline state."""
+
+    def __init__(self, *, answer_workflow_copy: AnswerWorkflowCopy) -> None:
+        self.answer_workflow_copy = answer_workflow_copy
 
     def from_pipeline_state(
         self,
@@ -38,7 +42,7 @@ class QuestionAnswerResultFactory:
     ) -> QuestionAnswerResult:
         del error
         return QuestionAnswerResult(
-            answer="The answer could not be generated.",
+            answer=self.answer_workflow_copy.answer_failed,
             analysis=None,
             retrieval_outcome=state.retrieval_outcome,
             answer_context=state.answer_context,

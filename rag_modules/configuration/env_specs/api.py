@@ -27,6 +27,11 @@ API_ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
         ("api", "build_job_runner_max_workers"),
         "int",
     ),
+    _spec(
+        "API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS",
+        ("api", "build_job_worker_poll_interval_seconds"),
+        "float",
+    ),
     _spec("API_BUILD_JOB_RETENTION_LIMIT", ("api", "build_job_retention_limit"), "int"),
     _spec("API_BUILD_JOB_LIST_DEFAULT_LIMIT", ("api", "build_job_list_default_limit"), "int"),
     _spec("API_BUILD_JOB_LIST_MAX_LIMIT", ("api", "build_job_list_max_limit"), "int"),

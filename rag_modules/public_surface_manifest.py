@@ -17,6 +17,15 @@ class PublicSurfaceEntry:
     scan_rules: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class PackageExportEntry:
+    module_name: str
+    export_name: str
+    kind: str
+    canonical_module: str
+    notes: str = ""
+
+
 # Package-version milestone for the final public import-facade removal; not API_VERSION.
 LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION = "0.2.0"
 LEGACY_PUBLIC_SURFACE_SCAN_RULES = (
@@ -26,6 +35,16 @@ LEGACY_PUBLIC_SURFACE_SCAN_RULES = (
 
 
 PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
+    PublicSurfaceEntry(
+        "rag_modules",
+        "public_api",
+        "rag_modules",
+        "canonical",
+        (
+            "root package export surface. Names in rag_modules.__all__ are public API "
+            "and are governed by ROOT_PACKAGE_EXPORTS."
+        ),
+    ),
     PublicSurfaceEntry(
         "rag_modules.configuration",
         "public_api",
@@ -132,6 +151,37 @@ INTERNAL_ONLY_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     ),
 )
 
+ROOT_PACKAGE_EXPORTS: tuple[PackageExportEntry, ...] = (
+    PackageExportEntry(
+        "rag_modules",
+        "AdvancedGraphRAGSystem",
+        "public_api",
+        "rag_modules.app.system",
+        "Stable root package entrypoint for serving/build runtime orchestration.",
+    ),
+    PackageExportEntry(
+        "rag_modules",
+        "GenerationWorkflowService",
+        "public_api",
+        "rag_modules.generation.service",
+        "Stable root package entrypoint for generation workflow orchestration.",
+    ),
+    PackageExportEntry(
+        "rag_modules",
+        "KnowledgeBaseService",
+        "public_api",
+        "rag_modules.app.services.knowledge_base_service",
+        "Stable root package entrypoint for build/rebuild knowledge-base workflows.",
+    ),
+    PackageExportEntry(
+        "rag_modules",
+        "MilvusIndexConstructionModule",
+        "public_api",
+        "rag_modules.infra.milvus_index_construction",
+        "Stable root package entrypoint for Milvus index construction.",
+    ),
+)
+
 ROOT_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
 
 EXTERNAL_PUBLIC_SURFACE: tuple[PublicSurfaceEntry, ...] = ()
@@ -174,6 +224,10 @@ def legacy_surface_by_module() -> dict[str, PublicSurfaceEntry]:
     return {entry.module_name: entry for entry in LEGACY_PUBLIC_SURFACE}
 
 
+def root_package_exports_by_name() -> dict[str, PackageExportEntry]:
+    return {entry.export_name: entry for entry in ROOT_PACKAGE_EXPORTS}
+
+
 def public_surface_by_module() -> dict[str, PublicSurfaceEntry]:
     return {entry.module_name: entry for entry in ALL_PUBLIC_SURFACE}
 
@@ -194,7 +248,9 @@ __all__ = [
     "LEGACY_PUBLIC_SURFACE",
     "LEGACY_PUBLIC_SURFACE_REMOVAL_VERSION",
     "LEGACY_PUBLIC_SURFACE_SCAN_RULES",
+    "PackageExportEntry",
     "PUBLIC_API_SURFACE",
+    "ROOT_PACKAGE_EXPORTS",
     "ROOT_PUBLIC_SURFACE",
     "SERVICE_API_SURFACE",
     "PublicSurfaceEntry",
@@ -203,6 +259,7 @@ __all__ = [
     "modules_for",
     "public_surface_by_module",
     "repo_root_facade_module_names",
+    "root_package_exports_by_name",
     "root_facade_module_names",
     "surface_by_kind",
 ]

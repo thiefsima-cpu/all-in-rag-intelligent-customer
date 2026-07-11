@@ -64,6 +64,7 @@ def build_generation_runtime(
         default_temperature=settings.temperature,
         request_retries=settings.request_retries,
         stream_timeout_seconds=settings.stream_timeout_seconds,
+        enable_thinking=settings.enable_thinking,
         circuit_breaker_failure_threshold=circuit_breaker_failure_threshold,
         circuit_breaker_recovery_seconds=circuit_breaker_recovery_seconds,
     )

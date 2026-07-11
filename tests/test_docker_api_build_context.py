@@ -62,6 +62,39 @@ class DockerApiBuildContextTests(unittest.TestCase):
                 self.assertIn(key_name, api_environment)
                 self.assertEqual(f"${{{key_name}:-}}", api_environment[key_name])
 
+    def test_api_service_forwards_generation_model_settings_from_compose_environment(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        api_environment = compose["services"]["api"]["environment"]
+
+        self.assertEqual("${LLM_MODEL:-qwen3.7-plus}", api_environment["LLM_MODEL"])
+        self.assertEqual(
+            "${LLM_ENABLE_THINKING:-false}",
+            api_environment["LLM_ENABLE_THINKING"],
+        )
+        self.assertEqual(
+            "${LLM_INPUT_COST_PER_MILLION_TOKENS:-0}",
+            api_environment["LLM_INPUT_COST_PER_MILLION_TOKENS"],
+        )
+        self.assertEqual(
+            "${LLM_OUTPUT_COST_PER_MILLION_TOKENS:-0}",
+            api_environment["LLM_OUTPUT_COST_PER_MILLION_TOKENS"],
+        )
+
+    def test_api_service_forwards_retrieval_model_settings_from_compose_environment(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        api_environment = compose["services"]["api"]["environment"]
+
+        self.assertEqual(
+            "${EMBEDDING_MODEL:-qwen3-vl-embedding}",
+            api_environment["EMBEDDING_MODEL"],
+        )
+        self.assertEqual("${EMBEDDING_DIMENSION:-1024}", api_environment["EMBEDDING_DIMENSION"])
+        self.assertEqual("${RERANK_MODEL:-qwen3-vl-rerank}", api_environment["RERANK_MODEL"])
+        self.assertEqual(
+            "${RERANK_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}",
+            api_environment["RERANK_BASE_URL"],
+        )
+
     def test_api_profile_exposes_build_api_surface(self) -> None:
         compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
         services = compose["services"]
@@ -131,6 +164,13 @@ class DockerApiBuildContextTests(unittest.TestCase):
         self.assertIn("COPY cypher ./cypher", dockerfile)
         self.assertIn("!cypher/", dockerignore)
         self.assertIn("!cypher/**", dockerignore)
+
+    def test_api_image_includes_build_worker_entrypoint(self) -> None:
+        dockerfile = (ROOT / "Dockerfile.api").read_text(encoding="utf-8")
+        dockerignore = set((ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines())
+
+        self.assertIn("main_build_worker.py", dockerfile)
+        self.assertIn("!main_build_worker.py", dockerignore)
 
     def test_bootstrap_environment_defaults_are_documented(self) -> None:
         env = dotenv_values(ROOT / ".env.example")

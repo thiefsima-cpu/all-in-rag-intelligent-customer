@@ -48,6 +48,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                 environ={
                     "OPENAI_API_KEY": "test-key",
                     "LLM_MODEL": "qwen-test",
+                    "LLM_ENABLE_THINKING": "false",
                     "EMBEDDING_BATCH_SIZE": "24",
                 }
             )
@@ -55,6 +56,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
 
         self.assertEqual(config.models.api_key, "test-key")
         self.assertEqual(config.models.llm_model, "qwen-test")
+        self.assertIs(config.models.llm_enable_thinking, False)
         self.assertEqual(config.models.embedding_batch_size, 24)
 
     def test_retrieval_settings_respect_environment_overrides(self) -> None:
@@ -185,8 +187,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "API_ANSWER_ACQUIRE_TIMEOUT_SECONDS": "0.5",
                     "API_STREAM_EXECUTOR_MAX_WORKERS": "8",
                     "API_STREAM_QUEUE_MAX_SIZE": "128",
-                    "API_BUILD_JOB_RUNNER_BACKEND": "in_process",
+                    "API_BUILD_JOB_RUNNER_BACKEND": "external_worker",
                     "API_BUILD_JOB_RUNNER_MAX_WORKERS": "3",
+                    "API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS": "0.25",
                     "API_BUILD_JOB_RETENTION_LIMIT": "12",
                     "API_BUILD_JOB_LIST_DEFAULT_LIMIT": "4",
                     "API_BUILD_JOB_LIST_MAX_LIMIT": "8",
@@ -207,8 +210,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.answer_acquire_timeout_seconds, 0.5)
         self.assertEqual(config.api.stream_executor_max_workers, 8)
         self.assertEqual(config.api.stream_queue_max_size, 128)
-        self.assertEqual(config.api.build_job_runner_backend, "in_process")
+        self.assertEqual(config.api.build_job_runner_backend, "external_worker")
         self.assertEqual(config.api.build_job_runner_max_workers, 3)
+        self.assertEqual(config.api.build_job_worker_poll_interval_seconds, 0.25)
         self.assertEqual(config.api.build_job_retention_limit, 12)
         self.assertEqual(config.api.build_job_list_default_limit, 4)
         self.assertEqual(config.api.build_job_list_max_limit, 8)

@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from ..contracts import RequestControl
+from ..contracts.runtime import QueryAnalysis, QueryUnderstandingSnapshot
 
 
 class LLMCompletionMessagePort(Protocol):
@@ -67,6 +68,31 @@ class OpenAICompatibleLLMClientPort(Protocol):
     chat: LLMChatPort
 
 
+class QueryUnderstandingPort(Protocol):
+    """Query-understanding behavior consumed by routing and app composition."""
+
+    def understand(
+        self,
+        query: str,
+        *,
+        control: RequestControl | None = None,
+    ) -> QueryUnderstandingSnapshot: ...
+
+    def analyze(
+        self,
+        query: str,
+        *,
+        control: RequestControl | None = None,
+    ) -> QueryAnalysis: ...
+
+    def explain(
+        self,
+        query: str,
+        *,
+        control: RequestControl | None = None,
+    ) -> str: ...
+
+
 __all__ = [
     "LLMChatPort",
     "LLMClientPort",
@@ -75,4 +101,5 @@ __all__ = [
     "LLMCompletionResponsePort",
     "LLMCompletionsPort",
     "OpenAICompatibleLLMClientPort",
+    "QueryUnderstandingPort",
 ]

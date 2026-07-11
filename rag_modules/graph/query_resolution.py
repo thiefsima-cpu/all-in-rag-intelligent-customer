@@ -4,10 +4,12 @@ Graph query resolution and decomposition.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from collections.abc import Mapping
+from typing import List
 
-from ..contracts import QueryPlan, QuerySemanticRuntimeSettings
+from ..contracts import QueryPlan, QuerySemanticProfile, QuerySemanticRuntimeSettings
 from ..contracts.graph import GraphQuery
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..query_policy import get_query_policy
 from ..query_policy.models import (
     GraphSubQuestionCondition,
@@ -25,10 +27,11 @@ from .query_intent import GraphQueryIntent, infer_graph_query_intent
 from .retrieval_types import QueryType
 
 
-def _coerce_constraints(value: Any) -> Dict[str, Any]:
-    if hasattr(value, "to_dict"):
-        return dict(value.to_dict())
-    return dict(value or {})
+def _coerce_constraints(value: object) -> JsonObject:
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return coerce_json_object(to_dict())
+    return coerce_json_object(value)
 
 
 class GraphQueryFactory:
@@ -249,7 +252,7 @@ def _sub_question_rule_matches(
     when: GraphSubQuestionCondition,
     *,
     query: str,
-    profile,
+    profile: QuerySemanticProfile,
     entities: List[str],
     relation_types: List[str],
 ) -> bool:
@@ -283,14 +286,14 @@ def _sub_question_rule_matches(
 
 
 def _constraints_present(
-    constraints: Dict[str, Any],
+    constraints: JsonObject,
     condition: GraphSubQuestionCondition,
 ) -> bool:
     if condition.constraints_present_any:
         return _any_constraint_present(constraints)
     for field_name in condition.constraints_present:
         value = constraints.get(field_name)
-        if field_name == "time" and isinstance(value, dict):
+        if field_name == "time" and isinstance(value, Mapping):
             if any(item is not None for item in value.values()):
                 return True
             continue
@@ -299,9 +302,9 @@ def _constraints_present(
     return False
 
 
-def _any_constraint_present(constraints: Dict[str, Any]) -> bool:
+def _any_constraint_present(constraints: JsonObject) -> bool:
     for key, value in constraints.items():
-        if key == "time" and isinstance(value, dict):
+        if key == "time" and isinstance(value, Mapping):
             if any(item is not None for item in value.values()):
                 return True
             continue

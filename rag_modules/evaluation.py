@@ -142,9 +142,11 @@ def _relevance_map(
 
 
 def _discounted_cumulative_gain(grades: Sequence[float]) -> float:
-    return sum(
-        (2.0 ** float(grade) - 1.0) / math.log2(index + 1)
-        for index, grade in enumerate(grades, start=1)
+    return float(
+        sum(
+            (2.0 ** float(grade) - 1.0) / math.log2(index + 1)
+            for index, grade in enumerate(grades, start=1)
+        )
     )
 
 

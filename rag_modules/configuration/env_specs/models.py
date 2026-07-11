@@ -14,6 +14,7 @@ MODELS_ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
     _spec("RERANK_BASE_URL", ("models", "rerank_base_url"), "str"),
     _spec("EMBEDDING_MODEL", ("models", "embedding_model"), "str"),
     _spec("LLM_MODEL", ("models", "llm_model"), "str"),
+    _spec("LLM_ENABLE_THINKING", ("models", "llm_enable_thinking"), "bool"),
     _spec("RERANK_MODEL", ("models", "rerank_model"), "str"),
     _spec("EMBEDDING_DIMENSION", ("models", "embedding_dimension"), "int"),
     _spec("EMBEDDING_BATCH_SIZE", ("models", "embedding_batch_size"), "int"),

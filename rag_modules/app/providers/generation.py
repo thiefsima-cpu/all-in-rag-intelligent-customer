@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
+from ...generation.ports import GenerationWorkflowPort
 from ...generation.service import GenerationWorkflowService
 from ...query_policy.models import QueryPolicyBundle
 
@@ -15,7 +16,7 @@ class _DefaultGenerationProvider:
         config: GraphRAGConfig,
         *,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> GenerationWorkflowService:
+    ) -> GenerationWorkflowPort:
         return GenerationWorkflowService.from_config(config, prompt_policy=policy_bundle)
 
 

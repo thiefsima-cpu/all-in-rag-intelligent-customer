@@ -9,13 +9,10 @@ from ...build_pipeline.contracts import (
     SemanticGraphSchemaSyncPort,
 )
 from ...configuration.models import GraphRAGConfig
-from ...generation.ports import LLMClientPort
-from ...generation.service import GenerationWorkflowService
-from ...graph.retrieval import GraphRAGRetrieval
+from ...generation.ports import GenerationWorkflowPort, LLMClientPort
 from ...observability.tracing_sinks import QueryTraceSink
 from ...query_policy.models import QueryPolicyBundle
-from ...query_understanding.service import QueryUnderstandingService
-from ...retrieval import HybridRetrievalService
+from ...query_understanding.ports import QueryUnderstandingPort
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile
 from ...routing import RoutingWorkflowProtocol
 from ...runtime.artifact_ports import (
@@ -25,15 +22,17 @@ from ...runtime.artifact_ports import (
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..ports import (
+    AnswerWorkflowPort,
     GraphDataModulePort,
+    KnowledgeBaseServicePort,
     Neo4jManagerPort,
     QueryTracerPort,
+    RuntimeDiagnosticsServicePort,
+    RuntimeShutdownServicePort,
+    ServingGraphRAGRetrievalPort,
+    ServingHybridRetrievalPort,
     VectorIndexModulePort,
 )
-from ..services.answer_workflow import AnswerWorkflow
-from ..services.knowledge_base_service import KnowledgeBaseService
-from ..services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from ..services.runtime_shutdown_service import RuntimeShutdownService
 
 
 class InfrastructureProvider(Protocol):
@@ -131,7 +130,7 @@ class RetrievalRuntimeProvider(Protocol):
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> QueryUnderstandingService: ...
+    ) -> QueryUnderstandingPort: ...
 
     def provide_traditional_retrieval(
         self,
@@ -143,7 +142,7 @@ class RetrievalRuntimeProvider(Protocol):
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> HybridRetrievalService: ...
+    ) -> ServingHybridRetrievalPort: ...
 
     def provide_graph_rag_retrieval(
         self,
@@ -153,17 +152,17 @@ class RetrievalRuntimeProvider(Protocol):
         neo4j_manager: Neo4jManagerPort,
         retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> GraphRAGRetrieval: ...
+    ) -> ServingGraphRAGRetrievalPort: ...
 
     def provide_routing_workflow(
         self,
         *,
         config: GraphRAGConfig,
-        traditional_retrieval: HybridRetrievalService,
-        graph_rag_retrieval: GraphRAGRetrieval,
+        traditional_retrieval: ServingHybridRetrievalPort,
+        graph_rag_retrieval: ServingGraphRAGRetrievalPort,
         llm_client: LLMClientPort,
         retrieval_profile: RetrievalRuntimeProfile,
-        query_understanding_service: QueryUnderstandingService,
+        query_understanding_service: QueryUnderstandingPort,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> RoutingWorkflowProtocol: ...
 
@@ -182,16 +181,16 @@ class ApplicationServiceProvider(Protocol):
         self,
         *,
         config: GraphRAGConfig,
-        existing: RuntimeDiagnosticsService | None = None,
+        existing: RuntimeDiagnosticsServicePort | None = None,
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
-    ) -> RuntimeDiagnosticsService: ...
+    ) -> RuntimeDiagnosticsServicePort: ...
 
     def provide_runtime_shutdown_service(
         self,
         *,
         config: GraphRAGConfig,
-        existing: RuntimeShutdownService | None = None,
-    ) -> RuntimeShutdownService: ...
+        existing: RuntimeShutdownServicePort | None = None,
+    ) -> RuntimeShutdownServicePort: ...
 
     def provide_knowledge_base_service(
         self,
@@ -205,16 +204,17 @@ class ApplicationServiceProvider(Protocol):
         runtime_stats_access: RuntimeStatsAccessPort | None = None,
         document_artifact_builder: DocumentArtifactBuilderPort | None = None,
         semantic_graph_schema_sync: SemanticGraphSchemaSyncPort | None = None,
-    ) -> KnowledgeBaseService: ...
+    ) -> KnowledgeBaseServicePort: ...
 
     def provide_answer_workflow(
         self,
         *,
         config: GraphRAGConfig,
         query_router: RoutingWorkflowProtocol,
-        generation_module: GenerationWorkflowService,
+        generation_module: GenerationWorkflowPort,
         query_tracer: QueryTracerPort,
-    ) -> AnswerWorkflow: ...
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> AnswerWorkflowPort: ...
 
 
 class RuntimeComponentProvider(Protocol):
@@ -230,7 +230,7 @@ class RuntimeComponentProvider(Protocol):
         config: GraphRAGConfig,
         *,
         policy_bundle: QueryPolicyBundle | None = None,
-    ) -> GenerationWorkflowService: ...
+    ) -> GenerationWorkflowPort: ...
 
 
 __all__ = [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import threading
 from types import TracebackType
 from typing import Any, BinaryIO, cast
@@ -39,7 +40,7 @@ class InterprocessFileLock:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         file = open(self.path, "a+b")
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 file.seek(0)
@@ -70,7 +71,7 @@ class InterprocessFileLock:
         self._acquired = False
         try:
             if file is not None:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     import msvcrt
 
                     file.seek(0)

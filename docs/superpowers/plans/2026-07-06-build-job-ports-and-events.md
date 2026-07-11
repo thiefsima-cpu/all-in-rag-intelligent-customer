@@ -1,5 +1,7 @@
 # Build Job Ports and Events Implementation Plan
 
+Status: completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace concrete, API-owned build-job orchestration with typed application ports, versioned events, lease-based execution, a V3 file repository, and one-time V2 migration.

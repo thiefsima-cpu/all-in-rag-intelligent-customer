@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from ...configuration.models import GraphRAGConfig
 from ...kernel.artifact_validation import vector_artifact_mismatch_reason
 from ...kernel.artifacts import ARTIFACT_STAGE_STALE, ArtifactManifest
+from ...kernel.documents import TextDocument
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,
     DocumentArtifactCachePort,
     RuntimeArtifactAccessPort,
 )
+from ..providers.contracts import InfrastructureProvider
 from ..runtime_state import BuildRuntime, ServingRuntime
 from .shared import ProgressCallback, emit_progress
 
@@ -19,13 +22,15 @@ class ServingRuntimePreparer:
     def __init__(
         self,
         *,
-        provider=None,
+        provider: object | None = None,
         manifest_store: ArtifactManifestStorePort | None = None,
         document_artifact_cache: DocumentArtifactCachePort | None = None,
         runtime_artifact_access: RuntimeArtifactAccessPort | None = None,
     ) -> None:
         self.provider = provider
-        self.infrastructure = getattr(provider, "infrastructure", None)
+        self.infrastructure: InfrastructureProvider | None = getattr(
+            provider, "infrastructure", None
+        )
         self.manifest_store = manifest_store
         self.document_artifact_cache = document_artifact_cache
         self.runtime_artifact_access = runtime_artifact_access
@@ -34,8 +39,8 @@ class ServingRuntimePreparer:
         self,
         runtime: ServingRuntime,
         *,
-        chunks=None,
-        artifact_manifest=None,
+        chunks: list[TextDocument] | None = None,
+        artifact_manifest: ArtifactManifest | None = None,
         progress: ProgressCallback = None,
         force: bool = False,
     ) -> ServingRuntime:
@@ -118,7 +123,7 @@ class ServingRuntimePreparer:
             force=force,
         )
 
-    def _resolve_manifest_store(self, config) -> ArtifactManifestStorePort:
+    def _resolve_manifest_store(self, config: GraphRAGConfig) -> ArtifactManifestStorePort:
         if self.manifest_store is not None:
             return self.manifest_store
         infrastructure = self.infrastructure
@@ -130,7 +135,7 @@ class ServingRuntimePreparer:
 
     def _resolve_document_artifact_cache(
         self,
-        config,
+        config: GraphRAGConfig,
         *,
         manifest_store: ArtifactManifestStorePort | None = None,
     ) -> DocumentArtifactCachePort:
@@ -149,7 +154,7 @@ class ServingRuntimePreparer:
 
     def _resolve_runtime_artifact_access(
         self,
-        config,
+        config: GraphRAGConfig,
     ) -> RuntimeArtifactAccessPort:
         if self.runtime_artifact_access is not None:
             return self.runtime_artifact_access
@@ -161,7 +166,7 @@ class ServingRuntimePreparer:
             )
         return infrastructure.provide_runtime_artifact_access(config)
 
-    def load_persisted_manifest(self, config) -> ArtifactManifest:
+    def load_persisted_manifest(self, config: GraphRAGConfig) -> ArtifactManifest:
         return self._resolve_manifest_store(config).load()
 
     def load_cached_document_artifacts(
@@ -169,7 +174,7 @@ class ServingRuntimePreparer:
         runtime: ServingRuntime,
         *,
         progress: ProgressCallback = None,
-    ):
+    ) -> list[TextDocument]:
         data_module = runtime.data_module
         if data_module is None:
             emit_progress(

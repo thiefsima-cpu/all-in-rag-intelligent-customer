@@ -305,6 +305,31 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.fallbacks, ["graph_empty_to_hybrid"])
         self.assertEqual([stage.name for stage in outcome.stages], ["graph_rag", "hybrid_fallback"])
 
+    def test_graph_strategy_does_not_count_normal_supplement_as_fallback(self) -> None:
+        services = RouteRetrievalServices(
+            traditional_retrieval=_FakeTraditionalRetrieval(
+                [EvidenceDocument(content="supplement", recipe_name="Supplement Dish")]
+            ),
+            graph_rag_retrieval=_FakeGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish")]
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        outcome = GraphRouteStrategy().execute(
+            _request(
+                query="why does the ingredient affect flavor",
+                top_k=2,
+                strategy=SearchStrategy.GRAPH_RAG,
+            ),
+            services=services,
+        )
+
+        self.assertEqual(outcome.fallbacks, [])
+        self.assertEqual(
+            [stage.name for stage in outcome.stages], ["graph_rag", "hybrid_supplement"]
+        )
+
     def test_combined_strategy_interleaves_graph_and_traditional(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
@@ -394,6 +419,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertTrue(traditional.observed_parallel_start)
         self.assertTrue(graph.observed_parallel_start)
         self.assertTrue(outcome.stages[0].details["parallel_execution"])
+        self.assertEqual(outcome.stages[0].details["branch_timeout_seconds"], 20.0)
         self.assertIn("traditional_latency_ms", outcome.stages[0].details)
         self.assertIn("graph_latency_ms", outcome.stages[0].details)
 
@@ -540,6 +566,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.stages[0].details["cancel_requested_branches"], ["graph"])
         self.assertEqual(outcome.stages[0].details["cancel_observed_branches"], ["graph"])
         self.assertTrue(outcome.stages[0].details["graph_control"]["cancelled"])
+        self.assertFalse(request.retrieval_request.control.cancelled)
 
     def test_combined_strategy_cancels_running_traditional_branch_control_on_timeout(self) -> None:
         traditional_started = threading.Event()
@@ -573,6 +600,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(outcome.stages[0].details["cancel_requested_branches"], ["traditional"])
         self.assertEqual(outcome.stages[0].details["cancel_observed_branches"], ["traditional"])
         self.assertTrue(outcome.stages[0].details["traditional_control"]["cancelled"])
+        self.assertFalse(request.retrieval_request.control.cancelled)
 
     def test_combined_strategy_reuses_default_executor_across_executions(self) -> None:
         created_executors = []
@@ -594,7 +622,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         strategy = CombinedRouteStrategy()
 
         with patch(
-            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
+            "rag_modules.routing.strategies.combined_executor.ThreadPoolExecutor",
             side_effect=build_executor,
         ):
             for query in ("first combined route", "second combined route"):
@@ -631,7 +659,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         strategy = CombinedRouteStrategy()
 
         with patch(
-            "rag_modules.routing.strategies.combined.ThreadPoolExecutor",
+            "rag_modules.routing.strategies.combined_executor.ThreadPoolExecutor",
             side_effect=build_executor,
         ):
             strategy.execute(
@@ -672,7 +700,9 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             retrieval_profile=_FakeRetrievalProfile(),
         )
 
-        with patch("rag_modules.routing.strategies.combined.ThreadPoolExecutor") as factory:
+        with patch(
+            "rag_modules.routing.strategies.combined_executor.ThreadPoolExecutor"
+        ) as factory:
             CombinedRouteStrategy(executor=executor).execute(
                 _request(
                     query="injected combined route",

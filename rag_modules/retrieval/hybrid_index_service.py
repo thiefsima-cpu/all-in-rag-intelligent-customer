@@ -5,22 +5,28 @@ Index lifecycle services for hybrid retrieval.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from rank_bm25 import BM25Okapi
+
+from ..configuration.models import GraphRAGConfig
+from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
 from ..parent_doc_enricher import ParentDocumentEnricher
 from ..retrieval_cache import RetrievalCacheStore
 from ..safe_logging import log_failure
 from .adapters import BM25Retriever
 from .evidence import RecipeConstraintMatcher
+from .ports import GraphDataModulePort, Neo4jDriverPort
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class HybridIndexArtifacts:
-    bm25: Any = None
+    bm25: BM25Okapi | None = None
     bm25_corpus_docs: List[TextDocument] = field(default_factory=list)
     graph_indexed: bool = False
     parent_doc_map: Dict[str, TextDocument] = field(default_factory=dict)
@@ -33,9 +39,9 @@ class HybridIndexService:
     def __init__(
         self,
         *,
-        config,
-        data_module,
-        graph_indexing,
+        config: GraphRAGConfig,
+        data_module: GraphDataModulePort,
+        graph_indexing: GraphIndexingModule,
         cache_store: RetrievalCacheStore,
         bm25_retriever: BM25Retriever,
         parent_enricher: ParentDocumentEnricher,
@@ -50,7 +56,11 @@ class HybridIndexService:
         self.graph_indexed = False
         self.database = self.storage.neo4j_database
 
-    def initialize(self, chunks: List[TextDocument], driver) -> HybridIndexArtifacts:
+    def initialize(
+        self,
+        chunks: List[TextDocument],
+        driver: Neo4jDriverPort | None,
+    ) -> HybridIndexArtifacts:
         if self.storage.enable_index_cache:
             cached = self.load_index_cache(chunks)
             if cached:
@@ -112,7 +122,7 @@ class HybridIndexService:
         }
         self.cache_store.save(chunks, payload)
 
-    def restore_bm25_retriever(self, payload: Dict[str, Any]) -> bool:
+    def restore_bm25_retriever(self, payload: Mapping[str, object]) -> bool:
         bm25_cache = payload.get("bm25_retriever")
         return bool(
             isinstance(bm25_cache, dict) and self.bm25_retriever.from_cache_dict(bm25_cache)
@@ -121,7 +131,7 @@ class HybridIndexService:
     @staticmethod
     def _serialize_parent_documents(
         parent_doc_map: Dict[str, TextDocument],
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> Dict[str, Dict[str, object]]:
         return {
             str(node_id): {
                 "page_content": str(document.content or ""),
@@ -131,17 +141,17 @@ class HybridIndexService:
         }
 
     @staticmethod
-    def _deserialize_parent_documents(payload: Any) -> Dict[str, TextDocument]:
-        if not isinstance(payload, dict):
+    def _deserialize_parent_documents(payload: object) -> Dict[str, TextDocument]:
+        if not isinstance(payload, Mapping):
             return {}
         try:
             return {
                 str(node_id): TextDocument(
                     content=str(item.get("page_content") or ""),
-                    metadata=dict(item.get("metadata") or {}),
+                    metadata=_parent_document_metadata(item),
                 )
                 for node_id, item in payload.items()
-                if isinstance(item, dict)
+                if isinstance(item, Mapping)
             }
         except (TypeError, ValueError):
             return {}
@@ -161,7 +171,7 @@ class HybridIndexService:
         docs = getattr(self.data_module, "documents", None) or []
         return self.parent_enricher.rebuild(docs)
 
-    def _build_graph_index(self, driver) -> None:
+    def _build_graph_index(self, driver: Neo4jDriverPort | None) -> None:
         if self.graph_indexed:
             return
 
@@ -185,7 +195,10 @@ class HybridIndexService:
                 error=exc,
             )
 
-    def _extract_relationships_from_graph(self, driver) -> List[Tuple[str, str, str]]:
+    def _extract_relationships_from_graph(
+        self,
+        driver: Neo4jDriverPort | None,
+    ) -> List[Tuple[str, str, str]]:
         relationships: List[Tuple[str, str, str]] = []
         if driver is None:
             return relationships
@@ -215,3 +228,10 @@ class HybridIndexService:
             )
 
         return relationships
+
+
+def _parent_document_metadata(item: Mapping[object, object]) -> Dict[str, object]:
+    metadata = item.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return {}
+    return {str(key): value for key, value in metadata.items()}

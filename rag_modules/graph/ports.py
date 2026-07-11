@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Protocol
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from typing import Protocol
 
 from ..contracts import RequestControl
+
+
+class Neo4jRecordPort(Protocol):
+    """Neo4j record behavior consumed by graph retrieval."""
+
+    def __getitem__(self, key: str) -> object: ...
+
+    def get(self, key: str, default: object | None = None) -> object: ...
+
+
+class Neo4jResultPort(Protocol):
+    """Neo4j result behavior consumed by graph retrieval."""
+
+    def __iter__(self) -> Iterator[Neo4jRecordPort]: ...
 
 
 class Neo4jSessionPort(Protocol):
@@ -15,11 +29,26 @@ class Neo4jSessionPort(Protocol):
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
-    def run(self, query: str, parameters: object | None = None, **kwargs: object) -> Any: ...
+    def run(
+        self,
+        query: str,
+        parameters: object | None = None,
+        **kwargs: object,
+    ) -> Neo4jResultPort: ...
 
-    def execute_read(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_read(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
-    def execute_write(self, transaction_function: Any, *args: Any, **kwargs: Any) -> Any: ...
+    def execute_write(
+        self,
+        transaction_function: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object: ...
 
 
 class Neo4jDriverPort(Protocol):
@@ -109,6 +138,8 @@ __all__ = [
     "LLMCompletionsPort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",
+    "Neo4jRecordPort",
+    "Neo4jResultPort",
     "Neo4jSessionPort",
     "OpenAICompatibleLLMClientPort",
 ]

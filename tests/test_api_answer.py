@@ -557,4 +557,3 @@ class ApiAnswerTests(unittest.TestCase):
         self.assertTrue(system.close_started.is_set())
         self.assertFalse(system.second_answer_started.is_set())
         self.assertEqual(errors, [])
-

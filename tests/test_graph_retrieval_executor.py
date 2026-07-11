@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import inspect
 import unittest
+from dataclasses import fields
 from types import SimpleNamespace
 
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.contracts.runtime.errors import ensure_runtime_error_detail
 from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
+from rag_modules.graph import ports as graph_ports
 from rag_modules.graph.query_executor import GraphQueryExecutor
 from rag_modules.graph.retrieval import GraphRetrievalExecutor
+from rag_modules.graph.retrieval_executor import GraphRetrievalExecutorServices
 
 
 class _FakeGraphRuntime:
@@ -126,7 +130,92 @@ class _FailingNeo4jManager:
         raise RuntimeError("boom")
 
 
+def _executor_services(
+    runtime: _FakeGraphRuntime,
+    docs: list[EvidenceDocument] | None = None,
+    *,
+    config=None,
+    neo4j_manager=None,
+    database_name: str = "neo4j",
+) -> GraphRetrievalExecutorServices:
+    return GraphRetrievalExecutorServices(
+        config=config or build_test_config(),
+        runtime=runtime,
+        orchestrator=_FakeOrchestrator(docs),
+        cache_warmup=SimpleNamespace(),
+        graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
+        entity_linker=SimpleNamespace(driver=None),
+        graph_executor=SimpleNamespace(driver=None),
+        neo4j_manager=neo4j_manager,
+        database_name=database_name,
+    )
+
+
 class GraphRetrievalExecutorTests(unittest.TestCase):
+    def test_executor_services_owns_all_constructor_dependencies(self) -> None:
+        self.assertEqual(
+            [
+                "config",
+                "runtime",
+                "orchestrator",
+                "cache_warmup",
+                "graph_cache_stats_store",
+                "entity_linker",
+                "graph_executor",
+                "neo4j_manager",
+                "database_name",
+            ],
+            [field.name for field in fields(GraphRetrievalExecutorServices)],
+        )
+
+    def test_constructor_accepts_only_executor_services(self) -> None:
+        signature = inspect.signature(GraphRetrievalExecutor)
+
+        self.assertEqual(["services"], list(signature.parameters))
+        self.assertIs(
+            signature.parameters["services"].kind,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+
+        with self.assertRaisesRegex(TypeError, "unexpected keyword argument 'config'"):
+            GraphRetrievalExecutor(
+                config=build_test_config(),
+                services=_executor_services(_FakeGraphRuntime()),
+            )
+
+    def test_constructor_rejects_legacy_service_keywords(self) -> None:
+        signature = inspect.signature(GraphRetrievalExecutor)
+        self.assertFalse(
+            any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        )
+
+        with self.assertRaisesRegex(TypeError, "unexpected keyword argument 'runtime'"):
+            GraphRetrievalExecutor(
+                services=_executor_services(_FakeGraphRuntime()),
+                runtime=_FakeGraphRuntime(),
+                orchestrator=_FakeOrchestrator([]),
+                cache_warmup=SimpleNamespace(),
+                graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
+                entity_linker=SimpleNamespace(driver=None),
+                graph_executor=SimpleNamespace(driver=None),
+            )
+
+    def test_graph_ports_define_narrow_neo4j_result_and_record_protocols(self) -> None:
+        record_port = getattr(graph_ports, "Neo4jRecordPort", None)
+        result_port = getattr(graph_ports, "Neo4jResultPort", None)
+
+        self.assertIsNotNone(record_port)
+        self.assertIsNotNone(result_port)
+        self.assertIn("__getitem__", record_port.__dict__)
+        self.assertIn("__iter__", result_port.__dict__)
+        self.assertEqual(
+            "Neo4jResultPort",
+            inspect.signature(graph_ports.Neo4jSessionPort.run).return_annotation,
+        )
+
     def test_graph_query_executor_passes_control_timeout_to_neo4j(self) -> None:
         driver = _RecordingNeo4jDriver()
         executor = GraphQueryExecutor(driver, database="neo4j")
@@ -148,16 +237,10 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         control = RequestControl.for_timeout(5.0, scope="graph")
         control.cancel("combined_branch_timeout")
         executor = GraphRetrievalExecutor(
-            config=build_test_config(),
-            runtime=runtime,
-            orchestrator=_FakeOrchestrator(
-                [EvidenceDocument(content="should not return", recipe_name="late")]
+            services=_executor_services(
+                runtime,
+                [EvidenceDocument(content="should not return", recipe_name="late")],
             ),
-            cache_warmup=SimpleNamespace(),
-            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
-            entity_linker=SimpleNamespace(driver=None),
-            graph_executor=SimpleNamespace(driver=None),
-            database_name="neo4j",
         )
         executor.driver = object()
         request = RetrievalRequest.from_inputs(query="tofu", top_k=2, control=control)
@@ -173,24 +256,21 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
 
     def test_initialize_raises_when_driver_setup_fails(self) -> None:
         runtime = _FakeGraphRuntime()
-        executor = GraphRetrievalExecutor(
-            config=build_test_config(
-                {
-                    "storage": {
-                        "neo4j_uri": "bolt://unused",
-                        "neo4j_user": "neo4j",
-                        "neo4j_password": "pass",
-                    }
+        config = build_test_config(
+            {
+                "storage": {
+                    "neo4j_uri": "bolt://unused",
+                    "neo4j_user": "neo4j",
+                    "neo4j_password": "pass",
                 }
+            }
+        )
+        executor = GraphRetrievalExecutor(
+            services=_executor_services(
+                runtime,
+                config=config,
+                neo4j_manager=_FailingNeo4jManager(),
             ),
-            runtime=runtime,
-            orchestrator=_FakeOrchestrator([]),
-            cache_warmup=SimpleNamespace(),
-            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
-            entity_linker=SimpleNamespace(driver=None),
-            graph_executor=SimpleNamespace(driver=None),
-            neo4j_manager=_FailingNeo4jManager(),
-            database_name="neo4j",
         )
 
         with self.assertRaisesRegex(RuntimeError, "Graph retrieval initialization failed"):
@@ -207,23 +287,17 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
             )
         ]
         runtime = _FakeGraphRuntime()
-        executor = GraphRetrievalExecutor(
-            config=build_test_config(
-                {
-                    "storage": {
-                        "neo4j_uri": "bolt://unused",
-                        "neo4j_user": "neo4j",
-                        "neo4j_password": "pass",
-                    }
+        config = build_test_config(
+            {
+                "storage": {
+                    "neo4j_uri": "bolt://unused",
+                    "neo4j_user": "neo4j",
+                    "neo4j_password": "pass",
                 }
-            ),
-            runtime=runtime,
-            orchestrator=_FakeOrchestrator(docs),
-            cache_warmup=SimpleNamespace(),
-            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
-            entity_linker=SimpleNamespace(driver=None),
-            graph_executor=SimpleNamespace(driver=None),
-            database_name="neo4j",
+            }
+        )
+        executor = GraphRetrievalExecutor(
+            services=_executor_services(runtime, docs, config=config),
         )
         executor.driver = object()
 
@@ -240,23 +314,17 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
 
     def test_execute_without_driver_marks_trace_error(self) -> None:
         runtime = _FakeGraphRuntime()
-        executor = GraphRetrievalExecutor(
-            config=build_test_config(
-                {
-                    "storage": {
-                        "neo4j_uri": "bolt://unused",
-                        "neo4j_user": "neo4j",
-                        "neo4j_password": "pass",
-                    }
+        config = build_test_config(
+            {
+                "storage": {
+                    "neo4j_uri": "bolt://unused",
+                    "neo4j_user": "neo4j",
+                    "neo4j_password": "pass",
                 }
-            ),
-            runtime=runtime,
-            orchestrator=_FakeOrchestrator([]),
-            cache_warmup=SimpleNamespace(),
-            graph_cache_stats_store=SimpleNamespace(path="storage/cache.json"),
-            entity_linker=SimpleNamespace(driver=None),
-            graph_executor=SimpleNamespace(driver=None),
-            database_name="neo4j",
+            }
+        )
+        executor = GraphRetrievalExecutor(
+            services=_executor_services(runtime, config=config),
         )
 
         request = RetrievalRequest.from_inputs(query="测试问题", top_k=1)

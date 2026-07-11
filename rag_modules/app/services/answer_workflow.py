@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import cast
 
 from ...configuration.models import GraphRAGConfig
 from ...contracts import RequestControl
 from ...contracts.runtime.errors import answer_error_detail
+from ...query_policy import get_query_policy
 from ...retrieval.runtime_profile import RetrievalRuntimeProfileFactory
 from ...safe_logging import log_failure
 from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
 from ..ports import QueryTracerPort
+from .answer_copy import AnswerWorkflowCopy
 from .answer_models import (
     AnswerPipelineState,
     ChunkCallback,
@@ -40,6 +43,7 @@ class AnswerWorkflow:
         pipeline: AnswerPipelineService | None = None,
         trace_assembler: AnswerTraceAssembler | None = None,
         result_factory: QuestionAnswerResultFactory | None = None,
+        answer_workflow_copy: AnswerWorkflowCopy | None = None,
         telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         self.config = config
@@ -50,18 +54,27 @@ class AnswerWorkflow:
         self.query_tracer = query_tracer
         self.telemetry = telemetry or get_runtime_telemetry(config)
         retrieval_profile = RetrievalRuntimeProfileFactory().build(config)
+        if answer_workflow_copy is None:
+            answer_workflow_copy = cast(
+                AnswerWorkflowCopy,
+                get_query_policy().generation.answer_workflow_copy,
+            )
+        self.answer_workflow_copy = answer_workflow_copy
         self.pipeline = pipeline or AnswerPipelineService(
             query_router=query_router,
             generation_service=generation_module,
             semantic_settings=retrieval_profile.semantics,
             top_k=self.retrieval_settings.top_k,
+            answer_workflow_copy=self.answer_workflow_copy,
             telemetry=self.telemetry,
         )
         self.trace_assembler = trace_assembler or AnswerTraceAssembler(
             query_tracer=query_tracer,
             semantic_settings=retrieval_profile.semantics,
         )
-        self.result_factory = result_factory or QuestionAnswerResultFactory()
+        self.result_factory = result_factory or QuestionAnswerResultFactory(
+            answer_workflow_copy=self.answer_workflow_copy,
+        )
 
     def answer_question(
         self,

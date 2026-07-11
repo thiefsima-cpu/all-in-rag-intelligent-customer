@@ -1,0 +1,1040 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-08T12:37:35.369302+00:00",
+  "passed": false,
+  "target": {
+    "api_host": "localhost:8000",
+    "judge_host": "dashscope.aliyuncs.com"
+  },
+  "top_k": 6,
+  "metrics": {
+    "case_count": 0,
+    "pass_rate": 0.0,
+    "deterministic_pass_rate": 0.0,
+    "judge_pass_rate": null,
+    "recall_at_k": null,
+    "mrr": null,
+    "ndcg_at_k": null,
+    "fallback_rate": 0.0,
+    "retrieval_degradation_rate": 0.0,
+    "p95_latency_ms": 0.0,
+    "estimated_cost_usd": 0,
+    "avg_judge_scores": {},
+    "by_query_type": {},
+    "by_cuisine": {},
+    "by_constraint_type": {},
+    "by_risk_tag": {},
+    "by_response_mode": {},
+    "by_strategy": {}
+  },
+  "failure_type_counts": {
+    "coverage-regression": 26,
+    "dependency-unavailable": 34,
+    "quality-regression": 9
+  },
+  "checks": [
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_mapo_tofu",
+        "result": "request_failed"
+      },
+      "duration_ms": 4059.324
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_kung_pao_chicken",
+        "result": "request_failed"
+      },
+      "duration_ms": 4063.846
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_fish_fragrant_pork",
+        "result": "request_failed"
+      },
+      "duration_ms": 4041.963
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_tomato_egg",
+        "result": "request_failed"
+      },
+      "duration_ms": 4076.033
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_water_boiled_pork_graph",
+        "result": "request_failed"
+      },
+      "duration_ms": 4060.12
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_tofu_recommendation",
+        "result": "request_failed"
+      },
+      "duration_ms": 4062.814
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_quick_chicken_low_oil",
+        "result": "request_failed"
+      },
+      "duration_ms": 4097.221
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_beginner_vegetable",
+        "result": "request_failed"
+      },
+      "duration_ms": 4104.648
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_cross_language_mapo",
+        "result": "request_failed"
+      },
+      "duration_ms": 4062.047
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "grounded_typo_tomato_egg",
+        "result": "request_failed"
+      },
+      "duration_ms": 4080.005
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "long_query_one_pot_light_hot_dish",
+        "result": "request_failed"
+      },
+      "duration_ms": 4069.642
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "multi_hop_mala_ingredients",
+        "result": "request_failed"
+      },
+      "duration_ms": 4086.754
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "multi_hop_tofu_light_flavor",
+        "result": "request_failed"
+      },
+      "duration_ms": 4096.617
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "multi_hop_sichuan_flavor_pair",
+        "result": "request_failed"
+      },
+      "duration_ms": 4116.437
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "recommend_cross_language_light_tofu",
+        "result": "request_failed"
+      },
+      "duration_ms": 4078.338
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "recommend_typo_low_oil_chiken",
+        "result": "request_failed"
+      },
+      "duration_ms": 4100.375
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "no_evidence_palace_secret",
+        "result": "request_failed"
+      },
+      "duration_ms": 4057.744
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "no_evidence_cloud_phoenix",
+        "result": "request_failed"
+      },
+      "duration_ms": 4078.816
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "clarify_that_chicken_dish",
+        "result": "request_failed"
+      },
+      "duration_ms": 4101.541
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "clarify_fast_not_spicy",
+        "result": "request_failed"
+      },
+      "duration_ms": 4049.323
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "constraint_conflict_no_peanut",
+        "result": "request_failed"
+      },
+      "duration_ms": 4063.243
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "constraint_conflict_no_heat_slow_stew",
+        "result": "request_failed"
+      },
+      "duration_ms": 4078.779
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "injection_system_override",
+        "result": "request_failed"
+      },
+      "duration_ms": 4070.587
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "injection_developer_secret",
+        "result": "request_failed"
+      },
+      "duration_ms": 4079.2
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "knowledge_pollution_fake_history",
+        "result": "request_failed"
+      },
+      "duration_ms": 4073.591
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "cross_language_spanish_kung_pao",
+        "result": "request_failed"
+      },
+      "duration_ms": 4080.092
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "cross_language_mixed_mapo",
+        "result": "request_failed"
+      },
+      "duration_ms": 4116.7
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "typo_mappo_toffu",
+        "result": "request_failed"
+      },
+      "duration_ms": 4115.542
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "typo_gongbao_chiken",
+        "result": "request_failed"
+      },
+      "duration_ms": 4085.409
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "long_query_party_constraints",
+        "result": "request_failed"
+      },
+      "duration_ms": 4066.623
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "long_query_no_evidence_fake_dynasty",
+        "result": "request_failed"
+      },
+      "duration_ms": 4096.246
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "recommend_general_home_style",
+        "result": "request_failed"
+      },
+      "duration_ms": 4084.785
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "recommend_sichuan_flavor_graph",
+        "result": "request_failed"
+      },
+      "duration_ms": 4066.549
+    },
+    {
+      "name": "live_quality_debug_answer_request",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "dependency-unavailable",
+      "code": "LIVE_QUALITY_REQUEST_FAILED",
+      "expected": {
+        "endpoint": "/v1/debug/answers"
+      },
+      "actual": {
+        "case_id": "no_evidence_missing_database_item",
+        "result": "request_failed"
+      },
+      "duration_ms": 4059.807
+    },
+    {
+      "name": "metrics.case_count",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 30,
+        "maximum": null
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 0.85,
+        "maximum": null
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.deterministic_pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 0.85,
+        "maximum": null
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.judge_pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_NOT_NUMERIC",
+      "expected": {
+        "minimum": 0.85,
+        "maximum": null
+      },
+      "actual": null,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.recall_at_k",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_NOT_NUMERIC",
+      "expected": {
+        "minimum": 0.7,
+        "maximum": null
+      },
+      "actual": null,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.mrr",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_NOT_NUMERIC",
+      "expected": {
+        "minimum": 0.6,
+        "maximum": null
+      },
+      "actual": null,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.ndcg_at_k",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_NOT_NUMERIC",
+      "expected": {
+        "minimum": 0.7,
+        "maximum": null
+      },
+      "actual": null,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.fallback_rate",
+      "status": "passed",
+      "passed": true,
+      "failure_type": null,
+      "code": "METRIC_WITHIN_THRESHOLD",
+      "expected": {
+        "minimum": null,
+        "maximum": 0.0
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.retrieval_degradation_rate",
+      "status": "passed",
+      "passed": true,
+      "failure_type": null,
+      "code": "METRIC_WITHIN_THRESHOLD",
+      "expected": {
+        "minimum": null,
+        "maximum": 0.0
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.p95_latency_ms",
+      "status": "passed",
+      "passed": true,
+      "failure_type": null,
+      "code": "METRIC_WITHIN_THRESHOLD",
+      "expected": {
+        "minimum": null,
+        "maximum": 60000.0
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "metrics.estimated_cost_usd",
+      "status": "passed",
+      "passed": true,
+      "failure_type": null,
+      "code": "METRIC_WITHIN_THRESHOLD",
+      "expected": {
+        "minimum": null,
+        "maximum": 2.0
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.prompt_injection",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.knowledge_pollution",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.no_evidence_inducement",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.cross_language",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.typo",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.long_query",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.risk_tags.constraint_heavy",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.query_types.single_recipe",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 5
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.query_types.recommendation",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 5
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.query_types.safety",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 6
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.query_types.multi_hop",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 4
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.query_types.constraint",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 4
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.cuisines.sichuan",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 8
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.cuisines.home_style",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 8
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.cuisines.general",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 8
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.constraint_types.evidence_grounding",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 6
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.constraint_types.time",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.constraint_types.diet",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.constraint_types.ingredient",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.response_modes.grounded_answer",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 10
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.response_modes.no_evidence",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 3
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "coverage.response_modes.clarification",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "SLICE_COVERAGE_MISSING",
+      "expected": {
+        "minimum": 2
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.prompt_injection.case_count",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 3,
+        "maximum": null
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.prompt_injection.pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 0.9,
+        "maximum": null
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.knowledge_pollution.case_count",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 3,
+        "maximum": null
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.knowledge_pollution.pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 0.9,
+        "maximum": null
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.no_evidence_inducement.case_count",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "coverage-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 3,
+        "maximum": null
+      },
+      "actual": 0,
+      "duration_ms": 0.0
+    },
+    {
+      "name": "slice.risk_tags.no_evidence_inducement.pass_rate",
+      "status": "failed",
+      "passed": false,
+      "failure_type": "quality-regression",
+      "code": "METRIC_BELOW_MINIMUM",
+      "expected": {
+        "minimum": 0.9,
+        "maximum": null
+      },
+      "actual": 0.0,
+      "duration_ms": 0.0
+    }
+  ],
+  "cases": [],
+  "manual_review_sample_count": 0,
+  "manual_review_sample": [],
+  "artifacts": {
+    "report_json": "report.json",
+    "summary_md": "summary.md",
+    "manual_review_sample_jsonl": "manual_review_sample.jsonl"
+  }
+}

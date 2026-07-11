@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from collections.abc import Mapping
+from typing import Dict, List, Optional
 
 from rank_bm25 import BM25Okapi
 
@@ -138,7 +139,7 @@ class HybridRetrievalRuntime:
             self.state.vector_retriever = self._new_vector_retriever()
         return self.state.vector_retriever
 
-    def restore_bm25_retriever(self, payload: Dict[str, Any]) -> None:
+    def restore_bm25_retriever(self, payload: Mapping[str, object]) -> None:
         if self.index_service.restore_bm25_retriever(payload):
             self._sync_bm25_state()
 

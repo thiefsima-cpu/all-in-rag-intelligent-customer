@@ -43,6 +43,29 @@ def _dict_list(value: object) -> List[dict]:
     return [dict(item) for item in _iter_values(value) if isinstance(item, dict)]
 
 
+def _truncate_text(value: object, max_chars: int | None) -> str:
+    text = str(value or "")
+    if not max_chars or max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "...[truncated]"
+
+
+def _bounded_dicts(
+    values: List[dict],
+    *,
+    max_items: int,
+    max_chars_per_item: int | None,
+) -> List[dict]:
+    bounded: List[dict] = []
+    for item in values[:max_items]:
+        serialized = json.dumps(item, ensure_ascii=False)
+        if max_chars_per_item and max_chars_per_item > 0 and len(serialized) > max_chars_per_item:
+            bounded.append({"summary": _truncate_text(serialized, max_chars_per_item)})
+        else:
+            bounded.append(dict(item))
+    return bounded
+
+
 @dataclass
 class AnswerEvidenceItem:
     citation: str
@@ -93,6 +116,7 @@ class AnswerEvidenceItem:
         self,
         max_graph_claims: int = 4,
         max_text_claims: int = 4,
+        max_claim_chars: int | None = None,
     ) -> Dict[str, object]:
         return {
             "citation": self.citation,
@@ -102,12 +126,12 @@ class AnswerEvidenceItem:
             "matched_terms": self.matched_terms[:8],
             "constraint_reasons": self.constraint_reasons[:6],
             "graph_claims": [
-                unit.get("claim")
+                _truncate_text(unit.get("claim"), max_claim_chars)
                 for unit in self.evidence_units
                 if unit.get("is_graph_evidence") and unit.get("claim")
             ][:max_graph_claims],
             "text_claims": [
-                unit.get("claim")
+                _truncate_text(unit.get("claim"), max_claim_chars)
                 for unit in self.evidence_units
                 if not unit.get("is_graph_evidence") and unit.get("claim")
             ][:max_text_claims],
@@ -130,11 +154,23 @@ class AnswerEvidenceItem:
             "retrieval_sources": self.retrieval_sources[:4],
             "matched_terms": self.matched_terms[:8],
             "constraint_reasons": self.constraint_reasons[:6],
-            "graph_paths": self.graph_paths[:max_graph_paths],
-            "evidence_units": self.evidence_units[:max_evidence_units],
+            "graph_paths": _bounded_dicts(
+                self.graph_paths,
+                max_items=max_graph_paths,
+                max_chars_per_item=max_content_chars,
+            ),
+            "evidence_units": _bounded_dicts(
+                self.evidence_units,
+                max_items=max_evidence_units,
+                max_chars_per_item=max_content_chars,
+            ),
         }
         if include_document_evidence:
-            payload["document_evidence"] = self.document_evidence[:6]
+            payload["document_evidence"] = _bounded_dicts(
+                self.document_evidence,
+                max_items=6,
+                max_chars_per_item=max_content_chars,
+            )
         payload = {key: value for key, value in payload.items() if value not in (None, "", [], {})}
 
         parts = [f"[{self.citation}]", json.dumps(payload, ensure_ascii=False)]
@@ -192,9 +228,14 @@ class AnswerEvidencePackage:
             if item.content.strip() or item.evidence_units or item.graph_paths
         )
 
-    def summarize_for_plan(self, max_items: int | None = None) -> List[Dict[str, object]]:
+    def summarize_for_plan(
+        self,
+        max_items: int | None = None,
+        *,
+        max_claim_chars: int | None = None,
+    ) -> List[Dict[str, object]]:
         items = self.items if not max_items or max_items <= 0 else self.items[:max_items]
-        return [item.to_summary_dict() for item in items]
+        return [item.to_summary_dict(max_claim_chars=max_claim_chars) for item in items]
 
     @property
     def citation_list(self) -> List[str]:

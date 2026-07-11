@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import tests.api_app_helpers as h
 
 json = h.json
@@ -131,7 +133,13 @@ class ApiSecurityTests(unittest.TestCase):
 
     def test_failed_answer_becomes_typed_500_without_raw_exception(self) -> None:
         secret = "answer-provider-secret"
-        app = create_serving_api_app(system=_FailedAnswerSystem(secret))
+        system = _FailedAnswerSystem(secret)
+        system.serving_runtime = SimpleNamespace(
+            answer_workflow=SimpleNamespace(
+                answer_workflow_copy=SimpleNamespace(answer_failed="CUSTOM_FAILED")
+            )
+        )
+        app = create_serving_api_app(system=system)
 
         with _client(app) as client:
             response = client.post(
@@ -146,6 +154,7 @@ class ApiSecurityTests(unittest.TestCase):
             code="ANSWER_FAILED",
             request_id="answer-failed-42",
         )
+        self.assertEqual(payload["error"]["message"], "CUSTOM_FAILED")
         self.assertNotIn(secret, json.dumps(payload))
 
     def test_openapi_security_metadata_clears_v1_health_and_keeps_debug_protected(self) -> None:
@@ -366,4 +375,3 @@ class ApiSecurityTests(unittest.TestCase):
             response = client.get("/metrics")
 
         self.assertEqual(response.status_code, 404)
-

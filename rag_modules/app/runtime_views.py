@@ -3,24 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-from ..graph.retrieval import GraphRAGRetrieval
-from ..retrieval import HybridRetrievalService
+from ..generation.ports import GenerationWorkflowPort
+from ..query_understanding.ports import QueryUnderstandingPort
 from ..retrieval.runtime_profile import RetrievalRuntimeProfile
 from ..routing import RoutingWorkflowProtocol
 from .ports import (
+    AnswerWorkflowPort,
     GraphDataModulePort,
+    KnowledgeBaseServicePort,
     Neo4jManagerPort,
     QueryTracerPort,
+    ServingGraphRAGRetrievalPort,
+    ServingHybridRetrievalPort,
     VectorIndexModulePort,
 )
-
-if TYPE_CHECKING:
-    from ..generation.service import GenerationWorkflowService
-    from ..query_understanding.service import QueryUnderstandingService
-    from .services.answer_workflow import AnswerWorkflow
-    from .services.knowledge_base_service import KnowledgeBaseService
 
 
 @dataclass(frozen=True)
@@ -38,9 +35,9 @@ class SystemRetrievalView:
     """Retrieval and routing-facing runtime dependencies."""
 
     retrieval_runtime_profile: RetrievalRuntimeProfile | None = None
-    query_understanding_service: QueryUnderstandingService | None = None
-    traditional_retrieval: HybridRetrievalService | None = None
-    graph_rag_retrieval: GraphRAGRetrieval | None = None
+    query_understanding_service: QueryUnderstandingPort | None = None
+    traditional_retrieval: ServingHybridRetrievalPort | None = None
+    graph_rag_retrieval: ServingGraphRAGRetrievalPort | None = None
     routing_workflow: RoutingWorkflowProtocol | None = None
 
 
@@ -48,9 +45,9 @@ class SystemRetrievalView:
 class SystemServicesView:
     """Application service-facing runtime dependencies."""
 
-    generation_service: GenerationWorkflowService | None = None
-    answer_workflow: AnswerWorkflow | None = None
-    knowledge_base_service: KnowledgeBaseService | None = None
+    generation_service: GenerationWorkflowPort | None = None
+    answer_workflow: AnswerWorkflowPort | None = None
+    knowledge_base_service: KnowledgeBaseServicePort | None = None
 
 
 __all__ = [

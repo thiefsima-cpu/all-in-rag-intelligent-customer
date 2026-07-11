@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001409,Recipe,炒滑蛋,炒滑蛋 (Recipe),炒滑蛋,[],素菜,1,,,,,,dishes\vegetable_dish\炒滑蛋\炒滑蛋.md
+201001410,Recipe,烤茄子,烤茄子 (Recipe),烤茄子,"[{'term': '烘烤茄子', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '烤青茄子', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '烤eggplant', 'language': 'en', 'language_code': 'en-US'}, {'term': 'baked茄子', 'language': 'en', 'language_code': 'en-US'}, {'term': 'roasted茄子', 'language': 'en', 'language_code': 'en-US'}, {'term': '烤紫茄子', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,3,,,,,,dishes\vegetable_dish\烤茄子\烤茄子.md
+201001411,Recipe,白灼菜心,白灼菜心 (Recipe),白灼菜心,[],其他,2,,,,,,dishes\vegetable_dish\白灼菜心\白灼菜心.md
+201001412,Recipe,糖拌西红柿,糖拌西红柿 (Recipe),糖拌西红柿,"[{'term': '糖拌番茄', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '糖拌tomato', 'language': 'en', 'language_code': 'en-US'}]",其他,2,,,,,,dishes\vegetable_dish\糖拌西红柿\糖拌西红柿.md
+201001413,Recipe,红烧冬瓜,红烧冬瓜 (Recipe),红烧冬瓜,"[{'term': 'braised冬瓜', 'language': 'en', 'language_code': 'en-US'}]",其他,3,,,,,,dishes\vegetable_dish\红烧冬瓜\红烧冬瓜.md
+201001414,Recipe,芹菜拌茶树菇,芹菜拌茶树菇 (Recipe),芹菜拌茶树菇,[],其他,2,,,,,,dishes\vegetable_dish\芹菜拌茶树菇\芹菜拌茶树菇.md
+201001415,Recipe,莴笋叶煎饼,莴笋叶煎饼 (Recipe),莴笋叶煎饼,"[{'term': '莴笋叶pan-fried饼', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,2,,,,,,dishes\vegetable_dish\莴笋叶煎饼\莴笋叶煎饼.md
+201001416,Recipe,菠菜炒鸡蛋,菠菜炒鸡蛋 (Recipe),菠菜炒鸡蛋,[],素菜,2,,,,,,dishes\vegetable_dish\菠菜炒鸡蛋\菠菜炒鸡蛋.md
+201001417,Recipe,蒜蓉空心菜,蒜蓉空心菜 (Recipe),蒜蓉空心菜,[],其他,2,,,,,,dishes\vegetable_dish\蒜蓉空心菜\蒜蓉空心菜.md
+201001418,Recipe,虎皮青椒,虎皮青椒 (Recipe),虎皮青椒,"[{'term': '虎皮甜椒', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '虎皮bell pepper', 'language': 'en', 'language_code': 'en-US'}, {'term': '虎皮彩椒', 'language': 'zh', 'language_code': 'zh-CN'}]",其他,3,,,,,,dishes\vegetable_dish\虎皮青椒\虎皮青椒.md

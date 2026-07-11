@@ -386,6 +386,11 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         graph_rag_retrieval = SimpleNamespace(name="graph")
         router = SimpleNamespace(name="router")
         answer_workflow = SimpleNamespace(name="workflow")
+        service_kwargs: dict[str, object] = {}
+
+        def _provide_answer_workflow(**kwargs):
+            service_kwargs.update(kwargs)
+            return answer_workflow
 
         infrastructure = SimpleNamespace(
             provide_neo4j_manager=(
@@ -404,7 +409,7 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
             ),
         )
         services = SimpleNamespace(
-            provide_answer_workflow=lambda **kwargs: answer_workflow,
+            provide_answer_workflow=_provide_answer_workflow,
         )
 
         class _RootProvider:
@@ -414,9 +419,11 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
                 self.retrieval_runtime = self
                 self.services = services
                 self.calls: list[str] = []
+                self.policy_bundle = None
 
             def provide_generation_module(self, config, *, policy_bundle):
-                del config, policy_bundle
+                del config
+                self.policy_bundle = policy_bundle
                 return SimpleNamespace(
                     client=client,
                     llm_client=llm_client,
@@ -465,6 +472,8 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         self.assertIs(runtime.query_understanding_service, understanding_service)
         self.assertIs(runtime.query_router, router)
         self.assertIs(runtime.answer_workflow, answer_workflow)
+        self.assertIn("policy_bundle", service_kwargs)
+        self.assertIs(service_kwargs["policy_bundle"], provider.policy_bundle)
         self.assertFalse(hasattr(runtime, "question_answer_service"))
 
     def test_build_requires_canonical_routing_workflow_provider(self) -> None:
@@ -492,7 +501,7 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
             infrastructure=infrastructure,
             build_pipeline=SimpleNamespace(),
             provide_generation_module=(
-                lambda config, *, policy_bundle: SimpleNamespace(client=SimpleNamespace())
+                lambda config, *, policy_bundle: SimpleNamespace(llm_client=SimpleNamespace())
             ),
             retrieval_runtime=SimpleNamespace(
                 provide_retrieval_runtime_profile=lambda config, *, policy_bundle: profile,

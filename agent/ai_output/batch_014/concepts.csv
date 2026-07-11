@@ -1,0 +1,11 @@
+concept_id,concept_type,name,fsn,preferred_term,synonyms,category,difficulty,cuisine_type,prep_time,cook_time,servings,tags,file_path
+201001259,Recipe,清蒸鳜鱼,清蒸鳜鱼 (Recipe),清蒸鳜鱼,"[{'term': '清steamed鳜鱼', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '清清蒸鳜鱼', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\清蒸鳜鱼\清蒸鳜鱼.md
+201001260,Recipe,湖南家常红烧肉,湖南家常红烧肉 (Recipe),湖南家常红烧肉,"[{'term': '湖南家常braised肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\湖南家常红烧肉\湖南家常红烧肉.md
+201001261,Recipe,湘祁米夫鸭,湘祁米夫鸭 (Recipe),湘祁米夫鸭,[],其他,4,,,,,,dishes\meat_dish\湘祁米夫鸭\湘祁米夫鸭.md
+201001262,Recipe,牛排,牛排 (Recipe),牛排,[],其他,4,,,,,,dishes\meat_dish\牛排\牛排.md
+201001263,Recipe,猪皮冻,猪皮冻 (Recipe),猪皮冻,[],其他,5,,,,,,dishes\meat_dish\猪皮冻\猪皮冻.md
+201001264,Recipe,瘦肉土豆片,瘦肉土豆片 (Recipe),瘦肉土豆片,"[{'term': '瘦肉马铃薯片', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '瘦肉potato片', 'language': 'zh', 'language_code': 'zh-CN'}, {'term': '瘦肉洋芋片', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\瘦肉土豆片\瘦肉土豆片.md
+201001265,Recipe,糖醋排骨,糖醋排骨 (Recipe),糖醋排骨,"[{'term': 'sweet and sour排骨', 'language': 'en', 'language_code': 'en-US'}]",其他,4,,,,,,dishes\meat_dish\糖醋排骨\糖醋排骨.md
+201001266,Recipe,红烧猪蹄,红烧猪蹄 (Recipe),红烧猪蹄,"[{'term': 'braised猪蹄', 'language': 'en', 'language_code': 'en-US'}]",其他,4,,,,,,dishes\meat_dish\红烧猪蹄\红烧猪蹄.md
+201001267,Recipe,南派红烧肉,南派红烧肉 (Recipe),南派红烧肉,"[{'term': '南派braised肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,4,,,,,,dishes\meat_dish\红烧肉\南派红烧肉.md
+201001268,Recipe,简易红烧肉,简易红烧肉 (Recipe),简易红烧肉,"[{'term': '简易braised肉', 'language': 'zh', 'language_code': 'zh-CN'}]",荤菜,3,,,,,,dishes\meat_dish\红烧肉\简易红烧肉.md

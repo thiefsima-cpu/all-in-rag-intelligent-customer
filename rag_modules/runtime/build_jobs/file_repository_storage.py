@@ -1,0 +1,290 @@
+"""File storage primitives for build-job repository records."""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from rag_modules.contracts.build_jobs import (
+    BuildJobId,
+    BuildJobLease,
+    BuildJobLeaseLostError,
+    BuildJobRepositoryError,
+    BuildJobRepositoryWarning,
+    BuildJobSnapshot,
+    WorkerIdentity,
+)
+from rag_modules.runtime.artifacts import write_json_atomic
+
+from .file_repository_codecs import datetime_from_json
+from .file_repository_events import TERMINAL_STATUSES
+from .locks import InterprocessFileLock
+from .serialization import (
+    BUILD_JOB_ENVELOPE_SCHEMA_VERSION,
+    BuildJobEnvelope,
+    envelope_from_dict,
+    envelope_to_dict,
+)
+
+if TYPE_CHECKING:
+    from .file_repository import FileBuildJobRepository
+
+
+def ensure_directories(repository: FileBuildJobRepository) -> None:
+    os.makedirs(repository.jobs_dir, exist_ok=True)
+    os.makedirs(repository.idempotency_dir, exist_ok=True)
+    os.makedirs(repository.leases_dir, exist_ok=True)
+
+
+def ensure_v3_repository_or_empty(repository: FileBuildJobRepository) -> None:
+    if not os.path.exists(repository.repository_dir):
+        return
+    if not os.path.exists(repository.metadata_path):
+        if any(Path(repository.repository_dir).iterdir()):
+            raise BuildJobRepositoryError(
+                "Build job store must be migrated to V3 before repository use."
+            )
+        return
+    try:
+        with open(repository.metadata_path, "r", encoding="utf-8") as file:
+            metadata = json.load(file)
+        if (
+            not isinstance(metadata, Mapping)
+            or int(metadata.get("schema_version", 0)) != BUILD_JOB_ENVELOPE_SCHEMA_VERSION
+        ):
+            raise ValueError
+    except (OSError, TypeError, ValueError) as exc:
+        raise BuildJobRepositoryError("Invalid build job V3 metadata.") from exc
+
+
+def write_metadata_if_missing(repository: FileBuildJobRepository) -> None:
+    if os.path.exists(repository.metadata_path):
+        return
+    write_json_atomic(
+        repository.metadata_path,
+        {"schema_version": BUILD_JOB_ENVELOPE_SCHEMA_VERSION},
+    )
+
+
+@contextmanager
+def store_lock(repository: FileBuildJobRepository) -> Iterator[None]:
+    with repository._lock:
+        with InterprocessFileLock(repository._store_lock_path):
+            yield
+
+
+def job_path(repository: FileBuildJobRepository, job_id: BuildJobId) -> str:
+    return os.path.join(repository.jobs_dir, f"{job_id}.json")
+
+
+def idempotency_path(repository: FileBuildJobRepository, key_hash: str) -> str:
+    return os.path.join(repository.idempotency_dir, f"{key_hash}.json")
+
+
+def lease_path(repository: FileBuildJobRepository, job_id: BuildJobId) -> str:
+    return os.path.join(repository.leases_dir, f"{job_id}.json")
+
+
+def load_envelope(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> BuildJobEnvelope | None:
+    path = job_path(repository, job_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            payload = json.load(file)
+        if not isinstance(payload, Mapping):
+            raise ValueError("build job envelope must be an object")
+        envelope = envelope_from_dict(payload)
+        if envelope.snapshot.job_id != job_id:
+            raise ValueError("build job envelope file name does not match job id")
+        return envelope
+    except (OSError, TypeError, ValueError):
+        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "job", str(job_id))
+        return None
+
+
+def require_envelope(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> BuildJobEnvelope:
+    envelope = load_envelope(repository, job_id)
+    if envelope is None:
+        raise BuildJobRepositoryError(f"Build job not found: {job_id}")
+    return envelope
+
+
+def load_all_envelopes(repository: FileBuildJobRepository) -> list[BuildJobEnvelope]:
+    if not os.path.isdir(repository.jobs_dir):
+        return []
+    envelopes: list[BuildJobEnvelope] = []
+    for path in Path(repository.jobs_dir).glob("*.json"):
+        try:
+            job_id = BuildJobId(path.stem)
+        except ValueError:
+            record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "job", path.stem)
+            continue
+        envelope = load_envelope(repository, job_id)
+        if envelope is not None:
+            envelopes.append(envelope)
+    return envelopes
+
+
+def load_all_snapshots(repository: FileBuildJobRepository) -> list[BuildJobSnapshot]:
+    return [envelope.snapshot for envelope in load_all_envelopes(repository)]
+
+
+def write_envelope(
+    repository: FileBuildJobRepository,
+    envelope: BuildJobEnvelope,
+) -> None:
+    write_json_atomic(job_path(repository, envelope.snapshot.job_id), envelope_to_dict(envelope))
+
+
+def write_lease_record(
+    repository: FileBuildJobRepository,
+    lease: BuildJobLease,
+) -> None:
+    write_json_atomic(
+        lease_path(repository, lease.job_id),
+        {
+            "job_id": str(lease.job_id),
+            "revision": lease.revision,
+            "worker": {
+                "worker_id": lease.worker.worker_id,
+                "runner_backend": lease.worker.runner_backend,
+            },
+            "lease_token": lease.lease_token,
+            "lease_expires_at": lease.lease_expires_at.isoformat(),
+        },
+    )
+
+
+def load_lease_record(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> BuildJobLease | None:
+    path = lease_path(repository, job_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            payload = json.load(file)
+        if not isinstance(payload, Mapping):
+            raise ValueError
+        worker = payload.get("worker")
+        if not isinstance(worker, Mapping):
+            raise ValueError
+        return BuildJobLease(
+            job_id=BuildJobId(str(payload["job_id"])),
+            revision=int(payload["revision"]),
+            worker=WorkerIdentity(
+                worker_id=str(worker["worker_id"]),
+                runner_backend=str(worker["runner_backend"]),
+            ),
+            lease_token=str(payload["lease_token"]),
+            lease_expires_at=datetime_from_json(payload["lease_expires_at"]),
+        )
+    except (OSError, TypeError, ValueError, KeyError):
+        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_LEASE", "lease", str(job_id))
+        return None
+
+
+def load_all_lease_records(repository: FileBuildJobRepository) -> list[BuildJobLease]:
+    if not os.path.isdir(repository.leases_dir):
+        return []
+    leases: list[BuildJobLease] = []
+    for path in Path(repository.leases_dir).glob("*.json"):
+        try:
+            job_id = BuildJobId(path.stem)
+        except ValueError:
+            record_warning(repository, "BUILD_JOB_STORE_CORRUPT_LEASE", "lease", path.stem)
+            continue
+        lease = load_lease_record(repository, job_id)
+        if lease is not None:
+            leases.append(lease)
+    return leases
+
+
+def remove_lease_record(repository: FileBuildJobRepository, job_id: BuildJobId) -> None:
+    try:
+        os.remove(lease_path(repository, job_id))
+    except FileNotFoundError:
+        pass
+
+
+def active_snapshot(repository: FileBuildJobRepository) -> BuildJobSnapshot | None:
+    active = [
+        snapshot
+        for snapshot in load_all_snapshots(repository)
+        if snapshot.status not in TERMINAL_STATUSES
+    ]
+    if not active:
+        return None
+    return sorted(active, key=lambda snapshot: (snapshot.created_at, snapshot.job_id))[0]
+
+
+def validate_lease(
+    repository: FileBuildJobRepository,
+    snapshot: BuildJobSnapshot,
+    lease: BuildJobLease,
+) -> None:
+    record = load_lease_record(repository, snapshot.job_id)
+    if (
+        record is None
+        or snapshot.job_id != lease.job_id
+        or snapshot.lease_token != lease.lease_token
+        or record.lease_token != lease.lease_token
+    ):
+        raise BuildJobLeaseLostError("Build job lease is no longer owned by this worker.")
+
+
+def record_warning(
+    repository: FileBuildJobRepository,
+    code: str,
+    component: str,
+    identifier: str,
+) -> None:
+    normalized_identifier = str(identifier or "")[:24]
+    warning_key = (code, component, normalized_identifier)
+    if any(
+        (warning.code, warning.component, warning.identifier) == warning_key
+        for warning in repository._warnings
+    ):
+        return
+    repository._warnings.append(
+        BuildJobRepositoryWarning(
+            code=code,
+            component=component,
+            identifier=normalized_identifier,
+            detected_at=repository._now().isoformat(),
+        )
+    )
+
+
+__all__ = [
+    "active_snapshot",
+    "ensure_directories",
+    "ensure_v3_repository_or_empty",
+    "idempotency_path",
+    "job_path",
+    "load_all_lease_records",
+    "load_all_envelopes",
+    "load_all_snapshots",
+    "load_envelope",
+    "load_lease_record",
+    "record_warning",
+    "remove_lease_record",
+    "require_envelope",
+    "store_lock",
+    "validate_lease",
+    "write_envelope",
+    "write_lease_record",
+    "write_metadata_if_missing",
+]

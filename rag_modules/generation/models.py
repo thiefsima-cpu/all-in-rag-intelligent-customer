@@ -181,6 +181,7 @@ class GenerationTrace:
 @dataclass
 class GenerationSettings:
     model_name: str = "qwen3.7-plus"
+    enable_thinking: bool | None = None
     temperature: float = 0.1
     max_tokens: int = 2048
     timeout_seconds: int = 45
@@ -209,6 +210,8 @@ class GenerationSettings:
     output_cost_per_million_tokens: float = 0.0
 
     def __post_init__(self) -> None:
+        if self.enable_thinking is not None:
+            self.enable_thinking = bool(self.enable_thinking)
         self.temperature = float(self.temperature)
         self.max_tokens = max(256, int(self.max_tokens or 2048))
         self.timeout_seconds = max(1, int(self.timeout_seconds or 45))
