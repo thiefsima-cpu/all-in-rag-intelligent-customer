@@ -5,10 +5,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Iterable
 
-from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts.runtime.generation import GenerationSnapshot
 from rag_modules.contracts.runtime.workflows import AnswerContext
+from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
 from rag_modules.generation import (
     GenerationExecutionEngine,
     GenerationPlanner,

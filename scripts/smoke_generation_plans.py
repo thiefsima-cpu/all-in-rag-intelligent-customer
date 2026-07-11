@@ -12,9 +12,9 @@ from typing import List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.answer_evidence_builder import AnswerEvidenceBuilder
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import AnswerContext, QueryAnalysis, RetrievalOutcome
+from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
 from rag_modules.generation import (
     GenerationPlanner,
     GenerationPromptBuilder,

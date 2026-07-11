@@ -8,7 +8,7 @@ from typing import Any, List
 
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.evaluation import grounding_metrics, percentile, retrieval_metrics
-from rag_modules.retrieval_observability import summarize_documents
+from rag_modules.observability.retrieval_snapshots import summarize_documents
 from scripts.eval_cases import EvalCase, EvalResponseMode
 
 

@@ -80,16 +80,17 @@ class DependencyIsolationTests(unittest.TestCase):
                 owner = importlib.import_module(owner_module)
                 self.assertEqual(getattr(owner, symbol_name).__module__, owner_module)
 
-    def test_production_imports_do_not_reference_retired_root_feature_helpers(self) -> None:
+    def test_runtime_imports_do_not_reference_retired_root_feature_helpers(self) -> None:
         retired_modules = {
             f"rag_modules.{Path(filename).stem}" for filename in ROOT_FEATURE_HELPER_OWNERS
         }
         violations: list[str] = []
 
-        for path in sorted((ROOT / "rag_modules").rglob("*.py")):
-            imported_modules = _resolved_import_modules(path)
-            for module_name in sorted(imported_modules & retired_modules):
-                violations.append(f"{path.relative_to(ROOT).as_posix()}: imports {module_name}")
+        for runtime_root in (ROOT / "rag_modules", ROOT / "scripts"):
+            for path in sorted(runtime_root.rglob("*.py")):
+                imported_modules = _resolved_import_modules(path)
+                for module_name in sorted(imported_modules & retired_modules):
+                    violations.append(f"{path.relative_to(ROOT).as_posix()}: imports {module_name}")
 
         self.assertEqual(violations, [])
 
