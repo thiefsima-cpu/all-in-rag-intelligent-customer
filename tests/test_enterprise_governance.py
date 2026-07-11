@@ -52,14 +52,15 @@ def test_ci_targets_all_long_lived_branches() -> None:
     assert workflow.count("      - main") == 2
 
 
-def test_ci_exposes_stable_branch_flow_check_in_report_mode() -> None:
+def test_ci_exposes_stable_branch_flow_check_in_enforce_mode() -> None:
     workflow = _read(".github/workflows/ci.yml")
 
     assert "name: Branch Flow Policy" in workflow
     assert "python scripts/check_branch_flow.py" in workflow
     assert "github.base_ref" in workflow
     assert "github.head_ref" in workflow
-    assert "--mode report" in workflow
+    assert "--mode enforce" in workflow
+    assert "--mode report" not in workflow
 
 
 def test_codeowners_protect_public_contracts_and_quality_corpus() -> None:
