@@ -96,6 +96,11 @@ python scripts/pressure_api_service.py --json
 `pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
 `python scripts/release_gate.py`，并在第一个失败点停止。
 
+The local gate now runs the full pytest suite with combined coverage enforcement, writes
+`coverage.json`, and then runs `python scripts/check_branch_coverage.py` as a distinct package
+branch-coverage step before the offline release gate. The configured thresholds are 75% combined
+coverage and 70% `rag_modules` branch coverage.
+
 API capacity formulas and pressure threshold interpretation are documented in
 [docs/api_capacity_and_pressure_thresholds.md](docs/api_capacity_and_pressure_thresholds.md).
 

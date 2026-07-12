@@ -362,3 +362,48 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_graph_query_executor_guards_missing_driver_and_selects_target_filter() -> None:
+    no_driver = GraphQueryExecutor(None, database="neo4j")
+    plan = _FakeRetrievalPlan()
+
+    assert no_driver.multi_hop_paths(plan) == []
+    assert no_driver.entity_relation_paths(plan) == []
+    assert no_driver.shortest_paths(plan) == []
+    assert no_driver.subgraphs(plan) == []
+    assert GraphQueryExecutor._target_filter_clause(plan) == ""
+
+    plan.target_terms = ["pepper"]
+    assert "target_terms" in GraphQueryExecutor._target_filter_clause(plan)
+
+
+def test_graph_query_executor_params_include_linked_ids_and_terms() -> None:
+    plan = _FakeRetrievalPlan()
+    plan.source_node_ids = ["r1"]
+    plan.target_node_ids = ["i1"]
+    plan.source_terms = ["tofu"]
+    plan.target_terms = ["pepper"]
+
+    params = GraphQueryExecutor._params(plan)
+
+    assert params["source_node_ids"] == ["r1"]
+    assert params["target_node_ids"] == ["i1"]
+    assert params["source_terms"] == ["tofu"]
+    assert params["target_terms"] == ["pepper"]
+
+
+def test_graph_query_executor_omits_timeout_without_control() -> None:
+    assert GraphQueryExecutor._run_kwargs(None) == {}
+
+
+def test_graph_query_executor_runs_all_query_families() -> None:
+    driver = _RecordingNeo4jDriver()
+    executor = GraphQueryExecutor(driver, database="neo4j")
+    plan = _FakeRetrievalPlan()
+
+    assert executor.multi_hop_paths(plan) == []
+    assert executor.entity_relation_paths(plan) == []
+    assert executor.shortest_paths(plan) == []
+    assert executor.subgraphs(plan) == []
+    assert len(driver.session_obj.run_calls) == 4

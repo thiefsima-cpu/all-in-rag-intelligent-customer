@@ -111,6 +111,62 @@ class GraphIndexingModuleTests(unittest.TestCase):
         )
         self.assertTrue(restored.get_relations_by_key(self._relation_keyword("CONTAINS_STEP")))
 
+    def test_entity_index_materializes_full_and_sparse_node_properties(self) -> None:
+        module = GraphIndexingModule(
+            SimpleNamespace(enable_llm_relation_keys=False), llm_client=None
+        )
+        recipe = SimpleNamespace(
+            node_id="r-full",
+            name="full recipe",
+            properties={
+                "description": "description",
+                "category": "main",
+                "cuisineType": "sichuan",
+                "difficulty": "easy",
+                "cookingTime": "20m",
+                "flavor_tags": ["spicy"],
+                "technique_tags": ["fry"],
+                "diet_tags": ["vegan"],
+                "health_tags": ["protein"],
+                "cuisine_style_tags": ["home"],
+                "ingredient_category_tags": ["soy"],
+                "time_profile_tags": ["quick"],
+                "difficulty_level_tags": ["beginner"],
+            },
+        )
+        sparse_recipe = SimpleNamespace(node_id="r-sparse", name="", properties=None)
+        ingredient = SimpleNamespace(
+            node_id="i-full",
+            name="tofu",
+            properties={"category": "soy", "nutrition": "protein", "storage": "cold"},
+        )
+        sparse_ingredient = SimpleNamespace(node_id="i-sparse", name="", properties={})
+        step = SimpleNamespace(
+            node_id="s-full",
+            properties={
+                "description": "stir ingredients",
+                "order": 1,
+                "technique": "stir fry",
+                "time": "3m",
+            },
+        )
+        sparse_step = SimpleNamespace(node_id="s-sparse", properties={})
+
+        module.create_entity_key_values(
+            [recipe, sparse_recipe],
+            [ingredient, sparse_ingredient],
+            [step, sparse_step],
+        )
+
+        full_recipe = module.entity_kv_store["r-full"]
+        self.assertIn("description", full_recipe.value_content)
+        self.assertIn("beginner", full_recipe.value_content)
+        self.assertIn("vegan", full_recipe.index_keys)
+        self.assertTrue(module.entity_kv_store["r-sparse"].entity_name)
+        self.assertIn("cold", module.entity_kv_store["i-full"].value_content)
+        self.assertTrue(module.entity_kv_store["i-sparse"].entity_name)
+        self.assertIn("stir fry", module.entity_kv_store["s-full"].value_content)
+
 
 if __name__ == "__main__":
     unittest.main()

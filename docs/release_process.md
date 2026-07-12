@@ -65,10 +65,11 @@ blocks deletion and force-push.
 
 ## Coverage Policy
 
-The repository has a full-suite coverage baseline in `pyproject.toml`. Pull
-requests also enforce incremental coverage with `diff-cover` against the target
-branch. Raise the baseline when sustained coverage improves; do not lower it
-without recording the reason in `CHANGELOG.md`.
+The full suite enforces combined coverage through `tool.coverage.report.fail_under = 75` and
+independently enforces `rag_modules` branch coverage at 70% through
+`python scripts/check_branch_coverage.py`. Pull requests continue to enforce 80% incremental
+coverage with `diff-cover`. Raise either baseline only after full-suite results remain stable; do
+not lower a baseline without recording the reason in `CHANGELOG.md`.
 
 ## Security Response Releases
 
