@@ -127,8 +127,8 @@ Delete the corresponding `BuildBootstrapperInvocationAdapter`,
 currently use dynamic `getattr` delegation and `cast` to call methods already declared by the real
 composition collaborator contracts.
 
-Move `_ComposedBootstrapperFacade` into `rag_modules.app.bootstrap`. Public bootstrapper classes
-continue to compose and bind their collaborator dataclasses, then call the resolved collaborators
+Do not retain `_ComposedBootstrapperFacade`. Public bootstrapper classes call their composer once,
+assign the typed result dataclass fields explicitly, and then call the resolved collaborators
 directly:
 
 - build runtime: `BuildRuntimeFactoryProtocol.build`;
@@ -210,9 +210,9 @@ Add focused AST-based checks for the current convergence boundary:
 2. Every deleted module path remains absent and import attempts fail.
 3. A production class named `*Adapter` may not explicitly inherit a `*Protocol`. Structural
    conformance does not require adapter inheritance.
-4. New protocols in the current boundary belong in consumer-owned `ports.py`, explicit
-   `contracts.py`, or an approved public extension surface. Existing exceptions are recorded as a
-   non-growing ratchet with a short rationale.
+4. New protocols in the current boundary belong in consumer-owned `ports.py` or `*_ports.py`,
+   explicit `contracts.py`, or an approved public extension surface. Existing exceptions are
+   recorded as a non-growing ratchet with a short rationale.
 
 These checks are intentionally semantic and scoped. The repository does not fail merely because a
 cohesive implementation file has fewer than 60 lines, nor does it reward merging unrelated

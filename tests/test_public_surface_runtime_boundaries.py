@@ -154,59 +154,75 @@ class PublicSurfaceRuntimeBoundaryTests(PublicSurfaceBoundaryTestCase):
             + "\n".join(violations),
         )
 
-    def test_public_bootstrapper_facades_do_not_bind_components_inline(self) -> None:
+    def test_public_bootstrapper_facades_bind_only_typed_composer_results(self) -> None:
         path = RAG_MODULES_DIR / "app" / "bootstrap.py"
         rel = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(source, filename=str(path))
         lines = source.splitlines()
         violations: list[str] = []
+        assignments: set[tuple[str, str]] = set()
 
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
-                continue
-            value_chain = ".".join(self._attribute_chain(node.value))
-            for target in node.targets:
-                if not isinstance(target, ast.Attribute):
+            if isinstance(node, ast.Assign):
+                value_chain = ".".join(self._attribute_chain(node.value))
+                for target in node.targets:
+                    target_chain = ".".join(self._attribute_chain(target))
+                    if not target_chain.startswith("self."):
+                        continue
+                    if value_chain.startswith("components."):
+                        assignments.add((target_chain, value_chain))
+                        if target_chain.removeprefix("self.") != value_chain.removeprefix(
+                            "components."
+                        ):
+                            violations.append(
+                                f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}"
+                            )
+            elif isinstance(node, ast.Call):
+                call_name = self._call_name(node)
+                if call_name in {"getattr", "setattr", "vars", "fields", "is_dataclass"}:
+                    violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
+                if not isinstance(node.func, ast.Attribute):
                     continue
-                target_chain = ".".join(self._attribute_chain(target))
-                if target_chain.startswith("self.") and value_chain.startswith("components."):
+                if ".".join(self._attribute_chain(node.func)) == "object.__getattribute__":
                     violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
 
-        self.assertFalse(
-            violations,
-            "Found public bootstrapper component binding that belongs behind a helper boundary:\n"
-            + "\n".join(violations),
-        )
-
-    def test_public_bootstrappers_do_not_call_runtime_collaborators_directly(self) -> None:
-        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
-        rel = path.relative_to(ROOT)
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
-        lines = source.splitlines()
-        violations: list[str] = []
-        prohibited = {
-            "self.factory.build",
-            "self.executor.build_knowledge_base",
-            "self.executor.rebuild_knowledge_base",
-            "self.lifecycle_service.build_ready",
-            "self.lifecycle_service.prepare",
-            "self.lifecycle_service.prepare_with_shared_runtime",
-            "self.bootstrap_service.build",
+        expected_assignments = {
+            ("self.provider", "components.provider"),
+            ("self.factory", "components.factory"),
+            ("self.executor", "components.executor"),
+            ("self.preparer", "components.preparer"),
+            ("self.lifecycle_service", "components.lifecycle_service"),
+            ("self.build_bootstrapper", "components.build_bootstrapper"),
+            ("self.serving_bootstrapper", "components.serving_bootstrapper"),
+            ("self.bootstrap_service", "components.bootstrap_service"),
         }
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Attribute):
-                continue
-            chain = ".".join(self._attribute_chain(node))
-            if chain in prohibited:
-                violations.append(f"{rel}:{node.lineno}: {lines[node.lineno - 1].strip()}")
         self.assertFalse(
             violations,
-            "Found public bootstrapper direct calls into runtime collaborators:\n"
+            "Found dynamic or mismatched public bootstrapper component binding:\n"
             + "\n".join(violations),
         )
+        self.assertEqual(assignments, expected_assignments)
+
+    def test_public_bootstrappers_call_resolved_runtime_collaborators_directly(self) -> None:
+        path = RAG_MODULES_DIR / "app" / "bootstrap.py"
+        source = path.read_text(encoding="utf-8-sig")
+
+        for expected in (
+            "self.factory.build(",
+            "self.executor.build_knowledge_base(",
+            "self.executor.rebuild_knowledge_base(",
+            "self.lifecycle_service.build_ready(",
+            "self.lifecycle_service.prepare(",
+            "self.lifecycle_service.prepare_with_shared_runtime(",
+            "self.bootstrap_service.build(",
+        ):
+            self.assertIn(expected, source)
+        self.assertNotIn("_invocations", source)
+        self.assertNotIn("InvocationAdapter", source)
+        self.assertNotIn("_ComposedBootstrapperFacade", source)
+        self.assertNotIn("getattr(", source)
 
     def test_public_bootstrapper_facades_do_not_construct_runtime_components(self) -> None:
         violations: list[str] = []

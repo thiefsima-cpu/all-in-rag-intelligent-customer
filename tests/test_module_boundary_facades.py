@@ -6,6 +6,20 @@ import unittest
 
 
 class ModuleBoundaryFacadeTests(unittest.TestCase):
+    def test_bootstrap_invocation_layers_are_retired(self) -> None:
+        for module_name in (
+            "rag_modules.app.bootstrap_facade_contracts",
+            "rag_modules.app.bootstrap_facade_support",
+        ):
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
     def test_internal_aggregate_facades_are_retired(self) -> None:
         for module_name in (
             "rag_modules.app.contracts",

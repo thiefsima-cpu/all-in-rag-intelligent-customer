@@ -29,7 +29,7 @@
 - `rag_modules/application/ports.py`: owns `AnswerWorkflowCopy` with the other application-consumed ports.
 - `rag_modules/application/answering/answer_pipeline.py`: imports `AnswerWorkflowCopy` from application ports.
 - `rag_modules/application/answering/answer_result_factory.py`: imports `AnswerWorkflowCopy` from application ports.
-- `rag_modules/app/bootstrap.py`: owns the small component-binding helper and delegates directly to resolved collaborators.
+- `rag_modules/app/bootstrap.py`: binds typed composer result dataclasses directly and delegates to resolved collaborators.
 - `rag_modules/app/diagnostics.py`: imports diagnostics DTOs directly from artifact, runtime, and stats owner modules.
 - `rag_modules/app/services/__init__.py`: exports only runtime diagnostics and shutdown services.
 
@@ -513,7 +513,7 @@ git commit -m "refactor: retire internal aggregate facades"
 **Interfaces:**
 
 - Consumes: `BuildRuntimeFactory.build`, `BuildRuntimeExecutor.build_knowledge_base`, `BuildRuntimeExecutor.rebuild_knowledge_base`, `ServingRuntimeLifecycleServiceProtocol.build_ready`, `prepare`, `prepare_with_shared_runtime`, and `SystemRuntimeBootstrapService.build`.
-- Produces: direct public-bootstrapper delegation and a local `_ComposedBootstrapperFacade` component-binding helper with no invocation type parameter.
+- Produces: direct public-bootstrapper delegation and explicit typed assignment from composer result dataclasses, with no generic component-binding helper.
 
 - [ ] **Step 1: Reverse the obsolete direct-call prohibition test**
 
@@ -627,7 +627,7 @@ def test_protocols_outside_port_and_contract_modules_match_approved_baseline() -
     actual: dict[Path, frozenset[str]] = {}
     for package_root in SCOPED_ROOTS:
         for path in package_root.rglob("*.py"):
-            if path.name in {"ports.py", "contracts.py"}:
+            if path.name in {"ports.py", "contracts.py"} or path.name.endswith("_ports.py"):
                 continue
             names = _protocol_definitions(path)
             if names:
@@ -671,77 +671,53 @@ python -m pytest tests/test_public_surface_runtime_boundaries.py::PublicSurfaceR
 
 Expected: failures show `_invocations`, the two existing bootstrap support modules, the three explicit adapter/protocol inheritances, and the four unapproved bootstrap protocols.
 
-- [ ] **Step 4: Move the component-binding helper into `app.bootstrap`**
+- [ ] **Step 4: Bind typed composer result dataclasses directly in `app.bootstrap`**
 
-Replace the support-module imports at the top of `rag_modules/app/bootstrap.py` with:
+Remove the support-module imports from `rag_modules/app/bootstrap.py`. Do not add a generic
+component-binding helper, `dataclasses.fields`, `getattr`, `object.__getattribute__`, or `vars`.
+Change all three bootstrapper declarations to plain classes with no shared binding base.
 
-```python
-from collections.abc import Callable
-from dataclasses import fields, is_dataclass
-from typing import Any, Optional
-```
-
-Insert this helper before `BuildBootstrapper`:
+Use these exact constructor bodies after the existing parameter lists:
 
 ```python
-class _ComposedBootstrapperFacade:
-    """Bind composer-resolved dataclass components onto a public facade."""
-
-    def _compose_and_bind(
-        self,
-        *,
-        compose: Callable[..., object],
-        **compose_kwargs: object,
-    ) -> None:
-        components = compose(**compose_kwargs)
-        if not is_dataclass(components):
-            raise TypeError("Bootstrapper components must be dataclass instances.")
-        for component_field in fields(components):
-            setattr(self, component_field.name, getattr(components, component_field.name))
-```
-
-Change the class bases to:
-
-```python
-class BuildBootstrapper(_ComposedBootstrapperFacade):
-class ServingBootstrapper(_ComposedBootstrapperFacade):
-class GraphRAGBootstrapper(_ComposedBootstrapperFacade):
-```
-
-Remove all `super().__init__(invocations=...)` calls. In each constructor call `_compose_and_bind`
-with the resolved compose method:
-
-```python
-self._compose_and_bind(
-    compose=(bootstrapper_composer or BuildBootstrapperComposer()).compose,
+components = (bootstrapper_composer or BuildBootstrapperComposer()).compose(
     provider=provider,
     factory=factory,
     executor=executor,
     provider_resolver=provider_resolver,
 )
-```
+self.provider = components.provider
+self.factory = components.factory
+self.executor = components.executor
 
-Use these exact calls for serving and graph constructors:
-
-```python
-self._compose_and_bind(
-    compose=(bootstrapper_composer or ServingBootstrapperComposer()).compose,
+components = (bootstrapper_composer or ServingBootstrapperComposer()).compose(
     provider=provider,
     factory=factory,
     preparer=preparer,
     lifecycle_service=lifecycle_service,
     provider_resolver=provider_resolver,
 )
+self.provider = components.provider
+self.factory = components.factory
+self.preparer = components.preparer
+self.lifecycle_service = components.lifecycle_service
 
-self._compose_and_bind(
-    compose=(bootstrapper_composer or GraphRAGBootstrapperComposer()).compose,
+components = (bootstrapper_composer or GraphRAGBootstrapperComposer()).compose(
     provider=provider,
     build_bootstrapper=build_bootstrapper,
     serving_bootstrapper=serving_bootstrapper,
     bootstrap_service=bootstrap_service,
     provider_resolver=provider_resolver,
 )
+self.provider = components.provider
+self.build_bootstrapper = components.build_bootstrapper
+self.serving_bootstrapper = components.serving_bootstrapper
+self.bootstrap_service = components.bootstrap_service
 ```
+
+Replace `test_public_bootstrapper_facades_do_not_bind_components_inline` with a test that permits
+only assignments from the typed local `components` object and still rejects runtime construction
+or dynamic lookup.
 
 - [ ] **Step 5: Replace every invocation-adapter call with the resolved collaborator**
 
