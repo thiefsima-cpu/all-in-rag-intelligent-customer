@@ -58,6 +58,77 @@ class GraphReasoningStrategyTests(unittest.TestCase):
 
         self.assertIn("comparative", patterns)
 
+    def test_reasoning_builds_causal_compositional_comparative_chains(self) -> None:
+        strategy = GraphReasoningStrategy()
+        causal = next(iter(strategy.causal_relation_types))
+        nodes = [
+            GraphNodeSnapshot(node_id="r1", name="A", labels=("Recipe",)),
+            GraphNodeSnapshot(node_id="r2", name="B", labels=("Recipe",)),
+            GraphNodeSnapshot(node_id="t1", name="Fry", labels=("Technique",)),
+            GraphNodeSnapshot(node_id="f1", name="Spicy", labels=("Flavor",)),
+        ]
+        subgraph = KnowledgeSubgraph(
+            central_nodes=nodes[:2],
+            connected_nodes=nodes[2:],
+            relationships=[
+                GraphRelationshipSnapshot(
+                    relation_type=causal,
+                    start_node_id="r1",
+                    end_node_id="f1",
+                )
+            ],
+        )
+
+        outcome = strategy.reason(subgraph, "compare spicy")
+
+        self.assertTrue({"causal", "compositional", "comparative"}.issubset(outcome.patterns))
+        self.assertTrue(outcome.validated_chains)
+        self.assertEqual(outcome.summary["central_node_count"], 2)
+        self.assertEqual(outcome.to_trace_details()["validated_chain_count"], 4)
+
+    def test_reasoning_uses_connectivity_when_no_named_pattern_matches(self) -> None:
+        strategy = GraphReasoningStrategy()
+        subgraph = KnowledgeSubgraph(
+            central_nodes=[GraphNodeSnapshot(node_id="r1", name="Recipe")],
+            connected_nodes=[GraphNodeSnapshot(node_id="i1", name="Ingredient")],
+            relationships=[
+                GraphRelationshipSnapshot(
+                    relation_type="UNCLASSIFIED",
+                    start_node_id="r1",
+                    end_node_id="i1",
+                )
+            ],
+        )
+
+        outcome = strategy.reason(subgraph, "")
+
+        self.assertEqual(outcome.patterns, ["connectivity"])
+        self.assertIn("nearby nodes", outcome.validated_chains[0])
+
+    def test_reasoning_validation_deduplicates_ranks_and_limits_four(self) -> None:
+        strategy = GraphReasoningStrategy()
+        result = strategy.validate_reasoning_chains(
+            ["", "plain", "query semantic", "plain", "longer chain", "four", "five"],
+            "query",
+            KnowledgeSubgraph(
+                connected_nodes=[GraphNodeSnapshot(name="semantic", labels=("Flavor",))]
+            ),
+        )
+
+        self.assertEqual(result[0], "query semantic")
+        self.assertEqual(len(result), 4)
+
+    def test_reasoning_comparison_without_two_recipes_returns_no_chain(self) -> None:
+        strategy = GraphReasoningStrategy()
+        subgraph = KnowledgeSubgraph(
+            central_nodes=[GraphNodeSnapshot(node_id="r1", name="Only", labels=("Recipe",))]
+        )
+
+        self.assertEqual(strategy.build_reasoning_chains("comparative", subgraph, "compare"), [])
+        self.assertEqual(
+            strategy.build_reasoning_chains("connectivity", KnowledgeSubgraph(), ""), []
+        )
+
 
 class _FakeNeo4jNode(dict):
     def __init__(self, node_id: str, name: str, labels: tuple[str, ...]) -> None:
