@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, TextIO
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_STEP_NAMES = ("pre_commit", "encoding_audit", "pytest", "release_gate")
+DEFAULT_STEP_NAMES = (
+    "pre_commit",
+    "encoding_audit",
+    "pytest",
+    "branch_coverage",
+    "release_gate",
+)
 
 
 @dataclass(frozen=True)
@@ -99,8 +105,33 @@ def default_steps(
         ),
         GateStep(
             name="pytest",
-            command=(python_executable, "-m", "pytest", "-q"),
-            display_command=("python", "-m", "pytest", "-q"),
+            command=(
+                python_executable,
+                "-m",
+                "pytest",
+                "-q",
+                "--cov=rag_modules",
+                "--cov=scripts",
+                "--cov-branch",
+                "--cov-report=term-missing",
+                "--cov-report=json:coverage.json",
+            ),
+            display_command=(
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "--cov=rag_modules",
+                "--cov=scripts",
+                "--cov-branch",
+                "--cov-report=term-missing",
+                "--cov-report=json:coverage.json",
+            ),
+        ),
+        GateStep(
+            name="branch_coverage",
+            command=(python_executable, str(scripts_dir / "check_branch_coverage.py")),
+            display_command=("python", "scripts/check_branch_coverage.py"),
         ),
         GateStep(
             name="release_gate",

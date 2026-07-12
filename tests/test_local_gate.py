@@ -32,7 +32,18 @@ class LocalGateTests(unittest.TestCase):
             [
                 ("pre-commit", "run", "--all-files"),
                 ("python", "scripts/check_encoding.py"),
-                ("python", "-m", "pytest", "-q"),
+                (
+                    "python",
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "--cov=rag_modules",
+                    "--cov=scripts",
+                    "--cov-branch",
+                    "--cov-report=term-missing",
+                    "--cov-report=json:coverage.json",
+                ),
+                ("python", "scripts/check_branch_coverage.py"),
                 ("python", "scripts/release_gate.py"),
             ],
         )

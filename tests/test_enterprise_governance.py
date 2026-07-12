@@ -44,6 +44,16 @@ def test_ci_workflow_enforces_coverage_security_and_sbom_gates() -> None:
         assert fragment in workflow
 
 
+def test_ci_enforces_package_branch_coverage_after_json_report() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "--cov-report=json:coverage.json" in workflow
+    assert "python scripts/check_branch_coverage.py" in workflow
+    assert workflow.index("--cov-report=json:coverage.json") < workflow.index(
+        "python scripts/check_branch_coverage.py"
+    )
+
+
 def test_ci_targets_all_long_lived_branches() -> None:
     workflow = _read(".github/workflows/ci.yml")
 
