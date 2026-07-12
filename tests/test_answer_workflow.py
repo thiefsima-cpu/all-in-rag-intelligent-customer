@@ -5,13 +5,15 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-from rag_modules.app.services.answer_models import (
+from rag_modules.application.answering.answer_models import (
     AnswerPipelineState,
     AnswerTraceBundle,
     QuestionAnswerResult,
 )
-from rag_modules.app.services.answer_result_factory import QuestionAnswerResultFactory
-from rag_modules.app.services.answer_workflow import AnswerWorkflow
+from rag_modules.application.answering.answer_pipeline import AnswerPipelineService
+from rag_modules.application.answering.answer_result_factory import QuestionAnswerResultFactory
+from rag_modules.application.answering.answer_trace_assembler import AnswerTraceAssembler
+from rag_modules.application.answering.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
@@ -30,6 +32,7 @@ from rag_modules.contracts.runtime.errors import routing_error_detail
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.query_policy.models import AnswerWorkflowCopyPolicy
+from rag_modules.telemetry import get_runtime_telemetry
 
 
 def _answer_copy(**overrides: str) -> AnswerWorkflowCopyPolicy:
@@ -63,6 +66,38 @@ def _answer_copy(**overrides: str) -> AnswerWorkflowCopyPolicy:
     }
     values.update(overrides)
     return AnswerWorkflowCopyPolicy(**values)
+
+
+def _compose_answer_workflow(
+    config,
+    query_router,
+    generation_module,
+    query_tracer,
+    *,
+    answer_workflow_copy=None,
+) -> AnswerWorkflow:
+    answer_workflow_copy = answer_workflow_copy or _answer_copy()
+    semantic_settings = semantic_runtime_settings(config)
+    telemetry = get_runtime_telemetry(config)
+    return AnswerWorkflow(
+        pipeline=AnswerPipelineService(
+            query_router=query_router,
+            generation_service=generation_module,
+            semantic_settings=semantic_settings,
+            top_k=config.retrieval.top_k,
+            answer_workflow_copy=answer_workflow_copy,
+            telemetry=telemetry,
+        ),
+        trace_assembler=AnswerTraceAssembler(
+            query_tracer=query_tracer,
+            semantic_settings=semantic_settings,
+        ),
+        result_factory=QuestionAnswerResultFactory(
+            answer_workflow_copy=answer_workflow_copy,
+        ),
+        telemetry=telemetry,
+        generation_latency_budget_seconds=(config.generation.generation_latency_budget_seconds),
+    )
 
 
 def _build_resolution(
@@ -264,7 +299,7 @@ class AnswerWorkflowTests(unittest.TestCase):
     def test_answer_workflow_uses_one_root_control_for_route_and_generation(self) -> None:
         router = _ControlCapturingRouter()
         generation = _ControlCapturingGeneration()
-        workflow = AnswerWorkflow(
+        workflow = _compose_answer_workflow(
             self.config,
             query_router=router,
             generation_module=generation,
@@ -288,7 +323,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             router,
             generation,
@@ -347,7 +382,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             ),
         )
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -417,7 +452,7 @@ class AnswerWorkflowTests(unittest.TestCase):
                 selected_evidence_items=1,
             ),
         )
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             _FakeQueryRouter(
                 semantic_settings=semantic_runtime_settings(self.config),
@@ -476,7 +511,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             },
             final_doc_count=1,
         )
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             _FakeQueryRouter(
                 semantic_settings=semantic_runtime_settings(self.config),
@@ -543,7 +578,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         )
         generation = _FakeGenerationService(answer="scoped answer")
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -570,7 +605,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             trace=GenerationSnapshot(mode="direct", total_evidence_items=1),
         )
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 
@@ -590,7 +625,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         )
         tracer = _FakeQueryTracer()
         chunks: list[str] = []
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -616,7 +651,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             stream_trace=GenerationSnapshot(mode="direct", total_evidence_items=2),
         )
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(
             question,
@@ -640,7 +675,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         )
         tracer = _FakeQueryTracer()
         messages: list[str] = []
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             router,
             generation,
@@ -720,7 +755,7 @@ class AnswerWorkflowTests(unittest.TestCase):
                     ),
                 )
 
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             _ConcurrentRouter(),
             _ConcurrentGeneration(),
@@ -780,7 +815,7 @@ class AnswerWorkflowTests(unittest.TestCase):
                 return "legacy answer"
 
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(
+        service = _compose_answer_workflow(
             self.config,
             _LegacyRouter(),
             _LegacyGeneration(),
@@ -804,7 +839,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         )
         generation = _FakeGenerationService()
         tracer = _FakeQueryTracer()
-        service = AnswerWorkflow(self.config, router, generation, tracer)
+        service = _compose_answer_workflow(self.config, router, generation, tracer)
 
         result = service.answer_question(question)
 

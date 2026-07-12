@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterator, Optional
 
 from ....app.application_protocol import GraphRAGApplication
-from ....app.services.answer_models import QuestionAnswerResponse
+from ....application.answering.answer_models import QuestionAnswerResponse
 from ....configuration.models import GraphRAGConfig
 from ....contracts import RequestControl
 from ....kernel.json_types import JsonObject

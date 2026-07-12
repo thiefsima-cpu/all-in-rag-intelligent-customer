@@ -162,6 +162,8 @@ module = [
   "rag_modules.app.providers.services",
   "rag_modules.app.services.runtime_diagnostics_service",
   "rag_modules.app.services.*",
+  "rag_modules.application",
+  "rag_modules.application.*",
   "rag_modules.domain",
   "rag_modules.domain.*",
   "rag_modules.contracts",

@@ -191,6 +191,7 @@ class ServingRuntimeFactory:
             query_router=query_router,
             generation_module=generation_service,
             query_tracer=shared.tracer,
+            retrieval_profile=retrieval_runtime_profile,
             policy_bundle=shared.policy_bundle,
         )
         return _ServingWorkflowModules(

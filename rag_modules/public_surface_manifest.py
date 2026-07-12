@@ -71,7 +71,7 @@ PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "public_api",
         "rag_modules.app",
         "canonical",
-        "Stable application-layer package exports.",
+        "Stable runtime facade and composition entrypoints.",
     ),
     PublicSurfaceEntry(
         "rag_modules.app.assembly",
@@ -98,6 +98,13 @@ PUBLIC_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
 
 SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
     PublicSurfaceEntry(
+        "rag_modules.application",
+        "service_api",
+        "rag_modules.application",
+        "canonical",
+        "Pure application use cases, consumer-owned ports, and application DTOs.",
+    ),
+    PublicSurfaceEntry(
         "rag_modules.contracts",
         "service_api",
         "rag_modules.contracts",
@@ -109,7 +116,7 @@ SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "service_api",
         "rag_modules.app.services",
         "canonical",
-        "Repository-internal service layer used by application assembly and workflows.",
+        "Compatibility imports for services now owned by rag_modules.application.",
     ),
     PublicSurfaceEntry(
         "rag_modules.routing",
@@ -170,7 +177,7 @@ ROOT_PACKAGE_EXPORTS: tuple[PackageExportEntry, ...] = (
         "rag_modules",
         "KnowledgeBaseService",
         "public_api",
-        "rag_modules.app.services.knowledge_base_service",
+        "rag_modules.application.knowledge_base",
         "Stable root package entrypoint for build/rebuild knowledge-base workflows.",
     ),
     PackageExportEntry(

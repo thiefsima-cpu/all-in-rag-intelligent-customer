@@ -13,7 +13,7 @@ from typing import Dict
 _EXPORTS: Dict[str, str] = {
     "AdvancedGraphRAGSystem": ".app.system",
     "GenerationWorkflowService": ".generation.service",
-    "KnowledgeBaseService": ".app.services.knowledge_base_service",
+    "KnowledgeBaseService": ".application.knowledge_base",
     "MilvusIndexConstructionModule": ".infra.milvus_index_construction",
 }
 

@@ -11,7 +11,7 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from ....app.application_protocol import GraphRAGApplication
-from ....app.services.answer_models import QuestionAnswerResponse
+from ....application.answering.answer_models import QuestionAnswerResponse
 from ....contracts import RequestControl
 from ....safe_logging import log_failure
 from ..answer_copy import answer_failed_message_from_system

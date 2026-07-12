@@ -474,6 +474,7 @@ class ServingRuntimeFactoryAssemblyTests(unittest.TestCase):
         self.assertIs(runtime.answer_workflow, answer_workflow)
         self.assertIn("policy_bundle", service_kwargs)
         self.assertIs(service_kwargs["policy_bundle"], provider.policy_bundle)
+        self.assertIs(service_kwargs["retrieval_profile"], profile)
         self.assertFalse(hasattr(runtime, "question_answer_service"))
 
     def test_build_requires_canonical_routing_workflow_provider(self) -> None:

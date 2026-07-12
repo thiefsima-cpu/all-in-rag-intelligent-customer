@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..application.answering.answer_models import QuestionAnswerer
 from .composition.contracts import (
     BuildRuntimeExecutorProtocol,
     BuildRuntimeFactoryProtocol,
@@ -12,7 +13,6 @@ from .composition.contracts import (
     SystemOperationsProtocol,
 )
 from .providers import RuntimeComponentProvider
-from .services.answer_models import QuestionAnswerer
 
 __all__ = [
     "BuildRuntimeExecutorProtocol",

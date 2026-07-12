@@ -17,8 +17,8 @@ composition/provider/factory/lifecycle 的完整展开，等请求主线建立�
    初始化校验、hot refresh、`system_ready` 检查、answer admission lock 和 SSE runner 分发。
 4. `rag_modules/app/system.py` 和 `rag_modules/app/composition/system_answering_service.py`：
    看应用 facade 如何把请求转给当前 serving runtime 上的 `AnswerWorkflow`。
-5. `rag_modules/app/services/answer_workflow.py` 和
-   `rag_modules/app/services/answer_pipeline.py`：这是请求主干。这里创建 request control，
+5. `rag_modules/application/answering/answer_workflow.py` 和
+   `rag_modules/application/answering/answer_pipeline.py`：这是请求主干。这里创建 request control，
    包住 telemetry/error boundary，执行 routing、generation、trace capture 和 result factory。
 6. `rag_modules/routing/workflow_service.py`：理解 query understanding、route execution request、
    hybrid/graph/combined 检索、post-processing 和 route trace 是如何组成 `RouteResolution` 的。
@@ -239,7 +239,8 @@ flowchart TD
 - `rag_modules/interfaces/api/services/serving.py` 负责 readiness checks、hot-refresh checks、
   backpressure 和 streaming event coordination。
 - `rag_modules/app/composition/system_answering_service.py` 将应用 facade 连接到已初始化的 `AnswerWorkflow`。
-- `rag_modules/app/services/answer_workflow.py` 和 `rag_modules/app/services/answer_pipeline.py`
+- `rag_modules/application/answering/answer_workflow.py` 和
+  `rag_modules/application/answering/answer_pipeline.py`
   负责 answer orchestration。
 - `rag_modules/routing/workflow_service.py` 负责 query understanding、route execution、
   retrieval post-processing 和 route trace capture。
