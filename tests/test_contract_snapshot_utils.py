@@ -4,7 +4,7 @@ import unittest
 
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts.runtime import GenerationSnapshot, GraphRetrievalSnapshot, RouteSnapshot
-from rag_modules.runtime.snapshot_utils import (
+from rag_modules.contracts.runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,

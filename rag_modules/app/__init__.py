@@ -7,8 +7,7 @@ from .assembly import (
     create_application_system,
 )
 from .bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
-from .contracts import RuntimeComponentProvider
-from .providers import create_default_runtime_provider
+from .providers import RuntimeComponentProvider, create_default_runtime_provider
 from .runtime_state import BuildRuntime, ServingRuntime
 from .runtime_view import SystemRuntime
 from .system import AdvancedGraphRAGSystem
