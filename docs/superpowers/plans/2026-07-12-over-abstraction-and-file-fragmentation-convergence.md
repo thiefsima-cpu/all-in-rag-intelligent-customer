@@ -88,14 +88,16 @@
 
 - [ ] **Step 1: Add failing canonical-port and retired-import tests**
 
-In `tests/test_application_use_cases.py`, add the import and ownership test:
+In `tests/test_application_use_cases.py`, add the ownership test without importing the missing
+symbol during collection:
 
 ```python
-from rag_modules.application.ports import AnswerWorkflowCopy
+import rag_modules.application.ports as application_ports
 
 
 def test_answer_workflow_copy_is_owned_by_application_ports() -> None:
-    assert AnswerWorkflowCopy.__module__ == "rag_modules.application.ports"
+    assert hasattr(application_ports, "AnswerWorkflowCopy")
+    assert application_ports.AnswerWorkflowCopy.__module__ == "rag_modules.application.ports"
 ```
 
 In `tests/test_module_boundary_facades.py`, add this method to `ModuleBoundaryFacadeTests`:
@@ -146,7 +148,9 @@ Run:
 python -m pytest tests/test_application_use_cases.py tests/test_module_boundary_facades.py tests/test_public_api_manifest.py -q
 ```
 
-Expected: collection fails because `AnswerWorkflowCopy` is not yet exported by `application.ports`, and the compatibility-module/export assertions fail while the old modules remain.
+Expected: the ownership test fails its `hasattr` assertion because `AnswerWorkflowCopy` is not yet
+exported by `application.ports`, and the compatibility-module/export assertions fail while the old
+modules remain.
 
 - [ ] **Step 3: Move `AnswerWorkflowCopy` into the application port module**
 
