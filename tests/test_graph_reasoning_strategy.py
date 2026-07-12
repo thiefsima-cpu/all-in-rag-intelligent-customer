@@ -307,3 +307,55 @@ class GraphRetrievalDtoBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_postprocessor_handles_empty_paths_failures_and_malformed_subgraph_values() -> None:
+    processor = GraphRetrievalPostProcessor()
+
+    empty_path = processor.parse_neo4j_path({"path_nodes": []})
+    assert empty_path is not None
+    assert empty_path.nodes == []
+
+    class BrokenRecord(dict[str, object]):
+        def get(self, key: str, default: object = None) -> object:
+            raise RuntimeError("unavailable")
+
+    assert processor.parse_neo4j_path(BrokenRecord()) is None
+    assert processor.build_knowledge_subgraph({}).central_nodes == []
+
+    subgraph = processor.build_knowledge_subgraph(
+        {
+            "source": {"nodeId": "r1", "name": "Recipe", "labels": "Recipe"},
+            "nodes": [None, {"nodeId": "i1", "name": "Pepper"}],
+            "rels": [[{"type": "USES", "startNodeId": "r1", "endNodeId": "i1"}]],
+            "metrics": {"density": "0.5", "invalid": "bad"},
+        }
+    )
+
+    assert subgraph.central_nodes[0].labels == ("Recipe",)
+    assert subgraph.connected_nodes[1].node_id == "i1"
+    assert subgraph.relationships[0].relation_type == "USES"
+    assert subgraph.graph_metrics == {"density": 0.5, "invalid": 0.0}
+
+
+def test_postprocessor_merges_duplicate_subgraphs_and_ranks_evidence() -> None:
+    processor = GraphRetrievalPostProcessor()
+    first = KnowledgeSubgraph(
+        central_nodes=[GraphNodeSnapshot(node_id="r1", name="Recipe")],
+        connected_nodes=[GraphNodeSnapshot(node_id="i1", name="Pepper")],
+        relationships=[
+            GraphRelationshipSnapshot(relation_type="USES", start_node_id="r1", end_node_id="i1")
+        ],
+        graph_metrics={"density": 0.2},
+    )
+    second = KnowledgeSubgraph(
+        central_nodes=[GraphNodeSnapshot(node_id="r1", name="Recipe")],
+        connected_nodes=[GraphNodeSnapshot(node_id="i2", name="Tofu")],
+        graph_metrics={"density": 0.8},
+    )
+
+    merged = processor.merge_subgraphs([first, second])
+
+    assert {node.node_id for node in merged.connected_nodes} == {"i1", "i2"}
+    assert merged.graph_metrics["density"] == 1 / 3
+    assert merged.graph_metrics["source_subgraph_count"] == 2.0

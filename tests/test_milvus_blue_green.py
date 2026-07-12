@@ -473,3 +473,47 @@ class MilvusBlueGreenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_blue_green_disabled_build_publish_and_rollback_use_physical_name() -> None:
+    module = _build_index_module(_FakeMilvusClient())
+    module.blue_green_enabled = False
+
+    target = module.prepare_blue_green_build("recipes__blue")
+    previous = module.publish_collection("recipes__blue")
+    module.rollback_collection_publish("recipes__green")
+
+    assert target["collection_name"] == "recipes"
+    assert previous == ""
+    assert module.collection_name == "recipes__green"
+
+
+def test_publish_rejects_missing_collection_and_discard_preserves_active() -> None:
+    client = _FakeMilvusClient()
+    module = _build_index_module(client)
+
+    try:
+        module.publish_collection("recipes__missing")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("missing collection must be rejected")
+
+    module.active_collection_name = "recipes__blue"
+    assert module.discard_build_collection("") is True
+    assert module.discard_build_collection("recipes__blue") is True
+    assert client.collections == {"recipes__blue", "recipes__green"}
+
+
+def test_rollback_without_previous_target_drops_alias_and_resets_state() -> None:
+    client = _FakeMilvusClient()
+    module = _build_index_module(client)
+    client.create_alias(collection_name="recipes__blue", alias="recipes__active")
+
+    module.rollback_collection_publish("")
+
+    assert "recipes__active" not in client.aliases
+    assert module.collection_name == "recipes"
+    assert module.active_collection_name == ""
+    assert module.physical_collection_name("green") == "recipes__green"
+    assert module.physical_collection_name("other") == "recipes__blue"
