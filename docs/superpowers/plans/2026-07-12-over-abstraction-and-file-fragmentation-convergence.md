@@ -824,6 +824,7 @@ git commit -m "refactor: remove bootstrap invocation ceremony"
 
 - Modify: `pyproject.toml`
 - Modify: `tests/test_type_contract_ratchets.py`
+- Modify: `tests/test_kernel_contracts.py`
 
 **Interfaces:**
 
@@ -929,6 +930,11 @@ def test_strict_mypy_patterns_do_not_redeclare_wildcard_children(self) -> None:
         + "\n".join(sorted(redundant)),
     )
 ```
+
+Update `test_canonical_kernel_and_runtime_contract_modules_use_strict_mypy` in
+`tests/test_kernel_contracts.py` to assert the normalized package rules
+`rag_modules.kernel`, `rag_modules.kernel.*`, `rag_modules.contracts`, and
+`rag_modules.contracts.*` instead of the redundant `rag_modules.contracts.runtime.*` child rule.
 
 - [ ] **Step 2: Run the ratchet tests and verify current redundancy fails**
 
