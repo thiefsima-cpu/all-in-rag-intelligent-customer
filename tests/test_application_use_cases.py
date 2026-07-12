@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import rag_modules.application.ports as application_ports
 from rag_modules.application.knowledge_base import KnowledgeBaseService
 from rag_modules.kernel.artifacts import ArtifactManifest
 
@@ -39,6 +40,11 @@ class _FakeCloseable:
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+def test_answer_workflow_copy_is_owned_by_application_ports() -> None:
+    assert hasattr(application_ports, "AnswerWorkflowCopy")
+    assert application_ports.AnswerWorkflowCopy.__module__ == "rag_modules.application.ports"
 
 
 def test_knowledge_base_service_delegates_to_injected_workflow() -> None:

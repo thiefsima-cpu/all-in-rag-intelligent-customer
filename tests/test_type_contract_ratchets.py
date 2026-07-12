@@ -9,29 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NO_EXPLICIT_ANY_TARGETS = (
-    ROOT / "rag_modules" / "app" / "providers" / "__init__.py",
-    ROOT / "rag_modules" / "app" / "providers" / "build_pipeline.py",
-    ROOT / "rag_modules" / "app" / "providers" / "contracts.py",
-    ROOT / "rag_modules" / "app" / "providers" / "default.py",
-    ROOT / "rag_modules" / "app" / "providers" / "generation.py",
-    ROOT / "rag_modules" / "app" / "providers" / "infrastructure.py",
-    ROOT / "rag_modules" / "app" / "providers" / "retrieval_runtime.py",
-    ROOT / "rag_modules" / "app" / "providers" / "services.py",
     ROOT / "rag_modules" / "app" / "diagnostics.py",
     ROOT / "rag_modules" / "app" / "ports.py",
-    ROOT / "rag_modules" / "app" / "bootstrap_facade_contracts.py",
-    ROOT / "rag_modules" / "app" / "bootstrap_facade_support.py",
     ROOT / "rag_modules" / "app" / "composition" / "build_jobs.py",
     ROOT / "rag_modules" / "app" / "composition" / "contracts.py",
     ROOT / "rag_modules" / "app" / "composition" / "serving_runtime_factory.py",
     ROOT / "rag_modules" / "app" / "composition" / "system_composer.py",
-    ROOT / "rag_modules" / "application" / "answering" / "answer_models.py",
-    ROOT / "rag_modules" / "application" / "answering" / "answer_pipeline.py",
-    ROOT / "rag_modules" / "application" / "answering" / "answer_trace_assembler.py",
-    ROOT / "rag_modules" / "application" / "answering" / "answer_workflow.py",
-    ROOT / "rag_modules" / "application" / "knowledge_base.py",
     ROOT / "rag_modules" / "app" / "services" / "runtime_diagnostics_service.py",
-    ROOT / "rag_modules" / "app" / "services" / "trace_adapters.py",
     ROOT / "rag_modules" / "query_policy" / "models.py",
     ROOT / "rag_modules" / "query_policy" / "loader.py",
     ROOT / "rag_modules" / "interfaces" / "api" / "answer_models.py",
@@ -55,11 +39,6 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "graph" / "reasoning_strategy.py",
     ROOT / "rag_modules" / "graph" / "retrieval_runtime.py",
     ROOT / "rag_modules" / "graph" / "ports.py",
-    ROOT / "rag_modules" / "generation" / "execution" / "contracts.py",
-    ROOT / "rag_modules" / "generation" / "execution" / "direct.py",
-    ROOT / "rag_modules" / "generation" / "execution" / "timeouts.py",
-    ROOT / "rag_modules" / "generation" / "execution" / "tracing.py",
-    ROOT / "rag_modules" / "generation" / "execution" / "two_stage.py",
     ROOT / "rag_modules" / "retrieval" / "adapters" / "bm25_retriever.py",
     ROOT / "rag_modules" / "retrieval" / "adapters" / "constraint_retriever.py",
     ROOT / "rag_modules" / "retrieval" / "adapters" / "graph_kv_retriever.py",
@@ -70,11 +49,6 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "retrieval" / "hybrid_service.py",
     ROOT / "rag_modules" / "retrieval" / "ports.py",
     ROOT / "rag_modules" / "retrieval" / "runtime_profile" / "profile.py",
-    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation" / "models.py",
-    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation" / "statistics.py",
-    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation" / "document_builder.py",
-    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation" / "loader.py",
-    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation" / "module.py",
     ROOT / "rag_modules" / "build_pipeline" / "ports.py",
     ROOT / "rag_modules" / "observability" / "tracing.py",
     ROOT / "rag_modules" / "observability" / "tracing_event_builder.py",
@@ -94,12 +68,26 @@ NO_EXPLICIT_ANY_TARGETS = (
     ROOT / "rag_modules" / "routing" / "search_orchestrator.py",
 )
 
-NO_EXPLICIT_ANY_PACKAGE_TARGETS = (ROOT / "rag_modules" / "query_policy" / "parsers",)
+NO_EXPLICIT_ANY_PACKAGE_TARGETS = (
+    ROOT / "rag_modules" / "app" / "providers",
+    ROOT / "rag_modules" / "application",
+    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation",
+    ROOT / "rag_modules" / "generation" / "execution",
+    ROOT / "rag_modules" / "query_policy" / "parsers",
+)
 
 STRICT_PACKAGE_TARGETS = (
-    ROOT / "rag_modules" / "domain",
+    ROOT / "rag_modules" / "app" / "providers",
+    ROOT / "rag_modules" / "app" / "services",
+    ROOT / "rag_modules" / "application",
+    ROOT / "rag_modules" / "build_pipeline" / "graph_preparation",
     ROOT / "rag_modules" / "contracts",
+    ROOT / "rag_modules" / "domain",
+    ROOT / "rag_modules" / "generation" / "execution",
+    ROOT / "rag_modules" / "interfaces" / "api",
+    ROOT / "rag_modules" / "kernel",
     ROOT / "rag_modules" / "query_policy" / "parsers",
+    ROOT / "rag_modules" / "retrieval" / "adapters",
     ROOT / "rag_modules" / "runtime",
 )
 
@@ -320,6 +308,40 @@ class TypeContractRatchetTests(unittest.TestCase):
             missing_modules,
             "Found strict package target modules outside the strict mypy override:\n"
             + "\n".join(missing_modules),
+        )
+
+    def test_strict_packages_use_package_and_descendant_patterns(self) -> None:
+        strict_patterns = set(_strict_mypy_modules())
+        missing_patterns: list[str] = []
+
+        for package_path in STRICT_PACKAGE_TARGETS:
+            package_name = _module_name_for_target(package_path / "__init__.py")
+            for expected in (package_name, f"{package_name}.*"):
+                if expected not in strict_patterns:
+                    missing_patterns.append(expected)
+
+        self.assertFalse(
+            missing_patterns,
+            "Strict packages must use package-level mypy patterns:\n" + "\n".join(missing_patterns),
+        )
+
+    def test_strict_mypy_patterns_do_not_redeclare_wildcard_children(self) -> None:
+        strict_patterns = _strict_mypy_modules()
+        redundant: list[str] = []
+
+        for wildcard in (pattern for pattern in strict_patterns if pattern.endswith(".*")):
+            package_name = wildcard[:-2]
+            redundant.extend(
+                f"{pattern} is covered by {wildcard}"
+                for pattern in strict_patterns
+                if pattern not in {package_name, wildcard}
+                and fnmatch.fnmatchcase(pattern, wildcard)
+            )
+
+        self.assertFalse(
+            redundant,
+            "Strict mypy package patterns contain redundant child entries:\n"
+            + "\n".join(sorted(redundant)),
         )
 
     def test_provider_type_surface_uses_ports_instead_of_concrete_subsystems(self) -> None:

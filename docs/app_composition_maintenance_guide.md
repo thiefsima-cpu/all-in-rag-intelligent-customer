@@ -68,6 +68,13 @@ refreshing, validating, or closing active runtime state.
 
 ## Boundary Rules
 
+- Import answer and knowledge-base use cases from `rag_modules.application`, not
+  `rag_modules.app.services`.
+- `rag_modules.app.services` owns only runtime diagnostics and shutdown services.
+- Public bootstrappers may directly call resolved composition collaborators; do
+  not add invocation protocols or adapters that only forward the same method.
+- Do not add forwarding-only modules. Keep a package facade only when it is the
+  documented canonical import surface.
 - Do not add forwarding-only classes to preserve old names.
 - Do not reintroduce `rag_modules/app/provider_components`.
 - Do not reintroduce `ServingRuntimeRefreshService`.

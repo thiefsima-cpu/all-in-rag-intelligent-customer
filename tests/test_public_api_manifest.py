@@ -41,6 +41,25 @@ def _is_within_internal_package(module_name: str) -> bool:
 
 
 class PublicApiManifestTests(unittest.TestCase):
+    def test_app_services_exports_only_real_lifecycle_services(self) -> None:
+        import rag_modules.app.services as app_services
+
+        self.assertEqual(
+            {"RuntimeDiagnosticsService", "RuntimeShutdownService"},
+            set(app_services.__all__),
+        )
+        self.assertFalse(hasattr(app_services, "AnswerWorkflow"))
+        self.assertFalse(hasattr(app_services, "KnowledgeBaseService"))
+
+    def test_app_services_manifest_describes_only_lifecycle_services(self) -> None:
+        entry = canonical_surface_by_module()["rag_modules.app.services"]
+
+        self.assertEqual("service_api", entry.kind)
+        self.assertEqual("rag_modules.app.services", entry.canonical_module)
+        self.assertIn("diagnostics", entry.notes.lower())
+        self.assertIn("shutdown", entry.notes.lower())
+        self.assertNotIn("compatibility", entry.notes.lower())
+
     def test_interfaces_package_exports_api_factories_only(self) -> None:
         import rag_modules.interfaces as interfaces
 

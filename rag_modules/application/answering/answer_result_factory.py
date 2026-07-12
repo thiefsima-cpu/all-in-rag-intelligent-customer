@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .answer_copy import AnswerWorkflowCopy
+from ..ports import AnswerWorkflowCopy
 from .answer_models import AnswerPipelineState, AnswerTraceBundle, QuestionAnswerResult
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import cast
 
-from ...application.answering.answer_copy import AnswerWorkflowCopy
 from ...application.answering.answer_pipeline import AnswerPipelineService
 from ...application.answering.answer_result_factory import QuestionAnswerResultFactory
 from ...application.answering.answer_trace_assembler import AnswerTraceAssembler
@@ -12,6 +11,7 @@ from ...application.answering.answer_workflow import AnswerWorkflow
 from ...application.knowledge_base import KnowledgeBaseService
 from ...application.ports import (
     AnswerTelemetryPort,
+    AnswerWorkflowCopy,
     AnswerWorkflowPort,
     KnowledgeBaseServicePort,
     QueryTracerPort,

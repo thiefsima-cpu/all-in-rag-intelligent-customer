@@ -52,6 +52,12 @@ composition/provider/factory/lifecycle 的完整展开，等请求主线建立�
 assembler 通过小型 `ApplicationContainer` 隐藏 provider 和 bootstrapper 内部细节；
 `SystemRuntimeManager` 负责持有活跃 build runtime 和 serving runtime 状态。
 
+`rag_modules.application` is the canonical Python import surface for answer and
+knowledge-base use cases. `rag_modules.app.services` contains only runtime
+diagnostics and shutdown services; it does not forward application use cases or
+DTOs. Public bootstrappers delegate directly to collaborators resolved by the
+composition roots and do not insert invocation adapters.
+
 provider 边界刻意保持狭窄。`RuntimeProviderSurface` 只暴露当前 facet：
 `infrastructure`、`build_pipeline`、`retrieval_runtime`、顶层 `provide_generation_module`
 和 `services`。Query understanding 属于 retrieval-runtime facet，因为 routing 会同时消费两者；

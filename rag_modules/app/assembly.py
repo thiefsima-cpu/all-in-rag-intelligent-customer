@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..application.answering.answer_models import QuestionAnswerer
 from ..configuration import get_default_config
 from ..configuration.models import GraphRAGConfig
 from .composition import (
@@ -12,12 +13,8 @@ from .composition import (
     AdvancedGraphRAGSystemOverrides,
     SystemBootstrapperOverrides,
 )
-from .contracts import (
-    QuestionAnswerer,
-    RuntimeComponentProvider,
-    SystemFacadeSupportProtocol,
-    SystemOperationsProtocol,
-)
+from .composition.contracts import SystemFacadeSupportProtocol, SystemOperationsProtocol
+from .providers import RuntimeComponentProvider
 from .runtime_operations import RuntimeOperationCoordinator
 
 if TYPE_CHECKING:

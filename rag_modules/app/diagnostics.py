@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from .diagnostics_formatters import startup_diagnostics_lines
-from .diagnostics_models import (
+from .diagnostics_artifact_models import (
     ArtifactBuildMetadataDiagnostics,
     ArtifactManifestDiagnostics,
     ConfigProfileDiagnostics,
+)
+from .diagnostics_formatters import startup_diagnostics_lines
+from .diagnostics_runtime_models import StartupDiagnostics, SystemStatsDiagnostics
+from .diagnostics_stats_models import (
     DataStatsDiagnostics,
     IndexStatsDiagnostics,
     ModelDiagnostics,
     RetrievalRuntimeProfileDiagnostics,
     RouteStatsDiagnostics,
     RuntimeProfileSectionDiagnostics,
-    StartupDiagnostics,
-    SystemStatsDiagnostics,
     TraceStatsDiagnostics,
 )
 
