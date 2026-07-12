@@ -213,6 +213,22 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
         ):
             self.assertIn(expected, guide)
 
+        for expected in (
+            "rag_modules.application",
+            "rag_modules.app.services",
+            "directly call resolved composition collaborators",
+            "Do not add forwarding-only modules",
+        ):
+            self.assertIn(expected, guide)
+
+        for expected in (
+            "rag_modules.application.*",
+            "rag_modules.app.diagnostics",
+            "rag_modules.app.services.answer_*",
+            "rag_modules.runtime.snapshot_utils",
+        ):
+            self.assertIn(expected, policy)
+
         self.assertIn("app_composition_maintenance_guide.md", architecture)
         self.assertIn("rag_modules.app.provider_components", policy)
         self.assertIn("ServingRuntimeRefreshService", policy)

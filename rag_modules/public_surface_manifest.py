@@ -116,7 +116,7 @@ SERVICE_API_SURFACE: tuple[PublicSurfaceEntry, ...] = (
         "service_api",
         "rag_modules.app.services",
         "canonical",
-        "Compatibility imports for services now owned by rag_modules.application.",
+        "Runtime diagnostics and shutdown services owned by application composition.",
     ),
     PublicSurfaceEntry(
         "rag_modules.routing",
