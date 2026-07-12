@@ -15,6 +15,7 @@ from rag_modules.kernel.artifacts import (
     DocumentArtifactResult,
 )
 from rag_modules.kernel.documents import TextDocument
+from rag_modules.runtime.artifact_adapters import DefaultRuntimeArtifactAccess
 from rag_modules.runtime.artifacts import ArtifactManifestStore
 
 
@@ -517,3 +518,51 @@ def test_rollback_without_previous_target_drops_alias_and_resets_state() -> None
     assert module.active_collection_name == ""
     assert module.physical_collection_name("green") == "recipes__green"
     assert module.physical_collection_name("other") == "recipes__blue"
+
+
+class _LegacyVectorIndex:
+    def __init__(self) -> None:
+        self.collection_name = "recipes"
+        self.build_calls: list[tuple[list[TextDocument], dict[str, object]]] = []
+
+    def has_collection(self) -> int:
+        return 1
+
+    def load_collection(self) -> int:
+        return 1
+
+    def build_vector_index(self, chunks, **kwargs):
+        self.build_calls.append((list(chunks), dict(kwargs)))
+        return 1
+
+    def delete_collection(self) -> int:
+        return 1
+
+
+def test_default_artifact_access_uses_legacy_vector_fallbacks() -> None:
+    access = DefaultRuntimeArtifactAccess()
+    index = _LegacyVectorIndex()
+    manifest = ArtifactManifest(collection_name="recipes__blue")
+
+    assert access.configure_vector_collection(index, manifest) == "recipes__blue"
+    assert index.collection_name == "recipes__blue"
+    assert access.has_vector_collection(index) is True
+    assert access.load_vector_collection(index) is True
+    assert access.prepare_vector_index_build(index) == {
+        "collection_name": "recipes__blue",
+        "collection_base_name": "recipes__blue",
+        "collection_slot": "",
+    }
+    assert access.publish_vector_index(index, "recipes__green") == ""
+    assert index.collection_name == "recipes__green"
+    assert access.discard_vector_index(index, "recipes__candidate") is True
+    assert access.delete_vector_collection(index) is True
+
+
+def test_default_artifact_access_passes_explicit_build_collection() -> None:
+    access = DefaultRuntimeArtifactAccess()
+    index = _LegacyVectorIndex()
+    chunks = [TextDocument(content="chunk")]
+
+    assert access.build_vector_index(index, chunks, collection_name="recipes__green") is True
+    assert index.build_calls[0][1] == {"collection_name": "recipes__green"}

@@ -219,6 +219,49 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
             },
         )
 
+    def test_recipe_document_builder_handles_sparse_invalid_relationship_rows(self) -> None:
+        driver = self._build_driver()
+        driver.responses["recipes"][0]["originalProperties"].update(
+            {
+                "difficulty": "invalid",
+                "tags": ["quick", "", "quick"],
+                "prepTime": "",
+                "cookTime": None,
+            }
+        )
+        driver.responses["recipe_ingredients"] = [
+            {
+                "recipe_id": "200000001",
+                "name": "tofu",
+                "category": "",
+                "amount": None,
+                "unit": "",
+                "description": "",
+            }
+        ]
+        driver.responses["recipe_steps"] = [
+            {
+                "recipe_id": "200000001",
+                "name": "",
+                "description": "simmer",
+                "stepNumber": "bad",
+                "methods": [],
+                "tools": None,
+                "timeEstimate": "",
+                "stepOrder": "bad",
+            }
+        ]
+        module = GraphDataPreparationModule(database="neo4j", driver=driver)
+        module.load_graph_data()
+
+        [document] = module.build_recipe_documents()
+
+        self.assertEqual(document.metadata["ingredients_count"], 1)
+        self.assertEqual(document.metadata["steps_count"], 1)
+        self.assertIn("tofu", document.content)
+        self.assertIn("simmer", document.content)
+        self.assertEqual(document.metadata["difficulty"], "invalid")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from rag_modules.contracts import RequestCancelled, RequestControl
 from rag_modules.generation.clients import (
@@ -247,6 +248,51 @@ class GenerationClientAdapterTests(unittest.TestCase):
             "generation_provider_empty_content",
         )
         self.assertEqual(len(client.completions.calls), 1)
+
+    def test_completion_estimates_usage_when_provider_omits_usage(self) -> None:
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="estimated completion"))]
+        )
+        adapter = GenerationClientAdapter(
+            client=_FakeClient([response]),
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=1,
+            stream_timeout_seconds=5,
+        )
+
+        result = adapter.create_completion(
+            prompt="estimated prompt",
+            temperature=0.0,
+            max_tokens=10,
+            timeout=2,
+        )
+
+        self.assertEqual(GenerationClientAdapter.response_text(result), "estimated completion")
+        usage = adapter.consume_token_usage()
+        self.assertEqual(usage["token_usage_source"], "estimated")
+        self.assertGreater(usage["total_tokens"], 0)
+
+    def test_consume_retry_count_resets_after_provider_retry(self) -> None:
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+        adapter = GenerationClientAdapter(
+            client=_FakeClient([TimeoutError("transient"), response]),
+            model_name="test-model",
+            default_temperature=0.0,
+            request_retries=2,
+            stream_timeout_seconds=5,
+        )
+
+        with patch("rag_modules.generation.clients.adapter.time.sleep"):
+            adapter.create_completion(
+                prompt="retry",
+                temperature=0.0,
+                max_tokens=10,
+                timeout=3,
+            )
+
+        self.assertEqual(adapter.consume_retry_count(), 1)
+        self.assertEqual(adapter.consume_retry_count(), 0)
 
 
 if __name__ == "__main__":
