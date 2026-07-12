@@ -172,6 +172,67 @@ class GraphRetrievalDtoBoundaryTests(unittest.TestCase):
             },
         )
 
+    def test_evidence_builder_handles_empty_paths_and_relationship_defaults(self) -> None:
+        builder = GraphEvidenceBuilder()
+        self.assertTrue(builder.build_path_description(GraphPath()))
+
+        path = GraphPath(
+            nodes=[
+                GraphNodeSnapshot(node_id="r1", name="Recipe", labels=("Recipe",)),
+                GraphNodeSnapshot(node_id="i1", name="Pepper", labels=("Ingredient",)),
+            ],
+            relationships=[GraphRelationshipSnapshot(start_node_id="r1", end_node_id="i1")],
+        )
+
+        self.assertIn("RELATED", builder.build_path_description(path))
+
+    def test_relationship_lines_deduplicate_and_respect_limit(self) -> None:
+        builder = GraphEvidenceBuilder()
+        relation = GraphRelationshipSnapshot(
+            relation_type="USES",
+            start_node_id="r1",
+            end_node_id="i1",
+        )
+        subgraph = KnowledgeSubgraph(
+            central_nodes=[GraphNodeSnapshot(node_id="r1", name="Recipe")],
+            connected_nodes=[GraphNodeSnapshot(node_id="i1", name="Pepper")],
+            relationships=[relation, relation],
+        )
+
+        self.assertEqual(
+            builder.relationship_lines(subgraph, limit=1),
+            ["Recipe -[USES]-> Pepper"],
+        )
+
+    def test_subgraph_description_and_evidence_use_fallback_identity(self) -> None:
+        builder = GraphEvidenceBuilder()
+        subgraph = KnowledgeSubgraph(graph_metrics={"density": 0.25})
+
+        [document] = builder.subgraph_to_evidence(subgraph, ["chain"], "query")
+
+        self.assertEqual(document.node_id, "")
+        self.assertEqual(document.score, 0.25)
+        self.assertEqual(document.recipe_graph_evidence["reasoning_chains"], ["chain"])
+
+    def test_subgraph_description_includes_nodes_and_deduplicated_relationships(self) -> None:
+        builder = GraphEvidenceBuilder()
+        subgraph = KnowledgeSubgraph(
+            central_nodes=[GraphNodeSnapshot(node_id="r1", name="Recipe")],
+            connected_nodes=[
+                GraphNodeSnapshot(node_id="i1", name="Pepper", labels=("Ingredient",))
+            ],
+            relationships=[
+                GraphRelationshipSnapshot(
+                    relation_type="USES", start_node_id="r1", end_node_id="i1"
+                )
+            ],
+        )
+
+        description = builder.build_subgraph_description(subgraph)
+
+        self.assertIn("Pepper", description)
+        self.assertIn("USES", description)
+
 
 if __name__ == "__main__":
     unittest.main()
