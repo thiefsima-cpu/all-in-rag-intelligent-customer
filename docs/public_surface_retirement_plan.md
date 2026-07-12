@@ -40,7 +40,8 @@ it does not imply API version `2.0.0` or package version `1.0.0`.
 
 ## Canonical Packages
 
-- Application: `rag_modules.app.*`
+- Application use cases and ports: `rag_modules.application.*`
+- Application composition and runtime facade: `rag_modules.app.*`
 - Configuration: `rag_modules.configuration.*`
 - Contract kernel: `rag_modules.contracts.*`
 - Generation: `rag_modules.generation.*`
@@ -76,6 +77,8 @@ their package. These are formal export surfaces, not compatibility shims, and
 their code comments should use canonical facade or export-surface language.
 Current examples include:
 
+- `rag_modules.app.diagnostics` is the single diagnostics DTO facade and imports
+  directly from the artifact, runtime, and stats diagnostics owner modules.
 - `rag_modules.interfaces.api.answer_models` for answer API DTOs.
 - `rag_modules.contracts.build_jobs` for build-job domain models, events,
   reducer logic, and repository/runner ports.
@@ -161,6 +164,14 @@ replacement policy.
 - New implementation lands in canonical packages only.
 - Compatibility tests should assert retirement and canonical replacements, not
   legacy import behavior.
+- The application-use-case compatibility modules under
+  `rag_modules.app.services.answer_*`,
+  `rag_modules.app.services.knowledge_base_service`, and
+  `rag_modules.app.services.trace_adapters` are retired in favor of
+  `rag_modules.application`. The internal aggregates
+  `rag_modules.app.contracts`, `rag_modules.app.diagnostics_models`, and
+  `rag_modules.runtime.snapshot_utils`, plus the bootstrap invocation support
+  modules, must fail instead of forwarding.
 - Internal compatibility shells are retired too. Runtime assembly must use
   `BuildRuntimeFactory.build()` and `ServingRuntimeFactory.build()` directly;
   `rag_modules.app.composition.build_runtime_assembler`,
@@ -213,7 +224,7 @@ grouped runtime views.
 - `evidence` facades retired in favor of `rag_modules.evidence_processing`.
 - `application`, `knowledge_base_service`, and `question_answer_service`
   facades retired in favor of `rag_modules.app.system` and
-  `rag_modules.app.services.*`.
+  `rag_modules.application.*`.
 - `generation_integration` and `hybrid_retrieval` facades retired in favor of
   `rag_modules.generation.service` and `rag_modules.retrieval.hybrid_service`.
 - `QuestionAnswerService` retired in favor of `AnswerWorkflow`.

@@ -51,6 +51,15 @@ class PublicApiManifestTests(unittest.TestCase):
         self.assertFalse(hasattr(app_services, "AnswerWorkflow"))
         self.assertFalse(hasattr(app_services, "KnowledgeBaseService"))
 
+    def test_app_services_manifest_describes_only_lifecycle_services(self) -> None:
+        entry = canonical_surface_by_module()["rag_modules.app.services"]
+
+        self.assertEqual("service_api", entry.kind)
+        self.assertEqual("rag_modules.app.services", entry.canonical_module)
+        self.assertIn("diagnostics", entry.notes.lower())
+        self.assertIn("shutdown", entry.notes.lower())
+        self.assertNotIn("compatibility", entry.notes.lower())
+
     def test_interfaces_package_exports_api_factories_only(self) -> None:
         import rag_modules.interfaces as interfaces
 
