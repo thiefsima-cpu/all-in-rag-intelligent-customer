@@ -1,12 +1,11 @@
-"""Application services."""
+"""Service exports retained at the stable app boundary."""
 
-from ...query_understanding.service import (
-    QueryUnderstandingResult,
-    QueryUnderstandingService,
+from ...application.answering import (
+    AnswerWorkflow,
+    QuestionAnswerResponse,
+    QuestionAnswerResult,
 )
-from .answer_models import QuestionAnswerResponse, QuestionAnswerResult
-from .answer_workflow import AnswerWorkflow
-from .knowledge_base_service import KnowledgeBaseService
+from ...application.knowledge_base import KnowledgeBaseService
 from .runtime_diagnostics_service import RuntimeDiagnosticsService
 from .runtime_shutdown_service import RuntimeShutdownService
 
@@ -15,8 +14,6 @@ __all__ = [
     "KnowledgeBaseService",
     "QuestionAnswerResponse",
     "QuestionAnswerResult",
-    "QueryUnderstandingResult",
-    "QueryUnderstandingService",
     "RuntimeDiagnosticsService",
     "RuntimeShutdownService",
 ]

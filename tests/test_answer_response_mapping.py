@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from rag_modules.app.services.answer_models import QuestionAnswerResult
+from rag_modules.application.answering.answer_models import QuestionAnswerResult
 from rag_modules.contracts import (
     EvidenceDocument,
     QueryPlan,

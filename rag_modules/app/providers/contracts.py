@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ...application.ports import (
+    AnswerWorkflowPort,
+    KnowledgeBaseServicePort,
+    QueryTracerPort,
+)
 from ...build_pipeline.contracts import (
     DocumentArtifactBuilderPort,
     SemanticGraphSchemaSyncPort,
@@ -22,11 +27,8 @@ from ...runtime.artifact_ports import (
 )
 from ...runtime.stats_ports import RuntimeStatsAccessPort
 from ..ports import (
-    AnswerWorkflowPort,
     GraphDataModulePort,
-    KnowledgeBaseServicePort,
     Neo4jManagerPort,
-    QueryTracerPort,
     RuntimeDiagnosticsServicePort,
     RuntimeShutdownServicePort,
     ServingGraphRAGRetrievalPort,
@@ -213,6 +215,7 @@ class ApplicationServiceProvider(Protocol):
         query_router: RoutingWorkflowProtocol,
         generation_module: GenerationWorkflowPort,
         query_tracer: QueryTracerPort,
+        retrieval_profile: RetrievalRuntimeProfile,
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> AnswerWorkflowPort: ...
 

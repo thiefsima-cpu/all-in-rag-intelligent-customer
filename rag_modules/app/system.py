@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
+from ..application.answering.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from ..configuration.models import GraphRAGConfig
 from ..contracts import RequestControl
 from ..kernel.artifacts import ArtifactManifest
@@ -14,7 +15,6 @@ from .contracts import (
     SystemFacadeSupportProtocol,
     SystemOperationsProtocol,
 )
-from .services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 
 if TYPE_CHECKING:
     from .bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper

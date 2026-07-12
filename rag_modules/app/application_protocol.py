@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from ..application.answering.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from ..configuration.models import GraphRAGConfig
 from ..contracts import RequestControl
 from .composition.shared import ProgressCallback
 from .diagnostics import StartupDiagnostics
 from .runtime_state import BuildRuntime, ServingRuntime
-from .services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 
 
 class GraphRAGApplication(Protocol):

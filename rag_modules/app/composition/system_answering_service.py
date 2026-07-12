@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from ...application.answering.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from ...contracts import RequestControl
 from ..ports import AnswerWorkflowPort
-from ..services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
 from .contracts import SystemOperationsProtocol
 from .runtime_state_store import RuntimeStateStore
 

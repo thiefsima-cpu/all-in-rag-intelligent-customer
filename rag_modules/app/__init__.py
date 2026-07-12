@@ -1,4 +1,4 @@
-"""Application layer exports for GraphRAG."""
+"""Runtime facade and composition entrypoints for GraphRAG."""
 
 from .assembly import (
     ApplicationAssembler,

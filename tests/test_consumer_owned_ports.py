@@ -9,7 +9,7 @@ def test_aggregate_runtime_contract_modules_are_deleted() -> None:
 
 
 def test_each_consumer_owns_its_ports() -> None:
-    from rag_modules.app.ports import QueryTracerPort
+    from rag_modules.application.ports import QueryTracerPort
     from rag_modules.build_pipeline.ports import (
         GraphDataModulePort as BuildGraphDataModulePort,
     )
@@ -24,7 +24,7 @@ def test_each_consumer_owns_its_ports() -> None:
     from rag_modules.routing.ports import GraphRAGRetrievalPort, HybridRetrievalPort
     from rag_modules.runtime.ports import GraphDataModulePort as RuntimeGraphDataModulePort
 
-    assert QueryTracerPort.__module__ == "rag_modules.app.ports"
+    assert QueryTracerPort.__module__ == "rag_modules.application.ports"
     assert BuildGraphDataModulePort.__module__ == "rag_modules.build_pipeline.ports"
     assert BuildVectorIndexModulePort.__module__ == "rag_modules.build_pipeline.ports"
     assert GenerationLLMClientPort.__module__ == "rag_modules.generation.ports"
