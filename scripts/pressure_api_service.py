@@ -13,7 +13,10 @@ from typing import Literal
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from rag_modules.app.diagnostics import ArtifactManifestDiagnostics, StartupDiagnostics
-from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerSummary
+from rag_modules.application.answering.answer_models import (
+    QuestionAnswerResponse,
+    QuestionAnswerSummary,
+)
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.interfaces.api.services import GraphRAGServingApiService

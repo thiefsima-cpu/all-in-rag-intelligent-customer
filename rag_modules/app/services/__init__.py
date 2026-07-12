@@ -1,19 +1,6 @@
-"""Service exports retained at the stable app boundary."""
+"""Runtime diagnostics and shutdown services owned by application composition."""
 
-from ...application.answering import (
-    AnswerWorkflow,
-    QuestionAnswerResponse,
-    QuestionAnswerResult,
-)
-from ...application.knowledge_base import KnowledgeBaseService
 from .runtime_diagnostics_service import RuntimeDiagnosticsService
 from .runtime_shutdown_service import RuntimeShutdownService
 
-__all__ = [
-    "AnswerWorkflow",
-    "KnowledgeBaseService",
-    "QuestionAnswerResponse",
-    "QuestionAnswerResult",
-    "RuntimeDiagnosticsService",
-    "RuntimeShutdownService",
-]
+__all__ = ["RuntimeDiagnosticsService", "RuntimeShutdownService"]

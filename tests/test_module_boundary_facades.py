@@ -6,6 +6,28 @@ import unittest
 
 
 class ModuleBoundaryFacadeTests(unittest.TestCase):
+    def test_application_use_case_compatibility_modules_are_retired(self) -> None:
+        module_names = (
+            "rag_modules.app.services.answer_copy",
+            "rag_modules.app.services.answer_models",
+            "rag_modules.app.services.answer_pipeline",
+            "rag_modules.app.services.answer_result_factory",
+            "rag_modules.app.services.answer_trace_assembler",
+            "rag_modules.app.services.answer_workflow",
+            "rag_modules.app.services.knowledge_base_service",
+            "rag_modules.app.services.trace_adapters",
+            "rag_modules.application.answering.answer_copy",
+        )
+        for module_name in module_names:
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
     def test_configuration_sections_package_exports_section_loaders(self) -> None:
         from rag_modules.configuration import sections
 
