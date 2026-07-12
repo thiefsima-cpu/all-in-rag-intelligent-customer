@@ -427,6 +427,12 @@ class BuildJobRunnerTests(unittest.TestCase):
                     time.sleep(0.01)
             finally:
                 system.allow_progress.set()
+                _wait_for_status(
+                    service,
+                    submitted.job_id,
+                    BuildJobStatus.SUCCEEDED,
+                    timeout=2.0,
+                )
                 runner.shutdown()
 
         self.assertGreater(
