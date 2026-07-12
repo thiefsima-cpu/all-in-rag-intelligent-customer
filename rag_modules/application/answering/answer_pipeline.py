@@ -13,8 +13,7 @@ from ...contracts.runtime import (
     QueryAnalysis,
 )
 from ...safe_logging import log_failure
-from ..ports import AnswerTelemetryPort
-from .answer_copy import AnswerWorkflowCopy
+from ..ports import AnswerTelemetryPort, AnswerWorkflowCopy
 from .answer_models import AnswerPipelineState, ChunkCallback, MessageCallback
 from .trace_adapters import (
     ExplainableQueryRouterProtocol,
