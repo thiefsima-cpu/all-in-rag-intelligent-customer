@@ -1,6 +1,6 @@
 # Over-Abstraction and File-Fragmentation Convergence Design
 
-Status: approved in conversation; pending written-spec review
+Status: approved
 
 ## Context
 
@@ -83,8 +83,10 @@ Delete these compatibility or aggregation modules:
 - `rag_modules/app/services/answer_workflow.py`
 - `rag_modules/app/services/knowledge_base_service.py`
 - `rag_modules/app/services/trace_adapters.py`
+- `rag_modules/application/answering/answer_copy.py`
 - `rag_modules/runtime/snapshot_utils.py`
 - `rag_modules/app/contracts.py`
+- `rag_modules/app/diagnostics_models.py`
 - `rag_modules/app/bootstrap_facade_contracts.py`
 - `rag_modules/app/bootstrap_facade_support.py`
 
@@ -99,12 +101,16 @@ The resulting ownership is:
 - provider contracts: `rag_modules.app.providers.contracts`; and
 - diagnostics and shutdown behavior: real modules under `rag_modules.app.services`.
 
+`rag_modules.app.diagnostics` remains the single approved diagnostics facade and imports its
+artifact, runtime, and stats DTOs directly from their owning modules. The intermediate
+`rag_modules.app.diagnostics_models` aggregate is not retained.
+
 `rag_modules.app.services.__init__` remains, but it exports only
 `RuntimeDiagnosticsService` and `RuntimeShutdownService`. It does not re-export application use
 cases or DTOs. Root and package-level public exports that intentionally expose application types
 must resolve directly to `rag_modules.application`, not through `rag_modules.app.services`.
 
-Deleting the twelve modules above is expected to reduce the main-package file count by twelve.
+Deleting the fourteen modules above is expected to reduce the main-package file count by fourteen.
 The implementation must report the measured result rather than treating that estimate as proof.
 
 ## Bootstrap Simplification
@@ -251,7 +257,7 @@ an existing strict module or relax strict flags to make the gate pass.
 
 The convergence is complete only when all of the following are true:
 
-- the twelve retired modules are absent;
+- the fourteen retired modules are absent;
 - old imports fail instead of forwarding;
 - canonical imports point directly to application, composition, provider, or contract owners;
 - the four bootstrap-only protocols and three invocation adapters are absent;
