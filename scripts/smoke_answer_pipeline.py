@@ -12,7 +12,6 @@ from typing import Iterable, List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.app.services.answer_workflow import AnswerWorkflow
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import EvidenceDocument, QueryPlan, QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
@@ -26,6 +25,9 @@ from rag_modules.contracts.runtime import (
 )
 from scripts.smoke_answer_pipeline_support import (
     OfflineGenerationModule as _OfflineGenerationModule,
+)
+from scripts.smoke_answer_pipeline_support import (
+    build_answer_workflow as _build_answer_workflow,
 )
 from scripts.smoke_answer_pipeline_support import (
     build_tracer as _build_tracer,
@@ -250,7 +252,7 @@ def evaluate_case(case: AnswerPipelineCase) -> dict:
     )
     generation_module = _OfflineGenerationModule([case.answer_text])
     tracer, sink = _build_tracer()
-    service = AnswerWorkflow(
+    service = _build_answer_workflow(
         config=config,
         query_router=router,
         generation_module=generation_module,

@@ -28,12 +28,12 @@ from ..contracts.runtime import (
     analysis_strategy_name,
 )
 from ..contracts.runtime.errors import ensure_runtime_error_detail
-from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
-from ..runtime.snapshot_utils import (
+from ..contracts.runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
 from .retrieval_snapshots import summarize_documents
 
 

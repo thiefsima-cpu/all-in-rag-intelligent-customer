@@ -5,6 +5,9 @@ which provider, factory, or lifecycle service owns the edit?
 
 The short rule is:
 
+- `rag_modules/application/` owns pure use cases, consumer-owned ports, and
+  application DTOs. It must receive semantic settings, pipelines, workflows,
+  telemetry, and other runtime collaborators through constructor injection.
 - `rag_modules/app/providers/` owns concrete collaborator selection behind
   the public `rag_modules.app.providers` facade.
 - `rag_modules/app/composition/*_factory.py` owns runtime object graph assembly.
@@ -23,7 +26,7 @@ canonical provider surface is `rag_modules.app.providers`.
 | Document artifact builder or semantic graph schema sync | `BuildPipelineProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/build_pipeline.py` | Build-only services that materialize artifacts belong here, not in lifecycle services. |
 | Retrieval runtime profile, query understanding service, hybrid retrieval, graph retrieval, routing workflow | `RetrievalRuntimeProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/retrieval_runtime.py` | Query understanding and retrieval are one serving runtime facet because routing needs both. |
 | Grounded generation workflow construction | `RuntimeComponentProvider.provide_generation_module` in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/generation.py` | Generation is a top-level provider method because serving assembly wires it directly into answer workflow. |
-| Runtime stats, diagnostics, shutdown, knowledge base service, answer workflow | `ApplicationServiceProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/services.py` | Application services sit above infrastructure and retrieval/generation collaborators. |
+| Runtime stats, diagnostics, shutdown, knowledge base service, answer workflow | `ApplicationServiceProvider` protocol in `rag_modules/app/providers/contracts.py`; default implementation in `rag_modules/app/providers/services.py` | The provider constructs concrete build/answer collaborators and injects them into use cases under `rag_modules/application/`. |
 
 ## Factory Map
 
@@ -57,8 +60,8 @@ refreshing, validating, or closing active runtime state.
 | --- | --- | --- |
 | A new storage or tracing adapter | `InfrastructureProvider` | Build and serving factories consume the new collaborator through provider methods. |
 | A new retrieval strategy or routing dependency | `RetrievalRuntimeProvider` | `ServingRuntimeFactory` wires the strategy into `RoutingWorkflowService`. |
-| Answer workflow dependencies | `ApplicationServiceProvider.provide_answer_workflow` | `ServingRuntimeFactory` should pass explicit runtime collaborators. |
-| Knowledge-base build dependencies | `BuildPipelineProvider` or `ApplicationServiceProvider.provide_knowledge_base_service` | `BuildRuntimeFactory` should remain the assembly point. |
+| Answer workflow dependencies | `ApplicationServiceProvider.provide_answer_workflow` | `ServingRuntimeFactory` passes the resolved retrieval profile; the provider injects semantic settings, pipeline, trace/result assembly, telemetry, and latency budget. |
+| Knowledge-base build dependencies | `BuildPipelineProvider` or `ApplicationServiceProvider.provide_knowledge_base_service` | `BuildRuntimeFactory` supplies build ports; the provider constructs `KnowledgeBaseBuildWorkflow` and injects it into the application use case. |
 | Hot refresh after build/rebuild | `ServingRuntimeLifecycleService.refresh_from_build` | `BuildRuntimeLifecycleService` should delegate to it. |
 | Public bootstrapper behavior | `bootstrapper_composer.py` plus focused bootstrapper tests | Avoid adding new logic to public facade methods. |
 | Full system construction order | `system_composer.py` | Keep provider resolution in `provider_resolution.py` and lifecycle bundle assembly in `runtime_lifecycle_service_composer.py`. |
@@ -70,4 +73,6 @@ refreshing, validating, or closing active runtime state.
 - Do not reintroduce `ServingRuntimeRefreshService`.
 - Keep provider methods about collaborator creation, not active runtime state.
 - Keep lifecycle services about runtime transitions, not low-level adapter construction.
+- Keep `rag_modules/application/` free of imports from configuration, build pipeline,
+  retrieval, routing, generation, infrastructure, query policy, and app composition.
 - Update focused tests when a boundary moves; boundary tests protect retired import paths and composition ownership.

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ...application.answering.answer_models import QuestionAnswerer
 from ...configuration import get_default_config
 from ...configuration.models import GraphRAGConfig
 from ..ports import RuntimeDiagnosticsServicePort, RuntimeShutdownServicePort
-from ..services.answer_models import QuestionAnswerer
 from .bootstrapper_composer import GraphRAGBootstrapperComposer
 from .contracts import (
     SystemFacadeSupportProtocol,

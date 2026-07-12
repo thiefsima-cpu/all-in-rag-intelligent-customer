@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Iterable
 
+from rag_modules.app.providers import create_default_runtime_provider
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts.runtime.generation import GenerationSnapshot
 from rag_modules.contracts.runtime.workflows import AnswerContext
@@ -17,6 +18,7 @@ from rag_modules.generation import (
 )
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import QueryTraceSink
+from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
 
 
 class CaptureSink(QueryTraceSink):
@@ -116,3 +118,23 @@ def build_tracer() -> tuple[QueryTracer, CaptureSink]:
         sink=sink,
     )
     return tracer, sink
+
+
+def build_answer_workflow(
+    *,
+    config,
+    query_router,
+    generation_module,
+    query_tracer,
+    retrieval_profile=None,
+):
+    """Compose the answer use case with the same provider used by runtime assembly."""
+
+    retrieval_profile = retrieval_profile or RetrievalRuntimeProfileFactory().build(config)
+    return create_default_runtime_provider().services.provide_answer_workflow(
+        config=config,
+        query_router=query_router,
+        generation_module=generation_module,
+        query_tracer=query_tracer,
+        retrieval_profile=retrieval_profile,
+    )

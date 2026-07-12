@@ -19,7 +19,10 @@ from rag_modules.app.diagnostics import (
     StartupDiagnostics,
     TraceStatsDiagnostics,
 )
-from rag_modules.app.services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
+from rag_modules.application.answering.answer_models import (
+    QuestionAnswerResponse,
+    QuestionAnswerResult,
+)
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import (

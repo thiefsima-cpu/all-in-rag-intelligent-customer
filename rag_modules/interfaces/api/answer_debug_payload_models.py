@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...app.services.answer_models import (
+from ...application.answering.answer_models import (
     QuestionAnswerDiagnostics,
     QuestionAnswerGrounding,
     QuestionAnswerResponse,

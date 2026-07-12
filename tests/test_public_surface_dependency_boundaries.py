@@ -220,6 +220,43 @@ class PublicSurfaceDependencyBoundaryTests(PublicSurfaceBoundaryTestCase):
             + "\n".join(violations),
         )
 
+    def test_application_layer_depends_only_on_contracts_kernel_and_safe_utilities(self) -> None:
+        application_dir = RAG_MODULES_DIR / "application"
+        allowed_modules = {
+            "rag_modules.application",
+            "rag_modules.contracts",
+            "rag_modules.kernel",
+            "rag_modules.safe_logging",
+        }
+        violations: list[str] = []
+
+        self.assertTrue(application_dir.is_dir(), "rag_modules/application package is missing")
+        for path in application_dir.rglob("*.py"):
+            rel = path.relative_to(ROOT)
+            for lineno, line, module_name, _imported_name in self._iter_resolved_imports(path):
+                if module_name.startswith("rag_modules.") and not self._module_matches(
+                    module_name,
+                    allowed_modules,
+                ):
+                    violations.append(f"{rel}:{lineno}: {line}")
+
+        self.assertFalse(
+            violations,
+            "Application use cases must receive feature implementations from composition:\n"
+            + "\n".join(violations),
+        )
+
+    def test_application_use_cases_do_not_construct_feature_workflows_or_factories(self) -> None:
+        answer_source = (
+            RAG_MODULES_DIR / "application" / "answering" / "answer_workflow.py"
+        ).read_text(encoding="utf-8-sig")
+        knowledge_base_source = (RAG_MODULES_DIR / "application" / "knowledge_base.py").read_text(
+            encoding="utf-8-sig"
+        )
+
+        self.assertNotIn("RetrievalRuntimeProfileFactory", answer_source)
+        self.assertNotIn("KnowledgeBaseBuildWorkflow(", knowledge_base_source)
+
     def test_runtime_models_do_not_depend_on_retrieval_or_query_understanding(self) -> None:
         prohibited = {
             "rag_modules.query_understanding",

@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Protocol
 
-from ..contracts import EvidenceDocument, RequestControl, RetrievalRequest
-from ..contracts.runtime import (
-    AnswerContext,
-    GenerationSnapshot,
-    GraphRetrievalSnapshot,
-    QueryTraceEvent,
-    RetrievalOutcome,
-    RouteSnapshot,
-    RuntimeErrorDetail,
+from ..application.ports import (
+    AnswerWorkflowPort,
+    ChunkCallback,
+    CloseablePort,
+    KnowledgeBaseServicePort,
+    MessageCallback,
+    ProgressCallback,
+    QueryTracerPort,
 )
-from ..kernel.artifacts import ArtifactManifest
+from ..contracts import RetrievalRequest
 from ..kernel.documents import TextDocument
-from ..kernel.json_types import JsonObject, JsonValue
+from ..kernel.json_types import JsonObject
 from ..routing.ports import GraphRAGRetrievalPort, HybridRetrievalPort
 from .diagnostics import StartupDiagnostics, SystemStatsDiagnostics
 
@@ -25,11 +23,6 @@ if TYPE_CHECKING:
     from ..build_pipeline.graph_preparation.models import GraphLoadCounts, GraphNode
     from ..build_pipeline.graph_preparation.statistics import GraphPreparationStats
     from .runtime_view import SystemRuntime
-    from .services.answer_models import QuestionAnswerResponse, QuestionAnswerResult
-
-ProgressCallback = Callable[[str], None] | None
-MessageCallback = Callable[[str], None] | None
-ChunkCallback = Callable[[str], None] | None
 
 
 class Neo4jDriverPort(Protocol):
@@ -100,33 +93,6 @@ class VectorIndexModulePort(Protocol):
     def close(self) -> None: ...
 
 
-class QueryTracerPort(Protocol):
-    """Query trace behavior consumed by app workflow and lifecycle orchestration."""
-
-    def record(
-        self,
-        query: str,
-        analysis: object,
-        documents: list[EvidenceDocument] | RetrievalOutcome | AnswerContext,
-        latency_ms: float,
-        answer: str | None = None,
-        error: RuntimeErrorDetail | Mapping[str, JsonValue] | None = None,
-        route_trace: Mapping[str, JsonValue] | RouteSnapshot | None = None,
-        graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None = None,
-        generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None = None,
-    ) -> QueryTraceEvent: ...
-
-    def stats(self) -> JsonObject: ...
-
-    def close(self) -> None: ...
-
-
-class CloseablePort(Protocol):
-    """Generic closeable resource consumed by lifecycle orchestration."""
-
-    def close(self) -> object: ...
-
-
 class RuntimeDiagnosticsServicePort(Protocol):
     """Runtime diagnostics behavior consumed by app composition."""
 
@@ -154,42 +120,6 @@ class RuntimeShutdownServicePort(Protocol):
     def close(self, *, runtime: "SystemRuntime") -> None: ...
 
 
-class KnowledgeBaseServicePort(Protocol):
-    """Knowledge-base lifecycle behavior consumed by app composition."""
-
-    @property
-    def artifacts_ready(self) -> bool: ...
-
-    @property
-    def system_ready(self) -> bool: ...
-
-    @property
-    def artifact_manifest(self) -> ArtifactManifest: ...
-
-    @artifact_manifest.setter
-    def artifact_manifest(self, manifest: ArtifactManifest) -> None: ...
-
-    def build(
-        self,
-        progress: ProgressCallback = None,
-        *,
-        request_id: str = "",
-        build_job_id: str = "",
-    ) -> None: ...
-
-    def rebuild(
-        self,
-        progress: ProgressCallback = None,
-        *,
-        request_id: str = "",
-        build_job_id: str = "",
-    ) -> None: ...
-
-    def show_stats(self, progress: ProgressCallback = None) -> None: ...
-
-    def close(self) -> None: ...
-
-
 class ServingHybridRetrievalPort(HybridRetrievalPort, Protocol):
     """Hybrid retrieval behavior consumed by serving lifecycle preparation."""
 
@@ -204,30 +134,6 @@ class ServingGraphRAGRetrievalPort(GraphRAGRetrievalPort, Protocol):
     def initialize(self) -> None: ...
 
     def close(self) -> None: ...
-
-
-class AnswerWorkflowPort(Protocol):
-    """Question-answer workflow behavior consumed by app composition."""
-
-    def answer_question(
-        self,
-        question: str,
-        stream: bool = False,
-        explain_routing: bool = False,
-        message_callback: MessageCallback = None,
-        chunk_callback: ChunkCallback = None,
-        control: RequestControl | None = None,
-    ) -> QuestionAnswerResult: ...
-
-    def answer_question_response(
-        self,
-        question: str,
-        stream: bool = False,
-        explain_routing: bool = False,
-        message_callback: MessageCallback = None,
-        chunk_callback: ChunkCallback = None,
-        control: RequestControl | None = None,
-    ) -> QuestionAnswerResponse: ...
 
 
 __all__ = [
