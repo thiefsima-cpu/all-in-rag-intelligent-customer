@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 
 def test_app_diagnostics_facade_reexports_split_models_and_formatter() -> None:
     facade = importlib.import_module("rag_modules.app.diagnostics")
-    models = importlib.import_module("rag_modules.app.diagnostics_models")
     artifacts = importlib.import_module("rag_modules.app.diagnostics_artifact_models")
     formatter = importlib.import_module("rag_modules.app.diagnostics_formatters")
     runtime = importlib.import_module("rag_modules.app.diagnostics_runtime_models")
@@ -18,9 +18,13 @@ def test_app_diagnostics_facade_reexports_split_models_and_formatter() -> None:
         ("SystemStatsDiagnostics", runtime),
         ("TraceStatsDiagnostics", stats),
     ):
-        assert getattr(facade, name) is getattr(models, name)
-        assert getattr(models, name) is getattr(owner, name)
+        assert getattr(facade, name) is getattr(owner, name)
     assert facade.startup_diagnostics_lines is formatter.startup_diagnostics_lines
+
+    source = (Path(__file__).resolve().parents[1] / "rag_modules/app/diagnostics.py").read_text(
+        encoding="utf-8"
+    )
+    assert "from .diagnostics_models import" not in source
 
 
 def test_answer_debug_facade_reexports_split_response_models() -> None:
