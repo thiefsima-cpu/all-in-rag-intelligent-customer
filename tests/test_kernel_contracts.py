@@ -96,8 +96,10 @@ def test_canonical_kernel_and_runtime_contract_modules_use_strict_mypy() -> None
         for module in override["module"]
     }
 
+    assert "rag_modules.kernel" in strict_modules
     assert "rag_modules.kernel.*" in strict_modules
-    assert "rag_modules.contracts.runtime.*" in strict_modules
+    assert "rag_modules.contracts" in strict_modules
+    assert "rag_modules.contracts.*" in strict_modules
 
 
 def test_candidate_generator_does_not_export_kernel_strategy_names() -> None:
