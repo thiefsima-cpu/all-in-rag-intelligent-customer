@@ -57,6 +57,10 @@ class HotspotFunctionRatchetsTests(unittest.TestCase):
                 "rag_modules/app/composition/serving_runtime_factory.py",
                 "ServingRuntimeFactory.build",
             ): 45,
+            (
+                "rag_modules/graph_index/entity_index_builder.py",
+                "EntityIndexBuilder.build",
+            ): 25,
         }
 
         oversize = []
