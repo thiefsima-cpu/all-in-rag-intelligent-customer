@@ -1,6 +1,6 @@
 # Production Function Length Ratchet Design
 
-**Status:** awaiting written-spec review
+**Status:** approved for implementation planning
 
 ## Goal
 
