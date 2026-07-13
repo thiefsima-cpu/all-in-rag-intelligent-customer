@@ -11,6 +11,8 @@ from ...contracts.runtime import (
     GenerationMode,
     GenerationSnapshot,
     QueryAnalysis,
+    RouteResolution,
+    RouteSnapshot,
 )
 from ...safe_logging import log_failure
 from ..ports import AnswerTelemetryPort, AnswerWorkflowCopy
@@ -51,6 +53,20 @@ class AnswerPipelineService:
         control = state.request_control
         if control is not None:
             control.raise_if_cancelled()
+        self._emit_request_prelude(state)
+        resolution, route_trace = self._retrieve(state)
+        self._apply_route_resolution(state, resolution, route_trace)
+        if not state.has_evidence:
+            return self._complete_without_evidence(state)
+        self._emit(
+            state.message_callback,
+            self._format_document_summary(state.evidence_documents),
+        )
+        self._emit(state.message_callback, self.answer_workflow_copy.answer_generation_started)
+        self._generate_with_telemetry(state)
+        return state
+
+    def _emit_request_prelude(self, state: AnswerPipelineState) -> None:
         self._emit(
             state.message_callback,
             self.answer_workflow_copy.user_question_template.format(question=state.question),
@@ -63,13 +79,11 @@ class AnswerPipelineService:
                 state.message_callback,
                 self.query_router.explain_routing_decision(state.question),
             )
-
         self._emit(state.message_callback, self.answer_workflow_copy.query_routing_started)
+
+    def _retrieve(self, state: AnswerPipelineState) -> tuple[RouteResolution, RouteSnapshot]:
         retrieval_span = (
-            self.telemetry.span(
-                "rag.retrieval",
-                attributes={"rag.top_k": self.top_k},
-            )
+            self.telemetry.span("rag.retrieval", attributes={"rag.top_k": self.top_k})
             if self.telemetry is not None
             else nullcontext(None)
         )
@@ -77,7 +91,7 @@ class AnswerPipelineService:
             resolution, route_trace = self.router_traces.route_with_trace(
                 state.question,
                 self.top_k,
-                control=control,
+                control=state.request_control,
             )
             if span is not None:
                 span.set_attribute(
@@ -89,6 +103,14 @@ class AnswerPipelineService:
                         "rag.strategy",
                         resolution.analysis.strategy_name,
                     )
+        return resolution, route_trace
+
+    def _apply_route_resolution(
+        self,
+        state: AnswerPipelineState,
+        resolution: RouteResolution,
+        route_trace: RouteSnapshot,
+    ) -> None:
         state.route_resolution = resolution
         state.retrieval_outcome = resolution.retrieval
         state.analysis = resolution.analysis
@@ -102,20 +124,19 @@ class AnswerPipelineService:
         if state.analysis:
             self._emit(state.message_callback, self._format_strategy_summary(state.analysis))
 
-        if not state.has_evidence:
-            state.generation_trace = GenerationSnapshot(
-                status="failed",
-                mode=GenerationMode.EMPTY,
-                decision_reason="no_evidence",
-                failure_code="no_evidence",
-                total_evidence_items=0,
-                selected_evidence_items=0,
-            )
-            state.answer = self.answer_workflow_copy.no_evidence_answer
-            return state
+    def _complete_without_evidence(self, state: AnswerPipelineState) -> AnswerPipelineState:
+        state.generation_trace = GenerationSnapshot(
+            status="failed",
+            mode=GenerationMode.EMPTY,
+            decision_reason="no_evidence",
+            failure_code="no_evidence",
+            total_evidence_items=0,
+            selected_evidence_items=0,
+        )
+        state.answer = self.answer_workflow_copy.no_evidence_answer
+        return state
 
-        self._emit(state.message_callback, self._format_document_summary(state.evidence_documents))
-        self._emit(state.message_callback, self.answer_workflow_copy.answer_generation_started)
+    def _generate_with_telemetry(self, state: AnswerPipelineState) -> None:
         generation_span = (
             self.telemetry.span(
                 "rag.generation",
@@ -130,7 +151,7 @@ class AnswerPipelineService:
                 stream=state.stream,
                 chunk_callback=state.chunk_callback,
                 message_callback=state.message_callback,
-                control=control,
+                control=state.request_control,
             )
             if span is not None:
                 span.set_attribute(
@@ -145,7 +166,6 @@ class AnswerPipelineService:
                     "rag.generation.mode",
                     state.generation_trace.mode_value or "unknown",
                 )
-        return state
 
     def capture_runtime_traces(self, state: AnswerPipelineState) -> AnswerPipelineState:
         if not state.route_trace.has_content():

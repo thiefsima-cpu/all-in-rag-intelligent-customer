@@ -92,6 +92,10 @@ graph-rag-live-quality-gate --json
 python scripts/pressure_api_service.py --json
 ```
 
+The direct script and `graph-rag-pressure` console command both delegate to the canonical
+`scripts.pressure.cli` entrypoint; scenario, runner, metrics, thresholds, and reporting contracts
+are owned by their matching `scripts.pressure` modules.
+
 发布前的最终本地门禁优先使用 `python scripts/local_gate.py`。它会按顺序串联
 `pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
 `python scripts/release_gate.py`，并在第一个失败点停止。
