@@ -65,6 +65,10 @@ class HotspotFunctionRatchetsTests(unittest.TestCase):
                 "rag_modules/generation/clients/adapter.py",
                 "GenerationClientAdapter.stream_prompt",
             ): 35,
+            (
+                "rag_modules/application/answering/answer_pipeline.py",
+                "AnswerPipelineService.execute",
+            ): 35,
         }
 
         oversize = []
