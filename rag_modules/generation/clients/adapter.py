@@ -6,6 +6,7 @@ import logging
 import time
 from collections.abc import Generator
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from openai import OpenAI
@@ -29,6 +30,21 @@ from .parsing import (
 from .usage import GenerationTokenUsageTracker
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _StreamingRequest:
+    temperature: float
+    attempts: int
+    deadline: float
+
+
+@dataclass
+class _StreamingAttemptState:
+    circuit_started: bool = False
+    emitted_content: bool = False
+    reported_usage: bool = False
+    emitted_chunks: list[str] = field(default_factory=list)
 
 
 class GenerationClientAdapter:
@@ -146,95 +162,138 @@ class GenerationClientAdapter:
         timeout_seconds: float | None = None,
         control: RequestControl | None = None,
     ) -> Generator[str, None, None]:
+        request = self._resolve_stream_request(
+            retries=retries, temperature=temperature,
+            timeout_seconds=timeout_seconds, control=control,
+        )  # fmt: skip
         last_exc: Exception | None = None
-        resolved_temperature = self.default_temperature if temperature is None else temperature
-        resolved_attempts = max(1, int(retries or 1))
+        for attempt in range(request.attempts):
+            self._attempt_count.set(attempt + 1)
+            state = _StreamingAttemptState()
+            try:
+                yield from self._stream_attempt(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    request=request,
+                    state=state,
+                    control=control,
+                )
+                return
+            except (RequestCancelled, RequestBudgetExceeded):
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if not self._prepare_stream_retry(exc, attempt, request, state):
+                    break
+        if last_exc:
+            raise last_exc
+
+    def _resolve_stream_request(
+        self,
+        *,
+        retries: int,
+        temperature: float | None,
+        timeout_seconds: float | None,
+        control: RequestControl | None,
+    ) -> _StreamingRequest:
         resolved_timeout = (
             max(0.1, float(timeout_seconds))
             if timeout_seconds is not None
             else float(self.stream_timeout_seconds)
         )
         configured_deadline = time.perf_counter() + resolved_timeout
-        request_deadline = (
-            min(configured_deadline, control.deadline)
-            if control is not None
-            else configured_deadline
+        return _StreamingRequest(
+            temperature=self.default_temperature if temperature is None else temperature,
+            attempts=max(1, int(retries or 1)),
+            deadline=(
+                min(configured_deadline, control.deadline)
+                if control is not None
+                else configured_deadline
+            ),
         )
-        for attempt in range(resolved_attempts):
-            self._attempt_count.set(attempt + 1)
-            emitted_content = False
-            circuit_started = False
-            try:
-                if control is not None:
-                    control.raise_if_cancelled()
-                remaining = request_deadline - time.perf_counter()
-                if remaining <= 0:
-                    raise GenerationLatencyBudgetExceeded(
-                        "Streaming generation deadline was exhausted."
-                    )
-                self.circuit_breaker.before_call()
-                circuit_started = True
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=resolved_temperature,
-                    max_tokens=max_tokens,
-                    stream=True,
-                    timeout=max(0.1, remaining),
-                    **self._provider_request_options(),
-                )
-                reported_usage = False
-                emitted_chunks: list[str] = []
-                for chunk in response:
-                    if control is not None:
-                        control.raise_if_cancelled()
-                    reported_usage = self._record_token_usage(chunk) or reported_usage
-                    choices = getattr(chunk, "choices", None) or []
-                    if not choices:
-                        continue
-                    delta = getattr(choices[0], "delta", None)
-                    content = getattr(delta, "content", None)
-                    if content:
-                        emitted_content = True
-                        emitted_chunks.append(str(content))
-                        yield content
-                if not emitted_content:
-                    raise GenerationProviderResponseError(
-                        "Generation provider returned no stream content.",
-                        failure_code="generation_provider_empty_content",
-                    )
-                if not reported_usage:
-                    self._record_estimated_usage(
-                        prompt=prompt,
-                        completion="".join(emitted_chunks),
-                    )
-                self.circuit_breaker.record_success()
-                return
-            except (RequestCancelled, RequestBudgetExceeded):
-                raise
-            except Exception as exc:
-                if circuit_started:
-                    self.circuit_breaker.record_failure()
-                last_exc = exc
-                logger.warning("Streaming generation attempt failed: attempt=%s", attempt + 1)
-                log_failure(
-                    logger,
-                    logging.WARNING,
-                    "generation_attempt_failed",
-                    code="GENERATION_FAILED",
-                    error=exc,
-                )
-                if emitted_content:
-                    break
-                if attempt < resolved_attempts - 1 and is_retryable_generation_error(exc):
-                    remaining = request_deadline - time.perf_counter()
-                    if remaining <= 0:
-                        break
-                    time.sleep(min(attempt + 1, 2, remaining))
-                    continue
-                break
-        if last_exc:
-            raise last_exc
+
+    def _stream_attempt(
+        self,
+        *,
+        prompt: str,
+        max_tokens: int,
+        request: _StreamingRequest,
+        state: _StreamingAttemptState,
+        control: RequestControl | None,
+    ) -> Generator[str, None, None]:
+        if control is not None:
+            control.raise_if_cancelled()
+        remaining = request.deadline - time.perf_counter()
+        if remaining <= 0:
+            raise GenerationLatencyBudgetExceeded("Streaming generation deadline was exhausted.")
+        self.circuit_breaker.before_call()
+        state.circuit_started = True
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=request.temperature,
+            max_tokens=max_tokens,
+            stream=True,
+            timeout=max(0.1, remaining),
+            **self._provider_request_options(),
+        )
+        yield from self._stream_chunks(response=response, state=state, control=control)
+        if not state.emitted_content:
+            raise GenerationProviderResponseError(
+                "Generation provider returned no stream content.",
+                failure_code="generation_provider_empty_content",
+            )
+        if not state.reported_usage:
+            self._record_estimated_usage(prompt=prompt, completion="".join(state.emitted_chunks))
+        self.circuit_breaker.record_success()
+
+    def _stream_chunks(
+        self,
+        *,
+        response: Any,
+        state: _StreamingAttemptState,
+        control: RequestControl | None,
+    ) -> Generator[str, None, None]:
+        for chunk in response:
+            if control is not None:
+                control.raise_if_cancelled()
+            state.reported_usage = self._record_token_usage(chunk) or state.reported_usage
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            content = getattr(delta, "content", None)
+            if content:
+                state.emitted_content = True
+                state.emitted_chunks.append(str(content))
+                yield content
+
+    def _prepare_stream_retry(
+        self,
+        exc: Exception,
+        attempt: int,
+        request: _StreamingRequest,
+        state: _StreamingAttemptState,
+    ) -> bool:
+        if state.circuit_started:
+            self.circuit_breaker.record_failure()
+        logger.warning("Streaming generation attempt failed: attempt=%s", attempt + 1)
+        log_failure(
+            logger,
+            logging.WARNING,
+            "generation_attempt_failed",
+            code="GENERATION_FAILED",
+            error=exc,
+        )
+        if state.emitted_content or attempt >= request.attempts - 1:
+            return False
+        if not is_retryable_generation_error(exc):
+            return False
+        remaining = request.deadline - time.perf_counter()
+        if remaining <= 0:
+            return False
+        time.sleep(min(attempt + 1, 2, remaining))
+        return True
 
     def _record_token_usage(self, response: Any) -> bool:
         return self._token_usage.record_provider(response)
