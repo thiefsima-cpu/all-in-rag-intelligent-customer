@@ -77,6 +77,18 @@ class HotspotFunctionRatchetsTests(unittest.TestCase):
                 "rag_modules/evidence_processing/extraction.py",
                 "_graph_relationship_units",
             ): 45,
+            (
+                "scripts/pressure/runner.py",
+                "run_pressure_test",
+            ): 45,
+            (
+                "scripts/pressure/runner.py",
+                "_run_answer_pressure_scenario",
+            ): 45,
+            (
+                "scripts/pressure/runner.py",
+                "_run_sse_pressure_scenario",
+            ): 45,
         }
 
         oversize = []
