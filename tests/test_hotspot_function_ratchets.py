@@ -69,6 +69,14 @@ class HotspotFunctionRatchetsTests(unittest.TestCase):
                 "rag_modules/application/answering/answer_pipeline.py",
                 "AnswerPipelineService.execute",
             ): 35,
+            (
+                "rag_modules/evidence_processing/extraction.py",
+                "extract_evidence_units",
+            ): 35,
+            (
+                "rag_modules/evidence_processing/extraction.py",
+                "_graph_relationship_units",
+            ): 45,
         }
 
         oversize = []
