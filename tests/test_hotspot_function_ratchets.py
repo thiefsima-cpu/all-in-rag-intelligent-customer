@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _file_line_count(path: str) -> int:
+    return len((ROOT / path).read_text(encoding="utf-8").splitlines())
+
+
 def _function_line_count(path: str, qualified_name: str) -> int:
     tree = ast.parse((ROOT / path).read_text(encoding="utf-8"), filename=path)
     parts = qualified_name.split(".")
@@ -35,6 +39,17 @@ def _qualified_name_parts(tree: ast.Module, target: ast.AST) -> list[str]:
 
 
 class HotspotFunctionRatchetsTests(unittest.TestCase):
+    def test_pressure_script_stays_a_thin_direct_entrypoint(self) -> None:
+        path = ROOT / "scripts/pressure_api_service.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        definitions = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        self.assertLessEqual(_file_line_count("scripts/pressure_api_service.py"), 20)
+        self.assertEqual(definitions, [])
+
     def test_named_hotspot_functions_stay_small_enough_to_review(self) -> None:
         limits = {
             (

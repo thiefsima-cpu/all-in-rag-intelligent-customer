@@ -83,6 +83,10 @@ single-source concentrated degradation as `fail`.
 | `model_call_budget` | Evaluate synthetic provider latency, token, and cost budgets. | `python scripts/pressure_api_service.py --json --scenario-name model_call_budget --synthetic-model-latency-ms 35 --synthetic-input-tokens-per-request 100 --synthetic-output-tokens-per-request 50` | `pass` when synthetic budget checks stay within limits |
 | `retrieval_degraded_budget` | Verify degraded retrieval is counted and classified. | `python scripts/pressure_api_service.py --json --scenario-name retrieval_degraded_budget --requests 120 --workers 2 --answer-delay-ms 1 --trace-delay-ms 0 --trace-queue-size 8 --max-concurrent-answers 2 --answer-acquire-timeout-seconds 0.25 --retrieval-degraded-every 40` | `warn` at a 2.5% injected degraded rate, below the 5% fail budget and above the 2% warning budget |
 
+The direct script and `graph-rag-pressure` console command both delegate to the canonical
+`scripts.pressure.cli` entrypoint; scenario, runner, metrics, thresholds, and reporting contracts
+are owned by their matching `scripts.pressure` modules.
+
 ## Report Contract
 
 JSON reports use this top-level shape:

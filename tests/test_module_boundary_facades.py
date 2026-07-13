@@ -96,8 +96,23 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
 
     def test_operational_scripts_import_canonical_contracts(self) -> None:
         importlib.import_module("scripts.smoke_answer_pipeline_real_route")
-        importlib.import_module("scripts.pressure_api_service")
+        pressure_module = importlib.import_module("scripts.pressure_api_service")
         importlib.import_module("scripts.migrate_semantic_schema")
+
+        retired = {
+            "PressureScenario",
+            "PressureMetrics",
+            "PressureThresholds",
+            "PressureReport",
+            "build_pressure_report",
+            "default_pressure_scenario",
+            "default_pressure_thresholds",
+            "run_pressure_test",
+        }
+        self.assertEqual(
+            {name for name in retired if hasattr(pressure_module, name)},
+            set(),
+        )
 
     def test_query_understanding_package_reexports_planning_service(self) -> None:
         import rag_modules.query_understanding as query_understanding
