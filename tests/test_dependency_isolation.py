@@ -155,6 +155,21 @@ class DependencyIsolationTests(unittest.TestCase):
             runtime_names.isdisjoint({"mypy", "pip-tools", "pre-commit", "pytest", "ruff"})
         )
 
+    def test_fastapi_and_anyio_match_approved_upgrade(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        runtime_dependencies = pyproject["project"]["dependencies"]
+        runtime_lock = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            _pinned_requirement_version(runtime_dependencies, "fastapi"),
+            "0.139.0",
+        )
+        self.assertNotIn("anyio", _requirement_names(runtime_dependencies))
+        for lock in (runtime_lock, dev_lock):
+            self.assertIn("fastapi==0.139.0", lock)
+            self.assertIn("anyio==4.14.2", lock)
+
     def test_development_lock_includes_httpx2_for_starlette_testclient(self) -> None:
         root = Path(__file__).resolve().parents[1]
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))

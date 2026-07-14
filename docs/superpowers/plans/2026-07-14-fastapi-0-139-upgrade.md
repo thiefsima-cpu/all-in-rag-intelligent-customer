@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade the main application to FastAPI 0.139.0 and absorb the compatible AnyIO 4.14.1 lock update without introducing AnyIO as a direct dependency.
+**Goal:** Upgrade the main application to FastAPI 0.139.0 and absorb the compatible AnyIO 4.14.2 lock update without introducing AnyIO as a direct dependency.
 
 **Architecture:** Keep `pyproject.toml` as the dependency source of truth with FastAPI as the only changed direct pin. Regenerate both locks with Python 3.11, then use pip-tools' targeted upgrade option for the transitive AnyIO pin so the rest of the resolved graph remains stable and reproducible.
 
@@ -13,7 +13,7 @@
 - Base the branch on the latest `development` commit and target the pull request to `development`.
 - Set the direct FastAPI dependency to exactly `fastapi==0.139.0`.
 - Keep AnyIO transitive; do not add it to `pyproject.toml`.
-- Resolve AnyIO to exactly `anyio==4.14.1` in both generated lock files.
+- Resolve AnyIO to exactly `anyio==4.14.2` in both generated lock files.
 - Use Python 3.11 and pip-tools; never hand-edit the final lock output.
 - Preserve all other direct dependency pins unless the resolver proves a compatibility change is required.
 - Do not modify `agent/` or its independent requirements.
@@ -28,7 +28,7 @@
 
 **Interfaces:**
 - Consumes: `_pinned_requirement_version(entries: list[str], package_name: str) -> str` and the two generated lock files.
-- Produces: a dependency governance test that requires FastAPI 0.139.0 in the source and locks, plus AnyIO 4.14.1 in both locks.
+- Produces: a dependency governance test that requires FastAPI 0.139.0 in the source and locks, plus AnyIO 4.14.2 in both locks.
 
 - [ ] **Step 1: Write the failing dependency policy test**
 
@@ -48,7 +48,7 @@ Add this method after `test_pyproject_is_dependency_source_of_truth` in `Depende
         self.assertNotIn("anyio", _requirement_names(runtime_dependencies))
         for lock in (runtime_lock, dev_lock):
             self.assertIn("fastapi==0.139.0", lock)
-            self.assertIn("anyio==4.14.1", lock)
+            self.assertIn("anyio==4.14.2", lock)
 ```
 
 - [ ] **Step 2: Run the focused test and verify RED**
@@ -68,7 +68,7 @@ Expected: FAIL because the direct FastAPI pin is `0.136.3`.
 
 **Interfaces:**
 - Consumes: the direct dependency declaration in `pyproject.toml` and Python 3.11 pip-tools resolution.
-- Produces: FastAPI 0.139.0 in source/runtime/dev and AnyIO 4.14.1 in both generated locks.
+- Produces: FastAPI 0.139.0 in source/runtime/dev and AnyIO 4.14.2 in both generated locks.
 
 - [ ] **Step 1: Update only the FastAPI direct pin**
 
@@ -92,7 +92,7 @@ Expected: the script verifies Python 3.11 and regenerates `requirements.txt` and
 python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple" --upgrade-package anyio
 ```
 
-Expected: the generated runtime lock contains `fastapi==0.139.0` and `anyio==4.14.1` without broad unrelated upgrades.
+Expected: the generated runtime lock contains `fastapi==0.139.0` and `anyio==4.14.2` without broad unrelated upgrades.
 
 - [ ] **Step 4: Regenerate the development lock with the same targeted upgrade**
 
@@ -184,7 +184,7 @@ Expected: only the plan, dependency policy, direct FastAPI pin, and generated lo
 
 ```powershell
 git push -u origin codex/fastapi-0-139
-gh pr create --draft --base development --head codex/fastapi-0-139 --title "deps: upgrade FastAPI to 0.139" --body "Upgrade FastAPI to 0.139.0, resolve AnyIO 4.14.1 in generated locks, and verify API compatibility."
+gh pr create --draft --base development --head codex/fastapi-0-139 --title "deps: upgrade FastAPI to 0.139" --body "Upgrade FastAPI to 0.139.0, resolve AnyIO 4.14.2 in generated locks, and verify API compatibility."
 ```
 
 Expected: the remote branch exists and the pull request base is `development`.
