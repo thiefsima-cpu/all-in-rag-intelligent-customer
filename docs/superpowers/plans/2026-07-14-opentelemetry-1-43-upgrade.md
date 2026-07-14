@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade the OTLP HTTP exporter and its transitive protocol package to 1.43.0 as one validated dependency change.
+**Goal:** Upgrade the OpenTelemetry SDK, OTLP HTTP exporter, and their resolved protocol family to 1.43.0 as one validated dependency change.
 
-**Architecture:** Keep the exporter as the only changed direct dependency in `pyproject.toml`, retain the compatible SDK 1.42.1 pin, and leave `opentelemetry-proto` transitive. Regenerate both locks with Python 3.11 and target the protocol package during resolution so exporter and wire schema move together without broad dependency churn.
+**Architecture:** Upgrade the two direct OpenTelemetry pins together because exporter 1.43.0 requires `opentelemetry-sdk~=1.43.0`. Leave API, common, proto, and semantic conventions transitive, then regenerate both locks with the repository script so the whole compatible family resolves atomically.
 
 **Tech Stack:** Python 3.11, OpenTelemetry OTLP HTTP exporter, pip-tools, pytest.
 
@@ -12,13 +12,20 @@
 
 - Base the branch on the latest `development` commit and target the pull request to `development`.
 - Set the direct exporter pin to exactly `opentelemetry-exporter-otlp-proto-http==1.43.0`.
-- Keep `opentelemetry-sdk==1.42.1` unless dependency resolution proves it incompatible.
+- Set the direct SDK pin to exactly `opentelemetry-sdk==1.43.0`.
 - Keep `opentelemetry-proto` transitive; do not add it to `pyproject.toml`.
 - Resolve `opentelemetry-proto==1.43.0` in both generated lock files.
 - Use Python 3.11 and pip-tools; never hand-edit the final lock output.
 - Preserve all unrelated direct and transitive versions unless the resolver proves a compatibility change is required.
 - Do not modify `agent/` or its independent requirements.
 - Follow RED-GREEN TDD for the dependency policy.
+
+## Resolver Evidence
+
+The first lock compilation with exporter 1.43.0 and SDK 1.42.1 failed deterministically.
+Package metadata reports `opentelemetry-sdk~=1.43.0` as an exporter requirement. A pip dry-run
+confirmed the minimal compatible family: API 1.43.0, exporter common 1.43.0, exporter HTTP 1.43.0,
+proto 1.43.0, SDK 1.43.0, and semantic conventions 0.64b0.
 
 ---
 
@@ -29,14 +36,14 @@
 
 **Interfaces:**
 - Consumes: `_pinned_requirement_version(entries: list[str], package_name: str) -> str`, `_requirement_names(entries: list[str]) -> set[str]`, and both generated locks.
-- Produces: a dependency policy requiring exporter 1.43.0 in source/locks, proto 1.43.0 in locks, SDK 1.42.1 in source, and no direct proto dependency.
+- Produces: a dependency policy requiring SDK/exporter 1.43.0 in source and the complete compatible OpenTelemetry family in both locks, with no direct proto dependency.
 
 - [ ] **Step 1: Write the failing OpenTelemetry dependency test**
 
 Add this method after `test_pyproject_is_dependency_source_of_truth` in `DependencyIsolationTests`:
 
 ```python
-    def test_opentelemetry_exporter_and_proto_match_approved_upgrade(self) -> None:
+    def test_opentelemetry_family_matches_approved_upgrade(self) -> None:
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         runtime_dependencies = pyproject["project"]["dependencies"]
         runtime_names = _requirement_names(runtime_dependencies)
@@ -52,23 +59,31 @@ Add this method after `test_pyproject_is_dependency_source_of_truth` in `Depende
         )
         self.assertEqual(
             _pinned_requirement_version(runtime_dependencies, "opentelemetry-sdk"),
-            "1.42.1",
+            "1.43.0",
         )
         self.assertNotIn("opentelemetry-proto", runtime_names)
+        expected_lock_entries = {
+            "opentelemetry-api==1.43.0",
+            "opentelemetry-exporter-otlp-proto-common==1.43.0",
+            "opentelemetry-exporter-otlp-proto-http==1.43.0",
+            "opentelemetry-proto==1.43.0",
+            "opentelemetry-sdk==1.43.0",
+            "opentelemetry-semantic-conventions==0.64b0",
+        }
         for lock in (runtime_lock, dev_lock):
-            self.assertIn("opentelemetry-exporter-otlp-proto-http==1.43.0", lock)
-            self.assertIn("opentelemetry-proto==1.43.0", lock)
+            for entry in expected_lock_entries:
+                self.assertIn(entry, lock)
 ```
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
 ```powershell
-python -m pytest tests/test_dependency_isolation.py::DependencyIsolationTests::test_opentelemetry_exporter_and_proto_match_approved_upgrade -q --basetemp=.pytest_otel_red
+python -m pytest tests/test_dependency_isolation.py::DependencyIsolationTests::test_opentelemetry_family_matches_approved_upgrade -q --basetemp=.pytest_otel_red_sdk
 ```
 
-Expected: FAIL because the direct exporter pin is `1.42.1`.
+Expected: FAIL because the direct SDK pin is `1.42.1` rather than `1.43.0`.
 
-### Task 2: Upgrade the Exporter and Regenerate the Protocol Pair
+### Task 2: Upgrade the Direct Pins and Regenerate the OpenTelemetry Family
 
 **Files:**
 - Modify: `pyproject.toml`
@@ -77,14 +92,15 @@ Expected: FAIL because the direct exporter pin is `1.42.1`.
 
 **Interfaces:**
 - Consumes: the direct exporter and SDK declarations plus Python 3.11 pip-tools resolution.
-- Produces: exporter 1.43.0 in source/runtime/dev and proto 1.43.0 in both generated locks.
+- Produces: SDK/exporter 1.43.0 in source and the compatible 1.43 family in both generated locks.
 
-- [ ] **Step 1: Update only the exporter direct pin**
+- [ ] **Step 1: Update both required direct pins**
 
 Apply this exact replacement in `pyproject.toml`:
 
 ```text
 opentelemetry-exporter-otlp-proto-http==1.42.1 -> opentelemetry-exporter-otlp-proto-http==1.43.0
+opentelemetry-sdk==1.42.1 -> opentelemetry-sdk==1.43.0
 ```
 
 - [ ] **Step 2: Regenerate both locks with the repository script**
@@ -93,43 +109,27 @@ opentelemetry-exporter-otlp-proto-http==1.42.1 -> opentelemetry-exporter-otlp-pr
 .\scripts\compile_locks.ps1
 ```
 
-Expected: the script verifies Python 3.11 and regenerates both locks from `pyproject.toml`.
+Expected: the script verifies Python 3.11 and regenerates both locks with the compatible 1.43 family.
 
-- [ ] **Step 3: Regenerate the runtime lock with a targeted proto upgrade**
-
-```powershell
-python -m piptools compile pyproject.toml --output-file requirements.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple" --upgrade-package opentelemetry-proto
-```
-
-Expected: the runtime lock contains exporter and proto 1.43.0 without unrelated version changes.
-
-- [ ] **Step 4: Regenerate the development lock with the same targeted upgrade**
-
-```powershell
-python -m piptools compile pyproject.toml --extra=dev --output-file requirements-dev.txt --strip-extras --allow-unsafe --pip-args="--index-url https://pypi.org/simple" --upgrade-package opentelemetry-proto
-```
-
-Expected: the development lock contains the same exporter and proto versions.
-
-- [ ] **Step 5: Run the focused dependency test and verify GREEN**
+- [ ] **Step 3: Run the focused dependency test and verify GREEN**
 
 Run the Task 1 Step 2 command again.
 
 Expected: `1 passed`.
 
-- [ ] **Step 6: Inspect resolver scope**
+- [ ] **Step 4: Inspect resolver scope**
 
 ```powershell
 git diff -- pyproject.toml requirements.txt requirements-dev.txt
 ```
 
-Expected: `pyproject.toml` changes only the exporter pin; lock changes are limited to exporter and proto unless a resolver compatibility requirement is documented.
+Expected: `pyproject.toml` changes only the SDK and exporter pins; locks change the six OpenTelemetry family entries documented in Resolver Evidence.
 
-- [ ] **Step 7: Commit the dependency upgrade**
+- [ ] **Step 5: Commit the dependency upgrade**
 
 ```powershell
 git add tests/test_dependency_isolation.py pyproject.toml requirements.txt requirements-dev.txt
-git commit -m "deps: upgrade opentelemetry exporter to 1.43"
+git commit -m "deps: upgrade opentelemetry family to 1.43"
 ```
 
 ### Task 3: Validate the Resolved Telemetry Environment
@@ -168,7 +168,7 @@ Expected: installation exits 0 and the editable metadata reflects the current `p
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-Expected: versions are `1.43.0`, `1.43.0`, and `1.42.1`; pip reports no broken requirements.
+Expected: all three versions are `1.43.0`; pip reports no broken requirements.
 
 - [ ] **Step 4: Run dependency, telemetry, and API compatibility tests**
 
@@ -259,7 +259,7 @@ Expected: only the plan, dependency policy, exporter pin, and generated lock upd
 
 ```powershell
 git push -u origin codex/opentelemetry-1-43
-gh pr create --draft --base development --head codex/opentelemetry-1-43 --title "deps: upgrade OpenTelemetry exporter to 1.43" --body "Upgrade the OTLP HTTP exporter and protocol package to 1.43.0, preserve the compatible SDK pin, and verify telemetry behavior."
+gh pr create --draft --base development --head codex/opentelemetry-1-43 --title "deps: upgrade OpenTelemetry family to 1.43" --body "Upgrade the SDK, OTLP HTTP exporter, and resolved protocol family to 1.43.0, then verify telemetry behavior."
 ```
 
 Expected: the remote branch exists and the pull request base is `development`.
