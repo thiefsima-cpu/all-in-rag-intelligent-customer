@@ -364,7 +364,7 @@ rag_modules/interfaces/api/routes.py
 Run:
 
 ```powershell
-python -m pytest tests/test_api_route_structure.py tests/test_api_app.py tests/test_entrypoints.py tests/test_public_surface_boundaries.py -q --basetemp=.pytest_cleanup_routes_green
+python -m pytest tests/test_api_route_structure.py tests/test_api_public_surface.py tests/test_entrypoints.py tests/test_public_surface_boundaries.py -q --basetemp=.pytest_cleanup_routes_green
 ```
 
 Expected: PASS.
@@ -506,7 +506,7 @@ git commit -m "docs: record internal facade hard cutover"
 - [ ] **Step 1: Run the combined focused regression slice**
 
 ```powershell
-python -m pytest tests/test_enterprise_governance.py tests/test_graph_cache_stats.py tests/test_graph_retrieval_executor.py tests/test_retrieval_service_factories.py tests/test_api_route_structure.py tests/test_api_app.py tests/test_entrypoints.py tests/test_public_surface_boundaries.py tests/test_public_api_manifest.py -q --basetemp=.pytest_cleanup_focused
+python -m pytest tests/test_enterprise_governance.py tests/test_graph_cache_stats.py tests/test_graph_retrieval_executor.py tests/test_retrieval_service_factories.py tests/test_api_route_structure.py tests/test_api_public_surface.py tests/test_entrypoints.py tests/test_public_surface_boundaries.py tests/test_public_api_manifest.py -q --basetemp=.pytest_cleanup_focused
 ```
 
 Expected: PASS.
