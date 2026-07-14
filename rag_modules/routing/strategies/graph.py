@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import List
 
+from ...contracts import EvidenceDocument, RetrievalRequest
 from ...kernel.json_types import coerce_json_object
 from ...kernel.routing import SearchStrategy
 from .base import (
@@ -30,17 +31,31 @@ class GraphRouteStrategy:
         services: RouteRetrievalServices,
     ) -> RouteExecutionOutcome:
         stages: List[RouteExecutionStageResult] = []
-        fallbacks: List[str] = []
+        _graph_request, documents = self._run_graph_stage(request, services, stages)
+        if not documents:
+            return self._hybrid_fallback(request, services, stages)
+        if len(documents) < request.top_k:
+            documents = self._supplement_documents(request, services, documents, stages)
+        return RouteExecutionOutcome(
+            documents=list(documents),
+            stages=stages,
+            fallbacks=[],
+        )
 
+    def _run_graph_stage(
+        self,
+        request: RouteExecutionRequestPort,
+        services: RouteRetrievalServices,
+        stages: List[RouteExecutionStageResult],
+    ) -> tuple[RetrievalRequest, List[EvidenceDocument]]:
         graph_start = time.perf_counter()
         graph_request = request.retrieval_request.copy_with(
             top_k=request.top_k,
             candidate_k=request.top_k,
             strategy=SearchStrategy.GRAPH_RAG.value,
         )
-        control = graph_request.control
-        if control is not None:
-            control.raise_if_cancelled()
+        if graph_request.control is not None:
+            graph_request.control.raise_if_cancelled()
         graph_documents, graph_trace = (
             services.graph_rag_retrieval.graph_rag_evidence_search_with_trace(graph_request)
         )
@@ -57,63 +72,62 @@ class GraphRouteStrategy:
             graph_documents,
             top_n=request.top_k,
         )
+        return graph_request, list(documents)
 
-        if not documents:
-            fallback_start = time.perf_counter()
-            fallback_outcome = services.traditional_retrieval.hybrid_evidence_search(
-                request.retrieval_request
+    def _hybrid_fallback(
+        self,
+        request: RouteExecutionRequestPort,
+        services: RouteRetrievalServices,
+        stages: List[RouteExecutionStageResult],
+    ) -> RouteExecutionOutcome:
+        fallback_start = time.perf_counter()
+        outcome = services.traditional_retrieval.hybrid_evidence_search(request.retrieval_request)
+        documents = list(outcome.documents)
+        stages.append(
+            RouteExecutionStageResult(
+                name="hybrid_fallback",
+                documents=documents,
+                latency_ms=_elapsed_ms(fallback_start),
+                details=coerce_json_object(outcome.to_stage_details()),
             )
-            fallback_documents = list(fallback_outcome.documents)
-            fallbacks.append("graph_empty_to_hybrid")
-            stages.append(
-                RouteExecutionStageResult(
-                    name="hybrid_fallback",
-                    documents=fallback_documents,
-                    latency_ms=_elapsed_ms(fallback_start),
-                    details=coerce_json_object(fallback_outcome.to_stage_details()),
-                )
-            )
-            return RouteExecutionOutcome(
-                documents=fallback_documents,
-                stages=stages,
-                fallbacks=fallbacks,
-            )
-
-        if len(documents) < request.top_k:
-            supplement_k = services.retrieval_profile.candidates.graph_supplement_candidate_k(
-                request.top_k
-            )
-            supplement_start = time.perf_counter()
-            supplement_outcome = services.traditional_retrieval.hybrid_evidence_search(
-                build_route_retrieval_request(
-                    query=request.query,
-                    top_k=supplement_k,
-                    candidate_k=supplement_k,
-                    constraints=request.constraints,
-                    query_plan=request.query_plan,
-                    control=request.retrieval_request.control,
-                )
-            )
-            supplement_docs = list(supplement_outcome.documents)
-            stages.append(
-                RouteExecutionStageResult(
-                    name="hybrid_supplement",
-                    documents=supplement_docs,
-                    latency_ms=_elapsed_ms(supplement_start),
-                    details=coerce_json_object(supplement_outcome.to_stage_details()),
-                )
-            )
-            documents = merge_route_documents(
-                documents,
-                supplement_docs,
-                limit=supplement_k,
-            )
-
-        return RouteExecutionOutcome(
-            documents=list(documents),
-            stages=stages,
-            fallbacks=fallbacks,
         )
+        return RouteExecutionOutcome(
+            documents=documents,
+            stages=stages,
+            fallbacks=["graph_empty_to_hybrid"],
+        )
+
+    def _supplement_documents(
+        self,
+        request: RouteExecutionRequestPort,
+        services: RouteRetrievalServices,
+        documents: List[EvidenceDocument],
+        stages: List[RouteExecutionStageResult],
+    ) -> List[EvidenceDocument]:
+        supplement_k = services.retrieval_profile.candidates.graph_supplement_candidate_k(
+            request.top_k
+        )
+        supplement_start = time.perf_counter()
+        outcome = services.traditional_retrieval.hybrid_evidence_search(
+            build_route_retrieval_request(
+                query=request.query,
+                top_k=supplement_k,
+                candidate_k=supplement_k,
+                constraints=request.constraints,
+                query_plan=request.query_plan,
+                control=request.retrieval_request.control,
+            )
+        )
+        supplement_docs = list(outcome.documents)
+        stages.append(
+            RouteExecutionStageResult(
+                name="hybrid_supplement",
+                documents=supplement_docs,
+                latency_ms=_elapsed_ms(supplement_start),
+                details=coerce_json_object(outcome.to_stage_details()),
+            )
+        )
+        return merge_route_documents(documents, supplement_docs, limit=supplement_k)
 
 
 __all__ = ["GraphRouteStrategy"]

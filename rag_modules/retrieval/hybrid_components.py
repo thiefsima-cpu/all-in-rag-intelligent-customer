@@ -67,6 +67,35 @@ class HybridRetrievalComponentFactory(Protocol):
 class DefaultHybridRetrievalComponentFactory:
     """Default wiring for the hybrid retrieval runtime stack."""
 
+    def _build_search_stack(
+        self,
+        *,
+        config: GraphRAGConfig,
+        retrieval_profile: RetrievalRuntimeProfile,
+        runtime: HybridRetrievalRuntime,
+        fusion_ranker: FusionRanker,
+        keyword_extractor: QueryKeywordExtractor,
+        cache_store: RetrievalCacheStore,
+        bm25_retriever: BM25Retriever,
+    ) -> tuple[ConstraintRetriever, HybridSearchService, HybridRetrievalExecutor]:
+        constraint_retriever = ConstraintRetriever(runtime.get_recipe_matcher)
+        search_service = HybridSearchService(
+            config=config,
+            retrieval_profile=retrieval_profile,
+            runtime=runtime,
+            fusion_ranker=fusion_ranker,
+            constraint_retriever=constraint_retriever,
+            candidate_source_factory=DefaultHybridCandidateSourceFactory(),
+        )
+        executor = HybridRetrievalExecutor(
+            runtime=runtime,
+            search_service=search_service,
+            keyword_extractor=keyword_extractor,
+            cache_store=cache_store,
+            bm25_tokenizer=tokenize_chinese,
+        )
+        return constraint_retriever, search_service, executor
+
     def build(
         self,
         *,
@@ -118,21 +147,14 @@ class DefaultHybridRetrievalComponentFactory:
             driver_service=driver_service,
             parent_document_service=parent_document_service,
         )
-        constraint_retriever = ConstraintRetriever(runtime.get_recipe_matcher)
-        search_service = HybridSearchService(
+        constraint_retriever, search_service, executor = self._build_search_stack(
             config=config,
             retrieval_profile=retrieval_profile,
             runtime=runtime,
             fusion_ranker=fusion_ranker,
-            constraint_retriever=constraint_retriever,
-            candidate_source_factory=DefaultHybridCandidateSourceFactory(),
-        )
-        executor = HybridRetrievalExecutor(
-            runtime=runtime,
-            search_service=search_service,
             keyword_extractor=keyword_extractor,
             cache_store=cache_store,
-            bm25_tokenizer=tokenize_chinese,
+            bm25_retriever=bm25_retriever,
         )
         return HybridRetrievalComponents(
             graph_indexing=graph_indexing,

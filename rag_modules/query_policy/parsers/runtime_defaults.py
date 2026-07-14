@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import partial
 from pathlib import Path
 
 from ..models import (
@@ -109,117 +110,71 @@ def _parse_semantic_defaults(
     payload: Mapping[str, object], root: Path
 ) -> QuerySemanticRuntimeDefaultsPolicy:
     semantics = _section(payload, root, "semantics")
+    read_float = partial(_semantic_float, semantics)
+    read_int = partial(_semantic_int, semantics)
     return QuerySemanticRuntimeDefaultsPolicy(
-        relation_intensity_reference_ratio=_semantic_float(
-            semantics, "relation_intensity_reference_ratio"
+        relation_intensity_reference_ratio=read_float("relation_intensity_reference_ratio"),
+        complexity_relation_hit_weight=read_float("complexity_relation_hit_weight"),
+        complexity_constraint_hit_weight=read_float("complexity_constraint_hit_weight"),
+        complexity_structural_hit_weight=read_float("complexity_structural_hit_weight"),
+        complexity_length_weight=read_float("complexity_length_weight"),
+        complexity_length_norm_chars=read_int("complexity_length_norm_chars"),
+        reasoning_complexity_threshold=read_float("reasoning_complexity_threshold"),
+        reasoning_relationship_threshold=read_float("reasoning_relationship_threshold"),
+        high_relationship_routing_threshold=read_float("high_relationship_routing_threshold"),
+        relation_hit_intensity_boost_base=read_float("relation_hit_intensity_boost_base"),
+        relation_hit_intensity_boost_step=read_float("relation_hit_intensity_boost_step"),
+        relation_hit_complexity_boost_base=read_float("relation_hit_complexity_boost_base"),
+        relation_hit_complexity_boost_step=read_float("relation_hit_complexity_boost_step"),
+        source_entity_limit=read_int("source_entity_limit"),
+        entity_keyword_limit=read_int("entity_keyword_limit"),
+        semantic_profile_entity_keyword_limit=read_int("semantic_profile_entity_keyword_limit"),
+        topic_keyword_limit=read_int("topic_keyword_limit"),
+        semantic_profile_topic_keyword_start=read_int("semantic_profile_topic_keyword_start"),
+        semantic_profile_topic_keyword_limit=read_int("semantic_profile_topic_keyword_limit"),
+        target_entity_limit=read_int("target_entity_limit"),
+        multi_hop_hint_entity_count=read_int("multi_hop_hint_entity_count"),
+        multi_hop_hint_relationship_threshold=read_float("multi_hop_hint_relationship_threshold"),
+        combined_strategy_relationship_threshold=read_float(
+            "combined_strategy_relationship_threshold"
         ),
-        complexity_relation_hit_weight=_semantic_float(semantics, "complexity_relation_hit_weight"),
-        complexity_constraint_hit_weight=_semantic_float(
-            semantics, "complexity_constraint_hit_weight"
+        combined_strategy_complexity_threshold=read_float("combined_strategy_complexity_threshold"),
+        source_entity_seed_relationship_threshold=read_float(
+            "source_entity_seed_relationship_threshold"
         ),
-        complexity_structural_hit_weight=_semantic_float(
-            semantics, "complexity_structural_hit_weight"
+        source_entity_backfill_relationship_threshold=read_float(
+            "source_entity_backfill_relationship_threshold"
         ),
-        complexity_length_weight=_semantic_float(semantics, "complexity_length_weight"),
-        complexity_length_norm_chars=_semantic_int(semantics, "complexity_length_norm_chars"),
-        reasoning_complexity_threshold=_semantic_float(semantics, "reasoning_complexity_threshold"),
-        reasoning_relationship_threshold=_semantic_float(
-            semantics, "reasoning_relationship_threshold"
+        rule_fallback_confidence=read_float("rule_fallback_confidence"),
+        entity_relation_max_depth=read_int("entity_relation_max_depth"),
+        path_finding_max_depth=read_int("path_finding_max_depth"),
+        path_finding_high_intensity_max_depth=read_int("path_finding_high_intensity_max_depth"),
+        path_finding_high_intensity_threshold=read_float("path_finding_high_intensity_threshold"),
+        subgraph_max_depth=read_int("subgraph_max_depth"),
+        subgraph_high_intensity_max_depth=read_int("subgraph_high_intensity_max_depth"),
+        subgraph_high_intensity_threshold=read_float("subgraph_high_intensity_threshold"),
+        clustering_max_depth=read_int("clustering_max_depth"),
+        default_max_depth=read_int("default_max_depth"),
+        default_high_intensity_max_depth=read_int("default_high_intensity_max_depth"),
+        default_high_intensity_threshold=read_float("default_high_intensity_threshold"),
+        entity_relation_max_nodes=read_int("entity_relation_max_nodes"),
+        path_finding_max_nodes=read_int("path_finding_max_nodes"),
+        subgraph_max_nodes=read_int("subgraph_max_nodes"),
+        clustering_max_nodes=read_int("clustering_max_nodes"),
+        default_max_nodes=read_int("default_max_nodes"),
+        graph_query_max_depth_cap=read_int("graph_query_max_depth_cap"),
+        graph_query_fallback_name_chars=read_int("graph_query_fallback_name_chars"),
+        adaptive_multi_hop_subgraph_threshold=read_float("adaptive_multi_hop_subgraph_threshold"),
+        adaptive_subgraph_multi_hop_threshold=read_float("adaptive_subgraph_multi_hop_threshold"),
+        adaptive_entity_relation_multi_hop_threshold=read_float(
+            "adaptive_entity_relation_multi_hop_threshold"
         ),
-        high_relationship_routing_threshold=_semantic_float(
-            semantics, "high_relationship_routing_threshold"
-        ),
-        relation_hit_intensity_boost_base=_semantic_float(
-            semantics, "relation_hit_intensity_boost_base"
-        ),
-        relation_hit_intensity_boost_step=_semantic_float(
-            semantics, "relation_hit_intensity_boost_step"
-        ),
-        relation_hit_complexity_boost_base=_semantic_float(
-            semantics, "relation_hit_complexity_boost_base"
-        ),
-        relation_hit_complexity_boost_step=_semantic_float(
-            semantics, "relation_hit_complexity_boost_step"
-        ),
-        source_entity_limit=_semantic_int(semantics, "source_entity_limit"),
-        entity_keyword_limit=_semantic_int(semantics, "entity_keyword_limit"),
-        semantic_profile_entity_keyword_limit=_semantic_int(
-            semantics, "semantic_profile_entity_keyword_limit"
-        ),
-        topic_keyword_limit=_semantic_int(semantics, "topic_keyword_limit"),
-        semantic_profile_topic_keyword_start=_semantic_int(
-            semantics, "semantic_profile_topic_keyword_start"
-        ),
-        semantic_profile_topic_keyword_limit=_semantic_int(
-            semantics, "semantic_profile_topic_keyword_limit"
-        ),
-        target_entity_limit=_semantic_int(semantics, "target_entity_limit"),
-        multi_hop_hint_entity_count=_semantic_int(semantics, "multi_hop_hint_entity_count"),
-        multi_hop_hint_relationship_threshold=_semantic_float(
-            semantics, "multi_hop_hint_relationship_threshold"
-        ),
-        combined_strategy_relationship_threshold=_semantic_float(
-            semantics, "combined_strategy_relationship_threshold"
-        ),
-        combined_strategy_complexity_threshold=_semantic_float(
-            semantics, "combined_strategy_complexity_threshold"
-        ),
-        source_entity_seed_relationship_threshold=_semantic_float(
-            semantics, "source_entity_seed_relationship_threshold"
-        ),
-        source_entity_backfill_relationship_threshold=_semantic_float(
-            semantics, "source_entity_backfill_relationship_threshold"
-        ),
-        rule_fallback_confidence=_semantic_float(semantics, "rule_fallback_confidence"),
-        entity_relation_max_depth=_semantic_int(semantics, "entity_relation_max_depth"),
-        path_finding_max_depth=_semantic_int(semantics, "path_finding_max_depth"),
-        path_finding_high_intensity_max_depth=_semantic_int(
-            semantics, "path_finding_high_intensity_max_depth"
-        ),
-        path_finding_high_intensity_threshold=_semantic_float(
-            semantics, "path_finding_high_intensity_threshold"
-        ),
-        subgraph_max_depth=_semantic_int(semantics, "subgraph_max_depth"),
-        subgraph_high_intensity_max_depth=_semantic_int(
-            semantics, "subgraph_high_intensity_max_depth"
-        ),
-        subgraph_high_intensity_threshold=_semantic_float(
-            semantics, "subgraph_high_intensity_threshold"
-        ),
-        clustering_max_depth=_semantic_int(semantics, "clustering_max_depth"),
-        default_max_depth=_semantic_int(semantics, "default_max_depth"),
-        default_high_intensity_max_depth=_semantic_int(
-            semantics, "default_high_intensity_max_depth"
-        ),
-        default_high_intensity_threshold=_semantic_float(
-            semantics, "default_high_intensity_threshold"
-        ),
-        entity_relation_max_nodes=_semantic_int(semantics, "entity_relation_max_nodes"),
-        path_finding_max_nodes=_semantic_int(semantics, "path_finding_max_nodes"),
-        subgraph_max_nodes=_semantic_int(semantics, "subgraph_max_nodes"),
-        clustering_max_nodes=_semantic_int(semantics, "clustering_max_nodes"),
-        default_max_nodes=_semantic_int(semantics, "default_max_nodes"),
-        graph_query_max_depth_cap=_semantic_int(semantics, "graph_query_max_depth_cap"),
-        graph_query_fallback_name_chars=_semantic_int(semantics, "graph_query_fallback_name_chars"),
-        adaptive_multi_hop_subgraph_threshold=_semantic_float(
-            semantics, "adaptive_multi_hop_subgraph_threshold"
-        ),
-        adaptive_subgraph_multi_hop_threshold=_semantic_float(
-            semantics, "adaptive_subgraph_multi_hop_threshold"
-        ),
-        adaptive_entity_relation_multi_hop_threshold=_semantic_float(
-            semantics, "adaptive_entity_relation_multi_hop_threshold"
-        ),
-        adaptive_subgraph_max_depth=_semantic_int(semantics, "adaptive_subgraph_max_depth"),
-        adaptive_subgraph_max_nodes=_semantic_int(semantics, "adaptive_subgraph_max_nodes"),
-        adaptive_multi_hop_max_depth=_semantic_int(semantics, "adaptive_multi_hop_max_depth"),
-        adaptive_multi_hop_max_nodes=_semantic_int(semantics, "adaptive_multi_hop_max_nodes"),
-        adaptive_entity_relation_max_depth=_semantic_int(
-            semantics, "adaptive_entity_relation_max_depth"
-        ),
-        adaptive_entity_relation_max_nodes=_semantic_int(
-            semantics, "adaptive_entity_relation_max_nodes"
-        ),
+        adaptive_subgraph_max_depth=read_int("adaptive_subgraph_max_depth"),
+        adaptive_subgraph_max_nodes=read_int("adaptive_subgraph_max_nodes"),
+        adaptive_multi_hop_max_depth=read_int("adaptive_multi_hop_max_depth"),
+        adaptive_multi_hop_max_nodes=read_int("adaptive_multi_hop_max_nodes"),
+        adaptive_entity_relation_max_depth=read_int("adaptive_entity_relation_max_depth"),
+        adaptive_entity_relation_max_nodes=read_int("adaptive_entity_relation_max_nodes"),
     )
 
 

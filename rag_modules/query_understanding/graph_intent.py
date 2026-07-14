@@ -114,6 +114,56 @@ def split_graph_entities(
     return dedupe_preserve_order(source_entities), dedupe_preserve_order(target_entities)
 
 
+def _profile_entities(
+    normalized: str,
+    query_type: str,
+    *,
+    settings: QuerySemanticRuntimeSettings,
+    registry: QueryUnderstandingRegistry,
+) -> tuple[List[str], List[str], List[str]]:
+    phrase_candidates = fallback_entity_phrases(normalized, registry=registry)
+    keyword_candidates = extract_entity_candidates(normalized, registry=registry)
+    candidates = dedupe_preserve_order([*phrase_candidates, *keyword_candidates])
+    source_entities, target_entities = split_graph_entities(
+        normalized,
+        query_type,
+        candidates,
+        settings=settings,
+        registry=registry,
+    )
+    keyword_seed = dedupe_preserve_order([*source_entities, *target_entities, *candidates])
+    entity_keywords = normalize_graph_sources(
+        keyword_seed[: settings.semantic_profile_entity_keyword_limit],
+        registry=registry,
+    )
+    return source_entities, target_entities, entity_keywords
+
+
+def _profile_topics(
+    normalized: str,
+    *,
+    entity_keywords: Sequence[str],
+    source_entities: Sequence[str],
+    target_entities: Sequence[str],
+    settings: QuerySemanticRuntimeSettings,
+    registry: QueryUnderstandingRegistry,
+) -> List[str]:
+    topic_pool = [
+        token
+        for token in extract_query_tokens(normalized, registry=registry)
+        if token not in entity_keywords
+        and token not in source_entities
+        and token not in target_entities
+        and token not in registry.query_stopwords
+        and token not in registry.graph_generic_terms
+        and token not in registry.relation_markers
+        and token not in registry.structural_reasoning_markers
+    ]
+    start = settings.semantic_profile_topic_keyword_start
+    limit = settings.semantic_profile_topic_keyword_limit
+    return dedupe_preserve_order(topic_pool[start : start + limit] or topic_pool[:limit])
+
+
 def infer_query_semantic_profile(
     query: str,
     *,
@@ -124,51 +174,22 @@ def infer_query_semantic_profile(
     active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     original_query = str(query or "").strip()
     normalized = normalize_query_text(original_query)
-
     query_type = infer_graph_query_type(normalized, registry=active_registry)
     relation_types = infer_relation_types(normalized, registry=active_registry)
-    phrase_candidates = fallback_entity_phrases(normalized, registry=active_registry)
-    keyword_candidates = extract_entity_candidates(normalized, registry=active_registry)
-    combined_candidates = dedupe_preserve_order([*phrase_candidates, *keyword_candidates])
-
-    source_entities, target_entities = split_graph_entities(
+    source_entities, target_entities, entity_keywords = _profile_entities(
         normalized,
         query_type,
-        combined_candidates,
         settings=settings,
         registry=active_registry,
     )
-
-    entity_keyword_seed = dedupe_preserve_order(
-        [
-            *source_entities,
-            *target_entities,
-            *combined_candidates,
-        ]
-    )
-    entity_keywords = normalize_graph_sources(
-        entity_keyword_seed[: settings.semantic_profile_entity_keyword_limit],
+    topic_keywords = _profile_topics(
+        normalized,
+        entity_keywords=entity_keywords,
+        source_entities=source_entities,
+        target_entities=target_entities,
+        settings=settings,
         registry=active_registry,
     )
-
-    semantic_tokens = extract_query_tokens(normalized, registry=active_registry)
-    topic_pool = [
-        token
-        for token in semantic_tokens
-        if token not in entity_keywords
-        and token not in source_entities
-        and token not in target_entities
-        and token not in active_registry.query_stopwords
-        and token not in active_registry.graph_generic_terms
-        and token not in active_registry.relation_markers
-        and token not in active_registry.structural_reasoning_markers
-    ]
-    topic_start = settings.semantic_profile_topic_keyword_start
-    topic_limit = settings.semantic_profile_topic_keyword_limit
-    topic_keywords = dedupe_preserve_order(
-        topic_pool[topic_start : topic_start + topic_limit] or topic_pool[:topic_limit]
-    )
-
     constraints = infer_query_constraints(normalized, registry=active_registry)
     recommendation_intent = has_recommendation_intent(normalized, registry=active_registry)
     recommendation_hits = (
@@ -186,7 +207,6 @@ def infer_query_semantic_profile(
     constraint_hits = marker_hits(normalized, active_registry.constraint_markers)
     structural_hits = marker_hits(normalized, active_registry.structural_reasoning_markers)
     fast_rule_hits = marker_hits(normalized, active_registry.fast_rule_markers)
-
     score_breakdown = build_query_semantic_score_breakdown(
         normalized,
         settings=settings,

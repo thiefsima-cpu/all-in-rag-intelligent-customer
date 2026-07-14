@@ -24,6 +24,47 @@ from .query_utils import as_list, clamp_float, clamp_int
 _SCHEMA_RELATION_TYPES = SEMANTIC_RELATION_TYPES
 
 
+def _resolve_semantic_profile(data: Dict[str, Any]) -> QuerySemanticProfile:
+    profile = data.get("semantic_profile")
+    if isinstance(profile, QuerySemanticProfile):
+        return profile
+    return QuerySemanticProfile.from_dict(profile)
+
+
+def _resolve_plan_strategy(
+    data: Dict[str, Any],
+    constraints: QueryConstraints,
+    validation_errors: List[str],
+) -> SearchStrategy:
+    raw_strategy = str(data.get("strategy") or SearchStrategy.HYBRID_TRADITIONAL.value)
+    try:
+        return SearchStrategy(raw_strategy)
+    except ValueError:
+        validation_errors.append(f"invalid_strategy:{raw_strategy}")
+        if constraints.has_constraints() or constraints.needs_recipe_recommendation:
+            return SearchStrategy.COMBINED
+        return SearchStrategy.HYBRID_TRADITIONAL
+
+
+def _resolve_plan_graph_query_type(
+    data: Dict[str, Any],
+    profile: QuerySemanticProfile,
+    validation_errors: List[str],
+) -> GraphQueryType:
+    raw_type = str(
+        data.get("graph_query_type") or profile.query_type_value or GraphQueryType.SUBGRAPH.value
+    )
+    try:
+        return GraphQueryType(raw_type)
+    except ValueError:
+        validation_errors.append(f"invalid_graph_query_type:{raw_type}")
+        return graph_query_type_or_default(profile.query_type, GraphQueryType.SUBGRAPH)
+
+
+def _profile_values(data: Dict[str, Any], key: str, fallback: Iterable[str]) -> List[str]:
+    return as_list(data.get(key)) or list(fallback)
+
+
 @dataclass
 class QueryPlan:
     query: str
@@ -83,43 +124,15 @@ class QueryPlan:
         schema_relation_types: Iterable[str] | None = None,
     ) -> "QueryPlan":
         allowed_relation_types = tuple(schema_relation_types or _SCHEMA_RELATION_TYPES)
-        semantic_profile = data.get("semantic_profile")
-        resolved_profile = (
-            semantic_profile
-            if isinstance(semantic_profile, QuerySemanticProfile)
-            else QuerySemanticProfile.from_dict(semantic_profile)
-        )
-
-        validation_errors = []
+        resolved_profile = _resolve_semantic_profile(data)
+        validation_errors: List[str] = []
         constraints = QueryConstraints.from_dict(
             data.get("constraints") or resolved_profile.constraints or {}
         )
-
-        raw_strategy = str(data.get("strategy") or SearchStrategy.HYBRID_TRADITIONAL.value)
-        try:
-            strategy = SearchStrategy(raw_strategy)
-        except ValueError:
-            validation_errors.append(f"invalid_strategy:{raw_strategy}")
-            strategy = (
-                SearchStrategy.COMBINED
-                if constraints.has_constraints() or constraints.needs_recipe_recommendation
-                else SearchStrategy.HYBRID_TRADITIONAL
-            )
-
-        raw_graph_query_type = str(
-            data.get("graph_query_type")
-            or resolved_profile.query_type_value
-            or GraphQueryType.SUBGRAPH.value
+        strategy = _resolve_plan_strategy(data, constraints, validation_errors)
+        resolved_graph_query_type = _resolve_plan_graph_query_type(
+            data, resolved_profile, validation_errors
         )
-        try:
-            resolved_graph_query_type = GraphQueryType(raw_graph_query_type)
-        except ValueError:
-            validation_errors.append(f"invalid_graph_query_type:{raw_graph_query_type}")
-            resolved_graph_query_type = graph_query_type_or_default(
-                resolved_profile.query_type,
-                GraphQueryType.SUBGRAPH,
-            )
-
         complexity = clamp_float(data.get("complexity"), resolved_profile.complexity)
         relationship_intensity = clamp_float(
             data.get("relationship_intensity"),
@@ -140,26 +153,15 @@ class QueryPlan:
         )
         constraints.needs_recipe_recommendation = needs_recipe_recommendation
 
-        entity_keywords = as_list(data.get("entity_keywords")) or list(
-            resolved_profile.entity_keywords
-        )
-        topic_keywords = as_list(data.get("topic_keywords")) or list(
-            resolved_profile.topic_keywords
-        )
-        source_entities = as_list(data.get("source_entities")) or list(
-            resolved_profile.source_entities
-        )
-        target_entities = as_list(data.get("target_entities")) or list(
-            resolved_profile.target_entities
-        )
+        entity_keywords = _profile_values(data, "entity_keywords", resolved_profile.entity_keywords)
+        topic_keywords = _profile_values(data, "topic_keywords", resolved_profile.topic_keywords)
+        source_entities = _profile_values(data, "source_entities", resolved_profile.source_entities)
+        target_entities = _profile_values(data, "target_entities", resolved_profile.target_entities)
         relation_types = [
             relation
-            for relation in (
-                as_list(data.get("relation_types")) or list(resolved_profile.relation_types)
-            )
+            for relation in _profile_values(data, "relation_types", resolved_profile.relation_types)
             if relation in allowed_relation_types
         ]
-
         return cls(
             query=query,
             intent=str(data.get("intent") or "qa"),

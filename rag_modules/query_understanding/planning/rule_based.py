@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from ...contracts import QueryPlan, QueryPlannerMode, QuerySemanticRuntimeSettings
+from ...contracts import (
+    QueryPlan,
+    QueryPlannerMode,
+    QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
+)
 from ...contracts.query_constraints import QueryConstraints
 from ...kernel.routing import SearchStrategy
 from ...query_policy.models import QueryPolicyBundle
@@ -22,6 +27,36 @@ class RuleBasedPlanner:
         self.settings = settings
         self.calibrator = calibrator
         self.policy_bundle = policy_bundle
+
+    def _resolve_source_entities(
+        self,
+        *,
+        query: str,
+        profile: QuerySemanticProfile,
+        strategy: str,
+        relationship_intensity: float,
+    ) -> list[str]:
+        source_candidates = (
+            profile.source_entities
+            if relationship_intensity >= self.settings.source_entity_seed_relationship_threshold
+            else []
+        )
+        if not source_candidates and (
+            strategy != SearchStrategy.HYBRID_TRADITIONAL.value
+            or relationship_intensity >= self.settings.source_entity_backfill_relationship_threshold
+        ):
+            source_candidates = (
+                profile.source_entities or profile.entity_keywords or fallback_keywords(query)
+            )
+        source_entities = normalize_graph_sources(
+            source_candidates[: self.settings.source_entity_limit]
+        )
+        if (
+            strategy == SearchStrategy.HYBRID_TRADITIONAL.value
+            and relationship_intensity < self.settings.source_entity_seed_relationship_threshold
+        ):
+            return []
+        return source_entities
 
     def plan(self, query: str) -> QueryPlan:
         profile = infer_query_semantic_profile(
@@ -55,26 +90,12 @@ class RuleBasedPlanner:
             relationship_intensity=relationship_intensity,
         )
 
-        source_candidates = (
-            profile.source_entities
-            if relationship_intensity >= self.settings.source_entity_seed_relationship_threshold
-            else []
+        source_entities = self._resolve_source_entities(
+            query=query,
+            profile=profile,
+            strategy=strategy,
+            relationship_intensity=relationship_intensity,
         )
-        if not source_candidates and (
-            strategy != SearchStrategy.HYBRID_TRADITIONAL.value
-            or relationship_intensity >= self.settings.source_entity_backfill_relationship_threshold
-        ):
-            source_candidates = (
-                profile.source_entities or profile.entity_keywords or fallback_keywords(query)
-            )
-        source_entities = normalize_graph_sources(
-            source_candidates[: self.settings.source_entity_limit]
-        )
-        if (
-            strategy == SearchStrategy.HYBRID_TRADITIONAL.value
-            and relationship_intensity < self.settings.source_entity_seed_relationship_threshold
-        ):
-            source_entities = []
 
         return QueryPlan(
             query=query,
