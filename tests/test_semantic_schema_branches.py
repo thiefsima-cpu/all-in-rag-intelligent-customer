@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from rag_modules.domain.shared import semantic_schema as schema
 
 
@@ -81,3 +83,50 @@ def test_recipe_semantics_builds_contribution_and_technique_relationships() -> N
     empty = schema.infer_recipe_semantics({}, [], [], "")
     assert empty["semantic_relations"]["CONTRIBUTES_TO"] == []
     assert empty["semantic_relations"]["TECHNIQUE_MODIFIES_TEXTURE"] == []
+
+
+def test_recipe_semantics_preserves_complete_relation_and_key_order() -> None:
+    contribution_hints = {
+        "effect-z": ["cause-b", "cause-a"],
+        "effect-a": ["cause-c"],
+    }
+    technique_hints = {
+        "texture-z": ["technique-b", "technique-a"],
+        "texture-a": ["technique-c"],
+    }
+    content = "cause-a technique-a cause-c cause-b technique-b technique-c"
+
+    with (
+        patch.object(schema, "_CONTRIBUTION_HINTS", contribution_hints),
+        patch.object(schema, "_TECHNIQUE_EFFECT_HINTS", technique_hints),
+    ):
+        result = schema.infer_recipe_semantics({}, [], [], content)
+
+    relations = result["semantic_relations"]
+    assert list(relations) == [
+        "HAS_FLAVOR",
+        "USES_TECHNIQUE",
+        "HAS_DIET_TAG",
+        "HAS_HEALTH_TAG",
+        "HAS_CUISINE_STYLE",
+        "HAS_INGREDIENT_CATEGORY",
+        "HAS_TIME_PROFILE",
+        "HAS_DIFFICULTY_LEVEL",
+        "CONTRIBUTES_TO",
+        "INGREDIENT_CONTRIBUTES_TO",
+        "TECHNIQUE_MODIFIES_TEXTURE",
+    ]
+    assert relations["CONTRIBUTES_TO"] == [
+        {"effect": "effect-z", "causes": ["cause-b", "cause-a"]},
+        {"effect": "effect-a", "causes": ["cause-c"]},
+    ]
+    assert relations["INGREDIENT_CONTRIBUTES_TO"] == [
+        {"source": "cause-b", "effect": "effect-z"},
+        {"source": "cause-a", "effect": "effect-z"},
+        {"source": "cause-c", "effect": "effect-a"},
+    ]
+    assert relations["TECHNIQUE_MODIFIES_TEXTURE"] == [
+        {"source": "technique-b", "effect": "texture-z"},
+        {"source": "technique-a", "effect": "texture-z"},
+        {"source": "technique-c", "effect": "texture-a"},
+    ]

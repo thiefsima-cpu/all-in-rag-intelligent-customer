@@ -9,20 +9,34 @@ from rag_modules.kernel.documents import TextDocument
 
 
 class _Embeddings:
-    def __init__(self, *, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        operations: list[str] | None = None,
+    ) -> None:
         self.error = error
         self.texts: list[str] = []
+        self.operations = operations
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if self.error:
             raise self.error
+        if self.operations is not None:
+            self.operations.append("embed")
         self.texts = list(texts)
         return [[float(index)] for index, _ in enumerate(texts)]
 
 
 class _Client:
-    def __init__(self, *, insert_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        insert_error: Exception | None = None,
+        operations: list[str] | None = None,
+    ) -> None:
         self.insert_error = insert_error
+        self.operations = operations
         self.inserted: list[tuple[str, list[dict[str, object]]]] = []
         self.flushed: list[str] = []
         self.loaded: list[str] = []
@@ -30,12 +44,18 @@ class _Client:
     def insert(self, *, collection_name: str, data: list[dict[str, object]]) -> None:
         if self.insert_error:
             raise self.insert_error
+        if self.operations is not None:
+            self.operations.append("insert")
         self.inserted.append((collection_name, data))
 
     def flush(self, *, collection_name: str) -> None:
+        if self.operations is not None:
+            self.operations.append("flush")
         self.flushed.append(collection_name)
 
     def load_collection(self, collection_name: str) -> None:
+        if self.operations is not None:
+            self.operations.append("load")
         self.loaded.append(collection_name)
 
 
@@ -44,16 +64,19 @@ class _Writer(_MilvusWriterOperations):
         self.collection_name = "recipes"
         self.build_collection_name = ""
         self.collection_created = True
-        self.client = _Client()
-        self.embeddings = _Embeddings()
+        self.operations: list[str] = []
+        self.client = _Client(operations=self.operations)
+        self.embeddings = _Embeddings(operations=self.operations)
         self.create_collection_result = True
         self.create_index_result = True
 
     def create_collection(self, force_recreate=False, *, collection_name=None) -> bool:
         assert force_recreate is True
+        self.operations.append("create")
         return self.create_collection_result
 
     def create_index(self, *, collection_name=None) -> bool:
+        self.operations.append("index")
         return self.create_index_result
 
 
@@ -98,6 +121,48 @@ def test_build_vector_index_writes_sanitized_entities_to_explicit_collection() -
     assert writer.client.flushed == ["recipes__green"]
     assert writer.client.loaded == ["recipes__green"]
     sleep.assert_called_once_with(2)
+
+
+def test_build_vector_index_preserves_batch_entity_and_operation_order() -> None:
+    writer = _Writer()
+    chunks = [
+        _chunk(
+            f"content-{index}",
+            chunk_id=f"chunk-{index:03d}",
+            node_id=f"node-{index:03d}",
+        )
+        for index in range(205)
+    ]
+
+    with patch(
+        "rag_modules.infra.milvus.writer.time.sleep",
+        side_effect=lambda _seconds: writer.operations.append("wait"),
+    ):
+        assert writer.build_vector_index(chunks, collection_name="recipes__ordered") is True
+
+    assert writer.operations == [
+        "create",
+        "embed",
+        "insert",
+        "insert",
+        "insert",
+        "flush",
+        "index",
+        "load",
+        "wait",
+    ]
+    assert [len(batch) for _, batch in writer.client.inserted] == [100, 100, 5]
+    assert [collection for collection, _ in writer.client.inserted] == [
+        "recipes__ordered",
+        "recipes__ordered",
+        "recipes__ordered",
+    ]
+    entities = [entity for _, batch in writer.client.inserted for entity in batch]
+    assert [entity["id"] for entity in entities] == [f"chunk-{index:03d}" for index in range(205)]
+    assert [entity["vector"] for entity in entities] == [[float(index)] for index in range(205)]
+    assert writer.embeddings.texts == [chunk.page_content for chunk in chunks]
+    assert writer.client.flushed == ["recipes__ordered"]
+    assert writer.client.loaded == ["recipes__ordered"]
 
 
 @pytest.mark.parametrize("failed_stage", ["collection", "index"])

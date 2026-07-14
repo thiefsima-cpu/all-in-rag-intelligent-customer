@@ -59,6 +59,40 @@ class _FakeGraphRetrieval:
         )
 
 
+class _OrderedTraditionalRetrieval(_FakeTraditionalRetrieval):
+    def __init__(self, hybrid_docs, *, events: list[str]) -> None:
+        super().__init__(hybrid_docs)
+        self.events = events
+
+    def hybrid_evidence_search(self, request):
+        self.events.append("hybrid")
+        return super().hybrid_evidence_search(request)
+
+    def enrich_to_parent_evidence_documents(self, request, docs, top_n=None):
+        self.events.append("enrich")
+        return super().enrich_to_parent_evidence_documents(request, docs, top_n=top_n)
+
+
+class _OrderedGraphRetrieval(_FakeGraphRetrieval):
+    def __init__(self, graph_docs, *, events: list[str], trace: object) -> None:
+        super().__init__(graph_docs, trace=trace)
+        self.events = events
+
+    def graph_rag_evidence_search_with_trace(self, request):
+        self.events.append("graph")
+        return super().graph_rag_evidence_search_with_trace(request)
+
+
+_HEALTHY_HYBRID_STAGE_DETAILS = {
+    "candidate_counts": {"vector": 1},
+    "degraded_sources": [],
+    "degraded_candidates": [],
+    "retrieval_degraded": False,
+    "circuit_breaker_triggered": False,
+    "answer_impacted": False,
+}
+
+
 class _FakeCandidates:
     def graph_supplement_candidate_k(self, top_k: int) -> int:
         return top_k + 1
@@ -329,6 +363,168 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(
             [stage.name for stage in outcome.stages], ["graph_rag", "hybrid_supplement"]
         )
+
+    def test_graph_strategy_copies_request_fields_for_graph_execution(self) -> None:
+        graph = _FakeGraphRetrieval(
+            [
+                EvidenceDocument(content="graph-1", recipe_name="Graph One"),
+                EvidenceDocument(content="graph-2", recipe_name="Graph Two"),
+            ]
+        )
+        traditional = _FakeTraditionalRetrieval()
+        services = RouteRetrievalServices(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=graph,
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        request = _request(query="graph request copy", top_k=2, strategy=SearchStrategy.GRAPH_RAG)
+        control = RequestControl.for_timeout(5.0, scope="route")
+        original = RetrievalRequest.from_inputs(
+            query=request.query,
+            top_k=7,
+            candidate_k=9,
+            strategy=SearchStrategy.COMBINED.value,
+            constraints=QueryConstraints(max_cook_minutes=30),
+            query_plan=request.query_plan,
+            entity_keywords=["pepper"],
+            topic_keywords=["texture"],
+            metadata={"trace_id": "copy-1"},
+            control=control,
+        )
+        request.retrieval_request = original
+
+        GraphRouteStrategy().execute(request, services=services)
+
+        graph_request = graph.calls[0]
+        self.assertIsNot(graph_request, original)
+        self.assertEqual(graph_request.query, "graph request copy")
+        self.assertEqual((graph_request.top_k, graph_request.candidate_k), (2, 2))
+        self.assertEqual(graph_request.strategy, SearchStrategy.GRAPH_RAG.value)
+        self.assertIs(graph_request.constraints, original.constraints)
+        self.assertIs(graph_request.query_plan, original.query_plan)
+        self.assertEqual(graph_request.entity_keywords, ["pepper"])
+        self.assertEqual(graph_request.topic_keywords, ["texture"])
+        self.assertEqual(graph_request.metadata, {"trace_id": "copy-1"})
+        self.assertIs(graph_request.control, control)
+        self.assertEqual((original.top_k, original.candidate_k), (7, 9))
+        self.assertIs(traditional.enrich_calls[0]["request"], graph_request)
+        self.assertEqual(traditional.enrich_calls[0]["top_n"], 2)
+
+    def test_graph_strategy_stops_before_retrieval_when_control_is_cancelled(self) -> None:
+        graph = _FakeGraphRetrieval([EvidenceDocument(content="graph", recipe_name="Must Not Run")])
+        traditional = _FakeTraditionalRetrieval()
+        services = RouteRetrievalServices(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=graph,
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        request = _request(query="cancelled graph", top_k=2, strategy=SearchStrategy.GRAPH_RAG)
+        control = RequestControl.for_timeout(5.0, scope="route")
+        control.cancel("caller_cancelled")
+        request.retrieval_request = request.retrieval_request.copy_with(control=control)
+
+        with self.assertRaisesRegex(RequestCancelled, "caller_cancelled"):
+            GraphRouteStrategy().execute(request, services=services)
+
+        self.assertEqual(graph.calls, [])
+        self.assertEqual(traditional.enrich_calls, [])
+        self.assertEqual(traditional.hybrid_calls, [])
+
+    def test_graph_strategy_records_complete_fallback_stage_sequence(self) -> None:
+        events: list[str] = []
+        graph_trace = {"query_type": "path_finding", "path_count": 0, "doc_count": 0}
+        traditional = _OrderedTraditionalRetrieval(
+            [EvidenceDocument(content="fallback", recipe_name="Fallback Dish")],
+            events=events,
+        )
+        services = RouteRetrievalServices(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=_OrderedGraphRetrieval(
+                [],
+                events=events,
+                trace=graph_trace,
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+
+        outcome = GraphRouteStrategy().execute(
+            _request(query="empty graph", top_k=2, strategy=SearchStrategy.GRAPH_RAG),
+            services=services,
+        )
+
+        self.assertEqual(events, ["graph", "enrich", "hybrid"])
+        self.assertEqual(
+            [
+                (
+                    stage.name,
+                    [doc.recipe_name for doc in stage.documents],
+                    stage.extra,
+                    stage.details,
+                )
+                for stage in outcome.stages
+            ],
+            [
+                ("graph_rag", [], graph_trace, {}),
+                ("hybrid_fallback", ["Fallback Dish"], None, _HEALTHY_HYBRID_STAGE_DETAILS),
+            ],
+        )
+        self.assertTrue(all(stage.latency_ms >= 0 for stage in outcome.stages))
+        self.assertEqual(outcome.fallbacks, ["graph_empty_to_hybrid"])
+
+    def test_graph_strategy_records_complete_supplement_stage_sequence(self) -> None:
+        events: list[str] = []
+        graph_trace = {"query_type": "multi_hop", "path_count": 1, "doc_count": 1}
+        traditional = _OrderedTraditionalRetrieval(
+            [EvidenceDocument(content="supplement", recipe_name="Supplement Dish", node_id="2")],
+            events=events,
+        )
+        services = RouteRetrievalServices(
+            traditional_retrieval=traditional,
+            graph_rag_retrieval=_OrderedGraphRetrieval(
+                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="1")],
+                events=events,
+                trace=graph_trace,
+            ),
+            retrieval_profile=_FakeRetrievalProfile(),
+        )
+        request = _request(query="supplement graph", top_k=2, strategy=SearchStrategy.GRAPH_RAG)
+        control = RequestControl.for_timeout(5.0, scope="route")
+        request.retrieval_request = request.retrieval_request.copy_with(control=control)
+
+        outcome = GraphRouteStrategy().execute(request, services=services)
+
+        self.assertEqual(events, ["graph", "enrich", "hybrid"])
+        self.assertEqual(
+            [
+                (
+                    stage.name,
+                    [doc.recipe_name for doc in stage.documents],
+                    stage.extra,
+                    stage.details,
+                )
+                for stage in outcome.stages
+            ],
+            [
+                ("graph_rag", ["Graph Dish"], graph_trace, {}),
+                (
+                    "hybrid_supplement",
+                    ["Supplement Dish"],
+                    None,
+                    _HEALTHY_HYBRID_STAGE_DETAILS,
+                ),
+            ],
+        )
+        self.assertTrue(all(stage.latency_ms >= 0 for stage in outcome.stages))
+        supplement_request = traditional.hybrid_calls[0]
+        self.assertEqual((supplement_request.top_k, supplement_request.candidate_k), (3, 3))
+        self.assertIs(supplement_request.constraints, request.constraints)
+        self.assertIs(supplement_request.query_plan, request.query_plan)
+        self.assertIs(supplement_request.control, control)
+        self.assertEqual(
+            [doc.recipe_name for doc in outcome.documents],
+            ["Graph Dish", "Supplement Dish"],
+        )
+        self.assertEqual(outcome.fallbacks, [])
 
     def test_combined_strategy_interleaves_graph_and_traditional(self) -> None:
         services = RouteRetrievalServices(

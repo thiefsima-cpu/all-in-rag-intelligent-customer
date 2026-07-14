@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.contracts import RequestControl
+from rag_modules.contracts import (
+    RequestBudgetExceeded,
+    RequestCancelled,
+    RequestControl,
+)
 from rag_modules.contracts.runtime import AnswerContext, GenerationSnapshot, QueryAnalysis
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation import (
@@ -20,6 +24,16 @@ from rag_modules.generation import (
     decide_generation_mode,
 )
 from rag_modules.generation.clients import GenerationLatencyBudgetExceeded
+from rag_modules.generation.execution.composer import GenerationComposer
+from rag_modules.generation.execution.contracts import GenerationAttemptFailed
+from rag_modules.generation.execution.direct import DirectCompletionRunner
+from rag_modules.generation.execution.fallbacks import GenerationFallbackHandler
+from rag_modules.generation.execution.timeouts import (
+    GenerationExecutionDeadline,
+    GenerationTimeoutBudget,
+)
+from rag_modules.generation.execution.two_stage import TwoStageCompletionRunner
+from rag_modules.generation.execution.usage import GenerationUsageCollector
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_policy import get_query_policy
 
@@ -156,6 +170,34 @@ class _FakeClientAdapter:
         if not self.token_usage:
             return {}
         return self.token_usage.pop(0)
+
+
+def _build_two_stage_runner(
+    settings: GenerationSettings,
+    client_adapter: _FakeClientAdapter,
+) -> tuple[TwoStageCompletionRunner, GenerationExecutionDeadline]:
+    prompt_builder = _FakePromptBuilder()
+    usage_collector = GenerationUsageCollector(client_adapter)
+    return (
+        TwoStageCompletionRunner(
+            settings=settings,
+            planner=_FakePlanner(),
+            composer=GenerationComposer(
+                settings=settings,
+                client_adapter=client_adapter,
+                prompt_builder=prompt_builder,
+            ),
+            direct_runner=DirectCompletionRunner(
+                settings=settings,
+                client_adapter=client_adapter,
+                prompt_builder=prompt_builder,
+                usage_collector=usage_collector,
+            ),
+            fallback_handler=GenerationFallbackHandler(settings=settings),
+            usage_collector=usage_collector,
+        ),
+        GenerationTimeoutBudget(settings.latency_budget_seconds).start(),
+    )
 
 
 class GenerationExecutionEngineTests(unittest.TestCase):
@@ -425,6 +467,81 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertTrue(trace.fallback_used)
         self.assertIn("two_stage_to_direct_model", trace.fallback_reason)
         self.assertEqual(trace.mode, "two_stage")
+
+    def test_two_stage_runner_accumulates_retries_through_direct_fallback(self) -> None:
+        settings = GenerationSettings(enable_two_stage=True, max_retries=1)
+        primary_failure = RuntimeError("compose failed")
+        client = _FakeClientAdapter(
+            [primary_failure, _FakeResponse("direct fallback")],
+            retry_counts=[2, 3, 5],
+        )
+        runner, deadline = _build_two_stage_runner(settings, client)
+        context = AnswerContext(
+            question="why does the flavor balance",
+            evidence_package=self._build_package().to_dict(),
+        )
+
+        result = runner.run(context, deadline=deadline)
+
+        self.assertEqual(result.answer, "direct fallback")
+        self.assertEqual(result.request_retries, 10)
+        self.assertEqual(result.status, "degraded")
+        self.assertTrue(result.fallback_used)
+        self.assertEqual(result.fallback_reason, "two_stage_to_direct_model")
+        self.assertIs(result.failure, primary_failure)
+        self.assertEqual(
+            client.prompts,
+            [
+                "compose::why does the flavor balance::1::1",
+                "direct::why does the flavor balance::1",
+            ],
+        )
+
+    def test_two_stage_runner_propagates_control_exits_without_fallback(self) -> None:
+        settings = GenerationSettings(enable_two_stage=True, max_retries=1)
+        context = AnswerContext(
+            question="controlled generation",
+            evidence_package=self._build_package().to_dict(),
+        )
+
+        for error in (
+            RequestCancelled("caller_cancelled"),
+            RequestBudgetExceeded("request_budget_exhausted"),
+        ):
+            with self.subTest(error_type=type(error).__name__):
+                client = _FakeClientAdapter([error, _FakeResponse("must not run")])
+                runner, deadline = _build_two_stage_runner(settings, client)
+
+                with self.assertRaises(type(error)) as raised:
+                    runner.run(context, deadline=deadline)
+
+                self.assertIs(raised.exception, error)
+                self.assertEqual(client.prompts, ["compose::controlled generation::1::1"])
+
+    def test_two_stage_runner_chains_direct_fallback_failure(self) -> None:
+        settings = GenerationSettings(enable_two_stage=True, max_retries=1)
+        primary_failure = RuntimeError("compose failed")
+        fallback_failure = ValueError("direct fallback failed")
+        client = _FakeClientAdapter(
+            [primary_failure, fallback_failure],
+            retry_counts=[2, 3, 5],
+        )
+        runner, deadline = _build_two_stage_runner(settings, client)
+        context = AnswerContext(
+            question="failed fallback",
+            evidence_package=self._build_package().to_dict(),
+        )
+
+        with self.assertRaises(GenerationAttemptFailed) as raised:
+            runner.run(context, deadline=deadline)
+
+        self.assertIs(raised.exception.error, fallback_failure)
+        self.assertIs(raised.exception.__cause__, fallback_failure)
+        self.assertEqual(raised.exception.request_retries, 10)
+        self.assertEqual(
+            client.prompts,
+            ["compose::failed fallback::1::1", "direct::failed fallback::1"],
+        )
 
     def test_stream_with_trace_returns_request_scoped_trace(self) -> None:
         settings = GenerationSettings(enable_two_stage=False, max_retries=1, stream_retries=1)
