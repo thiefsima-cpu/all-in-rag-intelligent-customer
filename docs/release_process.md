@@ -11,6 +11,11 @@ each promotion, synchronize the target merge commit back through checked pull re
 documented in `docs/branch_governance.md`. The complete synchronization path after a formal
 promotion is `main -> production -> development`.
 
+If the source of a promotion or synchronization pull request is behind its target, create a
+`codex/sync-*` branch from the latest target and merge the source into it before opening the pull
+request. Do not disable the strict up-to-date check and do not update a long-lived source branch
+outside its own pull request.
+
 ## Release Candidates
 
 Release candidates use PEP 440 package versions and protected Git tags. Package version

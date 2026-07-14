@@ -492,6 +492,11 @@ Expected: the PR is merged with a merge commit and the verified hotfix head is a
 
 - [ ] **Step 1: Create and merge the main-to-production synchronization PR**
 
+Because required checks use the strict up-to-date policy, first verify that `origin/production`
+is an ancestor of `origin/main`. If it is not, create `codex/sync-main-to-production` from the
+latest `origin/production`, merge `origin/main` into it, run the full local gate, and use that
+short-lived branch as the PR head instead of `main`.
+
 ```powershell
 $repo = "thiefsima-cpu/all-in-rag-intelligent-customer"
 $syncUrl = gh pr create `
@@ -638,7 +643,8 @@ git merge-base --is-ancestor $preDevelopment origin/development
 Expected: both ancestry commands exit `0`, proving production is synchronized and earlier
 development work remains.
 
-If the direct production-to-development PR has a merge conflict, stop before changing production.
+If the direct production-to-development PR has a merge conflict or is behind the target, stop
+before merging it.
 Create `codex/sync-production-to-development` from the current `origin/development`, merge
 `origin/production` into that short-lived branch, resolve only the named conflicts, rerun the full
 local gate, and target `development` from that `codex/` branch.
