@@ -14,6 +14,13 @@ a checked `production -> development` pull request. After merging `production` t
 synchronize through checked `main -> production -> development` pull requests. These merge
 commits keep all long-lived branches on a shared ancestry chain without direct pushes.
 
+Required checks use the strict up-to-date policy. When a synchronization source does not already
+contain the target tip, create `codex/sync-<source>-to-<target>` from the latest target, merge the
+source into that short-lived branch, and open the checked pull request from the synchronization
+branch. Only the `codex/sync-*` prefix may target `main` or `production`; ordinary `codex/*`
+branches remain rejected. This preserves both histories without weakening checks or updating a
+long-lived branch outside a pull request.
+
 Release candidates use immutable tags such as `v0.4.0-rc.1` on accepted production commits and
 GitHub prereleases. Formal deployments use immutable tags such as `v0.4.0` on main commits.
 Branch tips are not deployment identifiers.

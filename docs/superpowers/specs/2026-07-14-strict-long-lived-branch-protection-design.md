@@ -68,7 +68,9 @@ The existing branch-flow policy remains authoritative:
 - `production` may target `main`;
 - `main` may target `production` for post-release synchronization;
 - `production` may target `development` for synchronization;
-- `hotfix/*` may target `main`.
+- `hotfix/*` may target `main`;
+- `codex/sync-*` may target `main` or `production` only when it is a short-lived synchronization
+  branch created from the target tip.
 
 Direct pushes to all three long-lived branches are prohibited. Force-pushes and branch deletion
 remain prohibited.
@@ -85,6 +87,11 @@ a `hotfix/*` branch, and targets `main` through a checked pull request. After th
 tagged, it is synchronized through `main -> production -> development`. Emergency urgency does
 not create a direct-push exception.
 
+All required-check rules keep the strict up-to-date policy. If the source branch does not contain
+the current target tip, create `codex/sync-<source>-to-<target>` from the target, merge the source
+into that short-lived branch, and use it as the pull-request head. This avoids circular long-lived
+branch updates while preserving both histories and all required checks.
+
 ## 6. Repository Changes
 
 Implementation will:
@@ -99,8 +106,8 @@ Implementation will:
 - update `tests/test_enterprise_governance.py` to reject documented direct-push exceptions;
 - update `docs/branch_governance.md` and `docs/release_process.md`;
 - mark the superseded direct-push design as historical without deleting it;
-- retain `.github/workflows/ci.yml` and `scripts/check_branch_flow.py` unless a test exposes a
-  real policy mismatch.
+- retain `.github/workflows/ci.yml` and update `scripts/check_branch_flow.py` only for the tested
+  `codex/sync-*` policy required by strict synchronization.
 
 ## 7. Safe Rollout
 
@@ -115,13 +122,15 @@ The rollout order is:
 3. Run focused governance tests and `python scripts/local_gate.py`.
 4. Push the branch and open a checked pull request to `main`.
 5. Merge the checked hotfix pull request to `main` with a merge commit.
-6. Open and merge a checked `main -> production` synchronization pull request.
+6. Open and merge a checked `main -> production` synchronization pull request, using a
+   target-based `codex/sync-*` branch if the histories have diverged.
 7. Update the remote `Protect production` ruleset from the consolidated production manifest.
 8. Verify that production has no bypass and contains deletion, non-fast-forward, pull-request,
    and required-check rules.
 9. Delete the remote `Protect production history` ruleset.
 10. Update remote `Protect development` to the strict manifest.
-11. Open and merge a checked `production -> development` synchronization pull request.
+11. Open and merge a checked `production -> development` synchronization pull request, using a
+    target-based `codex/sync-*` branch if the histories have diverged.
 12. Verify repository files, remote rulesets, branch ancestry, CI results, and protected tags.
 
 There must be no interval in which `production` lacks deletion or non-fast-forward protection.

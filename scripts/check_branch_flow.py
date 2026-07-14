@@ -13,8 +13,8 @@ EXACT_ALLOWED_SOURCES: dict[str, set[str]] = {
     "development": {"production"},
 }
 PREFIX_ALLOWED_SOURCES: dict[str, tuple[str, ...]] = {
-    "main": ("hotfix/",),
-    "production": (),
+    "main": ("hotfix/", "codex/sync-"),
+    "production": ("codex/sync-",),
     "development": ("feature/", "fix/", "hotfix/", "codex/", "dependabot/"),
 }
 
