@@ -62,6 +62,14 @@ def test_ci_targets_all_long_lived_branches() -> None:
     assert workflow.count("      - main") == 2
 
 
+def test_dependabot_targets_development_for_all_ecosystems() -> None:
+    dependabot = _read(".github/dependabot.yml")
+
+    assert dependabot.count('target-branch: "development"') == 2
+    assert 'package-ecosystem: "pip"' in dependabot
+    assert 'package-ecosystem: "github-actions"' in dependabot
+
+
 def test_ci_exposes_stable_branch_flow_check_in_enforce_mode() -> None:
     workflow = _read(".github/workflows/ci.yml")
 
