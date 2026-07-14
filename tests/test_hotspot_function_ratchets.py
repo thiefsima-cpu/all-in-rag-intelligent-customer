@@ -42,7 +42,6 @@ def _qualified_name_parts(tree: ast.Module, target: ast.AST) -> list[str]:
 MAX_PRODUCTION_FUNCTION_LINES = 80
 MAX_STATE_MACHINE_EXCEPTIONS = 3
 STATE_MACHINE_FUNCTION_ALLOWLIST: dict[tuple[str, str], str] = {}
-_MIGRATION_FUNCTION_LENGTH_DEBT = {}
 
 
 @dataclass(frozen=True)
@@ -93,27 +92,14 @@ class HotspotFunctionRatchetsTests(unittest.TestCase):
             if not reason.startswith("state machine:"):
                 exception_errors.append(f"invalid state-machine reason: {key!r}")
 
-        debt_errors: list[str] = []
-        for key, baseline in _MIGRATION_FUNCTION_LENGTH_DEBT.items():
-            span = by_key.get(key)
-            if span is None:
-                debt_errors.append(f"missing migration debt target: {key!r}")
-            elif span.line_count <= MAX_PRODUCTION_FUNCTION_LINES:
-                debt_errors.append(f"stale migration debt: {key!r}")
-            elif span.line_count > baseline:
-                debt_errors.append(
-                    f"migration debt grew: {key!r} is {span.line_count} lines > {baseline}"
-                )
-
         oversize = [
             f"{span.path}:{span.qualified_name} is "
             f"{span.line_count} lines > {MAX_PRODUCTION_FUNCTION_LINES}"
             for span in spans
             if span.line_count > MAX_PRODUCTION_FUNCTION_LINES
             and span.key not in STATE_MACHINE_FUNCTION_ALLOWLIST
-            and span.key not in _MIGRATION_FUNCTION_LENGTH_DEBT
         ]
-        self.assertEqual(exception_errors + debt_errors + oversize, [])
+        self.assertEqual(exception_errors + oversize, [])
 
     def test_pressure_script_stays_a_thin_direct_entrypoint(self) -> None:
         path = ROOT / "scripts/pressure_api_service.py"

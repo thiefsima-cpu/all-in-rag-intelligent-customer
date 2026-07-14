@@ -1,5 +1,7 @@
 # Production Function Length Ratchet Implementation Plan
 
+**Status:** completed
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reduce every production function under `rag_modules/` to at most 80 physical lines and enforce the limit with a repository-wide AST ratchet.
