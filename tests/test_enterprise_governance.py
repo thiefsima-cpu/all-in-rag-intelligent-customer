@@ -178,6 +178,16 @@ def test_agent_config_template_does_not_contain_credentials() -> None:
     assert template["kimi"]["api_key"] == ""
 
 
+def test_generated_repository_metadata_is_ignored() -> None:
+    ignored_paths = set(_read(".gitignore").splitlines())
+
+    assert {
+        ".pytest_*/",
+        "*.egg-info/",
+        "/.superpowers/",
+    } <= ignored_paths
+
+
 def test_pyproject_declares_ci_quality_tooling() -> None:
     pyproject = _read("pyproject.toml")
 

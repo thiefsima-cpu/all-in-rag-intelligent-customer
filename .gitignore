@@ -5,8 +5,7 @@
 
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.pytest_tmp/
+.pytest_*/
 .coverage
 .coverage.*
 coverage.json
@@ -14,9 +13,11 @@ coverage.xml
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 .venv/
 .venv-*/
 .worktrees/
+/.superpowers/
 .idea/
 .restore_*/
 
