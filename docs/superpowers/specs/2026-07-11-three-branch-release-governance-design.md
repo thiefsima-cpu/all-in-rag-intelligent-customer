@@ -1,5 +1,10 @@
 # Three-Branch Release Governance Design
 
+**Status:** Superseded in part
+
+**Replacement:** `2026-07-14-strict-long-lived-branch-protection-design.md`; retained as
+historical context
+
 ## 1. Purpose
 
 This document defines the branch, CI, release, deployment-source, hotfix, and migration
