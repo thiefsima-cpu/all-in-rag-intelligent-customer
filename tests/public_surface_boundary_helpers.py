@@ -57,6 +57,7 @@ RETIRED_LEGACY_FACADE_MODULES = frozenset(
         "rag_modules.graph_data_preparation",
         "rag_modules.graph_indexing",
         "rag_modules.intelligent_query_router",
+        "rag_modules.interfaces.api.routes",
         "rag_modules.neo4j_pool",
         "rag_modules.routing.intelligent_query_router",
         "rag_modules.retrieval.hybrid_facade",

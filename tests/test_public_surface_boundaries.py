@@ -269,9 +269,11 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
         self.assertNotIn("remain active only for migration", policy)
 
     def test_api_routes_register_only_versioned_operational_paths(self) -> None:
-        path = RAG_MODULES_DIR / "interfaces" / "api" / "routes.py"
-        source = path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(source, filename=str(path))
+        paths = tuple(
+            RAG_MODULES_DIR / "interfaces" / "api" / filename
+            for filename in ("build_routes.py", "operational_routes.py", "serving_routes.py")
+        )
+        sources: list[str] = []
         violations: list[str] = []
 
         def route_path(node: ast.AST) -> tuple[str, str] | None:
@@ -294,41 +296,38 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
             )
             return ("versioned", suffix)
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            unversioned_paths: set[str] = set()
-            versioned_paths: set[str] = set()
-            for decorator in node.decorator_list:
-                if not isinstance(decorator, ast.Call):
+        for path in paths:
+            source = path.read_text(encoding="utf-8-sig")
+            sources.append(source)
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef):
                     continue
-                func = decorator.func
-                if (
-                    not isinstance(func, ast.Attribute)
-                    or func.attr not in {"get", "post"}
-                    or not isinstance(func.value, ast.Name)
-                    or func.value.id != "app"
-                    or not decorator.args
-                ):
-                    continue
-                parsed_path = route_path(decorator.args[0])
-                if parsed_path is None:
-                    continue
-                kind, parsed = parsed_path
-                if kind == "versioned":
-                    versioned_paths.add(parsed)
-                else:
-                    unversioned_paths.add(parsed)
-
-            for unversioned_path in sorted(unversioned_paths):
-                violations.append(f"{node.name}: {unversioned_path}")
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call):
+                        continue
+                    func = decorator.func
+                    if (
+                        not isinstance(func, ast.Attribute)
+                        or func.attr not in {"get", "post"}
+                        or not isinstance(func.value, ast.Name)
+                        or func.value.id != "app"
+                        or not decorator.args
+                    ):
+                        continue
+                    parsed_path = route_path(decorator.args[0])
+                    if parsed_path is None:
+                        continue
+                    kind, parsed = parsed_path
+                    if kind == "unversioned":
+                        violations.append(f"{path.name}:{node.name}: {parsed}")
 
         self.assertEqual(
             [],
             violations,
             "API route decorators must use canonical /v1 paths only.",
         )
-        self.assertNotIn("_versioned_alias_route", source)
+        self.assertNotIn("_versioned_alias_route", "\n".join(sources))
 
     def test_manifest_confirms_legacy_public_surface_is_retired(self) -> None:
         root_files = {

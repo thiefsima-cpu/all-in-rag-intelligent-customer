@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import importlib.util
 import unittest
 from pathlib import Path
@@ -17,25 +16,24 @@ class ApiRouteStructureTests(unittest.TestCase):
                 self.assertIsNotNone(spec.origin)
                 self.assertTrue(Path(spec.origin).is_file())
 
-    def test_routes_module_is_thin_compatibility_facade(self) -> None:
-        routes = importlib.import_module("rag_modules.interfaces.api.routes")
-        serving_routes = importlib.import_module("rag_modules.interfaces.api.serving_routes")
-        build_routes = importlib.import_module("rag_modules.interfaces.api.build_routes")
-        source = Path(routes.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=routes.__file__)
+    def test_application_assembly_imports_route_owners_directly(self) -> None:
+        spec = importlib.util.find_spec("rag_modules.interfaces.api.app")
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.origin)
 
-        function_names = [
-            node.name
+        source = Path(spec.origin).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=spec.origin)
+        direct_imports = {
+            (node.level, node.module, alias.name)
             for node in tree.body
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-        ]
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+        }
 
-        self.assertEqual([], function_names)
-        self.assertIs(routes.register_serving_routes, serving_routes.register_serving_routes)
-        self.assertIs(routes.register_build_routes, build_routes.register_build_routes)
-        self.assertEqual(
-            {"register_build_routes", "register_serving_routes"},
-            set(routes.__all__),
+        self.assertIn((1, "build_routes", "register_build_routes"), direct_imports)
+        self.assertIn((1, "serving_routes", "register_serving_routes"), direct_imports)
+        self.assertFalse(
+            any(level == 1 and module == "routes" for level, module, _name in direct_imports)
         )
 
 

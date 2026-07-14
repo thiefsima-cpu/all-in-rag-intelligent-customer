@@ -14,18 +14,16 @@ from ...app.build_jobs import BuildJobApplicationService
 from ...app.runtime_operations import resolve_runtime_operation_coordinator
 from ...configuration.models import ApiSettings, GraphRAGConfig, ObservabilitySettings
 from ...telemetry import get_runtime_telemetry
+from .build_routes import register_build_routes
 from .error_handlers import register_api_error_handlers
 from .error_models import error_response_openapi
 from .request_context import RequestContextMiddleware
-from .routes import (
-    register_build_routes,
-    register_serving_routes,
-)
 from .security import ApiSecurityMiddleware, configure_openapi_security
 from .services import (
     GraphRAGBuildApiService,
     GraphRAGServingApiService,
 )
+from .serving_routes import register_serving_routes
 from .versioning import API_VERSION
 
 
