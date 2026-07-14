@@ -227,6 +227,33 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertNotIn("jieba==0.42.1", runtime_lock)
         self.assertNotIn("jieba==0.42.1", dev_lock)
 
+    def test_langchain_core_uses_patched_version_in_source_and_locks(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        runtime_dependencies = pyproject["project"]["dependencies"]
+        runtime_lock = (root / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (root / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            _pinned_requirement_version(runtime_dependencies, "langchain-core"),
+            "1.3.3",
+        )
+        self.assertIn("langchain-core==1.3.3", runtime_lock)
+        self.assertIn("langchain-core==1.3.3", dev_lock)
+
+    def test_setuptools_uses_patched_version_across_build_and_install_paths(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        build_requirements = pyproject["build-system"]["requires"]
+        bootstrap = (root / "scripts" / "bootstrap_env.ps1").read_text(encoding="utf-8")
+        runtime_lock = (root / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (root / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertIn("setuptools>=83.0.0", build_requirements)
+        self.assertIn('"setuptools==83.0.0"', bootstrap)
+        self.assertIn("setuptools==83.0.0", runtime_lock)
+        self.assertIn("setuptools==83.0.0", dev_lock)
+
     def test_current_runtime_lock_contains_no_development_only_packages(self) -> None:
         from scripts.verify_environment import find_runtime_lock_violations
 
@@ -246,6 +273,8 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertIn("--strip-extras", script)
         self.assertIn("--allow-unsafe", script)
         self.assertIn("--pip-args", script)
+        self.assertIn("UpgradePackage", script)
+        self.assertIn("--upgrade-package", script)
         self.assertIn("3.11", script)
 
         try:
