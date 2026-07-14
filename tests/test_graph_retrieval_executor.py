@@ -11,8 +11,10 @@ from rag_modules.contracts.runtime.errors import ensure_runtime_error_detail
 from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
 from rag_modules.graph import ports as graph_ports
 from rag_modules.graph.query_executor import GraphQueryExecutor
-from rag_modules.graph.retrieval import GraphRetrievalExecutor
-from rag_modules.graph.retrieval_executor import GraphRetrievalExecutorServices
+from rag_modules.graph.retrieval_executor import (
+    GraphRetrievalExecutor,
+    GraphRetrievalExecutorServices,
+)
 
 
 class _FakeGraphRuntime:

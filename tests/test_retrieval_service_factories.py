@@ -7,7 +7,8 @@ from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.contracts.runtime import GraphRetrievalSnapshot
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
-from rag_modules.graph.retrieval import GraphRAGRetrieval, GraphRetrievalComponents
+from rag_modules.graph.rag_retrieval import GraphRAGRetrieval
+from rag_modules.graph.retrieval_components import GraphRetrievalComponents
 from rag_modules.retrieval import HybridRetrievalService
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
 
