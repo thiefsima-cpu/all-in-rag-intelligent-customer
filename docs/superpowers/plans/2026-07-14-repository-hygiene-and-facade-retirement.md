@@ -282,6 +282,7 @@ git commit -m "refactor: retire graph namespace forwarding modules"
 
 - Modify: `tests/test_api_route_structure.py`
 - Modify: `tests/public_surface_boundary_helpers.py`
+- Modify: `tests/test_public_surface_boundaries.py`
 - Modify: `rag_modules/interfaces/api/app.py`
 - Delete: `rag_modules/interfaces/api/routes.py`
 
@@ -323,6 +324,71 @@ Also add this entry to `RETIRED_LEGACY_FACADE_MODULES`:
 
 ```python
 "rag_modules.interfaces.api.routes",
+```
+
+Replace `test_api_routes_register_only_versioned_operational_paths` with the complete owner scan:
+
+```python
+def test_api_routes_register_only_versioned_operational_paths(self) -> None:
+    paths = tuple(
+        RAG_MODULES_DIR / "interfaces" / "api" / filename
+        for filename in ("build_routes.py", "operational_routes.py", "serving_routes.py")
+    )
+    sources: list[str] = []
+    violations: list[str] = []
+
+    def route_path(node: ast.AST) -> tuple[str, str] | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return ("unversioned", node.value)
+        if not isinstance(node, ast.JoinedStr):
+            return None
+        has_api_prefix = any(
+            isinstance(value, ast.FormattedValue)
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "API_PREFIX"
+            for value in node.values
+        )
+        if not has_api_prefix:
+            return None
+        suffix = "".join(
+            value.value
+            for value in node.values
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        )
+        return ("versioned", suffix)
+
+    for path in paths:
+        source = path.read_text(encoding="utf-8-sig")
+        sources.append(source)
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                func = decorator.func
+                if (
+                    not isinstance(func, ast.Attribute)
+                    or func.attr not in {"get", "post"}
+                    or not isinstance(func.value, ast.Name)
+                    or func.value.id != "app"
+                    or not decorator.args
+                ):
+                    continue
+                parsed_path = route_path(decorator.args[0])
+                if parsed_path is None:
+                    continue
+                kind, parsed = parsed_path
+                if kind == "unversioned":
+                    violations.append(f"{path.name}:{node.name}: {parsed}")
+
+    self.assertEqual(
+        [],
+        violations,
+        "API route decorators must use canonical /v1 paths only.",
+    )
+    self.assertNotIn("_versioned_alias_route", "\n".join(sources))
 ```
 
 - [ ] **Step 2: Run the structural and import-failure tests to verify they fail**
@@ -380,7 +446,7 @@ Expected: exit code 1 with no matches.
 - [ ] **Step 6: Commit the API route hard cutover**
 
 ```powershell
-git add -- rag_modules/interfaces/api/app.py rag_modules/interfaces/api/routes.py tests/test_api_route_structure.py tests/public_surface_boundary_helpers.py
+git add -- rag_modules/interfaces/api/app.py rag_modules/interfaces/api/routes.py tests/test_api_route_structure.py tests/public_surface_boundary_helpers.py tests/test_public_surface_boundaries.py
 git commit -m "refactor: retire API route forwarding module"
 ```
 
