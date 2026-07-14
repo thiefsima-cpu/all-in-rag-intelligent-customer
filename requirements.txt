@@ -192,5 +192,5 @@ zstandard==0.25.0
     # via langsmith
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==80.9.0
+setuptools==83.0.0
     # via pymilvus

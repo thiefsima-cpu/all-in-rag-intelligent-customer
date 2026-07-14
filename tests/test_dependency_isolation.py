@@ -220,6 +220,20 @@ class DependencyIsolationTests(unittest.TestCase):
                 content = (root / relative_path).read_text(encoding="utf-8")
                 self.assertIn(f"pip=={pip_version}", content)
 
+    def test_setuptools_security_floor_matches_bootstrap_and_locks(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertIn("setuptools>=83.0.0", pyproject["build-system"]["requires"])
+        self.assertIn(
+            '"setuptools==83.0.0"',
+            (root / "scripts" / "bootstrap_env.ps1").read_text(encoding="utf-8"),
+        )
+        for lock_name in ("requirements.txt", "requirements-dev.txt"):
+            with self.subTest(lock_name=lock_name):
+                lock = (root / lock_name).read_text(encoding="utf-8")
+                self.assertIn("setuptools==83.0.0", lock)
+
     def test_dependency_docs_point_to_lock_compiler_script(self) -> None:
         root = Path(__file__).resolve().parents[1]
 
