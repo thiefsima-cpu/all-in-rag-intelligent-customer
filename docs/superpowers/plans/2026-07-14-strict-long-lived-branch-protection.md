@@ -375,7 +375,11 @@ Expected: the three printed SHAs are preserved in local audit refs; `HEAD` is ah
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
 $rulesetsJson = gh api "$repoApi/rulesets"
-$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
+$parsedRulesets = $rulesetsJson | Out-String | ConvertFrom-Json
+$rulesets = @()
+foreach ($item in $parsedRulesets) {
+  $rulesets += $item
+}
 $expected = @(
   "Protect main",
   "Protect production",
@@ -451,7 +455,11 @@ Expected: one non-draft pull request targets `main` from the exact hotfix branch
 $pr = gh pr view $prUrl --repo $repo --json number --jq .number
 gh pr checks $pr --repo $repo --required --watch --interval 10
 $checksJson = gh pr checks $pr --repo $repo --json name,state
-$checks = @($checksJson | Out-String | ConvertFrom-Json)
+$parsedChecks = $checksJson | Out-String | ConvertFrom-Json
+$checks = @()
+foreach ($item in $parsedChecks) {
+  $checks += $item
+}
 $required = @("Branch Flow Policy", "Quality Gates", "Secret Scan", "SBOM")
 foreach ($name in $required) {
   $match = @($checks | Where-Object name -eq $name)
@@ -492,17 +500,21 @@ Expected: the PR is merged with a merge commit and the verified hotfix head is a
 
 - [ ] **Step 1: Create and merge the main-to-production synchronization PR**
 
-Because required checks use the strict up-to-date policy, first verify that `origin/production`
-is an ancestor of `origin/main`. If it is not, create `codex/sync-main-to-production` from the
-latest `origin/production`, merge `origin/main` into it, run the full local gate, and use that
-short-lived branch as the PR head instead of `main`.
+Because required checks use the strict up-to-date policy, use the dedicated target-based sync
+branch. Create `codex/sync-main-to-production` from the latest `origin/production`, merge
+`origin/main` into it, and run the full local gate before publishing the short-lived branch.
 
 ```powershell
 $repo = "thiefsima-cpu/all-in-rag-intelligent-customer"
+git fetch origin main production --prune
+git switch -C codex/sync-main-to-production origin/production
+git merge --no-ff origin/main -m "Merge branch 'main' into codex/sync-main-to-production"
+python scripts/local_gate.py
+git push -u origin codex/sync-main-to-production
 $syncUrl = gh pr create `
   --repo $repo `
   --base production `
-  --head main `
+  --head codex/sync-main-to-production `
   --title "chore: synchronize strict branch protection to production" `
   --body "Synchronize the checked governance-only main merge to production before changing the live production ruleset."
 $syncPr = gh pr view $syncUrl --repo $repo --json number --jq .number
@@ -521,7 +533,11 @@ Expected: all required checks pass, the PR is merged, and `origin/main` is an an
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
 $rulesetsJson = gh api "$repoApi/rulesets"
-$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
+$parsedRulesets = $rulesetsJson | Out-String | ConvertFrom-Json
+$rulesets = @()
+foreach ($item in $parsedRulesets) {
+  $rulesets += $item
+}
 $production = @($rulesets | Where-Object name -eq "Protect production")
 if ($production.Count -ne 1) { throw "expected exactly one Protect production ruleset" }
 gh api `
@@ -543,7 +559,11 @@ if (($types -join ",") -ne "deletion,non_fast_forward,pull_request,required_stat
   throw "production rules are incomplete: $($types -join ',')"
 }
 $effectiveJson = gh api "$repoApi/rules/branches/production"
-$effective = @($effectiveJson | Out-String | ConvertFrom-Json)
+$parsedEffective = $effectiveJson | Out-String | ConvertFrom-Json
+$effective = @()
+foreach ($item in $parsedEffective) {
+  $effective += $item
+}
 $effectiveTypes = @($effective.type | Sort-Object -Unique)
 if (($effectiveTypes -join ",") -ne "deletion,non_fast_forward,pull_request,required_status_checks") {
   throw "effective production rules are incomplete: $($effectiveTypes -join ',')"
@@ -556,17 +576,29 @@ Expected: detailed and effective production rules both contain all four rule typ
 
 ```powershell
 $rulesetsJson = gh api "$repoApi/rulesets"
-$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
+$parsedRulesets = $rulesetsJson | Out-String | ConvertFrom-Json
+$rulesets = @()
+foreach ($item in $parsedRulesets) {
+  $rulesets += $item
+}
 $history = @($rulesets | Where-Object name -eq "Protect production history")
 if ($history.Count -ne 1) { throw "expected exactly one Protect production history ruleset" }
 gh api --method DELETE "$repoApi/rulesets/$($history[0].id)"
 $remainingJson = gh api "$repoApi/rulesets"
-$remaining = @($remainingJson | Out-String | ConvertFrom-Json)
+$parsedRemaining = $remainingJson | Out-String | ConvertFrom-Json
+$remaining = @()
+foreach ($item in $parsedRemaining) {
+  $remaining += $item
+}
 if (@($remaining | Where-Object name -eq "Protect production history").Count -ne 0) {
   throw "Protect production history still exists"
 }
 $effectiveJson = gh api "$repoApi/rules/branches/production"
-$effective = @($effectiveJson | Out-String | ConvertFrom-Json)
+$parsedEffective = $effectiveJson | Out-String | ConvertFrom-Json
+$effective = @()
+foreach ($item in $parsedEffective) {
+  $effective += $item
+}
 if (@($effective.type | Sort-Object -Unique).Count -ne 4) {
   throw "production lost protection after redundant ruleset deletion"
 }
@@ -595,7 +627,11 @@ types.
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
 $rulesetsJson = gh api "$repoApi/rulesets"
-$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
+$parsedRulesets = $rulesetsJson | Out-String | ConvertFrom-Json
+$rulesets = @()
+foreach ($item in $parsedRulesets) {
+  $rulesets += $item
+}
 $development = @($rulesets | Where-Object name -eq "Protect development")
 if ($development.Count -ne 1) { throw "expected exactly one Protect development ruleset" }
 gh api `
@@ -617,17 +653,24 @@ Expected: development immediately becomes PR-only with no bypass and all four ru
 
 ```powershell
 $repo = "thiefsima-cpu/all-in-rag-intelligent-customer"
+git fetch origin production development --prune
+git switch -C codex/sync-production-to-development origin/development
+git merge --no-ff origin/production `
+  -m "Merge branch 'production' into codex/sync-production-to-development"
+python scripts/local_gate.py
+git push -u origin codex/sync-production-to-development
 $syncUrl = gh pr create `
   --repo $repo `
   --base development `
-  --head production `
+  --head codex/sync-production-to-development `
   --title "chore: synchronize strict branch protection to development" `
   --body "Synchronize the checked governance change from production while preserving all existing development-only commits."
 $syncPr = gh pr view $syncUrl --repo $repo --json number --jq .number
 gh pr checks $syncPr --repo $repo --required --watch --interval 10
 ```
 
-Expected: the PR targets development from production and all four required checks succeed.
+Expected: the PR targets development from the dedicated sync branch and all four required checks
+succeed.
 
 - [ ] **Step 3: Merge and prove both ancestry directions required by the rollout**
 
@@ -643,11 +686,8 @@ git merge-base --is-ancestor $preDevelopment origin/development
 Expected: both ancestry commands exit `0`, proving production is synchronized and earlier
 development work remains.
 
-If the direct production-to-development PR has a merge conflict or is behind the target, stop
-before merging it.
-Create `codex/sync-production-to-development` from the current `origin/development`, merge
-`origin/production` into that short-lived branch, resolve only the named conflicts, rerun the full
-local gate, and target `development` from that `codex/` branch.
+If creating the target-based sync branch produces a merge conflict, stop before publishing it,
+resolve only the named conflicts, and rerun the full local gate.
 
 ---
 
@@ -669,7 +709,11 @@ local gate, and target `development` from that `codex/` branch.
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
 $rulesetsJson = gh api "$repoApi/rulesets"
-$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
+$parsedRulesets = $rulesetsJson | Out-String | ConvertFrom-Json
+$rulesets = @()
+foreach ($item in $parsedRulesets) {
+  $rulesets += $item
+}
 $expectedNames = @(
   "Protect main",
   "Protect production",
