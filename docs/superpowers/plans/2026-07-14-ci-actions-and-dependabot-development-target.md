@@ -218,7 +218,9 @@ Expected: no whitespace errors; only the approved branch commits are ahead of `d
 
 ```powershell
 git push -u origin codex/ci-actions-node24
-gh pr create --draft --base development --head codex/ci-actions-node24 --title "ci: route dependency updates through development" --body-file <generated-temp-pr-body>
+gh pr create --draft --base development --head codex/ci-actions-node24 `
+  --title "ci: route dependency updates through development" `
+  --body "Updates GitHub Actions to Node 24-compatible major versions and routes Dependabot pull requests through development."
 ```
 
 Expected: the remote branch exists and the pull request base is `development`.
