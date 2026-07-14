@@ -22,8 +22,8 @@ The package version, API version, and compatibility removal version are not
 interchangeable:
 
 - Package version comes from `[project].version` in `pyproject.toml`. The
-  current package version is `0.3.0`, which is the release axis for Python
-  package publication and customer upgrade notes.
+  current package version is `0.4.0.dev0`, which is the development release
+  axis for Python package publication and customer upgrade notes.
 - API version comes from `API_VERSION` in
   `rag_modules/interfaces/api/versioning.py`. The current API version is
   `1.0.0`, served under `/v1`, and describes the HTTP/OpenAPI contract for both
@@ -95,6 +95,24 @@ paths include `rag_modules.neo4j_pool`,
 `rag_modules.build_pipeline.graph_data_preparation`,
 `rag_modules.evidence_processing.core`, and
 `rag_modules.query_understanding.planner_service`.
+
+The `0.4.0.dev0` internal hard cutover also retires namespace-only forwarding
+modules that own no behavior:
+
+- `rag_modules.graph.cache` -> `rag_modules.graph.cache_stats` and
+  `rag_modules.graph.cache_warmup`
+- `rag_modules.graph.evidence` -> `rag_modules.graph.evidence_builder`,
+  `rag_modules.graph.evidence_orchestrator`, and `rag_modules.graph.path_ranker`
+- `rag_modules.graph.query` -> `rag_modules.graph.query_executor`,
+  `rag_modules.graph.query_intent`, and `rag_modules.graph.query_resolution`
+- `rag_modules.graph.reasoning` -> `rag_modules.graph.reasoning_strategy`
+- `rag_modules.graph.retrieval` -> the focused `rag_modules.graph.retrieval_*`
+  modules and `rag_modules.graph.rag_retrieval`
+- `rag_modules.interfaces.api.routes` -> `rag_modules.interfaces.api.build_routes`
+  and `rag_modules.interfaces.api.serving_routes`
+
+These exact retired paths fail instead of forwarding. Package-level exports
+from `rag_modules.graph` remain supported and resolve directly to owner modules.
 
 Consumer-owned runtime ports live in the package that consumes them, such as
 `rag_modules.app.ports`, `rag_modules.retrieval.ports`,
@@ -233,6 +251,9 @@ grouped runtime views.
   retired in favor of `HybridRetrievalService` and evidence-native retrieval
   contracts.
 - Root `graph_*` wrappers retired in favor of `rag_modules.graph.*`.
+- Graph cache, evidence, query, reasoning, and retrieval namespace forwarders,
+  plus the API routes forwarder, retired in favor of their focused owner
+  modules during the `0.4.0.dev0` development cycle.
 - `indexing_pipeline` facades retired in favor of
   `rag_modules.build_pipeline.document_artifacts`.
 - `milvus_index_construction` facades retired in favor of

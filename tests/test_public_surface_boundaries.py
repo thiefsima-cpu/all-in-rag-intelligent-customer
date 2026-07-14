@@ -109,6 +109,12 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
             "rag_modules.__all__",
             "ROOT_PACKAGE_EXPORTS",
             "root wrapper modules remain retired",
+            "rag_modules.graph.cache",
+            "rag_modules.graph.evidence",
+            "rag_modules.graph.query",
+            "rag_modules.graph.reasoning",
+            "rag_modules.graph.retrieval",
+            "rag_modules.interfaces.api.routes",
         ):
             self.assertIn(expected, content)
 
@@ -119,6 +125,8 @@ class PublicSurfaceLegacyBoundaryTests(PublicSurfaceBoundaryTestCase):
         policy = (ROOT / "docs" / "public_surface_retirement_plan.md").read_text(encoding="utf-8")
         normalized_readme = " ".join(readme.split())
         normalized_policy = " ".join(policy.split())
+
+        self.assertIn(f"current package version is `{package_version}`", normalized_policy)
 
         for context, expected_options in (
             ("version governance heading", ("## Version Governance", "## 版本治理")),
