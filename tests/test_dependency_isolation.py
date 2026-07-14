@@ -155,6 +155,37 @@ class DependencyIsolationTests(unittest.TestCase):
             runtime_names.isdisjoint({"mypy", "pip-tools", "pre-commit", "pytest", "ruff"})
         )
 
+    def test_opentelemetry_family_matches_approved_upgrade(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        runtime_dependencies = pyproject["project"]["dependencies"]
+        runtime_names = _requirement_names(runtime_dependencies)
+        runtime_lock = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        dev_lock = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            _pinned_requirement_version(
+                runtime_dependencies,
+                "opentelemetry-exporter-otlp-proto-http",
+            ),
+            "1.43.0",
+        )
+        self.assertEqual(
+            _pinned_requirement_version(runtime_dependencies, "opentelemetry-sdk"),
+            "1.43.0",
+        )
+        self.assertNotIn("opentelemetry-proto", runtime_names)
+        expected_lock_entries = {
+            "opentelemetry-api==1.43.0",
+            "opentelemetry-exporter-otlp-proto-common==1.43.0",
+            "opentelemetry-exporter-otlp-proto-http==1.43.0",
+            "opentelemetry-proto==1.43.0",
+            "opentelemetry-sdk==1.43.0",
+            "opentelemetry-semantic-conventions==0.64b0",
+        }
+        for lock in (runtime_lock, dev_lock):
+            for entry in expected_lock_entries:
+                self.assertIn(entry, lock)
+
     def test_development_lock_includes_httpx2_for_starlette_testclient(self) -> None:
         root = Path(__file__).resolve().parents[1]
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
