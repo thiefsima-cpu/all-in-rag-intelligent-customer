@@ -1,6 +1,6 @@
 # Repository Hygiene and Facade Retirement Design
 
-Status: draft
+Status: approved
 
 Date: 2026-07-14
 
