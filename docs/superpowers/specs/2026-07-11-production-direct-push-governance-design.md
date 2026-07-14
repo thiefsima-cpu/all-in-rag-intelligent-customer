@@ -2,7 +2,10 @@
 
 **Date:** 2026-07-11
 
-**Status:** Approved for implementation planning
+**Status:** Superseded
+
+**Replacement:** `2026-07-14-strict-long-lived-branch-protection-design.md`; retained as
+historical context
 
 ## 1. Goal
 
