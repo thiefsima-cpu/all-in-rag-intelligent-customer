@@ -43,8 +43,6 @@ MAX_PRODUCTION_FUNCTION_LINES = 80
 MAX_STATE_MACHINE_EXCEPTIONS = 3
 STATE_MACHINE_FUNCTION_ALLOWLIST: dict[tuple[str, str], str] = {}
 _MIGRATION_FUNCTION_LENGTH_DEBT = {
-    ("rag_modules/query_policy/parsers/runtime_defaults.py", "_parse_semantic_defaults"): 116,
-    ("rag_modules/contracts/query_plan.py", "QueryPlan.from_dict"): 114,
     (
         "rag_modules/query_understanding/graph_intent.py",
         "infer_query_semantic_profile",
@@ -77,10 +75,6 @@ _MIGRATION_FUNCTION_LENGTH_DEBT = {
         "rag_modules/generation/execution/two_stage.py",
         "TwoStageCompletionRunner.run",
     ): 82,
-    (
-        "rag_modules/retrieval/hybrid_components.py",
-        "DefaultHybridRetrievalComponentFactory.build",
-    ): 81,
 }
 
 
