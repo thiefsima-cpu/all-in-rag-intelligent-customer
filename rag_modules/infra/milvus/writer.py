@@ -29,6 +29,38 @@ class _MilvusWriterOperations(MilvusOperationHost):
             return ""
         return str(text)[:max_length]
 
+    def _vector_entity(
+        self,
+        chunk: TextDocument,
+        vector: object,
+        index: int,
+    ) -> dict[str, object]:
+        return {
+            "id": self._safe_truncate(chunk.metadata.get("chunk_id", f"chunk_{index}"), 150),
+            "vector": vector,
+            "text": self._safe_truncate(chunk.page_content, 15000),
+            "node_id": self._safe_truncate(chunk.metadata.get("node_id", ""), 100),
+            "recipe_name": self._safe_truncate(chunk.metadata.get("recipe_name", ""), 300),
+            "node_type": self._safe_truncate(chunk.metadata.get("node_type", ""), 100),
+            "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
+            "cuisine_type": self._safe_truncate(chunk.metadata.get("cuisine_type", ""), 200),
+            "difficulty": int(chunk.metadata.get("difficulty", 0)),
+            "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
+            "chunk_id": self._safe_truncate(chunk.metadata.get("chunk_id", f"chunk_{index}"), 150),
+            "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),
+        }
+
+    def _insert_vector_batches(
+        self,
+        collection_name: str,
+        entities: list[dict[str, object]],
+    ) -> None:
+        batch_size = 100
+        for i in range(0, len(entities), batch_size):
+            batch = entities[i : i + batch_size]
+            self.client.insert(collection_name=collection_name, data=batch)
+            logger.info(f"已插入 {min(i + batch_size, len(entities))}/{len(entities)} 条数据")
+
     def build_vector_index(
         self,
         chunks: List[TextDocument],
@@ -68,35 +100,14 @@ class _MilvusWriterOperations(MilvusOperationHost):
             vectors = self.embeddings.embed_documents(texts)
 
             # 3. 准备插入数据
-            entities = []
-            for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
-                entity = {
-                    "id": self._safe_truncate(chunk.metadata.get("chunk_id", f"chunk_{i}"), 150),
-                    "vector": vector,
-                    "text": self._safe_truncate(chunk.page_content, 15000),
-                    "node_id": self._safe_truncate(chunk.metadata.get("node_id", ""), 100),
-                    "recipe_name": self._safe_truncate(chunk.metadata.get("recipe_name", ""), 300),
-                    "node_type": self._safe_truncate(chunk.metadata.get("node_type", ""), 100),
-                    "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
-                    "cuisine_type": self._safe_truncate(
-                        chunk.metadata.get("cuisine_type", ""), 200
-                    ),
-                    "difficulty": int(chunk.metadata.get("difficulty", 0)),
-                    "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
-                    "chunk_id": self._safe_truncate(
-                        chunk.metadata.get("chunk_id", f"chunk_{i}"), 150
-                    ),
-                    "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),
-                }
-                entities.append(entity)
+            entities = [
+                self._vector_entity(chunk, vector, index)
+                for index, (chunk, vector) in enumerate(zip(chunks, vectors))
+            ]
 
             # 4. 批量插入数据
             logger.info("正在插入向量数据...")
-            batch_size = 100
-            for i in range(0, len(entities), batch_size):
-                batch = entities[i : i + batch_size]
-                self.client.insert(collection_name=target_collection, data=batch)
-                logger.info(f"已插入 {min(i + batch_size, len(entities))}/{len(entities)} 条数据")
+            self._insert_vector_batches(target_collection, entities)
 
             self.client.flush(collection_name=target_collection)
 

@@ -244,6 +244,30 @@ def _extract_difficulty_levels(recipe_properties: Dict[str, Any], haystack: str)
     return _unique(matched)
 
 
+def _contribution_relations(
+    haystack: str,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    contribution_hints: List[Dict[str, Any]] = []
+    ingredient_contributions: List[Dict[str, str]] = []
+    for effect, causes in _CONTRIBUTION_HINTS.items():
+        matched_causes = _contains_terms(haystack, causes)
+        if not matched_causes:
+            continue
+        contribution_hints.append({"effect": effect, "causes": _unique(matched_causes)})
+        ingredient_contributions.extend(
+            {"source": cause, "effect": effect} for cause in matched_causes
+        )
+    return contribution_hints, ingredient_contributions
+
+
+def _technique_effects(haystack: str) -> List[Dict[str, str]]:
+    effects: List[Dict[str, str]] = []
+    for effect, techniques in _TECHNIQUE_EFFECT_HINTS.items():
+        matched = _contains_terms(haystack, techniques)
+        effects.extend({"source": item, "effect": effect} for item in _unique(matched))
+    return effects
+
+
 def infer_recipe_semantics(
     recipe_properties: Dict[str, Any],
     ingredients: List[str],
@@ -271,36 +295,8 @@ def infer_recipe_semantics(
     time_profile_tags = _extract_time_profiles(recipe_properties, haystack)
     difficulty_level_tags = _extract_difficulty_levels(recipe_properties, haystack)
 
-    contribution_hints = []
-    ingredient_contributions = []
-    for effect, causes in _CONTRIBUTION_HINTS.items():
-        matched_causes = _contains_terms(haystack, causes)
-        if matched_causes:
-            contribution_hints.append(
-                {
-                    "effect": effect,
-                    "causes": _unique(matched_causes),
-                }
-            )
-            for cause in matched_causes:
-                ingredient_contributions.append(
-                    {
-                        "source": cause,
-                        "effect": effect,
-                    }
-                )
-
-    technique_effects = []
-    for effect, techniques in _TECHNIQUE_EFFECT_HINTS.items():
-        matched_techniques = _contains_terms(haystack, techniques)
-        if matched_techniques:
-            for technique in _unique(matched_techniques):
-                technique_effects.append(
-                    {
-                        "source": technique,
-                        "effect": effect,
-                    }
-                )
+    contribution_hints, ingredient_contributions = _contribution_relations(haystack)
+    technique_effects = _technique_effects(haystack)
 
     semantic_relations = {
         "HAS_FLAVOR": flavor_tags,

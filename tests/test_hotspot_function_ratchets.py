@@ -42,16 +42,7 @@ def _qualified_name_parts(tree: ast.Module, target: ast.AST) -> list[str]:
 MAX_PRODUCTION_FUNCTION_LINES = 80
 MAX_STATE_MACHINE_EXCEPTIONS = 3
 STATE_MACHINE_FUNCTION_ALLOWLIST: dict[tuple[str, str], str] = {}
-_MIGRATION_FUNCTION_LENGTH_DEBT = {
-    (
-        "rag_modules/infra/milvus/writer.py",
-        "_MilvusWriterOperations.build_vector_index",
-    ): 95,
-    (
-        "rag_modules/domain/shared/semantic_schema.py",
-        "infer_recipe_semantics",
-    ): 83,
-}
+_MIGRATION_FUNCTION_LENGTH_DEBT = {}
 
 
 @dataclass(frozen=True)
