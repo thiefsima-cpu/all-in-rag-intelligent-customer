@@ -151,15 +151,8 @@ class QueryPlanCalibrator:
             return GraphQueryType(current_type_value)
         return profile_query_type
 
-    def calibrate(self, plan: QueryPlan) -> None:
-        query = plan.query or ""
-        profile = infer_query_semantic_profile(
-            query,
-            settings=self.settings,
-            policy_bundle=self.policy_bundle,
-        )
+    def _apply_profile(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
         plan.semantic_profile = profile
-
         plan.complexity = max(plan.complexity, profile.complexity)
         plan.relationship_intensity = max(
             plan.relationship_intensity, profile.relationship_intensity
@@ -174,34 +167,33 @@ class QueryPlanCalibrator:
             plan.constraints.needs_recipe_recommendation or profile.needs_recipe_recommendation
         )
 
-        resolved_strategy = self.resolve_strategy(
+    def _calibrate_strategy(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
+        resolved = self.resolve_strategy(
             current_strategy=plan.strategy,
             profile=profile,
             constraints=plan.constraints,
             complexity=plan.complexity,
             relationship_intensity=plan.relationship_intensity,
         )
-        current_strategy = _strategy_value(plan.strategy)
-        if resolved_strategy != current_strategy:
-            strategy_label = self.policy.validation_labels["strategy"]
-            plan.validation_errors.append(
-                f"{strategy_label}:{current_strategy}->{resolved_strategy}"
-            )
-            plan.strategy = SearchStrategy(resolved_strategy)
+        current = _strategy_value(plan.strategy)
+        if resolved == current:
+            return
+        label = self.policy.validation_labels["strategy"]
+        plan.validation_errors.append(f"{label}:{current}->{resolved}")
+        plan.strategy = SearchStrategy(resolved)
 
-        resolved_query_type = self.resolve_graph_query_type(plan.graph_query_type, profile)
-        if resolved_query_type != plan.graph_query_type:
-            graph_query_type_label = self.policy.validation_labels["graph_query_type"]
-            plan.validation_errors.append(
-                f"{graph_query_type_label}:"
-                f"{plan.graph_query_type_value}->{resolved_query_type.value}"
-            )
-            plan.graph_query_type = resolved_query_type
+    def _calibrate_graph_query_type(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
+        resolved = self.resolve_graph_query_type(plan.graph_query_type, profile)
+        if resolved == plan.graph_query_type:
+            return
+        label = self.policy.validation_labels["graph_query_type"]
+        plan.validation_errors.append(f"{label}:{plan.graph_query_type_value}->{resolved.value}")
+        plan.graph_query_type = resolved
 
+    def _fill_missing_terms(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
         for relation_type in profile.relation_types:
             if relation_type not in plan.relation_types:
                 plan.relation_types.append(relation_type)
-
         if not plan.entity_keywords:
             plan.entity_keywords = list(
                 profile.entity_keywords[: self.settings.entity_keyword_limit]
@@ -213,38 +205,53 @@ class QueryPlanCalibrator:
                 profile.target_entities[: self.settings.target_entity_limit]
             )
 
+    def _fill_graph_sources(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
         if (
             _strategy_value(plan.strategy)
-            in {SearchStrategy.GRAPH_RAG.value, SearchStrategy.COMBINED.value}
-            and not plan.source_entities
+            not in {
+                SearchStrategy.GRAPH_RAG.value,
+                SearchStrategy.COMBINED.value,
+            }
+            or plan.source_entities
         ):
-            fallback_candidates = (
-                profile.source_entities
-                or fallback_entity_phrases(query)
-                or profile.entity_keywords
-                or fallback_keywords(query)
-            )
-            plan.source_entities = normalize_graph_sources(
-                fallback_candidates[: self.settings.source_entity_limit]
-            )
-            if plan.source_entities:
-                plan.validation_errors.append(self.policy.validation_labels["source_entities"])
+            return
+        query = plan.query or ""
+        fallback_candidates = (
+            profile.source_entities
+            or fallback_entity_phrases(query)
+            or profile.entity_keywords
+            or fallback_keywords(query)
+        )
+        plan.source_entities = normalize_graph_sources(
+            fallback_candidates[: self.settings.source_entity_limit]
+        )
+        if plan.source_entities:
+            plan.validation_errors.append(self.policy.validation_labels["source_entities"])
 
+    def _clamp_max_depth(self, plan: QueryPlan) -> None:
+        inferred = plan.max_depth or infer_graph_max_depth(
+            plan.graph_query_type_value,
+            plan.relationship_intensity,
+            settings=self.settings,
+            policy_bundle=self.policy_bundle,
+        )
         plan.max_depth = max(
             1,
-            min(
-                int(
-                    plan.max_depth
-                    or infer_graph_max_depth(
-                        plan.graph_query_type_value,
-                        plan.relationship_intensity,
-                        settings=self.settings,
-                        policy_bundle=self.policy_bundle,
-                    )
-                ),
-                self.settings.graph_query_max_depth_cap,
-            ),
+            min(int(inferred), self.settings.graph_query_max_depth_cap),
         )
+
+    def calibrate(self, plan: QueryPlan) -> None:
+        profile = infer_query_semantic_profile(
+            plan.query or "",
+            settings=self.settings,
+            policy_bundle=self.policy_bundle,
+        )
+        self._apply_profile(plan, profile)
+        self._calibrate_strategy(plan, profile)
+        self._calibrate_graph_query_type(plan, profile)
+        self._fill_missing_terms(plan, profile)
+        self._fill_graph_sources(plan, profile)
+        self._clamp_max_depth(plan)
 
 
 __all__ = ["QueryPlanCalibrator"]

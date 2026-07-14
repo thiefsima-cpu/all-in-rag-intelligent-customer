@@ -44,17 +44,9 @@ MAX_STATE_MACHINE_EXCEPTIONS = 3
 STATE_MACHINE_FUNCTION_ALLOWLIST: dict[tuple[str, str], str] = {}
 _MIGRATION_FUNCTION_LENGTH_DEBT = {
     (
-        "rag_modules/query_understanding/graph_intent.py",
-        "infer_query_semantic_profile",
-    ): 110,
-    (
         "rag_modules/infra/milvus/writer.py",
         "_MilvusWriterOperations.build_vector_index",
     ): 95,
-    (
-        "rag_modules/query_understanding/planning/calibration.py",
-        "QueryPlanCalibrator.calibrate",
-    ): 94,
     (
         "rag_modules/generation/execution/engine.py",
         "GenerationExecutionEngine.generate_with_trace",
@@ -63,10 +55,6 @@ _MIGRATION_FUNCTION_LENGTH_DEBT = {
         "rag_modules/routing/strategies/graph.py",
         "GraphRouteStrategy.execute",
     ): 91,
-    (
-        "rag_modules/query_understanding/planning/rule_based.py",
-        "RuleBasedPlanner.plan",
-    ): 83,
     (
         "rag_modules/domain/shared/semantic_schema.py",
         "infer_recipe_semantics",
