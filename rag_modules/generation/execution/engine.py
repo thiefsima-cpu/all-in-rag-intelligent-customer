@@ -18,15 +18,15 @@ from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
-from ..models import AnswerPlan, GenerationMode, GenerationSettings
+from ..models import AnswerPlan, GenerationDecision, GenerationMode, GenerationSettings
 from ..planner import GenerationPlanner
 from ..prompt_builder import GenerationPromptBuilder
 from .composer import GenerationComposer
-from .contracts import GenerationAttemptFailed
+from .contracts import GenerationAttemptFailed, GenerationAttemptResult
 from .direct import DirectCompletionRunner
 from .fallbacks import GenerationFallbackHandler
 from .streaming import StreamingGenerationRunner
-from .timeouts import GenerationTimeoutBudget
+from .timeouts import GenerationExecutionDeadline, GenerationTimeoutBudget
 from .tracing import GenerationTraceRecorder
 from .two_stage import TwoStageCompletionRunner
 from .usage import GenerationUsageCollector
@@ -147,18 +147,12 @@ class GenerationExecutionEngine:
         trace = self._trace_recorder.new_trace(decision, package, selected_package)
 
         try:
-            if decision.mode is GenerationMode.TWO_STAGE:
-                result = self._two_stage_runner.run(
-                    selected_context,
-                    deadline=deadline,
-                    control=control,
-                )
-            else:
-                result = self._direct_runner.run(
-                    selected_context,
-                    deadline=deadline,
-                    control=control,
-                )
+            result = self._run_selected_attempt(
+                decision=decision,
+                answer_context=selected_context,
+                deadline=deadline,
+                control=control,
+            )
             self._trace_recorder.record_attempt_result(
                 trace,
                 result,
@@ -167,16 +161,12 @@ class GenerationExecutionEngine:
             return result.answer, self._trace_recorder.finalize_trace(trace)
         except GenerationAttemptFailed as failure:
             self._trace_recorder.add_retries(trace, failure.request_retries)
-            answer = self._fallback_handler.build_evidence_only_answer(
+            return self._record_generation_fallback(
+                trace=trace,
                 package=selected_package,
                 error=failure.error,
+                deadline=deadline,
             )
-            self._trace_recorder.record_evidence_fallback(
-                trace,
-                error=failure.error,
-                total_latency_ms=deadline.total_elapsed_ms(),
-            )
-            return answer, self._trace_recorder.finalize_trace(trace)
         except (RequestCancelled, RequestBudgetExceeded):
             raise
         except Exception as exc:
@@ -191,16 +181,48 @@ class GenerationExecutionEngine:
                 trace,
                 self._usage_collector.drain_retry_count(),
             )
-            answer = self._fallback_handler.build_evidence_only_answer(
+            return self._record_generation_fallback(
+                trace=trace,
                 package=selected_package,
                 error=exc,
+                deadline=deadline,
             )
-            self._trace_recorder.record_evidence_fallback(
-                trace,
-                error=exc,
-                total_latency_ms=deadline.total_elapsed_ms(),
+
+    def _run_selected_attempt(
+        self,
+        *,
+        decision: GenerationDecision,
+        answer_context: AnswerContext,
+        deadline: GenerationExecutionDeadline,
+        control: RequestControl | None,
+    ) -> GenerationAttemptResult:
+        if decision.mode is GenerationMode.TWO_STAGE:
+            return self._two_stage_runner.run(
+                answer_context,
+                deadline=deadline,
+                control=control,
             )
-            return answer, self._trace_recorder.finalize_trace(trace)
+        return self._direct_runner.run(
+            answer_context,
+            deadline=deadline,
+            control=control,
+        )
+
+    def _record_generation_fallback(
+        self,
+        *,
+        trace: GenerationSnapshot,
+        package: AnswerEvidencePackage,
+        error: Exception,
+        deadline: GenerationExecutionDeadline,
+    ) -> tuple[str, GenerationSnapshot]:
+        answer = self._fallback_handler.build_evidence_only_answer(package=package, error=error)
+        self._trace_recorder.record_evidence_fallback(
+            trace,
+            error=error,
+            total_latency_ms=deadline.total_elapsed_ms(),
+        )
+        return answer, self._trace_recorder.finalize_trace(trace)
 
     def stream(
         self,

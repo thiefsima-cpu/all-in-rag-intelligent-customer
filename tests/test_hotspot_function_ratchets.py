@@ -48,21 +48,9 @@ _MIGRATION_FUNCTION_LENGTH_DEBT = {
         "_MilvusWriterOperations.build_vector_index",
     ): 95,
     (
-        "rag_modules/generation/execution/engine.py",
-        "GenerationExecutionEngine.generate_with_trace",
-    ): 92,
-    (
-        "rag_modules/routing/strategies/graph.py",
-        "GraphRouteStrategy.execute",
-    ): 91,
-    (
         "rag_modules/domain/shared/semantic_schema.py",
         "infer_recipe_semantics",
     ): 83,
-    (
-        "rag_modules/generation/execution/two_stage.py",
-        "TwoStageCompletionRunner.run",
-    ): 82,
 }
 
 
