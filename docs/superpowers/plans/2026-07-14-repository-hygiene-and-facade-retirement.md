@@ -1,6 +1,6 @@
 # Repository Hygiene and Facade Retirement Implementation Plan
 
-Status: active
+Status: completed
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
