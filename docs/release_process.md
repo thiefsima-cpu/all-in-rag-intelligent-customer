@@ -7,18 +7,14 @@ must be called out explicitly when they change.
 ## Branch Promotion
 
 The governed flow is `development -> production -> main`. Promotions use merge commits. After
-each promotion, synchronize the target merge commit back into its source branch as documented in
-`docs/branch_governance.md`.
+each promotion, synchronize the target merge commit back through checked pull requests as
+documented in `docs/branch_governance.md`. The complete synchronization path after a formal
+promotion is `main -> production -> development`.
 
-### Production Direct-Push Exception
-
-The single maintainer may direct fast-forward push a commit created on local `production`.
-Production push CI must pass before synchronization or RC tagging. Every such change is merged
-back through a `production -> development` pull request. `development -> production` remains a
-checked pull request with a merge commit.
-
-Do not create an RC tag when production push CI is pending or failed. Repair or revert with a new
-commit; production history is never rewritten.
+If the source of a promotion or synchronization pull request is behind its target, create a
+`codex/sync-*` branch from the latest target and merge the source into it before opening the pull
+request. Do not disable the strict up-to-date check and do not update a long-lived source branch
+outside its own pull request.
 
 ## Release Candidates
 
@@ -37,12 +33,10 @@ is the only formal deployment source. The final tag is never reused for an RC.
 
 ## Required GitHub Enforcement
 
-Main requires pull requests and all four checks without bypass. Production uses two active
-rulesets: `Protect production history` blocks deletion and non-fast-forward updates without
-bypass, while `Protect production` requires pull requests and the four checks but grants the
-repository administrator an `always` bypass for local production fast-forward pushes. Required
-approvals remain zero for the single-maintainer repository. Development permits direct pushes but
-blocks deletion and force-push.
+`development`, `production`, and `main` each require pull requests, resolved review
+conversations, merge commits, and the same four checks without bypass: `Branch Flow Policy`,
+`Quality Gates`, `Secret Scan`, and `SBOM`. Required approvals remain zero for the
+single-maintainer repository. All three branches block deletion and non-fast-forward updates.
 
 ## Release Checklist
 
@@ -77,3 +71,6 @@ Security releases follow the same checklist, but the changelog entry may describ
 impact and mitigation without exposing exploit details. If a vulnerable
 dependency is fixed only in lock files, the release pull request still needs the
 dependency audit and SBOM checks.
+
+Urgent fixes use checked `hotfix/ -> main -> production -> development` pull requests; urgency
+does not permit direct push or bypass required checks.

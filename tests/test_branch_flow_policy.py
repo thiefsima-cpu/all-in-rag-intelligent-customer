@@ -10,8 +10,10 @@ from scripts.check_branch_flow import evaluate_branch_flow, main
     [
         ("main", "production"),
         ("main", "hotfix/0.4.1"),
+        ("main", "codex/sync-production-to-main"),
         ("production", "development"),
         ("production", "main"),
+        ("production", "codex/sync-main-to-production"),
         ("development", "feature/query-cache"),
         ("development", "fix/timeout"),
         ("development", "codex/refactor-runtime"),
@@ -33,6 +35,8 @@ def test_allowed_branch_flows(base: str, head: str) -> None:
         ("production", "feature/direct-to-production"),
         ("production", "hotfix/0.4.1"),
         ("main", "dependabot/pip/fastapi-0.139.0"),
+        ("main", "codex/feature-direct-to-main"),
+        ("production", "codex/feature-direct-to-production"),
     ],
 )
 def test_rejected_branch_flows(base: str, head: str) -> None:

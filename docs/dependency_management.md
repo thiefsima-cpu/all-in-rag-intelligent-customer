@@ -19,6 +19,16 @@ The script runs `piptools compile` for the runtime lock and the `dev` extra.
 Pass `-IndexUrl` only when a release process intentionally uses a different
 package index.
 
+When a security update must replace a version already retained in the lock
+files, request only those resolver upgrades explicitly:
+
+```powershell
+.\scripts\compile_locks.ps1 -UpgradePackage "package-a==1.2.3","package-b==4.5.6"
+```
+
+Direct dependencies must still be updated in `pyproject.toml` first. Avoid a
+repository-wide resolver upgrade when a targeted security update is sufficient.
+
 Create an isolated Miniconda-backed development environment:
 
 ```powershell

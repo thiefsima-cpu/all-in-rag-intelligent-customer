@@ -156,34 +156,41 @@ def test_branch_governance_documents_promotion_and_synchronization() -> None:
 
     assert "development -> production -> main" in governance
     assert "merge commit" in governance
-    assert "fast-forward development" in governance
     assert "main -> production" in governance
+    assert "production -> development" in governance
     assert "v0.4.0-rc.1" in governance
     assert "v0.4.0" in governance
     assert "previous final tag" in governance
 
 
-def test_production_direct_push_requires_ci_and_development_back_sync() -> None:
+def test_long_lived_branches_are_pr_only_without_bypass() -> None:
     governance = _read("docs/branch_governance.md")
     release_process = _read("docs/release_process.md")
+    current_policy = governance + release_process
+    normalized_policy = " ".join(current_policy.split())
 
-    for fragment in (
-        "local `production`",
+    for forbidden in (
+        "Direct Production Changes",
+        "Production Direct-Push Exception",
         "direct fast-forward push",
-        "production -> development",
         "administrator bypass",
-        "Protect production history",
+        "Development permits direct push",
+    ):
+        assert forbidden not in normalized_policy
+
+    for required in (
+        "development -> production -> main",
+        "pull requests",
+        "zero approving reviews",
+        "Branch Flow Policy",
+        "Quality Gates",
+        "Secret Scan",
+        "SBOM",
+        "hotfix/",
+        "main -> production -> development",
         "never force-push",
     ):
-        assert fragment in governance
-
-    for fragment in (
-        "production push CI",
-        "development -> production",
-        "merge commit",
-        "Do not create an RC tag",
-    ):
-        assert fragment in release_process
+        assert required in normalized_policy
 
 
 def test_release_workflow_validates_and_archives_without_pypi_publish() -> None:
