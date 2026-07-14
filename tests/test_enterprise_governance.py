@@ -70,6 +70,28 @@ def test_dependabot_targets_development_for_all_ecosystems() -> None:
     assert 'package-ecosystem: "github-actions"' in dependabot
 
 
+def test_workflows_use_node24_compatible_action_majors() -> None:
+    ci = _read(".github/workflows/ci.yml")
+    release = _read(".github/workflows/release.yml")
+    workflows = ci + release
+
+    assert ci.count("actions/checkout@v7") == 4
+    assert release.count("actions/checkout@v7") == 1
+    assert ci.count("actions/setup-python@v6") == 2
+    assert release.count("actions/setup-python@v6") == 1
+    assert ci.count("actions/upload-artifact@v7") == 1
+    assert release.count("actions/upload-artifact@v7") == 1
+    assert ci.count("gitleaks/gitleaks-action@v3") == 1
+
+    for retired_action in (
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "gitleaks/gitleaks-action@v2",
+    ):
+        assert retired_action not in workflows
+
+
 def test_ci_exposes_stable_branch_flow_check_in_enforce_mode() -> None:
     workflow = _read(".github/workflows/ci.yml")
 
