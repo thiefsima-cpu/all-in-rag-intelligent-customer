@@ -1,6 +1,7 @@
 param(
     [string]$Python = "python",
-    [string]$IndexUrl = "https://pypi.org/simple"
+    [string]$IndexUrl = "https://pypi.org/simple",
+    [string[]]$UpgradePackage = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,21 +29,34 @@ if ($Version.Trim() -ne "3.11") {
 }
 
 $PipArgs = "--index-url $IndexUrl"
+$UpgradeArguments = @(
+    foreach ($Package in $UpgradePackage) {
+        if ($Package.Trim()) {
+            "--upgrade-package=$($Package.Trim())"
+        }
+    }
+)
 
 Push-Location $RepositoryRoot
 try {
-    Invoke-Checked $Python "-m" "piptools" "compile" "pyproject.toml" `
-        "--output-file" "requirements.txt" `
-        "--strip-extras" `
-        "--allow-unsafe" `
+    $RuntimeArguments = @(
+        "-m", "piptools", "compile", "pyproject.toml",
+        "--output-file", "requirements.txt",
+        "--strip-extras",
+        "--allow-unsafe",
         "--pip-args=$PipArgs"
+    ) + $UpgradeArguments
+    Invoke-Checked -Command $Python -Arguments $RuntimeArguments
 
-    Invoke-Checked $Python "-m" "piptools" "compile" "pyproject.toml" `
-        "--extra=dev" `
-        "--output-file" "requirements-dev.txt" `
-        "--strip-extras" `
-        "--allow-unsafe" `
+    $DevelopmentArguments = @(
+        "-m", "piptools", "compile", "pyproject.toml",
+        "--extra=dev",
+        "--output-file", "requirements-dev.txt",
+        "--strip-extras",
+        "--allow-unsafe",
         "--pip-args=$PipArgs"
+    ) + $UpgradeArguments
+    Invoke-Checked -Command $Python -Arguments $DevelopmentArguments
 } finally {
     Pop-Location
 }
