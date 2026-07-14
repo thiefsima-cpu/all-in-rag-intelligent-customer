@@ -374,7 +374,8 @@ Expected: the three printed SHAs are preserved in local audit refs; `HEAD` is ah
 
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
-$rulesets = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$rulesetsJson = gh api "$repoApi/rulesets"
+$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
 $expected = @(
   "Protect main",
   "Protect production",
@@ -449,7 +450,8 @@ Expected: one non-draft pull request targets `main` from the exact hotfix branch
 ```powershell
 $pr = gh pr view $prUrl --repo $repo --json number --jq .number
 gh pr checks $pr --repo $repo --required --watch --interval 10
-$checks = @(gh pr checks $pr --repo $repo --json name,state | ConvertFrom-Json)
+$checksJson = gh pr checks $pr --repo $repo --json name,state
+$checks = @($checksJson | Out-String | ConvertFrom-Json)
 $required = @("Branch Flow Policy", "Quality Gates", "Secret Scan", "SBOM")
 foreach ($name in $required) {
   $match = @($checks | Where-Object name -eq $name)
@@ -513,7 +515,8 @@ Expected: all required checks pass, the PR is merged, and `origin/main` is an an
 
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
-$rulesets = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$rulesetsJson = gh api "$repoApi/rulesets"
+$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
 $production = @($rulesets | Where-Object name -eq "Protect production")
 if ($production.Count -ne 1) { throw "expected exactly one Protect production ruleset" }
 gh api `
@@ -527,13 +530,15 @@ Expected: the API returns active `Protect production` with an empty bypass list.
 - [ ] **Step 3: Verify consolidated production protection before deleting anything**
 
 ```powershell
-$productionDetail = gh api "$repoApi/rulesets/$($production[0].id)" | ConvertFrom-Json
+$productionDetailJson = gh api "$repoApi/rulesets/$($production[0].id)"
+$productionDetail = $productionDetailJson | Out-String | ConvertFrom-Json
 if (@($productionDetail.bypass_actors).Count -ne 0) { throw "production bypass remains" }
 $types = @($productionDetail.rules.type | Sort-Object)
 if (($types -join ",") -ne "deletion,non_fast_forward,pull_request,required_status_checks") {
   throw "production rules are incomplete: $($types -join ',')"
 }
-$effective = @(gh api "$repoApi/rules/branches/production" | ConvertFrom-Json)
+$effectiveJson = gh api "$repoApi/rules/branches/production"
+$effective = @($effectiveJson | Out-String | ConvertFrom-Json)
 $effectiveTypes = @($effective.type | Sort-Object -Unique)
 if (($effectiveTypes -join ",") -ne "deletion,non_fast_forward,pull_request,required_status_checks") {
   throw "effective production rules are incomplete: $($effectiveTypes -join ',')"
@@ -545,15 +550,18 @@ Expected: detailed and effective production rules both contain all four rule typ
 - [ ] **Step 4: Delete only the now-redundant production-history ruleset**
 
 ```powershell
-$rulesets = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$rulesetsJson = gh api "$repoApi/rulesets"
+$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
 $history = @($rulesets | Where-Object name -eq "Protect production history")
 if ($history.Count -ne 1) { throw "expected exactly one Protect production history ruleset" }
 gh api --method DELETE "$repoApi/rulesets/$($history[0].id)"
-$remaining = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$remainingJson = gh api "$repoApi/rulesets"
+$remaining = @($remainingJson | Out-String | ConvertFrom-Json)
 if (@($remaining | Where-Object name -eq "Protect production history").Count -ne 0) {
   throw "Protect production history still exists"
 }
-$effective = @(gh api "$repoApi/rules/branches/production" | ConvertFrom-Json)
+$effectiveJson = gh api "$repoApi/rules/branches/production"
+$effective = @($effectiveJson | Out-String | ConvertFrom-Json)
 if (@($effective.type | Sort-Object -Unique).Count -ne 4) {
   throw "production lost protection after redundant ruleset deletion"
 }
@@ -581,14 +589,16 @@ types.
 
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
-$rulesets = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$rulesetsJson = gh api "$repoApi/rulesets"
+$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
 $development = @($rulesets | Where-Object name -eq "Protect development")
 if ($development.Count -ne 1) { throw "expected exactly one Protect development ruleset" }
 gh api `
   --method PUT `
   "$repoApi/rulesets/$($development[0].id)" `
   --input ".github/rulesets/development.json"
-$detail = gh api "$repoApi/rulesets/$($development[0].id)" | ConvertFrom-Json
+$detailJson = gh api "$repoApi/rulesets/$($development[0].id)"
+$detail = $detailJson | Out-String | ConvertFrom-Json
 if (@($detail.bypass_actors).Count -ne 0) { throw "development bypass exists" }
 $types = @($detail.rules.type | Sort-Object)
 if (($types -join ",") -ne "deletion,non_fast_forward,pull_request,required_status_checks") {
@@ -652,7 +662,8 @@ local gate, and target `development` from that `codex/` branch.
 
 ```powershell
 $repoApi = "repos/thiefsima-cpu/all-in-rag-intelligent-customer"
-$rulesets = @(gh api "$repoApi/rulesets" | ConvertFrom-Json)
+$rulesetsJson = gh api "$repoApi/rulesets"
+$rulesets = @($rulesetsJson | Out-String | ConvertFrom-Json)
 $expectedNames = @(
   "Protect main",
   "Protect production",
@@ -674,7 +685,8 @@ $requiredChecks = @("Branch Flow Policy", "Quality Gates", "Secret Scan", "SBOM"
 foreach ($branch in @("development", "production", "main")) {
   $summary = @($rulesets | Where-Object name -eq "Protect $branch")
   if ($summary.Count -ne 1) { throw "missing or duplicate branch ruleset: $branch" }
-  $detail = gh api "$repoApi/rulesets/$($summary[0].id)" | ConvertFrom-Json
+  $detailJson = gh api "$repoApi/rulesets/$($summary[0].id)"
+  $detail = $detailJson | Out-String | ConvertFrom-Json
   if (@($detail.bypass_actors).Count -ne 0) { throw "$branch has a bypass actor" }
   $types = @($detail.rules.type | Sort-Object)
   if (($types -join ",") -ne "deletion,non_fast_forward,pull_request,required_status_checks") {
