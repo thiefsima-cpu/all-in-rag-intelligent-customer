@@ -251,6 +251,24 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
         self.nonlocal_names.update(node.names)
 
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.pattern is not None:
+            self.visit(node.pattern)
+        if node.name is not None:
+            self.bound.add(node.name)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name is not None:
+            self.bound.add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        for key in node.keys:
+            self.visit(key)
+        for pattern in node.patterns:
+            self.visit(pattern)
+        if node.rest is not None:
+            self.bound.add(node.rest)
+
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self.bound.add(alias.asname or alias.name.split(".", maxsplit=1)[0])
@@ -333,6 +351,12 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
         self._visit_comprehension(node.generators, (node.key, node.value))
+
+
+def _pattern_bound_names(pattern: ast.pattern) -> set[str]:
+    collector = _FunctionLocalBindingCollector()
+    collector.visit(pattern)
+    return collector.local_names()
 
 
 class _LazyTableMutationVisitor(ast.NodeVisitor):
@@ -444,16 +468,63 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         for name in self._target_names(target):
             self._replace_alias(name, frozenset())
 
+    def _alias_targets_from_expression(self, value: ast.AST) -> frozenset[str]:
+        if isinstance(value, ast.Name):
+            return self.aliases.get(value.id, frozenset())
+        if isinstance(value, ast.NamedExpr):
+            return self._alias_targets_from_expression(value.value)
+        if isinstance(value, ast.IfExp):
+            return self._alias_targets_from_expression(
+                value.body
+            ) | self._alias_targets_from_expression(value.orelse)
+        if isinstance(value, ast.BoolOp):
+            targets = frozenset()
+            for item in value.values:
+                targets |= self._alias_targets_from_expression(item)
+            return targets
+        if isinstance(value, (ast.List, ast.Tuple)):
+            targets = frozenset()
+            for item in value.elts:
+                targets |= self._alias_targets_from_expression(item)
+            return targets
+        if isinstance(value, ast.Starred):
+            return self._alias_targets_from_expression(value.value)
+        return frozenset()
+
+    def _record_assignment_target(self, target: ast.AST, statement: ast.AST) -> None:
+        if isinstance(target, (ast.List, ast.Tuple)):
+            for item in target.elts:
+                self._record_assignment_target(item, statement)
+            return
+        if isinstance(target, ast.Starred):
+            self._record_assignment_target(target.value, statement)
+            return
+        self._record_target(target, statement)
+
     def _update_alias(self, target: ast.AST, value: ast.AST, statement: ast.AST) -> None:
+        if isinstance(target, ast.Starred):
+            self._update_alias(target.value, value, statement)
+            return
+        if isinstance(target, (ast.List, ast.Tuple)):
+            if (
+                isinstance(value, (ast.List, ast.Tuple))
+                and len(target.elts) == len(value.elts)
+                and not any(isinstance(item, ast.Starred) for item in target.elts)
+            ):
+                for target_item, value_item in zip(target.elts, value.elts, strict=True):
+                    self._update_alias(target_item, value_item, statement)
+                return
+            possible_targets = self._alias_targets_from_expression(value)
+            for name in self._target_names(target):
+                self._replace_alias(name, possible_targets)
+            return
         if not isinstance(target, ast.Name):
             self._clear_target_aliases(target)
             return
         if statement is self.definitions.get(target.id):
             self._replace_alias(target.id, frozenset((target.id,)))
             return
-        targets = (
-            self.aliases.get(value.id, frozenset()) if isinstance(value, ast.Name) else frozenset()
-        )
+        targets = self._alias_targets_from_expression(value)
         self._replace_alias(target.id, targets)
 
     def _visit_nodes(
@@ -469,10 +540,73 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         self.aliases = previous
         return result
 
+    def _visit_loop_statements(
+        self,
+        nodes: list[ast.stmt],
+        state: dict[str, frozenset[str]],
+    ) -> tuple[
+        dict[str, frozenset[str]] | None,
+        list[dict[str, frozenset[str]]],
+        list[dict[str, frozenset[str]]],
+    ]:
+        current: dict[str, frozenset[str]] | None = state.copy()
+        break_states: list[dict[str, frozenset[str]]] = []
+        continue_states: list[dict[str, frozenset[str]]] = []
+        for node in nodes:
+            if current is None:
+                break
+            if isinstance(node, ast.Break):
+                break_states.append(current)
+                current = None
+                break
+            if isinstance(node, ast.Continue):
+                continue_states.append(current)
+                current = None
+                break
+            if isinstance(node, (ast.Raise, ast.Return)):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node)
+                self.aliases = previous
+                current = None
+                break
+            if isinstance(node, ast.If):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node.test)
+                branch_state = self._copy_aliases()
+                self.aliases = previous
+                body_normal, body_breaks, body_continues = self._visit_loop_statements(
+                    node.body,
+                    branch_state,
+                )
+                if node.orelse:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        node.orelse,
+                        branch_state,
+                    )
+                else:
+                    else_normal = branch_state
+                    else_breaks = []
+                    else_continues = []
+                break_states.extend((*body_breaks, *else_breaks))
+                continue_states.extend((*body_continues, *else_continues))
+                normal_states = tuple(
+                    item for item in (body_normal, else_normal) if item is not None
+                )
+                current = self._merge_aliases(normal_states) if normal_states else None
+                continue
+            previous = self.aliases
+            self.aliases = current.copy()
+            self.visit(node)
+            current = self._copy_aliases()
+            self.aliases = previous
+        return current, break_states, continue_states
+
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
         for target in node.targets:
-            self._record_target(target, node)
+            self._record_assignment_target(target, node)
             self._update_alias(target, node.value, node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -510,6 +644,26 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         body_state = self._visit_nodes(node.body, initial)
         else_state = self._visit_nodes(node.orelse, initial) if node.orelse else initial
         self.aliases = self._merge_aliases((body_state, else_state))
+        self._checkpoint_aliases()
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        initial = self._copy_aliases()
+        alternatives = [initial]
+        for case in node.cases:
+            previous = self.aliases
+            self.aliases = initial.copy()
+            self.visit(case.pattern)
+            for name in _pattern_bound_names(case.pattern):
+                self._record_binding(name, case.pattern)
+                self._replace_alias(name, frozenset())
+            if case.guard is not None:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+            alternatives.append(self._copy_aliases())
+            self.aliases = previous
+        self.aliases = self._merge_aliases(tuple(alternatives))
         self._checkpoint_aliases()
 
     def visit_IfExp(self, node: ast.IfExp) -> None:
@@ -661,6 +815,7 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         self.visit(node.iter)
         initial = self._copy_aliases()
         loop_state = initial
+        break_states: list[dict[str, frozenset[str]]] = []
         while True:
             previous = self.aliases
             self.aliases = loop_state.copy()
@@ -668,17 +823,22 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
             for name in self._target_names(node.target):
                 self._record_binding(name, node)
             self._clear_target_aliases(node.target)
-            for statement in node.body:
-                self.visit(statement)
-            body_state = self._copy_aliases()
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                self._copy_aliases(),
+            )
+            break_states.extend(iteration_breaks)
             self.aliases = previous
-            next_loop_state = self._merge_aliases((initial, body_state))
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = self._merge_aliases(tuple(continuation_states))
             if next_loop_state == loop_state:
                 loop_state = next_loop_state
                 break
             loop_state = next_loop_state
         else_state = self._visit_nodes(node.orelse, loop_state)
-        self.aliases = self._merge_aliases((loop_state, else_state))
+        self.aliases = self._merge_aliases((loop_state, else_state, *break_states))
         self._checkpoint_aliases()
 
     def visit_For(self, node: ast.For) -> None:
@@ -690,22 +850,31 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
     def visit_While(self, node: ast.While) -> None:
         initial = self._copy_aliases()
         loop_state = initial
+        break_states: list[dict[str, frozenset[str]]] = []
         while True:
             previous = self.aliases
             self.aliases = loop_state.copy()
             self.visit(node.test)
             test_state = self._copy_aliases()
-            for statement in node.body:
-                self.visit(statement)
-            body_state = self._copy_aliases()
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                test_state,
+            )
+            break_states.extend(iteration_breaks)
             self.aliases = previous
-            next_loop_state = self._merge_aliases((initial, body_state))
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = self._merge_aliases(tuple(continuation_states))
             if next_loop_state == loop_state:
                 loop_state = next_loop_state
                 break
             loop_state = next_loop_state
         else_state = self._visit_nodes(node.orelse, test_state)
-        self.aliases = self._merge_aliases((test_state, body_state, else_state))
+        final_states = [test_state, else_state, *break_states]
+        if body_state is not None:
+            final_states.append(body_state)
+        self.aliases = self._merge_aliases(tuple(final_states))
         self._checkpoint_aliases()
 
     def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
@@ -865,6 +1034,58 @@ class _ImportVisitor(ast.NodeVisitor):
         self.kind = previous_kind
         return result
 
+    def _visit_loop_statements(
+        self,
+        statements: list[ast.stmt],
+        initial: _BindingState,
+    ) -> tuple[_BindingState | None, list[_BindingState], list[_BindingState]]:
+        current: _BindingState | None = initial.copy()
+        break_states: list[_BindingState] = []
+        continue_states: list[_BindingState] = []
+        for statement in statements:
+            if current is None:
+                break
+            if isinstance(statement, ast.Break):
+                break_states.append(current)
+                current = None
+                break
+            if isinstance(statement, ast.Continue):
+                continue_states.append(current)
+                current = None
+                break
+            if isinstance(statement, (ast.Raise, ast.Return)):
+                self._visit_branch([statement], current, kind=self.kind)
+                current = None
+                break
+            if isinstance(statement, ast.If) and not self._is_type_checking_guard(statement.test):
+                previous = self.bindings
+                self.bindings = current.copy()
+                self.visit(statement.test)
+                branch_state = self.bindings.copy()
+                self.bindings = previous
+                body_normal, body_breaks, body_continues = self._visit_loop_statements(
+                    statement.body,
+                    branch_state,
+                )
+                if statement.orelse:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        statement.orelse,
+                        branch_state,
+                    )
+                else:
+                    else_normal = branch_state
+                    else_breaks = []
+                    else_continues = []
+                break_states.extend((*body_breaks, *else_breaks))
+                continue_states.extend((*body_continues, *else_continues))
+                normal_states = tuple(
+                    item for item in (body_normal, else_normal) if item is not None
+                )
+                current = _BindingState.merge(normal_states) if normal_states else None
+                continue
+            current = self._visit_branch([statement], current, kind=self.kind)
+        return current, break_states, continue_states
+
     @staticmethod
     def _bound_names(target: ast.AST) -> tuple[str, ...]:
         if isinstance(target, ast.Name):
@@ -995,6 +1216,24 @@ class _ImportVisitor(ast.NodeVisitor):
         self.bindings = (
             else_state if is_type_guard else _BindingState.merge((body_state, else_state))
         )
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        initial = self.bindings.copy()
+        alternatives = [initial]
+        for case in node.cases:
+            previous = self.bindings
+            self.bindings = initial.copy()
+            self.visit(case.pattern)
+            for name in _pattern_bound_names(case.pattern):
+                self._clear_binding(name)
+            if case.guard is not None:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+            alternatives.append(self.bindings.copy())
+            self.bindings = previous
+        self.bindings = _BindingState.merge(tuple(alternatives))
 
     def _visit_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         for decorator in node.decorator_list:
@@ -1143,22 +1382,28 @@ class _ImportVisitor(ast.NodeVisitor):
         self.visit(node.iter)
         initial = self.bindings.copy()
         loop_state = initial
+        break_states: list[_BindingState] = []
         while True:
             previous = self.bindings
             self.bindings = loop_state.copy()
             self.visit(node.target)
             self._clear_target_bindings(node.target)
-            for statement in node.body:
-                self.visit(statement)
-            body_state = self.bindings.copy()
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                self.bindings,
+            )
+            break_states.extend(iteration_breaks)
             self.bindings = previous
-            next_loop_state = _BindingState.merge((initial, body_state))
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = _BindingState.merge(tuple(continuation_states))
             if next_loop_state == loop_state:
                 loop_state = next_loop_state
                 break
             loop_state = next_loop_state
         else_state = self._visit_branch(node.orelse, loop_state, kind=self.kind)
-        self.bindings = _BindingState.merge((loop_state, else_state))
+        self.bindings = _BindingState.merge((loop_state, else_state, *break_states))
 
     def visit_For(self, node: ast.For) -> None:
         self._visit_for(node)
@@ -1169,20 +1414,31 @@ class _ImportVisitor(ast.NodeVisitor):
     def visit_While(self, node: ast.While) -> None:
         initial = self.bindings.copy()
         loop_state = initial
+        break_states: list[_BindingState] = []
         while True:
             previous = self.bindings
             self.bindings = loop_state.copy()
             self.visit(node.test)
             test_state = self.bindings.copy()
             self.bindings = previous
-            body_state = self._visit_branch(node.body, test_state, kind=self.kind)
-            next_loop_state = _BindingState.merge((initial, body_state))
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                test_state,
+            )
+            break_states.extend(iteration_breaks)
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = _BindingState.merge(tuple(continuation_states))
             if next_loop_state == loop_state:
                 loop_state = next_loop_state
                 break
             loop_state = next_loop_state
         else_state = self._visit_branch(node.orelse, test_state, kind=self.kind)
-        self.bindings = _BindingState.merge((test_state, body_state, else_state))
+        final_states = [test_state, else_state, *break_states]
+        if body_state is not None:
+            final_states.append(body_state)
+        self.bindings = _BindingState.merge(tuple(final_states))
 
     def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
         for item in node.items:
@@ -1849,6 +2105,35 @@ while load("rag_modules.generation"):
     assert "rag_modules.generation" in {item.target_module for item in imports}
 
 
+def test_loop_control_preserves_loader_state_before_unreachable_tail() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+for_load = object()
+for item in items:
+    for_load = import_module
+    break
+    for_load = object()
+for_load("rag_modules.generation")
+
+while_load = object()
+while condition:
+    while_load = import_module
+    continue
+    while_load = object()
+while_load("rag_modules.retrieval")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
 def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
     source = """
 from importlib import import_module
@@ -2081,6 +2366,57 @@ def test_lazy_alias_merges_conditional_rebindings_conservatively() -> None:
     assert tables == {}
 
 
+def test_lazy_alias_merges_match_cases_and_collects_pattern_locals() -> None:
+    branch_source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "match value:",
+            "    case 0:",
+            "        _ALIAS = {}",
+            "    case _:",
+            "        pass",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(branch_source, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == (("_EXPORTS", 8),)
+    assert tables == {}
+
+    local_source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "def helper(value):",
+            '    _ALIAS.update({"Unreachable": requested})',
+            "    match value:",
+            "        case _ALIAS:",
+            "            pass",
+        )
+    )
+    tree = ast.parse(local_source, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
+def test_lazy_alias_propagates_structured_assignment_targets() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS, _other = _EXPORTS, None",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 3),)
+    assert tables == {}
+
+
 def test_lazy_alias_created_in_for_body_is_visible_after_the_loop() -> None:
     source = "\n".join(
         (
@@ -2095,6 +2431,29 @@ def test_lazy_alias_created_in_for_body_is_visible_after_the_loop() -> None:
     tables, mutations = _lazy_export_table_analysis(tree)
 
     assert mutations == (("_EXPORTS", 4),)
+    assert tables == {}
+
+
+@pytest.mark.parametrize(
+    "loop",
+    (
+        "for _item in (1,):\n    _LATE_ALIAS = _EXPORTS\n    break\n    _LATE_ALIAS = {}",
+        "while condition:\n    _LATE_ALIAS = _EXPORTS\n    continue\n    _LATE_ALIAS = {}",
+    ),
+)
+def test_lazy_alias_loop_control_ignores_unreachable_rebindings(loop: str) -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            loop,
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 6),)
     assert tables == {}
 
 
