@@ -647,10 +647,15 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
                 continue_states.extend(with_continues)
                 continue
             if isinstance(node, (ast.Try, ast.TryStar)):
-                try_normal, try_breaks, try_continues = self._visit_loop_statements(
-                    node.body,
-                    current,
-                )
+                exception_prefixes = [current.copy()]
+                self._exception_state_sinks.append(exception_prefixes)
+                try:
+                    try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                        node.body,
+                        current,
+                    )
+                finally:
+                    self._exception_state_sinks.pop()
                 normal_states: list[dict[str, frozenset[str]]] = []
                 outgoing_breaks = list(try_breaks)
                 outgoing_continues = list(try_continues)
@@ -663,7 +668,7 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
                         normal_states.append(else_normal)
                     outgoing_breaks.extend(else_breaks)
                     outgoing_continues.extend(else_continues)
-                exception_candidates = [current, *try_breaks, *try_continues]
+                exception_candidates = [*exception_prefixes, *try_breaks, *try_continues]
                 if try_normal is not None:
                     exception_candidates.append(try_normal)
                 exception_state = self._merge_aliases(tuple(exception_candidates))
@@ -1266,10 +1271,15 @@ class _ImportVisitor(ast.NodeVisitor):
                 continue_states.extend(with_continues)
                 continue
             if isinstance(statement, (ast.Try, ast.TryStar)):
-                try_normal, try_breaks, try_continues = self._visit_loop_statements(
-                    statement.body,
-                    current,
-                )
+                exception_prefixes = [current.copy()]
+                self._exception_state_sinks.append(exception_prefixes)
+                try:
+                    try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                        statement.body,
+                        current,
+                    )
+                finally:
+                    self._exception_state_sinks.pop()
                 normal_states: list[_BindingState] = []
                 outgoing_breaks = list(try_breaks)
                 outgoing_continues = list(try_continues)
@@ -1282,7 +1292,7 @@ class _ImportVisitor(ast.NodeVisitor):
                         normal_states.append(else_normal)
                     outgoing_breaks.extend(else_breaks)
                     outgoing_continues.extend(else_continues)
-                exception_candidates = [current, *try_breaks, *try_continues]
+                exception_candidates = [*exception_prefixes, *try_breaks, *try_continues]
                 if try_normal is not None:
                     exception_candidates.append(try_normal)
                 exception_state = _BindingState.merge(tuple(exception_candidates))
@@ -2437,6 +2447,29 @@ load("rag_modules.generation")
     assert "rag_modules.generation" in {item.target_module for item in imports}
 
 
+def test_loop_try_handler_receives_loader_exception_prefix_state() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+load = object()
+for item in items:
+    try:
+        load = import_module
+        might_raise()
+        load = object()
+    except Exception:
+        break
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
 def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
     source = """
 from importlib import import_module
@@ -2797,6 +2830,28 @@ def test_lazy_alias_loop_control_flows_through_compound_statements(loop: str) ->
     tables, mutations = _lazy_export_table_analysis(tree)
 
     assert mutations[-1][0] == "_EXPORTS"
+    assert tables == {}
+
+
+def test_lazy_loop_try_handler_receives_alias_exception_prefix_state() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "for _item in items:",
+            "    try:",
+            "        _LATE_ALIAS = _EXPORTS",
+            "        might_raise()",
+            "        _LATE_ALIAS = {}",
+            "    except Exception:",
+            "        break",
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 9),)
     assert tables == {}
 
 
