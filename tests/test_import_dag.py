@@ -53,6 +53,15 @@ def _module_name(path: Path, *, root: Path = ROOT) -> tuple[str, bool]:
     return ".".join(parts), is_package
 
 
+@lru_cache(maxsize=1)
+def _production_module_index() -> frozenset[str]:
+    return frozenset(
+        _module_name(path)[0]
+        for path in RAG_MODULES.rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
+
+
 def architectural_nodes(
     module: str,
     *,
@@ -90,32 +99,59 @@ def _resolve_import_from(
     return ".".join([*package_parts[:keep], *suffix])
 
 
-def _resolve_dynamic_target(source_module: str, target: str) -> str:
+def _source_package(source_module: str, *, is_package: bool) -> str:
+    if is_package:
+        return source_module
+    return source_module.rpartition(".")[0]
+
+
+def _resolve_dynamic_target(
+    source_module: str,
+    target: str,
+    *,
+    is_package: bool,
+    package: str | None = None,
+) -> str:
     if not target.startswith("."):
         return target
     level = len(target) - len(target.lstrip("."))
     return _resolve_import_from(
-        source_module,
+        package or _source_package(source_module, is_package=is_package),
         is_package=True,
         level=level,
         module=target.lstrip("."),
     )
 
 
-def _is_type_checking_guard(node: ast.AST) -> bool:
-    if isinstance(node, ast.Name):
-        return node.id == "TYPE_CHECKING"
-    if isinstance(node, ast.Attribute):
-        return node.attr == "TYPE_CHECKING"
-    return False
-
-
-def _dynamic_import_function(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Name) and node.id in {"import_module", "__import__"}:
-        return node.id
-    if isinstance(node, ast.Attribute) and node.attr == "import_module":
-        return "import_module"
-    return None
+def _static_lazy_export_tables(tree: ast.Module) -> dict[str, tuple[ast.Constant, ...]]:
+    tables: dict[str, tuple[ast.Constant, ...]] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target = statement.targets[0]
+            value = statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            target = statement.target
+            value = statement.value
+        else:
+            continue
+        if not (
+            isinstance(target, ast.Name)
+            and target.id.endswith("_EXPORTS")
+            and isinstance(value, ast.Dict)
+            and value.keys
+            and all(
+                isinstance(key, ast.Constant) and isinstance(key.value, str) for key in value.keys
+            )
+            and all(
+                isinstance(item, ast.Constant)
+                and isinstance(item.value, str)
+                and item.value.startswith(".")
+                for item in value.values
+            )
+        ):
+            continue
+        tables[target.id] = tuple(item for item in value.values if isinstance(item, ast.Constant))
+    return tables
 
 
 class _ImportVisitor(ast.NodeVisitor):
@@ -132,13 +168,102 @@ class _ImportVisitor(ast.NodeVisitor):
         self.kind: DependencyKind = "runtime"
         self.imports: list[RawImport] = []
         self.dynamic_import_errors: list[str] = []
+        self.dynamic_loaders: dict[str, str] = {"__import__": "__import__"}
+        self.importlib_aliases: set[str] = set()
+        self.builtins_aliases: set[str] = set()
+        self.lazy_export_tables: set[str] = set()
+        self.lazy_dynamic_targets: set[str] = set()
+        self.type_checking_names: set[str] = set()
+        self.typing_aliases: set[str] = set()
 
     def _record(self, target_module: str, line: int) -> None:
         if target_module:
             self.imports.append(RawImport(target_module, line, self.kind))
 
+    def _dynamic_package(self, node: ast.Call) -> str | None:
+        package_node = node.args[1] if len(node.args) > 1 else None
+        if package_node is None:
+            package_node = next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "package"),
+                None,
+            )
+        if isinstance(package_node, ast.Constant) and isinstance(package_node.value, str):
+            return package_node.value
+        if isinstance(package_node, ast.Name) and package_node.id == "__package__":
+            return _source_package(self.source_module, is_package=self.is_package)
+        return None
+
+    def _dynamic_import_function(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return self.dynamic_loaders.get(node.id)
+        if not isinstance(node, ast.Attribute) or not isinstance(node.value, ast.Name):
+            return None
+        if node.attr == "import_module" and node.value.id in self.importlib_aliases:
+            return "import_module"
+        if node.attr == "__import__" and node.value.id in self.builtins_aliases:
+            return "__import__"
+        return None
+
+    def _clear_dynamic_binding(self, name: str) -> None:
+        self.dynamic_loaders.pop(name, None)
+        self.importlib_aliases.discard(name)
+        self.builtins_aliases.discard(name)
+
+    def _bind_dynamic_loader(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
+            return
+        function_name = self._dynamic_import_function(value)
+        self._clear_dynamic_binding(target.id)
+        if function_name is not None:
+            self.dynamic_loaders[target.id] = function_name
+
+    def _lazy_export_source(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            owner = node.func.value
+            if (
+                node.func.attr == "get"
+                and isinstance(owner, ast.Name)
+                and owner.id in self.lazy_export_tables
+            ):
+                return owner.id
+        if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+            if node.value.id in self.lazy_export_tables:
+                return node.value.id
+        return None
+
+    def _bind_lazy_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
+            return
+        if self._lazy_export_source(value) is None:
+            self.lazy_dynamic_targets.discard(target.id)
+        else:
+            self.lazy_dynamic_targets.add(target.id)
+
+    def _is_lazy_dynamic_target(self, node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Name) and node.id in self.lazy_dynamic_targets
+        ) or self._lazy_export_source(node) is not None
+
+    def _is_type_checking_guard(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.type_checking_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "TYPE_CHECKING"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.typing_aliases
+        )
+
+    def _clear_typing_binding(self, name: str) -> None:
+        self.type_checking_names.discard(name)
+        self.typing_aliases.discard(name)
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self.lazy_export_tables = set(_static_lazy_export_tables(node))
+        self.generic_visit(node)
+
     def visit_If(self, node: ast.If) -> None:
-        if not _is_type_checking_guard(node.test):
+        if not self._is_type_checking_guard(node.test):
             self.generic_visit(node)
             return
         previous_kind = self.kind
@@ -152,20 +277,56 @@ class _ImportVisitor(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record(alias.name, node.lineno)
+            binding = alias.asname or alias.name.split(".", maxsplit=1)[0]
+            self._clear_dynamic_binding(binding)
+            self._clear_typing_binding(binding)
+            if alias.name == "importlib":
+                self.importlib_aliases.add(binding)
+            elif alias.name == "builtins":
+                self.builtins_aliases.add(binding)
+            elif alias.name == "typing":
+                self.typing_aliases.add(binding)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        self._record(
-            _resolve_import_from(
-                self.source_module,
-                is_package=self.is_package,
-                level=node.level,
-                module=node.module,
-            ),
-            node.lineno,
+        target_module = _resolve_import_from(
+            self.source_module,
+            is_package=self.is_package,
+            level=node.level,
+            module=node.module,
         )
+        self._record(target_module, node.lineno)
+        for alias in node.names:
+            imported_module = ".".join(part for part in (target_module, alias.name) if part)
+            if imported_module in _production_module_index():
+                self._record(imported_module, node.lineno)
+            binding = alias.asname or alias.name
+            self._clear_dynamic_binding(binding)
+            self._clear_typing_binding(binding)
+            if node.level == 0 and node.module == "importlib" and alias.name == "import_module":
+                self.dynamic_loaders[binding] = "import_module"
+            elif node.level == 0 and node.module == "builtins" and alias.name == "__import__":
+                self.dynamic_loaders[binding] = "__import__"
+            elif node.level == 0 and node.module == "typing" and alias.name == "TYPE_CHECKING":
+                self.type_checking_names.add(binding)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                self._clear_typing_binding(target.id)
+            self._bind_dynamic_loader(target, node.value)
+            self._bind_lazy_target(target, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            if isinstance(node.target, ast.Name):
+                self._clear_typing_binding(node.target.id)
+            self._bind_dynamic_loader(node.target, node.value)
+            self._bind_lazy_target(node.target, node.value)
+        self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        function_name = _dynamic_import_function(node.func)
+        function_name = self._dynamic_import_function(node.func)
         if function_name is None:
             self.generic_visit(node)
             return
@@ -175,10 +336,19 @@ class _ImportVisitor(ast.NodeVisitor):
             and isinstance(node.args[0].value, str)
         ):
             self._record(
-                _resolve_dynamic_target(self.source_module, node.args[0].value),
+                _resolve_dynamic_target(
+                    self.source_module,
+                    node.args[0].value,
+                    is_package=self.is_package,
+                    package=self._dynamic_package(node),
+                ),
                 node.lineno,
             )
-        elif self.relative_path not in CONTROLLED_LAZY_IMPORT_FILES:
+        elif not (
+            self.relative_path in CONTROLLED_LAZY_IMPORT_FILES
+            and node.args
+            and self._is_lazy_dynamic_target(node.args[0])
+        ):
             self.dynamic_import_errors.append(
                 f"{self.relative_path}:{node.lineno}: non-literal {function_name}"
             )
@@ -187,19 +357,13 @@ class _ImportVisitor(ast.NodeVisitor):
 
 def _lazy_table_imports(tree: ast.AST, source_module: str) -> list[RawImport]:
     imports: list[RawImport] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Dict):
-            continue
-        for value in node.values:
-            if not (
-                isinstance(value, ast.Constant)
-                and isinstance(value.value, str)
-                and value.value.startswith(".")
-            ):
-                continue
+    if not isinstance(tree, ast.Module):
+        return imports
+    for values in _static_lazy_export_tables(tree).values():
+        for value in values:
             imports.append(
                 RawImport(
-                    _resolve_dynamic_target(source_module, value.value),
+                    _resolve_dynamic_target(source_module, value.value, is_package=True),
                     value.lineno,
                     "runtime",
                 )
@@ -421,6 +585,198 @@ else:
         ("rag_modules.build_pipeline.ports", "type"),
         ("rag_modules.contracts", "runtime"),
     }
+
+
+def test_import_from_records_an_existing_internal_submodule() -> None:
+    imports = _collect_imports_from_source(
+        """
+from . import AdvancedGraphRAGSystem
+from . import query_understanding
+""",
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "rag_modules",
+        "rag_modules.query_understanding",
+    }
+
+
+def test_relative_dynamic_import_from_module_uses_its_package() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+import_module("..generation", __package__)
+import_module(".contracts", package="rag_modules")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "importlib",
+        "rag_modules.contracts",
+        "rag_modules.generation",
+    }
+
+
+def test_aliased_dynamic_import_loaders_are_detected() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib as il
+import builtins as bi
+from builtins import __import__ as builtin_load
+from importlib import import_module as load
+
+load("rag_modules.generation")
+il.import_module("rag_modules.retrieval")
+builtin_load("rag_modules.graph")
+assigned_load = __import__
+assigned_load("rag_modules.routing")
+bi.__import__("rag_modules.kernel")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "builtins",
+        "importlib",
+        "rag_modules.generation",
+        "rag_modules.graph",
+        "rag_modules.kernel",
+        "rag_modules.retrieval",
+        "rag_modules.routing",
+    }
+
+
+def test_dynamic_import_aliases_stop_matching_after_rebinding() -> None:
+    source = """
+import builtins as bi
+import importlib as il
+from importlib import import_module as load
+
+bi = object()
+il = object()
+from config import load as load
+
+bi.__import__(requested)
+il.import_module(requested)
+load(requested)
+"""
+    tree = ast.parse(source, filename="rag_modules/runtime/sample.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+    visitor.visit(tree)
+
+    assert visitor.dynamic_import_errors == []
+
+
+def test_controlled_lazy_file_rejects_unrelated_non_literal_loader_target() -> None:
+    source = """
+from importlib import import_module as load
+
+_LAZY_EXPORTS = {"PublicThing": ".thing"}
+
+def resolve(name, requested):
+    module_name = _LAZY_EXPORTS.get(name)
+    load(module_name, __name__)
+    load(requested, __name__)
+"""
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+    imports = [*visitor.imports, *_lazy_table_imports(tree, "rag_modules")]
+
+    assert RawImport("rag_modules.thing", 4, "runtime") in imports
+    assert visitor.dynamic_import_errors == ["rag_modules/__init__.py:9: non-literal import_module"]
+
+
+def test_type_checking_guard_requires_a_typing_binding() -> None:
+    imports = _collect_imports_from_source(
+        """
+import config
+import typing as t
+from typing import TYPE_CHECKING as CHECKING
+
+if config.TYPE_CHECKING:
+    from ..generation import service
+if t.TYPE_CHECKING:
+    from ..kernel import json_types
+if CHECKING:
+    from ..contracts import RetrievalRequest
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        (item.target_module, item.kind)
+        for item in imports
+        if item.target_module.startswith("rag_modules.")
+    } == {
+        ("rag_modules.contracts", "type"),
+        ("rag_modules.generation", "runtime"),
+        ("rag_modules.generation.service", "runtime"),
+        ("rag_modules.kernel", "type"),
+        ("rag_modules.kernel.json_types", "type"),
+    }
+
+
+def test_concrete_cycle_format_includes_closed_path_and_edge_evidence() -> None:
+    edges = (
+        ImportEdge(
+            source_module="rag_modules.runtime.sample",
+            target_module="rag_modules.generation.service",
+            source_node="runtime",
+            target_node="generation",
+            path=ROOT / "rag_modules/runtime/sample.py",
+            line=11,
+            kind="type",
+        ),
+        ImportEdge(
+            source_module="rag_modules.generation.service",
+            target_module="rag_modules.app.system",
+            source_node="generation",
+            target_node="app",
+            path=ROOT / "rag_modules/generation/service.py",
+            line=22,
+            kind="runtime",
+        ),
+        ImportEdge(
+            source_module="rag_modules.app.system",
+            target_module="rag_modules.runtime.sample",
+            source_node="app",
+            target_node="runtime",
+            path=ROOT / "rag_modules/app/system.py",
+            line=33,
+            kind="runtime",
+        ),
+    )
+
+    rendered = _format_component(("app", "generation", "runtime"), edges)
+
+    assert rendered == "\n".join(
+        (
+            "app -> runtime -> generation -> app",
+            f"  app -[runtime {Path('rag_modules/app/system.py')}:33]-> runtime",
+            f"  runtime -[type {Path('rag_modules/runtime/sample.py')}:11]-> generation",
+            f"  generation -[runtime {Path('rag_modules/generation/service.py')}:22]-> app",
+        )
+    )
 
 
 def test_unknown_and_ambiguous_modules_do_not_receive_an_owner() -> None:
