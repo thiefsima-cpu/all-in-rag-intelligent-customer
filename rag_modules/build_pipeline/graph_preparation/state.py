@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
+from ...contracts.graph_preparation import GraphNode
 from ...kernel.documents import TextDocument
-from .models import GraphNode
 
 
 @dataclass(slots=True)

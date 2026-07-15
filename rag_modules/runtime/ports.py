@@ -19,8 +19,7 @@ from ..kernel.documents import TextDocument
 from ..kernel.json_types import JsonObject, JsonValue
 
 if TYPE_CHECKING:
-    from ..build_pipeline.graph_preparation.models import GraphLoadCounts
-    from ..build_pipeline.graph_preparation.statistics import GraphPreparationStats
+    from ..contracts.graph_preparation import GraphLoadCounts, GraphPreparationStats
 
 
 class GraphDataModulePort(Protocol):

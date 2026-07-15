@@ -1,5 +1,6 @@
 """Canonical cross-subsystem contract kernel."""
 
+from .graph_preparation import GraphLoadCounts, GraphNode, GraphPreparationStats
 from .query import (
     GraphQueryType,
     QueryPlan,
@@ -24,6 +25,9 @@ from .retrieval import (
 
 __all__ = [
     "EvidenceDocument",
+    "GraphLoadCounts",
+    "GraphNode",
+    "GraphPreparationStats",
     "GraphQueryType",
     "PageDocumentLike",
     "QueryPlan",

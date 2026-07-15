@@ -10,7 +10,7 @@ from .document_artifacts import (
     DocumentIndexCache,
     build_or_load_documents,
 )
-from .graph_preparation import GraphDataPreparationModule, GraphNode, GraphRelation
+from .graph_preparation import GraphDataPreparationModule, GraphRelation
 from .knowledge_base_workflow import KnowledgeBaseBuildWorkflow
 from .manifest_lifecycle import KnowledgeBaseManifestLifecycle
 from .schema_sync import SemanticGraphSchemaSyncService
@@ -21,7 +21,6 @@ __all__ = [
     "DocumentArtifactBuilderPort",
     "DocumentIndexCache",
     "GraphDataPreparationModule",
-    "GraphNode",
     "GraphRelation",
     "KnowledgeBaseBuildWorkflow",
     "KnowledgeBaseManifestLifecycle",

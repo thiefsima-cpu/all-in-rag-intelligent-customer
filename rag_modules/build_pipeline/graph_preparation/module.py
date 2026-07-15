@@ -5,15 +5,16 @@ from __future__ import annotations
 import logging
 from typing import cast
 
+from ...contracts.graph_preparation import GraphLoadCounts, GraphNode, GraphPreparationStats
 from ...infra.neo4j import create_neo4j_driver
 from ...kernel.documents import TextDocument
 from ..ports import Neo4jDriverPort
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
 from .loader import Neo4jGraphDataLoader
-from .models import GraphLoadCounts, GraphNode, PreparedIngredientInput, PreparedStepInput
+from .models import PreparedIngredientInput, PreparedStepInput
 from .state import GraphPreparationState
-from .statistics import GraphPreparationStatisticsService, GraphPreparationStats
+from .statistics import GraphPreparationStatisticsService
 
 logger = logging.getLogger(__name__)
 

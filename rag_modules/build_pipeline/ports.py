@@ -10,8 +10,7 @@ from ..kernel.documents import TextDocument
 from ..kernel.json_types import JsonObject
 
 if TYPE_CHECKING:
-    from .graph_preparation.models import GraphLoadCounts
-    from .graph_preparation.statistics import GraphPreparationStats
+    from ..contracts.graph_preparation import GraphLoadCounts, GraphPreparationStats
 
 
 class Neo4jRecordPort(Protocol):

@@ -21,11 +21,11 @@ from rag_modules.app.runtime_views import (
     SystemRetrievalView,
     SystemServicesView,
 )
-from rag_modules.build_pipeline.graph_preparation.models import GraphLoadCounts
-from rag_modules.build_pipeline.graph_preparation.statistics import GraphPreparationStats
 from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
+    GraphLoadCounts,
+    GraphPreparationStats,
     GraphQueryType,
     QueryPlan,
     QuerySemanticProfile,

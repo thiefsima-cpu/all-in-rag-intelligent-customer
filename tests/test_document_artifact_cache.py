@@ -11,7 +11,7 @@ from rag_modules.build_pipeline.document_artifacts import (
     DocumentIndexCache,
 )
 from rag_modules.build_pipeline.document_artifacts.statistics import DocumentArtifactStatsCollector
-from rag_modules.build_pipeline.graph_preparation.statistics import GraphPreparationStats
+from rag_modules.contracts import GraphPreparationStats
 from rag_modules.kernel.documents import TextDocument
 
 
