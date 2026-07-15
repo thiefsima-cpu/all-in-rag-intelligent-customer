@@ -20,8 +20,7 @@ from ..routing.ports import GraphRAGRetrievalPort, HybridRetrievalPort
 from .diagnostics import StartupDiagnostics, SystemStatsDiagnostics
 
 if TYPE_CHECKING:
-    from ..build_pipeline.graph_preparation.models import GraphLoadCounts, GraphNode
-    from ..build_pipeline.graph_preparation.statistics import GraphPreparationStats
+    from ..contracts.graph_preparation import GraphLoadCounts, GraphNode, GraphPreparationStats
     from .runtime_view import SystemRuntime
 
 

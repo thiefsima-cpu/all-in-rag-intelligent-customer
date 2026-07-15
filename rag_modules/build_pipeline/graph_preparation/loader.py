@@ -7,9 +7,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from ...contracts.graph_preparation import GraphLoadCounts, GraphNode
 from ...kernel.json_types import coerce_json_object, coerce_json_value
 from ..ports import Neo4jDriverPort, Neo4jRecordPort
-from .models import GraphLoadCounts, GraphNode
 
 logger = logging.getLogger(__name__)
 

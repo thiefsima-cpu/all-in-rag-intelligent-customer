@@ -2,107 +2,1961 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
+from typing import Literal, Mapping
+
+import pytest
+
+from tests.import_dag_policy import (
+    ALLOWED_IMPORTS,
+    CONTROLLED_LAZY_IMPORT_FILES,
+    EXACT_MODULE_NODES,
+    NODE_PREFIXES,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 RAG_MODULES = ROOT / "rag_modules"
+DependencyKind = Literal["runtime", "type"]
 
 
-def _module_name(path: Path) -> tuple[str, bool]:
-    relative = path.relative_to(ROOT).with_suffix("")
+@dataclass(frozen=True, slots=True)
+class RawImport:
+    target_module: str
+    line: int
+    kind: DependencyKind
+
+
+@dataclass(frozen=True, slots=True)
+class ImportEdge:
+    source_module: str
+    target_module: str
+    source_node: str
+    target_node: str
+    path: Path
+    line: int
+    kind: DependencyKind
+
+
+@dataclass(frozen=True, slots=True)
+class ImportInventory:
+    classification_errors: tuple[str, ...]
+    dynamic_import_errors: tuple[str, ...]
+    edges: tuple[ImportEdge, ...]
+
+
+@dataclass(slots=True)
+class _BindingState:
+    dynamic_loaders: dict[str, str] = field(default_factory=lambda: {"__import__": "__import__"})
+    importlib_aliases: set[str] = field(default_factory=set)
+    builtins_aliases: set[str] = field(default_factory=set)
+    lazy_dynamic_targets: set[str] = field(default_factory=set)
+    type_checking_names: set[str] = field(default_factory=set)
+    typing_aliases: set[str] = field(default_factory=set)
+
+    def copy(self) -> _BindingState:
+        return _BindingState(
+            dynamic_loaders=dict(self.dynamic_loaders),
+            importlib_aliases=set(self.importlib_aliases),
+            builtins_aliases=set(self.builtins_aliases),
+            lazy_dynamic_targets=set(self.lazy_dynamic_targets),
+            type_checking_names=set(self.type_checking_names),
+            typing_aliases=set(self.typing_aliases),
+        )
+
+    @classmethod
+    def merge(cls, states: tuple[_BindingState, ...]) -> _BindingState:
+        if not states:
+            raise ValueError("binding-state merge requires at least one state")
+        loader_kinds: dict[str, set[str]] = defaultdict(set)
+        for state in states:
+            for name, kind in state.dynamic_loaders.items():
+                loader_kinds[name].add(kind)
+        dynamic_loaders = {
+            name: ("import_module" if "import_module" in kinds else sorted(kinds)[0])
+            for name, kinds in loader_kinds.items()
+        }
+        lazy_dynamic_targets = set(states[0].lazy_dynamic_targets)
+        for state in states[1:]:
+            lazy_dynamic_targets.intersection_update(state.lazy_dynamic_targets)
+        return cls(
+            dynamic_loaders=dynamic_loaders,
+            importlib_aliases=set().union(*(state.importlib_aliases for state in states)),
+            builtins_aliases=set().union(*(state.builtins_aliases for state in states)),
+            lazy_dynamic_targets=lazy_dynamic_targets,
+            type_checking_names=set().union(*(state.type_checking_names for state in states)),
+            typing_aliases=set().union(*(state.typing_aliases for state in states)),
+        )
+
+
+def _inventory_edge_sort_key(
+    edge: ImportEdge,
+) -> tuple[str, int, str, str, DependencyKind, str, str]:
+    return (
+        edge.path.as_posix(),
+        edge.line,
+        edge.source_node,
+        edge.target_node,
+        edge.kind,
+        edge.source_module,
+        edge.target_module,
+    )
+
+
+def _concrete_cycle_edge_sort_key(
+    edge: ImportEdge,
+) -> tuple[str, str, int, DependencyKind, str, str]:
+    return (
+        edge.target_node,
+        edge.path.as_posix(),
+        edge.line,
+        edge.kind,
+        edge.source_module,
+        edge.target_module,
+    )
+
+
+def _module_name(path: Path, *, root: Path = ROOT) -> tuple[str, bool]:
+    relative = path.relative_to(root).with_suffix("")
     parts = list(relative.parts)
     is_package = parts[-1] == "__init__"
     if is_package:
-        parts = parts[:-1]
+        parts.pop()
     return ".".join(parts), is_package
 
 
-def _is_type_checking_guard(node: ast.AST) -> bool:
-    if isinstance(node, ast.Name):
-        return node.id == "TYPE_CHECKING"
-    if isinstance(node, ast.Attribute):
-        return node.attr == "TYPE_CHECKING"
-    return False
+@lru_cache(maxsize=1)
+def _production_module_index() -> frozenset[str]:
+    return frozenset(
+        _module_name(path)[0]
+        for path in RAG_MODULES.rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
+
+
+def architectural_nodes(
+    module: str,
+    *,
+    exact_modules: Mapping[str, str] = EXACT_MODULE_NODES,
+    node_prefixes: Mapping[str, tuple[str, ...]] = NODE_PREFIXES,
+) -> tuple[str, ...]:
+    matches: list[tuple[int, str]] = []
+    exact_owner = exact_modules.get(module)
+    if exact_owner is not None:
+        matches.append((len(module), exact_owner))
+    matches.extend(
+        (len(prefix), node)
+        for node, prefixes in node_prefixes.items()
+        for prefix in prefixes
+        if module == prefix or module.startswith(f"{prefix}.")
+    )
+    if not matches:
+        return ()
+    longest = max(length for length, _node in matches)
+    return tuple(sorted({node for length, node in matches if length == longest}))
 
 
 def _resolve_import_from(
-    current_module: str,
+    source_module: str,
+    *,
     is_package: bool,
-    node: ast.ImportFrom,
-) -> str | None:
-    if node.level == 0:
-        return node.module
+    level: int,
+    module: str | None,
+) -> str:
+    if level == 0:
+        return module or ""
+    package_parts = source_module.split(".") if is_package else source_module.split(".")[:-1]
+    keep = max(0, len(package_parts) - (level - 1))
+    suffix = (module or "").split(".") if module else []
+    return ".".join([*package_parts[:keep], *suffix])
 
-    current_parts = current_module.split(".")
-    package_parts = current_parts if is_package else current_parts[:-1]
-    keep = max(0, len(package_parts) - (node.level - 1))
-    resolved_parts = package_parts[:keep]
-    if node.module:
-        resolved_parts.extend(node.module.split("."))
-    return ".".join(resolved_parts)
+
+def _source_package(source_module: str, *, is_package: bool) -> str:
+    if is_package:
+        return source_module
+    return source_module.rpartition(".")[0]
+
+
+def _resolve_dynamic_target(
+    source_module: str,
+    target: str,
+    *,
+    is_package: bool,
+    package: str | None = None,
+) -> str:
+    if not target.startswith("."):
+        return target
+    level = len(target) - len(target.lstrip("."))
+    return _resolve_import_from(
+        package or _source_package(source_module, is_package=is_package),
+        is_package=True,
+        level=level,
+        module=target.lstrip("."),
+    )
+
+
+def _literal_lazy_export_definition(
+    statement: ast.stmt,
+) -> tuple[str, tuple[ast.Constant, ...]] | None:
+    if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+        target = statement.targets[0]
+        value = statement.value
+    elif isinstance(statement, ast.AnnAssign):
+        target = statement.target
+        value = statement.value
+    else:
+        return None
+    if not (
+        isinstance(target, ast.Name)
+        and target.id.endswith("_EXPORTS")
+        and isinstance(value, ast.Dict)
+        and value.keys
+        and all(isinstance(key, ast.Constant) and isinstance(key.value, str) for key in value.keys)
+        and all(
+            isinstance(item, ast.Constant)
+            and isinstance(item.value, str)
+            and item.value.startswith(".")
+            for item in value.values
+        )
+    ):
+        return None
+    return target.id, tuple(item for item in value.values if isinstance(item, ast.Constant))
+
+
+def _mutation_root_name(target: ast.AST) -> str | None:
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Subscript):
+        return _mutation_root_name(target.value)
+    return None
+
+
+class _FunctionLocalBindingCollector(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.bound: set[str] = set()
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+
+    def local_names(self) -> set[str]:
+        return self.bound - self.global_names - self.nonlocal_names
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.bound.add(node.id)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.nonlocal_names.update(node.names)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.pattern is not None:
+            self.visit(node.pattern)
+        if node.name is not None:
+            self.bound.add(node.name)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name is not None:
+            self.bound.add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        for key in node.keys:
+            self.visit(key)
+        for pattern in node.patterns:
+            self.visit(pattern)
+        if node.rest is not None:
+            self.bound.add(node.rest)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.bound.add(alias.asname or alias.name.split(".", maxsplit=1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self.bound.add(alias.asname or alias.name)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.type is not None:
+            self.visit(node.type)
+        if node.name is not None:
+            self.bound.add(node.name)
+        for statement in node.body:
+            self.visit(statement)
+
+    def _visit_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        for argument in arguments:
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.bound.add(node.name)
+        self._visit_function_signature(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.bound.add(node.name)
+        self._visit_function_signature(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.bound.add(node.name)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+
+    def _visit_comprehension(
+        self,
+        generators: list[ast.comprehension],
+        results: tuple[ast.AST, ...],
+    ) -> None:
+        for generator in generators:
+            self.visit(generator.iter)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for result in results:
+            self.visit(result)
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node.generators, (node.key, node.value))
+
+
+def _pattern_bound_names(pattern: ast.pattern) -> set[str]:
+    collector = _FunctionLocalBindingCollector()
+    collector.visit(pattern)
+    return collector.local_names()
+
+
+class _LazyTableMutationVisitor(ast.NodeVisitor):
+    _MUTATING_METHODS = frozenset(
+        {"__setitem__", "clear", "pop", "popitem", "setdefault", "update"}
+    )
+
+    def __init__(self, definitions: Mapping[str, ast.stmt]) -> None:
+        self.definitions = definitions
+        self.aliases = {name: frozenset((name,)) for name in definitions}
+        self.mutations: set[tuple[str, int]] = set()
+        self._exception_state_sinks: list[list[dict[str, frozenset[str]]]] = []
+
+    def _copy_aliases(self) -> dict[str, frozenset[str]]:
+        return self.aliases.copy()
+
+    @staticmethod
+    def _merge_aliases(
+        states: tuple[dict[str, frozenset[str]], ...],
+    ) -> dict[str, frozenset[str]]:
+        merged: dict[str, set[str]] = defaultdict(set)
+        for state in states:
+            for binding, targets in state.items():
+                merged[binding].update(targets)
+        return {binding: frozenset(targets) for binding, targets in merged.items() if targets}
+
+    def _checkpoint_aliases(self) -> None:
+        for sink in self._exception_state_sinks:
+            sink.append(self._copy_aliases())
+
+    def _replace_alias(self, binding: str, targets: frozenset[str]) -> None:
+        previous = self.aliases.get(binding, frozenset())
+        if targets:
+            self.aliases[binding] = targets
+        else:
+            self.aliases.pop(binding, None)
+        if previous != targets:
+            self._checkpoint_aliases()
+
+    def _record_binding(self, binding: str, statement: ast.AST) -> None:
+        if binding in self.definitions and binding in self.aliases:
+            self.mutations.add((binding, statement.lineno))
+
+    def _record_target(
+        self,
+        target: ast.AST,
+        statement: ast.AST,
+        *,
+        alias_name_mutates: bool = False,
+    ) -> None:
+        binding = _mutation_root_name(target)
+        names = self.aliases.get(binding or "", frozenset())
+        if not names:
+            return
+        if isinstance(target, ast.Name):
+            if statement is self.definitions.get(target.id):
+                return
+            if alias_name_mutates:
+                self.mutations.update((name, statement.lineno) for name in names)
+            elif target.id in self.definitions:
+                self.mutations.add((target.id, statement.lineno))
+            return
+        self.mutations.update((name, statement.lineno) for name in names)
+
+    @staticmethod
+    def _target_names(target: ast.AST) -> tuple[str, ...]:
+        if isinstance(target, ast.Name):
+            return (target.id,)
+        if isinstance(target, ast.Starred):
+            return _LazyTableMutationVisitor._target_names(target.value)
+        if isinstance(target, (ast.List, ast.Tuple)):
+            return tuple(
+                name
+                for element in target.elts
+                for name in _LazyTableMutationVisitor._target_names(element)
+            )
+        return ()
+
+    @staticmethod
+    def _argument_names(arguments: ast.arguments) -> tuple[str, ...]:
+        names = [
+            argument.arg
+            for argument in [
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+            ]
+        ]
+        if arguments.vararg is not None:
+            names.append(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            names.append(arguments.kwarg.arg)
+        return tuple(names)
+
+    @staticmethod
+    def _function_local_names(body: list[ast.stmt]) -> set[str]:
+        collector = _FunctionLocalBindingCollector()
+        for statement in body:
+            collector.visit(statement)
+        return collector.local_names()
+
+    @staticmethod
+    def _lambda_local_names(body: ast.expr) -> set[str]:
+        collector = _FunctionLocalBindingCollector()
+        collector.visit(body)
+        return collector.local_names()
+
+    def _clear_target_aliases(self, target: ast.AST) -> None:
+        for name in self._target_names(target):
+            self._replace_alias(name, frozenset())
+
+    def _alias_targets_from_expression(self, value: ast.AST) -> frozenset[str]:
+        if isinstance(value, ast.Name):
+            return self.aliases.get(value.id, frozenset())
+        if isinstance(value, ast.NamedExpr):
+            return self._alias_targets_from_expression(value.value)
+        if isinstance(value, ast.IfExp):
+            return self._alias_targets_from_expression(
+                value.body
+            ) | self._alias_targets_from_expression(value.orelse)
+        if isinstance(value, ast.BoolOp):
+            targets = frozenset()
+            for item in value.values:
+                targets |= self._alias_targets_from_expression(item)
+            return targets
+        if isinstance(value, ast.Starred):
+            return self._alias_targets_from_expression(value.value)
+        return frozenset()
+
+    def _contained_alias_targets(self, value: ast.AST) -> frozenset[str]:
+        if isinstance(value, (ast.List, ast.Tuple)):
+            targets = frozenset()
+            for item in value.elts:
+                targets |= self._contained_alias_targets(item)
+            return targets
+        return self._alias_targets_from_expression(value)
+
+    def _record_assignment_target(self, target: ast.AST, statement: ast.AST) -> None:
+        if isinstance(target, (ast.List, ast.Tuple)):
+            for item in target.elts:
+                self._record_assignment_target(item, statement)
+            return
+        if isinstance(target, ast.Starred):
+            self._record_assignment_target(target.value, statement)
+            return
+        self._record_target(target, statement)
+
+    def _update_alias(self, target: ast.AST, value: ast.AST, statement: ast.AST) -> None:
+        if isinstance(target, ast.Starred):
+            self._update_alias(target.value, value, statement)
+            return
+        if isinstance(target, (ast.List, ast.Tuple)):
+            if (
+                isinstance(value, (ast.List, ast.Tuple))
+                and len(target.elts) == len(value.elts)
+                and not any(isinstance(item, ast.Starred) for item in target.elts)
+            ):
+                for target_item, value_item in zip(target.elts, value.elts, strict=True):
+                    self._update_alias(target_item, value_item, statement)
+                return
+            possible_targets = self._contained_alias_targets(value)
+            for name in self._target_names(target):
+                self._replace_alias(name, possible_targets)
+            return
+        if not isinstance(target, ast.Name):
+            self._clear_target_aliases(target)
+            return
+        if statement is self.definitions.get(target.id):
+            self._replace_alias(target.id, frozenset((target.id,)))
+            return
+        targets = self._alias_targets_from_expression(value)
+        self._replace_alias(target.id, targets)
+
+    def _visit_nodes(
+        self,
+        nodes: list[ast.stmt],
+        state: dict[str, frozenset[str]],
+    ) -> dict[str, frozenset[str]]:
+        previous = self.aliases
+        self.aliases = state.copy()
+        for node in nodes:
+            self.visit(node)
+        result = self._copy_aliases()
+        self.aliases = previous
+        return result
+
+    def _visit_loop_statements(
+        self,
+        nodes: list[ast.stmt],
+        state: dict[str, frozenset[str]],
+    ) -> tuple[
+        dict[str, frozenset[str]] | None,
+        list[dict[str, frozenset[str]]],
+        list[dict[str, frozenset[str]]],
+    ]:
+        current: dict[str, frozenset[str]] | None = state.copy()
+        break_states: list[dict[str, frozenset[str]]] = []
+        continue_states: list[dict[str, frozenset[str]]] = []
+        for node in nodes:
+            if current is None:
+                break
+            if isinstance(node, ast.Break):
+                break_states.append(current)
+                current = None
+                break
+            if isinstance(node, ast.Continue):
+                continue_states.append(current)
+                current = None
+                break
+            if isinstance(node, (ast.Raise, ast.Return)):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node)
+                self.aliases = previous
+                current = None
+                break
+            if isinstance(node, ast.If):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node.test)
+                branch_state = self._copy_aliases()
+                self.aliases = previous
+                body_normal, body_breaks, body_continues = self._visit_loop_statements(
+                    node.body,
+                    branch_state,
+                )
+                if node.orelse:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        node.orelse,
+                        branch_state,
+                    )
+                else:
+                    else_normal = branch_state
+                    else_breaks = []
+                    else_continues = []
+                break_states.extend((*body_breaks, *else_breaks))
+                continue_states.extend((*body_continues, *else_continues))
+                normal_states = tuple(
+                    item for item in (body_normal, else_normal) if item is not None
+                )
+                current = self._merge_aliases(normal_states) if normal_states else None
+                continue
+            if isinstance(node, ast.Match):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node.subject)
+                match_state = self._copy_aliases()
+                self.aliases = previous
+                normal_states = [match_state]
+                for case in node.cases:
+                    previous = self.aliases
+                    self.aliases = match_state.copy()
+                    self.visit(case.pattern)
+                    for name in _pattern_bound_names(case.pattern):
+                        self._record_binding(name, case.pattern)
+                        self._replace_alias(name, frozenset())
+                    if case.guard is not None:
+                        self.visit(case.guard)
+                    case_state = self._copy_aliases()
+                    self.aliases = previous
+                    case_normal, case_breaks, case_continues = self._visit_loop_statements(
+                        case.body,
+                        case_state,
+                    )
+                    if case_normal is not None:
+                        normal_states.append(case_normal)
+                    break_states.extend(case_breaks)
+                    continue_states.extend(case_continues)
+                current = self._merge_aliases(tuple(normal_states))
+                continue
+            if isinstance(node, (ast.With, ast.AsyncWith)):
+                previous = self.aliases
+                self.aliases = current.copy()
+                for item in node.items:
+                    self.visit(item.context_expr)
+                    if item.optional_vars is not None:
+                        for name in self._target_names(item.optional_vars):
+                            self._record_binding(name, node)
+                        self._clear_target_aliases(item.optional_vars)
+                with_state = self._copy_aliases()
+                self.aliases = previous
+                with_normal, with_breaks, with_continues = self._visit_loop_statements(
+                    node.body,
+                    with_state,
+                )
+                current = with_normal
+                break_states.extend(with_breaks)
+                continue_states.extend(with_continues)
+                continue
+            if isinstance(node, (ast.Try, ast.TryStar)):
+                exception_prefixes = [current.copy()]
+                self._exception_state_sinks.append(exception_prefixes)
+                try:
+                    try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                        node.body,
+                        current,
+                    )
+                finally:
+                    self._exception_state_sinks.pop()
+                normal_states: list[dict[str, frozenset[str]]] = []
+                outgoing_breaks = list(try_breaks)
+                outgoing_continues = list(try_continues)
+                if try_normal is not None:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        node.orelse,
+                        try_normal,
+                    )
+                    if else_normal is not None:
+                        normal_states.append(else_normal)
+                    outgoing_breaks.extend(else_breaks)
+                    outgoing_continues.extend(else_continues)
+                exception_candidates = [*exception_prefixes, *try_breaks, *try_continues]
+                if try_normal is not None:
+                    exception_candidates.append(try_normal)
+                exception_state = self._merge_aliases(tuple(exception_candidates))
+                for handler in node.handlers:
+                    previous = self.aliases
+                    self.aliases = exception_state.copy()
+                    if handler.type is not None:
+                        self.visit(handler.type)
+                    if handler.name is not None:
+                        self._record_binding(handler.name, handler)
+                        self._replace_alias(handler.name, frozenset())
+                    handler_state = self._copy_aliases()
+                    self.aliases = previous
+                    handler_normal, handler_breaks, handler_continues = self._visit_loop_statements(
+                        handler.body, handler_state
+                    )
+                    if handler.name is not None:
+                        if handler_normal is not None:
+                            handler_normal.pop(handler.name, None)
+                        for state in (*handler_breaks, *handler_continues):
+                            state.pop(handler.name, None)
+                    if handler_normal is not None:
+                        normal_states.append(handler_normal)
+                    outgoing_breaks.extend(handler_breaks)
+                    outgoing_continues.extend(handler_continues)
+                current, finalized_breaks, finalized_continues = self._apply_loop_finally(
+                    node.finalbody,
+                    normal_states,
+                    outgoing_breaks,
+                    outgoing_continues,
+                )
+                break_states.extend(finalized_breaks)
+                continue_states.extend(finalized_continues)
+                continue
+            previous = self.aliases
+            self.aliases = current.copy()
+            self.visit(node)
+            current = self._copy_aliases()
+            self.aliases = previous
+        return current, break_states, continue_states
+
+    def _apply_loop_finally(
+        self,
+        finalbody: list[ast.stmt],
+        normal_states: list[dict[str, frozenset[str]]],
+        break_states: list[dict[str, frozenset[str]]],
+        continue_states: list[dict[str, frozenset[str]]],
+    ) -> tuple[
+        dict[str, frozenset[str]] | None,
+        list[dict[str, frozenset[str]]],
+        list[dict[str, frozenset[str]]],
+    ]:
+        finalized_normals: list[dict[str, frozenset[str]]] = []
+        finalized_breaks: list[dict[str, frozenset[str]]] = []
+        finalized_continues: list[dict[str, frozenset[str]]] = []
+        for state in normal_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_normals.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in break_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_breaks.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in continue_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_continues.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        normal_state = self._merge_aliases(tuple(finalized_normals)) if finalized_normals else None
+        return normal_state, finalized_breaks, finalized_continues
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        for target in node.targets:
+            self._record_assignment_target(target, node)
+            self._update_alias(target, node.value, node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            self.visit(node.value)
+            self._record_target(node.target, node)
+            self._update_alias(node.target, node.value, node)
+        self.visit(node.annotation)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.target)
+        self.visit(node.value)
+        self._record_target(node.target, node, alias_name_mutates=True)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        self._record_target(node.target, node)
+        self._update_alias(node.target, node.value, node)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            self._record_target(target, node)
+            self._clear_target_aliases(target)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Attribute) and node.func.attr in self._MUTATING_METHODS:
+            binding = _mutation_root_name(node.func.value)
+            names = self.aliases.get(binding or "", frozenset())
+            self.mutations.update((name, node.lineno) for name in names)
+        self.generic_visit(node)
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        initial = self._copy_aliases()
+        body_state = self._visit_nodes(node.body, initial)
+        else_state = self._visit_nodes(node.orelse, initial) if node.orelse else initial
+        self.aliases = self._merge_aliases((body_state, else_state))
+        self._checkpoint_aliases()
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        initial = self._copy_aliases()
+        alternatives = [initial]
+        for case in node.cases:
+            previous = self.aliases
+            self.aliases = initial.copy()
+            self.visit(case.pattern)
+            for name in _pattern_bound_names(case.pattern):
+                self._record_binding(name, case.pattern)
+                self._replace_alias(name, frozenset())
+            if case.guard is not None:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+            alternatives.append(self._copy_aliases())
+            self.aliases = previous
+        self.aliases = self._merge_aliases(tuple(alternatives))
+        self._checkpoint_aliases()
+
+    def visit_IfExp(self, node: ast.IfExp) -> None:
+        self.visit(node.test)
+        initial = self._copy_aliases()
+        previous = self.aliases
+        self.aliases = initial.copy()
+        self.visit(node.body)
+        body_state = self._copy_aliases()
+        self.aliases = initial.copy()
+        self.visit(node.orelse)
+        else_state = self._copy_aliases()
+        self.aliases = previous
+        self.aliases = self._merge_aliases((body_state, else_state))
+        self._checkpoint_aliases()
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> None:
+        possible_states: list[dict[str, frozenset[str]]] = []
+        for value in node.values:
+            self.visit(value)
+            possible_states.append(self._copy_aliases())
+        self.aliases = self._merge_aliases(tuple(possible_states))
+        self._checkpoint_aliases()
+
+    def _visit_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        for argument in arguments:
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._visit_function_signature(node)
+        self._record_binding(node.name, node)
+        self._replace_alias(node.name, frozenset())
+        outer = self._copy_aliases()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.aliases = outer.copy()
+        local_names = self._function_local_names(node.body)
+        local_names.update(self._argument_names(node.args))
+        for name in local_names:
+            self.aliases.pop(name, None)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.aliases = outer
+            self._exception_state_sinks = outer_sinks
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        outer = self._copy_aliases()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.aliases = outer.copy()
+        local_names = self._lambda_local_names(node.body)
+        local_names.update(self._argument_names(node.args))
+        for name in local_names:
+            self.aliases.pop(name, None)
+        try:
+            self.visit(node.body)
+        finally:
+            self.aliases = outer
+            self._exception_state_sinks = outer_sinks
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        self._record_binding(node.name, node)
+        self._replace_alias(node.name, frozenset())
+        outer = self._copy_aliases()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.aliases = outer.copy()
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.aliases = outer
+            self._exception_state_sinks = outer_sinks
+
+    def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
+        initial = self._copy_aliases()
+        exception_prefixes = [initial]
+        self._exception_state_sinks.append(exception_prefixes)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+                exception_prefixes.append(self._copy_aliases())
+        finally:
+            self._exception_state_sinks.pop()
+        body_state = self._copy_aliases()
+        success_state = self._visit_nodes(node.orelse, body_state)
+        exception_state = self._merge_aliases(tuple(exception_prefixes))
+        alternatives = [success_state]
+        for handler in node.handlers:
+            previous = self.aliases
+            self.aliases = exception_state.copy()
+            if handler.type is not None:
+                self.visit(handler.type)
+            if handler.name is not None:
+                self._record_binding(handler.name, handler)
+                self._replace_alias(handler.name, frozenset())
+            for statement in handler.body:
+                self.visit(statement)
+            if handler.name is not None:
+                self._replace_alias(handler.name, frozenset())
+            alternatives.append(self._copy_aliases())
+            self.aliases = previous
+        self.aliases = self._merge_aliases(tuple(alternatives))
+        self._checkpoint_aliases()
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_try(node)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self._visit_try(node)
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        initial = self._copy_aliases()
+        loop_state = initial
+        break_states: list[dict[str, frozenset[str]]] = []
+        while True:
+            previous = self.aliases
+            self.aliases = loop_state.copy()
+            self.visit(node.target)
+            for name in self._target_names(node.target):
+                self._record_binding(name, node)
+            self._clear_target_aliases(node.target)
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                self._copy_aliases(),
+            )
+            break_states.extend(iteration_breaks)
+            self.aliases = previous
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = self._merge_aliases(tuple(continuation_states))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
+        else_state = self._visit_nodes(node.orelse, loop_state)
+        self.aliases = self._merge_aliases((loop_state, else_state, *break_states))
+        self._checkpoint_aliases()
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_for(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_for(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        initial = self._copy_aliases()
+        loop_state = initial
+        break_states: list[dict[str, frozenset[str]]] = []
+        while True:
+            previous = self.aliases
+            self.aliases = loop_state.copy()
+            self.visit(node.test)
+            test_state = self._copy_aliases()
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                test_state,
+            )
+            break_states.extend(iteration_breaks)
+            self.aliases = previous
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = self._merge_aliases(tuple(continuation_states))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
+        else_state = self._visit_nodes(node.orelse, test_state)
+        final_states = [test_state, else_state, *break_states]
+        if body_state is not None:
+            final_states.append(body_state)
+        self.aliases = self._merge_aliases(tuple(final_states))
+        self._checkpoint_aliases()
+
+    def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                for name in self._target_names(item.optional_vars):
+                    self._record_binding(name, node)
+                self._clear_target_aliases(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_with(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_with(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            binding = alias.asname or alias.name.split(".", maxsplit=1)[0]
+            self._record_binding(binding, node)
+            self._replace_alias(binding, frozenset())
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            binding = alias.asname or alias.name
+            self._record_binding(binding, node)
+            self._replace_alias(binding, frozenset())
+
+    def _visit_comprehension(
+        self,
+        generators: list[ast.comprehension],
+        results: tuple[ast.AST, ...],
+    ) -> None:
+        if not generators:
+            for result in results:
+                self.visit(result)
+            return
+        self.visit(generators[0].iter)
+        outer = self._copy_aliases()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.aliases = outer.copy()
+        try:
+            for index, generator in enumerate(generators):
+                if index:
+                    self.visit(generator.iter)
+                self._clear_target_aliases(generator.target)
+                for condition in generator.ifs:
+                    self.visit(condition)
+            for result in results:
+                self.visit(result)
+        finally:
+            self.aliases = outer
+            self._exception_state_sinks = outer_sinks
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node.generators, (node.key, node.value))
+
+
+def _lazy_export_table_analysis(
+    tree: ast.Module,
+) -> tuple[dict[str, tuple[ast.Constant, ...]], tuple[tuple[str, int], ...]]:
+    tables: dict[str, tuple[ast.Constant, ...]] = {}
+    definitions: dict[str, ast.stmt] = {}
+    for statement in tree.body:
+        definition = _literal_lazy_export_definition(statement)
+        if definition is None:
+            continue
+        name, values = definition
+        if name not in definitions:
+            definitions[name] = statement
+            tables[name] = values
+    visitor = _LazyTableMutationVisitor(definitions)
+    visitor.visit(tree)
+    mutations = tuple(sorted(visitor.mutations, key=lambda item: (item[1], item[0])))
+    invalid_names = {name for name, _line in mutations}
+    return (
+        {name: values for name, values in tables.items() if name not in invalid_names},
+        mutations,
+    )
+
+
+def _static_lazy_export_tables(tree: ast.Module) -> dict[str, tuple[ast.Constant, ...]]:
+    tables, _mutations = _lazy_export_table_analysis(tree)
+    return tables
 
 
 class _ImportVisitor(ast.NodeVisitor):
-    def __init__(self, current_module: str, is_package: bool) -> None:
-        self.current_module = current_module
+    def __init__(
+        self,
+        *,
+        source_module: str,
+        is_package: bool,
+        relative_path: str,
+    ) -> None:
+        self.source_module = source_module
         self.is_package = is_package
-        self.imported_modules: list[str] = []
+        self.relative_path = relative_path
+        self.kind: DependencyKind = "runtime"
+        self.imports: list[RawImport] = []
+        self.dynamic_import_errors: list[str] = []
+        self.bindings = _BindingState()
+        self.lazy_export_tables: set[str] = set()
+        self._exception_state_sinks: list[list[_BindingState]] = []
 
-    def visit_If(self, node: ast.If) -> None:
-        if _is_type_checking_guard(node.test):
-            for child in node.orelse:
-                self.visit(child)
+    @property
+    def dynamic_loaders(self) -> dict[str, str]:
+        return self.bindings.dynamic_loaders
+
+    @property
+    def importlib_aliases(self) -> set[str]:
+        return self.bindings.importlib_aliases
+
+    @property
+    def builtins_aliases(self) -> set[str]:
+        return self.bindings.builtins_aliases
+
+    @property
+    def lazy_dynamic_targets(self) -> set[str]:
+        return self.bindings.lazy_dynamic_targets
+
+    @property
+    def type_checking_names(self) -> set[str]:
+        return self.bindings.type_checking_names
+
+    @property
+    def typing_aliases(self) -> set[str]:
+        return self.bindings.typing_aliases
+
+    def _visit_branch(
+        self,
+        statements: list[ast.stmt],
+        initial: _BindingState,
+        *,
+        kind: DependencyKind | None = None,
+    ) -> _BindingState:
+        previous_bindings = self.bindings
+        previous_kind = self.kind
+        self.bindings = initial.copy()
+        if kind is not None:
+            self.kind = kind
+        for statement in statements:
+            self.visit(statement)
+        result = self.bindings.copy()
+        self.bindings = previous_bindings
+        self.kind = previous_kind
+        return result
+
+    def _visit_loop_statements(
+        self,
+        statements: list[ast.stmt],
+        initial: _BindingState,
+    ) -> tuple[_BindingState | None, list[_BindingState], list[_BindingState]]:
+        current: _BindingState | None = initial.copy()
+        break_states: list[_BindingState] = []
+        continue_states: list[_BindingState] = []
+        for statement in statements:
+            if current is None:
+                break
+            if isinstance(statement, ast.Break):
+                break_states.append(current)
+                current = None
+                break
+            if isinstance(statement, ast.Continue):
+                continue_states.append(current)
+                current = None
+                break
+            if isinstance(statement, (ast.Raise, ast.Return)):
+                self._visit_branch([statement], current, kind=self.kind)
+                current = None
+                break
+            if isinstance(statement, ast.If) and not self._is_type_checking_guard(statement.test):
+                previous = self.bindings
+                self.bindings = current.copy()
+                self.visit(statement.test)
+                branch_state = self.bindings.copy()
+                self.bindings = previous
+                body_normal, body_breaks, body_continues = self._visit_loop_statements(
+                    statement.body,
+                    branch_state,
+                )
+                if statement.orelse:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        statement.orelse,
+                        branch_state,
+                    )
+                else:
+                    else_normal = branch_state
+                    else_breaks = []
+                    else_continues = []
+                break_states.extend((*body_breaks, *else_breaks))
+                continue_states.extend((*body_continues, *else_continues))
+                normal_states = tuple(
+                    item for item in (body_normal, else_normal) if item is not None
+                )
+                current = _BindingState.merge(normal_states) if normal_states else None
+                continue
+            if isinstance(statement, ast.Match):
+                previous = self.bindings
+                self.bindings = current.copy()
+                self.visit(statement.subject)
+                match_state = self.bindings.copy()
+                self.bindings = previous
+                normal_states = [match_state]
+                for case in statement.cases:
+                    previous = self.bindings
+                    self.bindings = match_state.copy()
+                    self.visit(case.pattern)
+                    for name in _pattern_bound_names(case.pattern):
+                        self._clear_binding(name)
+                    if case.guard is not None:
+                        self.visit(case.guard)
+                    case_state = self.bindings.copy()
+                    self.bindings = previous
+                    case_normal, case_breaks, case_continues = self._visit_loop_statements(
+                        case.body,
+                        case_state,
+                    )
+                    if case_normal is not None:
+                        normal_states.append(case_normal)
+                    break_states.extend(case_breaks)
+                    continue_states.extend(case_continues)
+                current = _BindingState.merge(tuple(normal_states))
+                continue
+            if isinstance(statement, (ast.With, ast.AsyncWith)):
+                previous = self.bindings
+                self.bindings = current.copy()
+                for item in statement.items:
+                    self.visit(item.context_expr)
+                    if item.optional_vars is not None:
+                        self.visit(item.optional_vars)
+                        self._clear_target_bindings(item.optional_vars)
+                with_state = self.bindings.copy()
+                self.bindings = previous
+                with_normal, with_breaks, with_continues = self._visit_loop_statements(
+                    statement.body,
+                    with_state,
+                )
+                current = with_normal
+                break_states.extend(with_breaks)
+                continue_states.extend(with_continues)
+                continue
+            if isinstance(statement, (ast.Try, ast.TryStar)):
+                exception_prefixes = [current.copy()]
+                self._exception_state_sinks.append(exception_prefixes)
+                try:
+                    try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                        statement.body,
+                        current,
+                    )
+                finally:
+                    self._exception_state_sinks.pop()
+                normal_states: list[_BindingState] = []
+                outgoing_breaks = list(try_breaks)
+                outgoing_continues = list(try_continues)
+                if try_normal is not None:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        statement.orelse,
+                        try_normal,
+                    )
+                    if else_normal is not None:
+                        normal_states.append(else_normal)
+                    outgoing_breaks.extend(else_breaks)
+                    outgoing_continues.extend(else_continues)
+                exception_candidates = [*exception_prefixes, *try_breaks, *try_continues]
+                if try_normal is not None:
+                    exception_candidates.append(try_normal)
+                exception_state = _BindingState.merge(tuple(exception_candidates))
+                for handler in statement.handlers:
+                    previous = self.bindings
+                    self.bindings = exception_state.copy()
+                    if handler.type is not None:
+                        self.visit(handler.type)
+                    if handler.name is not None:
+                        self._clear_binding(handler.name)
+                    handler_state = self.bindings.copy()
+                    self.bindings = previous
+                    handler_normal, handler_breaks, handler_continues = self._visit_loop_statements(
+                        handler.body, handler_state
+                    )
+                    if handler.name is not None:
+                        if handler_normal is not None:
+                            handler_normal = self._without_binding(
+                                handler_normal,
+                                handler.name,
+                            )
+                        handler_breaks = [
+                            self._without_binding(state, handler.name) for state in handler_breaks
+                        ]
+                        handler_continues = [
+                            self._without_binding(state, handler.name)
+                            for state in handler_continues
+                        ]
+                    if handler_normal is not None:
+                        normal_states.append(handler_normal)
+                    outgoing_breaks.extend(handler_breaks)
+                    outgoing_continues.extend(handler_continues)
+                current, finalized_breaks, finalized_continues = self._apply_loop_finally(
+                    statement.finalbody,
+                    normal_states,
+                    outgoing_breaks,
+                    outgoing_continues,
+                )
+                break_states.extend(finalized_breaks)
+                continue_states.extend(finalized_continues)
+                continue
+            current = self._visit_branch([statement], current, kind=self.kind)
+        return current, break_states, continue_states
+
+    def _without_binding(self, state: _BindingState, name: str) -> _BindingState:
+        previous = self.bindings
+        self.bindings = state.copy()
+        self._clear_binding(name)
+        result = self.bindings.copy()
+        self.bindings = previous
+        return result
+
+    def _apply_loop_finally(
+        self,
+        finalbody: list[ast.stmt],
+        normal_states: list[_BindingState],
+        break_states: list[_BindingState],
+        continue_states: list[_BindingState],
+    ) -> tuple[_BindingState | None, list[_BindingState], list[_BindingState]]:
+        finalized_normals: list[_BindingState] = []
+        finalized_breaks: list[_BindingState] = []
+        finalized_continues: list[_BindingState] = []
+        for state in normal_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_normals.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in break_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_breaks.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in continue_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_continues.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        normal_state = _BindingState.merge(tuple(finalized_normals)) if finalized_normals else None
+        return normal_state, finalized_breaks, finalized_continues
+
+    @staticmethod
+    def _bound_names(target: ast.AST) -> tuple[str, ...]:
+        if isinstance(target, ast.Name):
+            return (target.id,)
+        if isinstance(target, ast.Starred):
+            return _ImportVisitor._bound_names(target.value)
+        if isinstance(target, (ast.List, ast.Tuple)):
+            return tuple(name for item in target.elts for name in _ImportVisitor._bound_names(item))
+        return ()
+
+    def _clear_binding(self, name: str) -> None:
+        self._clear_dynamic_binding(name)
+        self._clear_typing_binding(name)
+        self.lazy_dynamic_targets.discard(name)
+
+    def _clear_target_bindings(self, target: ast.AST) -> None:
+        for name in self._bound_names(target):
+            self._clear_binding(name)
+
+    def _checkpoint_bindings(self) -> None:
+        for sink in self._exception_state_sinks:
+            sink.append(self.bindings.copy())
+
+    def _record(self, target_module: str, line: int) -> None:
+        if target_module:
+            self.imports.append(RawImport(target_module, line, self.kind))
+
+    def _dynamic_package(self, node: ast.Call) -> str | None:
+        package_node = node.args[1] if len(node.args) > 1 else None
+        if package_node is None:
+            package_node = next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "package"),
+                None,
+            )
+        if isinstance(package_node, ast.Constant) and isinstance(package_node.value, str):
+            return package_node.value
+        if isinstance(package_node, ast.Name) and package_node.id == "__package__":
+            return _source_package(self.source_module, is_package=self.is_package)
+        return None
+
+    def _dynamic_import_function(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return self.dynamic_loaders.get(node.id)
+        if not isinstance(node, ast.Attribute) or not isinstance(node.value, ast.Name):
+            return None
+        if node.attr == "import_module" and node.value.id in self.importlib_aliases:
+            return "import_module"
+        if node.attr == "__import__" and node.value.id in self.builtins_aliases:
+            return "__import__"
+        return None
+
+    def _clear_dynamic_binding(self, name: str) -> None:
+        self.dynamic_loaders.pop(name, None)
+        self.importlib_aliases.discard(name)
+        self.builtins_aliases.discard(name)
+
+    def _bind_dynamic_loader(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
             return
+        function_name = self._dynamic_import_function(value)
+        self._clear_dynamic_binding(target.id)
+        if function_name is not None:
+            self.dynamic_loaders[target.id] = function_name
+
+    def _lazy_export_source(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            owner = node.func.value
+            if (
+                node.func.attr == "get"
+                and isinstance(owner, ast.Name)
+                and owner.id in self.lazy_export_tables
+                and len(node.args) == 1
+                and not node.keywords
+            ):
+                return owner.id
+        if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+            if node.value.id in self.lazy_export_tables:
+                return node.value.id
+        return None
+
+    def _bind_lazy_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
+            return
+        if self._lazy_export_source(value) is None:
+            self.lazy_dynamic_targets.discard(target.id)
+        else:
+            self.lazy_dynamic_targets.add(target.id)
+
+    def _is_lazy_dynamic_target(self, node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Name) and node.id in self.lazy_dynamic_targets
+        ) or self._lazy_export_source(node) is not None
+
+    def _is_type_checking_guard(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.type_checking_names
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "TYPE_CHECKING"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.typing_aliases
+        )
+
+    def _clear_typing_binding(self, name: str) -> None:
+        self.type_checking_names.discard(name)
+        self.typing_aliases.discard(name)
+
+    def visit_Module(self, node: ast.Module) -> None:
+        tables, mutations = _lazy_export_table_analysis(node)
+        self.lazy_export_tables = set(tables)
+        if self.relative_path in CONTROLLED_LAZY_IMPORT_FILES:
+            self.dynamic_import_errors.extend(
+                f"{self.relative_path}:{line}: mutated lazy import table {name}"
+                for name, line in mutations
+            )
         self.generic_visit(node)
 
+    def visit_If(self, node: ast.If) -> None:
+        is_type_guard = self._is_type_checking_guard(node.test)
+        self.visit(node.test)
+        initial = self.bindings.copy()
+        body_state = self._visit_branch(
+            node.body,
+            initial,
+            kind="type" if is_type_guard else self.kind,
+        )
+        else_state = self._visit_branch(node.orelse, initial, kind=self.kind)
+        self.bindings = (
+            else_state if is_type_guard else _BindingState.merge((body_state, else_state))
+        )
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        initial = self.bindings.copy()
+        alternatives = [initial]
+        for case in node.cases:
+            previous = self.bindings
+            self.bindings = initial.copy()
+            self.visit(case.pattern)
+            for name in _pattern_bound_names(case.pattern):
+                self._clear_binding(name)
+            if case.guard is not None:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+            alternatives.append(self.bindings.copy())
+            self.bindings = previous
+        self.bindings = _BindingState.merge(tuple(alternatives))
+
+    def _visit_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        for argument in arguments:
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+
+    @staticmethod
+    def _argument_names(arguments: ast.arguments) -> tuple[str, ...]:
+        names = [
+            argument.arg
+            for argument in [
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+            ]
+        ]
+        if arguments.vararg is not None:
+            names.append(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            names.append(arguments.kwarg.arg)
+        return tuple(names)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._visit_function_signature(node)
+        self._clear_binding(node.name)
+        outer = self.bindings.copy()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.bindings = outer.copy()
+        collector = _FunctionLocalBindingCollector()
+        for statement in node.body:
+            collector.visit(statement)
+        local_names = collector.local_names()
+        local_names.update(self._argument_names(node.args))
+        for name in local_names:
+            self._clear_binding(name)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.bindings = outer
+            self._exception_state_sinks = outer_sinks
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        outer = self.bindings
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.bindings = outer.copy()
+        collector = _FunctionLocalBindingCollector()
+        collector.visit(node.body)
+        local_names = collector.local_names()
+        local_names.update(self._argument_names(node.args))
+        for name in local_names:
+            self._clear_binding(name)
+        try:
+            self.visit(node.body)
+        finally:
+            self.bindings = outer
+            self._exception_state_sinks = outer_sinks
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        self._clear_binding(node.name)
+        outer = self.bindings.copy()
+        outer_sinks = self._exception_state_sinks
+        self._exception_state_sinks = []
+        self.bindings = outer.copy()
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.bindings = outer
+            self._exception_state_sinks = outer_sinks
+
+    def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
+        initial = self.bindings.copy()
+        previous = self.bindings
+        self.bindings = initial.copy()
+        exception_prefixes = [initial]
+        self._exception_state_sinks.append(exception_prefixes)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+                exception_prefixes.append(self.bindings.copy())
+        finally:
+            self._exception_state_sinks.pop()
+        body_state = self.bindings.copy()
+        self.bindings = previous
+        exception_state = _BindingState.merge(tuple(exception_prefixes))
+        success_state = self._visit_branch(node.orelse, body_state, kind=self.kind)
+        alternatives = [success_state]
+        for handler in node.handlers:
+            previous = self.bindings
+            self.bindings = exception_state.copy()
+            if handler.type is not None:
+                self.visit(handler.type)
+            if handler.name is not None:
+                self._clear_binding(handler.name)
+            for statement in handler.body:
+                self.visit(statement)
+            if handler.name is not None:
+                self._clear_binding(handler.name)
+            alternatives.append(self.bindings.copy())
+            self.bindings = previous
+        self.bindings = _BindingState.merge(tuple(alternatives))
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_try(node)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self._visit_try(node)
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        initial = self.bindings.copy()
+        loop_state = initial
+        break_states: list[_BindingState] = []
+        while True:
+            previous = self.bindings
+            self.bindings = loop_state.copy()
+            self.visit(node.target)
+            self._clear_target_bindings(node.target)
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                self.bindings,
+            )
+            break_states.extend(iteration_breaks)
+            self.bindings = previous
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = _BindingState.merge(tuple(continuation_states))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
+        else_state = self._visit_branch(node.orelse, loop_state, kind=self.kind)
+        self.bindings = _BindingState.merge((loop_state, else_state, *break_states))
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_for(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_for(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        initial = self.bindings.copy()
+        loop_state = initial
+        break_states: list[_BindingState] = []
+        while True:
+            previous = self.bindings
+            self.bindings = loop_state.copy()
+            self.visit(node.test)
+            test_state = self.bindings.copy()
+            self.bindings = previous
+            body_state, iteration_breaks, continue_states = self._visit_loop_statements(
+                node.body,
+                test_state,
+            )
+            break_states.extend(iteration_breaks)
+            continuation_states = [initial, *continue_states]
+            if body_state is not None:
+                continuation_states.append(body_state)
+            next_loop_state = _BindingState.merge(tuple(continuation_states))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
+        else_state = self._visit_branch(node.orelse, test_state, kind=self.kind)
+        final_states = [test_state, else_state, *break_states]
+        if body_state is not None:
+            final_states.append(body_state)
+        self.bindings = _BindingState.merge(tuple(final_states))
+
+    def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self.visit(item.optional_vars)
+                self._clear_target_bindings(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_with(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_with(node)
+
     def visit_Import(self, node: ast.Import) -> None:
-        self.imported_modules.extend(alias.name for alias in node.names)
+        for alias in node.names:
+            self._record(alias.name, node.lineno)
+            binding = alias.asname or alias.name.split(".", maxsplit=1)[0]
+            self._clear_dynamic_binding(binding)
+            self._clear_typing_binding(binding)
+            if alias.name == "importlib":
+                self.importlib_aliases.add(binding)
+            elif alias.name == "builtins":
+                self.builtins_aliases.add(binding)
+            elif alias.name == "typing":
+                self.typing_aliases.add(binding)
+            self._checkpoint_bindings()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        module_name = _resolve_import_from(self.current_module, self.is_package, node)
-        if module_name:
-            self.imported_modules.append(module_name)
+        target_module = _resolve_import_from(
+            self.source_module,
+            is_package=self.is_package,
+            level=node.level,
+            module=node.module,
+        )
+        self._record(target_module, node.lineno)
+        for alias in node.names:
+            imported_module = ".".join(part for part in (target_module, alias.name) if part)
+            if imported_module in _production_module_index():
+                self._record(imported_module, node.lineno)
+            binding = alias.asname or alias.name
+            self._clear_dynamic_binding(binding)
+            self._clear_typing_binding(binding)
+            if node.level == 0 and node.module == "importlib" and alias.name == "import_module":
+                self.dynamic_loaders[binding] = "import_module"
+            elif node.level == 0 and node.module == "builtins" and alias.name == "__import__":
+                self.dynamic_loaders[binding] = "__import__"
+            elif node.level == 0 and node.module == "typing" and alias.name == "TYPE_CHECKING":
+                self.type_checking_names.add(binding)
+            self._checkpoint_bindings()
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        for target in node.targets:
+            self.visit(target)
+            self._bind_assignment_target(target, node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is None:
+            self.visit(node.target)
+            self.visit(node.annotation)
+            return
+        self.visit(node.value)
+        self.visit(node.target)
+        self._bind_assignment_target(node.target, node.value)
+        self.visit(node.annotation)
+
+    def _bind_assignment_target(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
+            self._clear_target_bindings(target)
+            self._checkpoint_bindings()
+            return
+        self._clear_typing_binding(target.id)
+        self._bind_dynamic_loader(target, value)
+        self._bind_lazy_target(target, value)
+        self._checkpoint_bindings()
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.target)
+        self.visit(node.value)
+        self._clear_target_bindings(node.target)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        self.visit(node.target)
+        self._bind_assignment_target(node.target, node.value)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            self.visit(target)
+            self._clear_target_bindings(target)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        function_name = self._dynamic_import_function(node.func)
+        if function_name is None:
+            self.generic_visit(node)
+            return
+        if (
+            node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            self._record(
+                _resolve_dynamic_target(
+                    self.source_module,
+                    node.args[0].value,
+                    is_package=self.is_package,
+                    package=self._dynamic_package(node),
+                ),
+                node.lineno,
+            )
+        elif not (
+            self.relative_path in CONTROLLED_LAZY_IMPORT_FILES
+            and node.args
+            and self._is_lazy_dynamic_target(node.args[0])
+        ):
+            self.dynamic_import_errors.append(
+                f"{self.relative_path}:{node.lineno}: non-literal {function_name}"
+            )
+        self.generic_visit(node)
 
 
-def _internal_package_import_graph() -> dict[str, set[str]]:
-    graph: dict[str, set[str]] = defaultdict(set)
-    modules = {
-        path: _module_name(path)
-        for path in RAG_MODULES.rglob("*.py")
-        if "__pycache__" not in path.parts
-    }
-    owners = {
-        module_name.split(".")[1]
-        for module_name, _is_package in modules.values()
-        if module_name.startswith("rag_modules.") and len(module_name.split(".")) > 1
-    }
+def _lazy_table_imports(tree: ast.AST, source_module: str) -> list[RawImport]:
+    imports: list[RawImport] = []
+    if not isinstance(tree, ast.Module):
+        return imports
+    for values in _static_lazy_export_tables(tree).values():
+        for value in values:
+            imports.append(
+                RawImport(
+                    _resolve_dynamic_target(source_module, value.value, is_package=True),
+                    value.lineno,
+                    "runtime",
+                )
+            )
+    return imports
 
-    for owner in owners:
-        graph.setdefault(owner, set())
 
-    for path, (current_module, is_package) in modules.items():
-        current_parts = current_module.split(".")
-        if len(current_parts) < 2:
+def _collect_imports_from_source(
+    source: str,
+    *,
+    source_module: str,
+    is_package: bool,
+    relative_path: str,
+) -> list[RawImport]:
+    tree = ast.parse(source, filename=relative_path)
+    visitor = _ImportVisitor(
+        source_module=source_module,
+        is_package=is_package,
+        relative_path=relative_path,
+    )
+    visitor.visit(tree)
+    imports = list(visitor.imports)
+    if relative_path in CONTROLLED_LAZY_IMPORT_FILES:
+        imports.extend(_lazy_table_imports(tree, source_module))
+    return sorted(set(imports), key=lambda item: (item.line, item.target_module, item.kind))
+
+
+def _classification_error(module: str, owners: tuple[str, ...]) -> str:
+    if not owners:
+        return f"{module}: unclassified"
+    return f"{module}: ambiguous owners {', '.join(owners)}"
+
+
+@lru_cache(maxsize=1)
+def _import_inventory() -> ImportInventory:
+    classification_errors: list[str] = []
+    dynamic_import_errors: list[str] = []
+    edges: set[ImportEdge] = set()
+    for path in sorted(RAG_MODULES.rglob("*.py")):
+        if "__pycache__" in path.parts:
             continue
-        source_owner = current_parts[1]
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        visitor = _ImportVisitor(current_module, is_package)
+        source_module, is_package = _module_name(path)
+        source_owners = architectural_nodes(source_module)
+        if len(source_owners) != 1:
+            classification_errors.append(_classification_error(source_module, source_owners))
+            continue
+        source_node = source_owners[0]
+        relative_path = path.relative_to(ROOT).as_posix()
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=relative_path)
+        visitor = _ImportVisitor(
+            source_module=source_module,
+            is_package=is_package,
+            relative_path=relative_path,
+        )
         visitor.visit(tree)
-
-        for imported_module in visitor.imported_modules:
-            if imported_module != "rag_modules" and not imported_module.startswith("rag_modules."):
+        raw_imports = list(visitor.imports)
+        dynamic_import_errors.extend(visitor.dynamic_import_errors)
+        if relative_path in CONTROLLED_LAZY_IMPORT_FILES:
+            raw_imports.extend(_lazy_table_imports(tree, source_module))
+        for item in raw_imports:
+            target = item.target_module
+            if target != "rag_modules" and not target.startswith("rag_modules."):
                 continue
-            imported_parts = imported_module.split(".")
-            if len(imported_parts) < 2:
+            target_owners = architectural_nodes(target)
+            if len(target_owners) != 1:
+                classification_errors.append(_classification_error(target, target_owners))
                 continue
-            target_owner = imported_parts[1]
-            if target_owner != source_owner:
-                graph[source_owner].add(target_owner)
+            target_node = target_owners[0]
+            if target_node == source_node:
+                continue
+            edges.add(
+                ImportEdge(
+                    source_module=source_module,
+                    target_module=target,
+                    source_node=source_node,
+                    target_node=target_node,
+                    path=path,
+                    line=item.line,
+                    kind=item.kind,
+                )
+            )
+    return ImportInventory(
+        classification_errors=tuple(sorted(set(classification_errors))),
+        dynamic_import_errors=tuple(sorted(set(dynamic_import_errors))),
+        edges=tuple(sorted(edges, key=_inventory_edge_sort_key)),
+    )
 
-    return graph
 
-
-def _strongly_connected_components(graph: dict[str, set[str]]) -> list[tuple[str, ...]]:
+def _strongly_connected_components(edges: tuple[ImportEdge, ...]) -> list[tuple[str, ...]]:
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    for node in ALLOWED_IMPORTS:
+        adjacency.setdefault(node, set())
+    for edge in edges:
+        adjacency[edge.source_node].add(edge.target_node)
     index = 0
     stack: list[str] = []
     on_stack: set[str] = set()
@@ -110,71 +1964,1082 @@ def _strongly_connected_components(graph: dict[str, set[str]]) -> list[tuple[str
     lowlinks: dict[str, int] = {}
     components: list[tuple[str, ...]] = []
 
-    def strongconnect(node: str) -> None:
+    def visit(node: str) -> None:
         nonlocal index
         indices[node] = index
         lowlinks[node] = index
         index += 1
         stack.append(node)
         on_stack.add(node)
-
-        for dependency in sorted(graph[node]):
-            if dependency not in indices:
-                strongconnect(dependency)
-                lowlinks[node] = min(lowlinks[node], lowlinks[dependency])
-            elif dependency in on_stack:
-                lowlinks[node] = min(lowlinks[node], indices[dependency])
-
+        for target in sorted(adjacency[node]):
+            if target not in indices:
+                visit(target)
+                lowlinks[node] = min(lowlinks[node], lowlinks[target])
+            elif target in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[target])
         if lowlinks[node] != indices[node]:
             return
-
         component: list[str] = []
-        while True:
-            dependency = stack.pop()
-            on_stack.remove(dependency)
-            component.append(dependency)
-            if dependency == node:
+        while stack:
+            target = stack.pop()
+            on_stack.remove(target)
+            component.append(target)
+            if target == node:
                 break
         if len(component) > 1:
             components.append(tuple(sorted(component)))
 
-    for node in sorted(graph):
+    for node in sorted(adjacency):
         if node not in indices:
-            strongconnect(node)
-
-    return sorted(components, key=lambda item: (-len(item), item))
-
-
-def test_rag_modules_internal_import_graph_is_acyclic() -> None:
-    graph = _internal_package_import_graph()
-    cycles = _strongly_connected_components(graph)
-
-    details = []
-    for component in cycles:
-        component_set = set(component)
-        edges = [
-            f"{source} -> {target}"
-            for source in component
-            for target in sorted(graph[source] & component_set)
-        ]
-        details.append(f"{', '.join(component)}\n  " + "\n  ".join(edges))
-
-    assert cycles == [], "Found cyclic rag_modules package imports:\n" + "\n\n".join(details)
+            visit(node)
+    return sorted(components)
 
 
-def test_interfaces_do_not_import_retrieval_implementations() -> None:
-    violations: list[str] = []
-    interfaces_dir = RAG_MODULES / "interfaces"
+def _concrete_cycle(
+    component: tuple[str, ...],
+    edges: tuple[ImportEdge, ...],
+) -> list[ImportEdge]:
+    members = set(component)
+    adjacency: dict[str, list[ImportEdge]] = defaultdict(list)
+    for edge in edges:
+        if edge.source_node in members and edge.target_node in members:
+            adjacency[edge.source_node].append(edge)
+    active: dict[str, int] = {}
+    visited: set[str] = set()
+    path_nodes: list[str] = []
+    path_edges: list[ImportEdge] = []
 
-    for path in interfaces_dir.rglob("*.py"):
-        module_name, is_package = _module_name(path)
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        visitor = _ImportVisitor(module_name, is_package)
+    def visit(node: str) -> list[ImportEdge] | None:
+        active[node] = len(path_nodes)
+        path_nodes.append(node)
+        for edge in sorted(
+            adjacency[node],
+            key=_concrete_cycle_edge_sort_key,
+        ):
+            target = edge.target_node
+            if target in active:
+                return [*path_edges[active[target] :], edge]
+            if target in visited:
+                continue
+            path_edges.append(edge)
+            cycle = visit(target)
+            if cycle is not None:
+                return cycle
+            path_edges.pop()
+        path_nodes.pop()
+        active.pop(node)
+        visited.add(node)
+        return None
+
+    for node in component:
+        if node in visited:
+            continue
+        cycle = visit(node)
+        if cycle is not None:
+            return cycle
+    raise AssertionError(f"could not render cycle for component {component}")
+
+
+def _format_component(component: tuple[str, ...], edges: tuple[ImportEdge, ...]) -> str:
+    cycle = _concrete_cycle(component, edges)
+    node_path = [cycle[0].source_node, *(edge.target_node for edge in cycle)]
+    details = [" -> ".join(node_path)]
+    details.extend(
+        f"  {edge.source_node} -[{edge.kind} {edge.path.relative_to(ROOT)}:{edge.line}]-> "
+        f"{edge.target_node}"
+        for edge in cycle
+    )
+    return "\n".join(details)
+
+
+def test_type_checking_body_and_runtime_else_are_classified_separately() -> None:
+    imports = _collect_imports_from_source(
+        """
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..build_pipeline.ports import GraphDataModulePort
+else:
+    from ..contracts import RetrievalRequest
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {(item.target_module, item.kind) for item in imports} == {
+        ("typing", "runtime"),
+        ("rag_modules.build_pipeline.ports", "type"),
+        ("rag_modules.contracts", "runtime"),
+    }
+
+
+def test_import_from_records_an_existing_internal_submodule() -> None:
+    imports = _collect_imports_from_source(
+        """
+from . import AdvancedGraphRAGSystem
+from . import query_understanding
+""",
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "rag_modules",
+        "rag_modules.query_understanding",
+    }
+
+
+def test_relative_dynamic_import_from_module_uses_its_package() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+import_module("..generation", __package__)
+import_module(".contracts", package="rag_modules")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "importlib",
+        "rag_modules.contracts",
+        "rag_modules.generation",
+    }
+
+
+def test_aliased_dynamic_import_loaders_are_detected() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib as il
+import builtins as bi
+from builtins import __import__ as builtin_load
+from importlib import import_module as load
+
+load("rag_modules.generation")
+il.import_module("rag_modules.retrieval")
+builtin_load("rag_modules.graph")
+assigned_load = __import__
+assigned_load("rag_modules.routing")
+bi.__import__("rag_modules.kernel")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {item.target_module for item in imports} == {
+        "builtins",
+        "importlib",
+        "rag_modules.generation",
+        "rag_modules.graph",
+        "rag_modules.kernel",
+        "rag_modules.retrieval",
+        "rag_modules.routing",
+    }
+
+
+def test_dynamic_import_aliases_stop_matching_after_rebinding() -> None:
+    source = """
+import builtins as bi
+import importlib as il
+from importlib import import_module as load
+
+bi = object()
+il = object()
+from config import load as load
+
+bi.__import__(requested)
+il.import_module(requested)
+load(requested)
+"""
+    tree = ast.parse(source, filename="rag_modules/runtime/sample.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+    visitor.visit(tree)
+
+    assert visitor.dynamic_import_errors == []
+
+
+def test_assignment_rhs_uses_loader_binding_before_plain_and_annotated_rebinding() -> None:
+    source = """
+from importlib import import_module as load
+from importlib import import_module as annotated_load
+
+load = load("rag_modules.generation")
+annotated_load: object = annotated_load("rag_modules.retrieval")
+"""
+    tree = ast.parse(source, filename="rag_modules/runtime/sample.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+    visitor.visit(tree)
+
+    assert [item for item in visitor.imports if item.target_module.startswith("rag_modules.")] == [
+        RawImport("rag_modules.generation", 5, "runtime"),
+        RawImport("rag_modules.retrieval", 6, "runtime"),
+    ]
+
+
+def test_function_scope_shadow_does_not_erase_outer_loader_or_type_guard() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+from typing import TYPE_CHECKING
+
+def helper():
+    import_module = object()
+    TYPE_CHECKING = False
+
+import_module("rag_modules.generation")
+if TYPE_CHECKING:
+    from ..graph import GraphPath
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        (item.target_module, item.kind)
+        for item in imports
+        if item.target_module.startswith("rag_modules.")
+    } == {
+        ("rag_modules.generation", "runtime"),
+        ("rag_modules.graph", "type"),
+    }
+
+
+def test_function_parameters_and_local_imports_stay_in_their_scope() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+def shadowed(import_module):
+    import_module("rag_modules.routing")
+
+def local_loader():
+    from importlib import import_module as local_load
+    local_load("rag_modules.graph")
+
+local_load("rag_modules.generation")
+import_module("rag_modules.retrieval")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.graph", "rag_modules.retrieval"}
+
+
+def test_if_and_try_branches_preserve_a_possible_loader_binding() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module as load
+
+if condition:
+    load = object()
+load("rag_modules.generation")
+
+try:
+    load = object()
+except Exception:
+    pass
+load("rag_modules.retrieval")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
+def test_try_handlers_preserve_loader_bound_before_a_possible_exception() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib
+
+load = object()
+try:
+    load = importlib.import_module
+    might_raise()
+    load = object()
+except Exception:
+    pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+def test_try_handlers_preserve_loader_bound_mid_expression() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib
+
+load = object()
+try:
+    ((load := importlib.import_module), might_raise(), (load := object()))
+except Exception:
+    pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+@pytest.mark.parametrize(
+    ("definition", "target_module"),
+    (
+        (
+            "def helper():\n        load = importlib.import_module\n        might_raise()",
+            "rag_modules.generation",
+        ),
+        (
+            "helper = lambda: ((load := importlib.import_module), might_raise())",
+            "rag_modules.retrieval",
+        ),
+        (
+            "class Helper:\n        load = importlib.import_module\n        might_raise()",
+            "rag_modules.graph",
+        ),
+    ),
+)
+def test_try_checkpoints_do_not_leak_across_lexical_scopes(
+    definition: str,
+    target_module: str,
+) -> None:
+    imports = _collect_imports_from_source(
+        f"""
+import importlib
+
+load = object()
+try:
+    {definition}
+except Exception:
+    pass
+load("{target_module}")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert target_module not in {item.target_module for item in imports}
+
+
+def test_loops_reach_a_loader_binding_from_a_later_iteration() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+for_load = object()
+for item in items:
+    for_load("rag_modules.generation")
+    for_load = import_module
+
+while_load = object()
+while condition:
+    while_load("rag_modules.retrieval")
+    while_load = import_module
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
+def test_while_rechecks_its_condition_with_later_iteration_bindings() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+def keep_running(name):
+    return condition
+
+load = keep_running
+while load("rag_modules.generation"):
+    load = import_module
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+def test_loop_control_preserves_loader_state_before_unreachable_tail() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+for_load = object()
+for item in items:
+    for_load = import_module
+    break
+    for_load = object()
+for_load("rag_modules.generation")
+
+while_load = object()
+while condition:
+    while_load = import_module
+    continue
+    while_load = object()
+while_load("rag_modules.retrieval")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
+def test_loop_control_preserves_loader_state_through_try_finally() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+load = object()
+for item in items:
+    try:
+        load = import_module
+        break
+        load = object()
+    finally:
+        pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+def test_loop_try_handler_receives_loader_exception_prefix_state() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+load = object()
+for item in items:
+    try:
+        load = import_module
+        might_raise()
+        load = object()
+    except Exception:
+        break
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
+    source = """
+from importlib import import_module
+
+_EXPORTS = {"Thing": ".thing"}
+
+if condition:
+    module_name = requested
+else:
+    module_name = _EXPORTS.get(name)
+import_module(module_name, __name__)
+"""
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert visitor.dynamic_import_errors == [
+        "rag_modules/__init__.py:10: non-literal import_module"
+    ]
+
+
+def test_binding_targets_shadow_loaders_inside_their_runtime_region() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module as load
+
+for load in loaders:
+    load("rag_modules.generation")
+with manager() as load:
+    load("rag_modules.retrieval")
+try:
+    operation()
+except Exception as load:
+    load("rag_modules.graph")
+load += replacement
+load("rag_modules.routing")
+(load := replacement)
+load("rag_modules.app")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert not [item for item in imports if item.target_module.startswith("rag_modules.")]
+
+
+def test_controlled_lazy_file_rejects_unrelated_non_literal_loader_target() -> None:
+    source = """
+from importlib import import_module as load
+
+_LAZY_EXPORTS = {"PublicThing": ".thing"}
+
+def resolve(name, requested):
+    module_name = _LAZY_EXPORTS.get(name)
+    load(module_name, __name__)
+    load(requested, __name__)
+"""
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+    imports = [*visitor.imports, *_lazy_table_imports(tree, "rag_modules")]
+
+    assert RawImport("rag_modules.thing", 4, "runtime") in imports
+    assert visitor.dynamic_import_errors == ["rag_modules/__init__.py:9: non-literal import_module"]
+
+
+def test_controlled_lazy_file_rejects_lazy_get_with_a_dynamic_default() -> None:
+    source = """
+from importlib import import_module as load
+
+_LAZY_EXPORTS = {"PublicThing": ".thing"}
+
+def resolve(name, requested):
+    module_name = _LAZY_EXPORTS.get(name, requested)
+    load(module_name, __name__)
+"""
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert visitor.dynamic_import_errors == ["rag_modules/__init__.py:8: non-literal import_module"]
+
+
+def test_controlled_lazy_tables_reject_mutation_and_leave_no_static_targets() -> None:
+    mutations = {
+        "reassignment": "_EXPORTS = requested",
+        "subscript assignment": '_EXPORTS["Injected"] = requested',
+        "subscript augmented assignment": '_EXPORTS["Injected"] |= requested',
+        "mapping augmented assignment": "_EXPORTS |= requested",
+        "subscript deletion": 'del _EXPORTS["Safe"]',
+        "update": '_EXPORTS.update({"Injected": requested})',
+        "setdefault": '_EXPORTS.setdefault("Injected", requested)',
+        "clear": "_EXPORTS.clear()",
+        "pop": '_EXPORTS.pop("Safe")',
+        "popitem": "_EXPORTS.popitem()",
+    }
+
+    for label, mutation in mutations.items():
+        source = "\n".join(
+            (
+                "from importlib import import_module",
+                '_EXPORTS = {"Safe": ".safe"}',
+                mutation,
+                "module_name = _EXPORTS.get(name)",
+                "import_module(module_name, __name__)",
+            )
+        )
+        tree = ast.parse(source, filename="rag_modules/__init__.py")
+        visitor = _ImportVisitor(
+            source_module="rag_modules",
+            is_package=True,
+            relative_path="rag_modules/__init__.py",
+        )
         visitor.visit(tree)
-        for imported_module in visitor.imported_modules:
-            if imported_module == "rag_modules.retrieval" or imported_module.startswith(
-                "rag_modules.retrieval."
-            ):
-                violations.append(f"{path.relative_to(ROOT)} imports {imported_module}")
 
-    assert violations == []
+        assert (
+            "rag_modules/__init__.py:3: mutated lazy import table _EXPORTS"
+            in visitor.dynamic_import_errors
+        ), label
+        assert _lazy_table_imports(tree, "rag_modules") == [], label
+
+
+def test_controlled_lazy_tables_reject_mutation_through_an_alias() -> None:
+    source = "\n".join(
+        (
+            "from importlib import import_module",
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            '_ALIAS.update({"Injected": requested})',
+            "module_name = _EXPORTS.get(name)",
+            "import_module(module_name, __name__)",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert (
+        "rag_modules/__init__.py:4: mutated lazy import table _EXPORTS"
+        in visitor.dynamic_import_errors
+    )
+    assert _lazy_table_imports(tree, "rag_modules") == []
+
+
+def test_controlled_lazy_table_alias_augassign_is_a_mutation() -> None:
+    source = "\n".join(
+        (
+            "from importlib import import_module",
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            '_ALIAS |= {"Injected": requested}',
+            "module_name = _EXPORTS.get(name)",
+            "import_module(module_name, __name__)",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert (
+        "rag_modules/__init__.py:4: mutated lazy import table _EXPORTS"
+        in visitor.dynamic_import_errors
+    )
+
+
+def test_lazy_alias_scope_shadow_does_not_hide_or_invent_mutation() -> None:
+    global_mutation = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "def helper():",
+            "    _ALIAS = other",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(global_mutation, filename="rag_modules/__init__.py")
+    _tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == (("_EXPORTS", 5),)
+
+    loop_shadow = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "for _ALIAS in values:",
+            '    _ALIAS.update({"Unrelated": requested})',
+        )
+    )
+    tree = ast.parse(loop_shadow, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
+def test_lazy_alias_merges_conditional_rebindings_conservatively() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "if condition:",
+            "    _ALIAS = {}",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 5),)
+    assert tables == {}
+
+
+def test_lazy_alias_merges_match_cases_and_collects_pattern_locals() -> None:
+    branch_source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "match value:",
+            "    case 0:",
+            "        _ALIAS = {}",
+            "    case _:",
+            "        pass",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(branch_source, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == (("_EXPORTS", 8),)
+    assert tables == {}
+
+    local_source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "def helper(value):",
+            '    _ALIAS.update({"Unreachable": requested})',
+            "    match value:",
+            "        case _ALIAS:",
+            "            pass",
+        )
+    )
+    tree = ast.parse(local_source, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
+def test_lazy_alias_propagates_structured_assignment_targets() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS, _other = _EXPORTS, None",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 3),)
+    assert tables == {}
+
+
+def test_lazy_alias_does_not_confuse_a_container_with_its_contents() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_CONTAINER = [_EXPORTS]",
+            "_CONTAINER.clear()",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
+def test_lazy_alias_created_in_for_body_is_visible_after_the_loop() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "for _item in (1,):",
+            "    _LATE_ALIAS = _EXPORTS",
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 4),)
+    assert tables == {}
+
+
+@pytest.mark.parametrize(
+    "loop",
+    (
+        "for _item in (1,):\n    _LATE_ALIAS = _EXPORTS\n    break\n    _LATE_ALIAS = {}",
+        "while condition:\n    _LATE_ALIAS = _EXPORTS\n    continue\n    _LATE_ALIAS = {}",
+    ),
+)
+def test_lazy_alias_loop_control_ignores_unreachable_rebindings(loop: str) -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            loop,
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 6),)
+    assert tables == {}
+
+
+@pytest.mark.parametrize(
+    "loop",
+    (
+        "for _item in (1,):\n    try:\n        _LATE_ALIAS = _EXPORTS\n        break\n        _LATE_ALIAS = {}\n    finally:\n        pass",
+        "for _item in (1,):\n    with context:\n        _LATE_ALIAS = _EXPORTS\n        break\n        _LATE_ALIAS = {}",
+        "while condition:\n    match value:\n        case _:\n            _LATE_ALIAS = _EXPORTS\n            continue\n            _LATE_ALIAS = {}",
+    ),
+)
+def test_lazy_alias_loop_control_flows_through_compound_statements(loop: str) -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            loop,
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations[-1][0] == "_EXPORTS"
+    assert tables == {}
+
+
+def test_lazy_loop_try_handler_receives_alias_exception_prefix_state() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "for _item in items:",
+            "    try:",
+            "        _LATE_ALIAS = _EXPORTS",
+            "        might_raise()",
+            "        _LATE_ALIAS = {}",
+            "    except Exception:",
+            "        break",
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == (("_EXPORTS", 9),)
+    assert tables == {}
+
+
+@pytest.mark.parametrize(
+    "definition",
+    (
+        'def helper():\n    _ALIAS.update({"Injected": requested})\n    _ALIAS = {}',
+        'helper = lambda: (_ALIAS.update({"Injected": requested}), (_ALIAS := {}))',
+    ),
+)
+def test_lazy_alias_compiled_locals_shadow_outer_alias_for_the_whole_scope(
+    definition: str,
+) -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            definition,
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
+def test_type_checking_guard_requires_a_typing_binding() -> None:
+    imports = _collect_imports_from_source(
+        """
+import config
+import typing as t
+from typing import TYPE_CHECKING as CHECKING
+
+if config.TYPE_CHECKING:
+    from ..generation import service
+if t.TYPE_CHECKING:
+    from ..kernel import json_types
+if CHECKING:
+    from ..contracts import RetrievalRequest
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        (item.target_module, item.kind)
+        for item in imports
+        if item.target_module.startswith("rag_modules.")
+    } == {
+        ("rag_modules.contracts", "type"),
+        ("rag_modules.generation", "runtime"),
+        ("rag_modules.generation.service", "runtime"),
+        ("rag_modules.kernel", "type"),
+        ("rag_modules.kernel.json_types", "type"),
+    }
+
+
+def test_concrete_cycle_format_includes_closed_path_and_edge_evidence() -> None:
+    edges = (
+        ImportEdge(
+            source_module="rag_modules.runtime.sample",
+            target_module="rag_modules.generation.service",
+            source_node="runtime",
+            target_node="generation",
+            path=ROOT / "rag_modules/runtime/sample.py",
+            line=11,
+            kind="type",
+        ),
+        ImportEdge(
+            source_module="rag_modules.generation.service",
+            target_module="rag_modules.app.system",
+            source_node="generation",
+            target_node="app",
+            path=ROOT / "rag_modules/generation/service.py",
+            line=22,
+            kind="runtime",
+        ),
+        ImportEdge(
+            source_module="rag_modules.app.system",
+            target_module="rag_modules.runtime.sample",
+            source_node="app",
+            target_node="runtime",
+            path=ROOT / "rag_modules/app/system.py",
+            line=33,
+            kind="runtime",
+        ),
+    )
+
+    rendered = _format_component(("app", "generation", "runtime"), edges)
+
+    assert rendered == "\n".join(
+        (
+            "app -> runtime -> generation -> app",
+            f"  app -[runtime {Path('rag_modules/app/system.py')}:33]-> runtime",
+            f"  runtime -[type {Path('rag_modules/runtime/sample.py')}:11]-> generation",
+            f"  generation -[runtime {Path('rag_modules/generation/service.py')}:22]-> app",
+        )
+    )
+
+
+def test_edge_sort_keys_have_a_stable_total_module_level_order() -> None:
+    shared = {
+        "source_node": "runtime",
+        "target_node": "generation",
+        "path": ROOT / "rag_modules/runtime/sample.py",
+        "line": 11,
+        "kind": "runtime",
+    }
+    edges = (
+        ImportEdge(
+            source_module="rag_modules.runtime.zeta",
+            target_module="rag_modules.generation.alpha",
+            **shared,
+        ),
+        ImportEdge(
+            source_module="rag_modules.runtime.alpha",
+            target_module="rag_modules.generation.zeta",
+            **shared,
+        ),
+        ImportEdge(
+            source_module="rag_modules.runtime.alpha",
+            target_module="rag_modules.generation.alpha",
+            **shared,
+        ),
+    )
+    expected = [
+        ("rag_modules.runtime.alpha", "rag_modules.generation.alpha"),
+        ("rag_modules.runtime.alpha", "rag_modules.generation.zeta"),
+        ("rag_modules.runtime.zeta", "rag_modules.generation.alpha"),
+    ]
+
+    assert [
+        (edge.source_module, edge.target_module)
+        for edge in sorted(edges, key=_inventory_edge_sort_key)
+    ] == expected
+    assert [
+        (edge.source_module, edge.target_module)
+        for edge in sorted(edges, key=_concrete_cycle_edge_sort_key)
+    ] == expected
+
+
+def test_unknown_and_ambiguous_modules_do_not_receive_an_owner() -> None:
+    assert architectural_nodes("rag_modules.new_subsystem.module") == ()
+    assert architectural_nodes(
+        "rag_modules.overlap.module",
+        exact_modules={},
+        node_prefixes={
+            "first": ("rag_modules.overlap",),
+            "second": ("rag_modules.overlap",),
+        },
+    ) == ("first", "second")
+
+
+def test_every_module_is_classified_and_every_edge_is_allowed() -> None:
+    inventory = _import_inventory()
+    declared_nodes = set(EXACT_MODULE_NODES.values()) | set(NODE_PREFIXES)
+    assert set(ALLOWED_IMPORTS) == declared_nodes
+    assert not inventory.classification_errors, "Classification errors:\n" + "\n".join(
+        inventory.classification_errors
+    )
+    assert not inventory.dynamic_import_errors, "Dynamic import errors:\n" + "\n".join(
+        inventory.dynamic_import_errors
+    )
+    forbidden = [
+        edge
+        for edge in inventory.edges
+        if edge.target_node not in ALLOWED_IMPORTS[edge.source_node]
+    ]
+    assert not forbidden, "Forbidden import edges:\n" + "\n".join(
+        f"{edge.path.relative_to(ROOT)}:{edge.line}: {edge.kind} "
+        f"{edge.source_node} -> {edge.target_node} ({edge.target_module})"
+        for edge in forbidden
+    )
+
+
+def test_runtime_and_semantic_import_graphs_are_acyclic() -> None:
+    inventory = _import_inventory()
+    runtime_edges = tuple(edge for edge in inventory.edges if edge.kind == "runtime")
+    semantic_edges = inventory.edges
+    failures: list[str] = []
+    for graph_name, edges in (("runtime", runtime_edges), ("semantic", semantic_edges)):
+        components = _strongly_connected_components(edges)
+        if components:
+            failures.append(
+                f"{graph_name} graph:\n"
+                + "\n\n".join(_format_component(component, edges) for component in components)
+            )
+    assert not failures, "Cyclic import graphs:\n" + "\n\n".join(failures)
