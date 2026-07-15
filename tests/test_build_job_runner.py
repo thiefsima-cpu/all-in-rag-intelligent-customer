@@ -394,6 +394,40 @@ class BuildJobRunnerTests(unittest.TestCase):
         self.assertEqual(stale.status, BuildJobStatus.RUNNING)
         self.assertEqual(stale.logs, ())
 
+    def test_shutdown_waits_for_running_worker_to_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            system = _BlockedProgressSystem()
+            repository, runner, service = _stack(Path(temp_dir), system)
+            shutdown_returned = threading.Event()
+            shutdown_thread: threading.Thread | None = None
+
+            def shutdown_runner() -> None:
+                runner.shutdown()
+                shutdown_returned.set()
+
+            try:
+                service.startup()
+                service.submit(
+                    rebuild=False,
+                    request_id="shutdown-request",
+                    idempotency_key="",
+                )
+                self.assertTrue(system.started.wait(timeout=1.0))
+
+                shutdown_thread = threading.Thread(target=shutdown_runner)
+                shutdown_thread.start()
+                returned_before_worker_release = shutdown_returned.wait(timeout=0.5)
+            finally:
+                system.allow_progress.set()
+                if shutdown_thread is None:
+                    runner.shutdown()
+                else:
+                    shutdown_thread.join(timeout=2.0)
+
+            self.assertFalse(returned_before_worker_release)
+            self.assertTrue(system.finished.is_set())
+            self.assertFalse(shutdown_thread.is_alive())
+
     def test_heartbeat_renews_lease_without_progress(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
