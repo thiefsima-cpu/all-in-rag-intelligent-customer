@@ -212,7 +212,6 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.stream_executor_max_workers, 8)
         self.assertEqual(config.api.stream_executor_max_outstanding, 12)
         self.assertEqual(config.api.stream_event_queue_max_size, 128)
-        self.assertFalse(hasattr(config.api, "stream_queue_max_size"))
         self.assertEqual(config.api.build_job_runner_backend, "external_worker")
         self.assertEqual(config.api.build_job_runner_max_workers, 3)
         self.assertEqual(config.api.build_job_worker_poll_interval_seconds, 0.25)

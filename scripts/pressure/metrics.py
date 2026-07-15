@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from rag_modules.interfaces.api.services.serving_stream_executor import StreamExecutorSnapshot
+
 
 @dataclass(frozen=True)
 class TraceMetrics:
@@ -38,6 +40,34 @@ class TraceMetrics:
 
 
 @dataclass(frozen=True)
+class SseExecutorMetrics:
+    max_workers: int = 0
+    max_outstanding: int = 0
+    active: int = 0
+    queued: int = 0
+    peak_active: int = 0
+    peak_queued: int = 0
+    peak_outstanding: int = 0
+    rejected: int = 0
+
+    @classmethod
+    def from_snapshot(cls, snapshot: StreamExecutorSnapshot) -> "SseExecutorMetrics":
+        return cls(**snapshot.to_dict())
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "max_workers": self.max_workers,
+            "max_outstanding": self.max_outstanding,
+            "active": self.active,
+            "queued": self.queued,
+            "peak_active": self.peak_active,
+            "peak_queued": self.peak_queued,
+            "peak_outstanding": self.peak_outstanding,
+            "rejected": self.rejected,
+        }
+
+
+@dataclass(frozen=True)
 class SseMetrics:
     attempted_streams: int = 0
     done_events: int = 0
@@ -46,6 +76,7 @@ class SseMetrics:
     rate_limited_error_events: int = 0
     unfinished_streams: int = 0
     cancelled_after_done: int = 0
+    executor: SseExecutorMetrics = field(default_factory=SseExecutorMetrics)
 
     @property
     def done_event_rate(self) -> float:
@@ -70,6 +101,7 @@ class SseMetrics:
             "rate_limited_error_rate": round(self.rate_limited_error_rate, 4),
             "unfinished_streams": self.unfinished_streams,
             "cancelled_after_done": self.cancelled_after_done,
+            "executor": self.executor.to_dict(),
         }
 
 

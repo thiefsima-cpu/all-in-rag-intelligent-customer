@@ -345,6 +345,9 @@ class ApiSecurityTests(unittest.TestCase):
         self.assertEqual(unauthorized.status_code, 401)
         self.assertEqual(authorized.status_code, 200)
         self.assertIn("graphrag_queries_total", authorized.text)
+        self.assertIn("graphrag_sse_executor_active", authorized.text)
+        self.assertIn("graphrag_sse_executor_queued", authorized.text)
+        self.assertIn("graphrag_sse_executor_rejected_total", authorized.text)
         self.assertTrue(authorized.headers["content-type"].startswith("text/plain"))
 
     def test_prometheus_metrics_endpoint_can_be_made_public(self) -> None:

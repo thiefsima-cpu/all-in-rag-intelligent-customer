@@ -66,7 +66,8 @@ class ServingApiCollaboratorTests(unittest.TestCase):
                     "max_concurrent_answers": 3,
                     "answer_acquire_timeout_seconds": 0.05,
                     "stream_executor_max_workers": 2,
-                    "stream_queue_max_size": 7,
+                    "stream_executor_max_outstanding": 3,
+                    "stream_event_queue_max_size": 7,
                     "serving_hot_refresh_enabled": False,
                     "serving_hot_refresh_interval_seconds": 0.5,
                 }
@@ -80,7 +81,8 @@ class ServingApiCollaboratorTests(unittest.TestCase):
         self.assertEqual(service._answer_admission.acquire_timeout_seconds, 0.05)
         self.assertIsInstance(service._stream_runner, ServingSseRunner)
         self.assertEqual(service._stream_runner.max_workers, 2)
-        self.assertEqual(service._stream_runner.queue_max_size, 7)
+        self.assertEqual(service._stream_runner.max_outstanding, 3)
+        self.assertEqual(service._stream_runner.event_queue_max_size, 7)
         self.assertIsInstance(service._hot_refresh, ServingHotRefreshCoordinator)
         self.assertFalse(service._hot_refresh.enabled)
         self.assertEqual(service._hot_refresh.interval_seconds, 0.5)

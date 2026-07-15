@@ -30,6 +30,15 @@ Key metrics:
 - `graphrag_generation_provider_latency_seconds`
 - `graphrag_generation_tokens_total`
 - `graphrag_generation_cost_usd_total`
+- `graphrag_sse_executor_active`
+- `graphrag_sse_executor_queued`
+- `graphrag_sse_executor_rejected_total`
+
+The SSE executor gauges report currently running tasks and accepted tasks that
+have not started. The rejection counter increments when
+`stream_executor_max_outstanding` is full and a stream is immediately returned
+as `RATE_LIMITED`; it does not include answer-admission rejection after a task
+has started.
 
 ## OpenTelemetry
 

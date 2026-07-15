@@ -15,7 +15,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from opentelemetry.trace import Span, Status, StatusCode
-from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +79,21 @@ class RuntimeTelemetry:
             "graphrag_generation_cost_usd_total",
             "Estimated model cost in USD from configured token prices.",
             ("model",),
+            registry=self.registry,
+        )
+        self.sse_executor_active = Gauge(
+            "graphrag_sse_executor_active",
+            "SSE executor tasks currently running.",
+            registry=self.registry,
+        )
+        self.sse_executor_queued = Gauge(
+            "graphrag_sse_executor_queued",
+            "Accepted SSE executor tasks waiting to start.",
+            registry=self.registry,
+        )
+        self.sse_executor_rejected = Counter(
+            "graphrag_sse_executor_rejected_total",
+            "SSE executor submissions rejected at capacity.",
             registry=self.registry,
         )
 
@@ -151,6 +166,22 @@ class RuntimeTelemetry:
         )
         if estimated_cost:
             self.generation_cost.labels(model=self.identity.model_name).inc(estimated_cost)
+
+    def record_sse_executor_state(
+        self,
+        *,
+        active_delta: int = 0,
+        queued_delta: int = 0,
+        rejected_delta: int = 0,
+    ) -> None:
+        if not self.identity.prometheus_enabled:
+            return
+        if active_delta:
+            self.sse_executor_active.inc(active_delta)
+        if queued_delta:
+            self.sse_executor_queued.inc(queued_delta)
+        if rejected_delta:
+            self.sse_executor_rejected.inc(rejected_delta)
 
     @staticmethod
     def enrich_answer_span(span: Span, result) -> None:

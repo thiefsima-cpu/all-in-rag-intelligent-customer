@@ -13,6 +13,9 @@ class PressureScenario:
     trace_queue_size: int
     max_concurrent_answers: int
     answer_acquire_timeout_seconds: float
+    stream_executor_max_workers: int = 4
+    stream_executor_max_outstanding: int = 8
+    stream_event_queue_max_size: int = 64
     synthetic_model_latency_ms: float = 0.0
     synthetic_input_tokens_per_request: int = 0
     synthetic_output_tokens_per_request: int = 0
@@ -34,6 +37,9 @@ class PressureScenario:
                 self.answer_acquire_timeout_seconds,
                 4,
             ),
+            "stream_executor_max_workers": self.stream_executor_max_workers,
+            "stream_executor_max_outstanding": self.stream_executor_max_outstanding,
+            "stream_event_queue_max_size": self.stream_event_queue_max_size,
             "synthetic_model_latency_ms": round(self.synthetic_model_latency_ms, 2),
             "synthetic_input_tokens_per_request": self.synthetic_input_tokens_per_request,
             "synthetic_output_tokens_per_request": self.synthetic_output_tokens_per_request,
@@ -66,6 +72,9 @@ def default_pressure_scenario(
     trace_queue_size: int | None = None,
     max_concurrent_answers: int | None = None,
     answer_acquire_timeout_seconds: float | None = None,
+    stream_executor_max_workers: int | None = None,
+    stream_executor_max_outstanding: int | None = None,
+    stream_event_queue_max_size: int | None = None,
     synthetic_model_latency_ms: float | None = None,
     synthetic_input_tokens_per_request: int | None = None,
     synthetic_output_tokens_per_request: int | None = None,
@@ -75,6 +84,22 @@ def default_pressure_scenario(
     retrieval_degraded_source: str | None = None,
 ) -> PressureScenario:
     defaults = DEFAULT_PRESSURE_SCENARIO
+    resolved_stream_workers = max(
+        1,
+        int(
+            defaults.stream_executor_max_workers
+            if stream_executor_max_workers is None
+            else stream_executor_max_workers
+        ),
+    )
+    resolved_stream_outstanding = max(
+        resolved_stream_workers,
+        int(
+            defaults.stream_executor_max_outstanding
+            if stream_executor_max_outstanding is None
+            else stream_executor_max_outstanding
+        ),
+    )
     return PressureScenario(
         name=str(scenario_name or defaults.name),
         requests=max(1, int(defaults.requests if requests is None else requests)),
@@ -105,6 +130,16 @@ def default_pressure_scenario(
                 defaults.answer_acquire_timeout_seconds
                 if answer_acquire_timeout_seconds is None
                 else answer_acquire_timeout_seconds
+            ),
+        ),
+        stream_executor_max_workers=resolved_stream_workers,
+        stream_executor_max_outstanding=resolved_stream_outstanding,
+        stream_event_queue_max_size=max(
+            1,
+            int(
+                defaults.stream_event_queue_max_size
+                if stream_event_queue_max_size is None
+                else stream_event_queue_max_size
             ),
         ),
         synthetic_model_latency_ms=max(

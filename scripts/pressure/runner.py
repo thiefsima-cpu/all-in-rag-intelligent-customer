@@ -22,6 +22,7 @@ from scripts.pressure.metrics import (
     ModelMetrics,
     PressureMetrics,
     RetrievalMetrics,
+    SseExecutorMetrics,
     SseMetrics,
     TraceMetrics,
     _percentile,
@@ -300,8 +301,9 @@ def _build_service(
     if enable_sse:
         api_config.update(
             {
-                "stream_executor_max_workers": max(1, scenario.workers),
-                "stream_queue_max_size": max(1, scenario.trace_queue_size),
+                "stream_executor_max_workers": scenario.stream_executor_max_workers,
+                "stream_executor_max_outstanding": scenario.stream_executor_max_outstanding,
+                "stream_event_queue_max_size": scenario.stream_event_queue_max_size,
             }
         )
     system = _PressureTestSystem(
@@ -422,6 +424,7 @@ def _sse_metrics(
     scenario: PressureScenario,
     state: _SseRunState,
     trace: TraceMetrics,
+    executor: SseExecutorMetrics,
 ) -> PressureMetrics:
     sse = SseMetrics(
         attempted_streams=scenario.requests,
@@ -431,6 +434,7 @@ def _sse_metrics(
         rate_limited_error_events=state.rate_limited_error_events,
         unfinished_streams=state.unfinished_streams,
         cancelled_after_done=0,
+        executor=executor,
     )
     return _empty_pressure_metrics(scenario=scenario, trace=trace, sse=sse)
 
@@ -474,6 +478,7 @@ def _run_sse_pressure_scenario(scenario: PressureScenario) -> PressureReport:
         workers=scenario.workers,
         target=partial(_run_sse_worker, service, state),
     )
+    executor = SseExecutorMetrics.from_snapshot(service.stream_executor_snapshot())
     service.shutdown()
     return build_pressure_report(
         scenario=scenario,
@@ -481,6 +486,7 @@ def _run_sse_pressure_scenario(scenario: PressureScenario) -> PressureReport:
             scenario=scenario,
             state=state,
             trace=TraceMetrics.from_stats(tracer.stats()),
+            executor=executor,
         ),
         thresholds=default_pressure_thresholds(scenario),
     )
@@ -496,6 +502,9 @@ def run_pressure_test(
     trace_queue_size: int | None = None,
     max_concurrent_answers: int | None = None,
     answer_acquire_timeout_seconds: float | None = None,
+    stream_executor_max_workers: int | None = None,
+    stream_executor_max_outstanding: int | None = None,
+    stream_event_queue_max_size: int | None = None,
     synthetic_model_latency_ms: float | None = None,
     synthetic_input_tokens_per_request: int | None = None,
     synthetic_output_tokens_per_request: int | None = None,
@@ -513,6 +522,9 @@ def run_pressure_test(
         trace_queue_size=trace_queue_size,
         max_concurrent_answers=max_concurrent_answers,
         answer_acquire_timeout_seconds=answer_acquire_timeout_seconds,
+        stream_executor_max_workers=stream_executor_max_workers,
+        stream_executor_max_outstanding=stream_executor_max_outstanding,
+        stream_event_queue_max_size=stream_event_queue_max_size,
         synthetic_model_latency_ms=synthetic_model_latency_ms,
         synthetic_input_tokens_per_request=synthetic_input_tokens_per_request,
         synthetic_output_tokens_per_request=synthetic_output_tokens_per_request,

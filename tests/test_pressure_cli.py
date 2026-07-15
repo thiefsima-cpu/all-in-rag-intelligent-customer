@@ -32,6 +32,34 @@ class PressureCliTests(unittest.TestCase):
             args.answer_acquire_timeout_seconds,
             DEFAULT_PRESSURE_SCENARIO.answer_acquire_timeout_seconds,
         )
+        self.assertEqual(
+            args.stream_executor_max_workers,
+            DEFAULT_PRESSURE_SCENARIO.stream_executor_max_workers,
+        )
+        self.assertEqual(
+            args.stream_executor_max_outstanding,
+            DEFAULT_PRESSURE_SCENARIO.stream_executor_max_outstanding,
+        )
+        self.assertEqual(
+            args.stream_event_queue_max_size,
+            DEFAULT_PRESSURE_SCENARIO.stream_event_queue_max_size,
+        )
+
+    def test_cli_parser_accepts_explicit_stream_capacity(self) -> None:
+        args = _parse_args(
+            [
+                "--stream-executor-max-workers",
+                "1",
+                "--stream-executor-max-outstanding",
+                "2",
+                "--stream-event-queue-max-size",
+                "4",
+            ]
+        )
+
+        self.assertEqual(args.stream_executor_max_workers, 1)
+        self.assertEqual(args.stream_executor_max_outstanding, 2)
+        self.assertEqual(args.stream_event_queue_max_size, 4)
 
     def test_main_returns_one_and_preserves_json_for_failed_report(self) -> None:
         output = io.StringIO()

@@ -6,6 +6,7 @@ from scripts.pressure.metrics import (
     ModelMetrics,
     PressureMetrics,
     RetrievalMetrics,
+    SseExecutorMetrics,
     SseMetrics,
     TraceMetrics,
 )
@@ -29,6 +30,7 @@ def _metrics(
     trace_failed_events: int = 0,
     retrieval_degraded_rate: float = 0.0,
     degraded_source_counts: dict[str, int] | None = None,
+    sse: SseMetrics | None = None,
 ) -> PressureMetrics:
     return PressureMetrics(
         requests=requests,
@@ -48,7 +50,7 @@ def _metrics(
             max_queue_size=32,
             async_enabled=True,
         ),
-        sse=SseMetrics(),
+        sse=sse or SseMetrics(),
         model=ModelMetrics(
             p95_latency_ms=25.0,
             input_tokens=100,
@@ -254,6 +256,61 @@ class PressureThresholdTests(unittest.TestCase):
         self.assertIn("retrieval", payload["metrics"])
         self.assertNotIn("trace_stats", payload)
         self.assertNotIn("requests", payload)
+
+    def test_sse_executor_checks_fail_for_capacity_accounting_and_idle_violations(
+        self,
+    ) -> None:
+        scenario = PressureScenario(
+            name="sse_runner_capacity",
+            requests=3,
+            workers=3,
+            answer_delay_ms=20.0,
+            trace_delay_ms=0.0,
+            trace_queue_size=8,
+            max_concurrent_answers=1,
+            answer_acquire_timeout_seconds=0.01,
+            stream_executor_max_workers=1,
+            stream_executor_max_outstanding=2,
+            stream_event_queue_max_size=4,
+        )
+        metrics = _metrics(
+            requests=3,
+            completed_requests=0,
+            sse=SseMetrics(
+                attempted_streams=3,
+                done_events=3,
+                error_events=1,
+                rate_limited_error_events=1,
+                executor=SseExecutorMetrics(
+                    max_workers=1,
+                    max_outstanding=2,
+                    active=1,
+                    queued=0,
+                    peak_active=2,
+                    peak_queued=2,
+                    peak_outstanding=3,
+                    rejected=2,
+                ),
+            ),
+        )
+
+        report = build_pressure_report(
+            scenario=scenario,
+            metrics=metrics,
+            thresholds=default_pressure_thresholds(scenario),
+        )
+        failed_names = {
+            check["name"] for check in report.to_dict()["checks"] if check["status"] == "fail"
+        }
+
+        self.assertTrue(
+            {
+                "sse_executor_peak_active",
+                "sse_executor_peak_outstanding",
+                "sse_executor_rejection_accounting",
+                "sse_executor_idle",
+            }.issubset(failed_names)
+        )
 
 
 if __name__ == "__main__":

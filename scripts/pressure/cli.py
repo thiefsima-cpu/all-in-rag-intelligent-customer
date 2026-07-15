@@ -32,6 +32,21 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=defaults.answer_acquire_timeout_seconds,
     )
     parser.add_argument(
+        "--stream-executor-max-workers",
+        type=int,
+        default=defaults.stream_executor_max_workers,
+    )
+    parser.add_argument(
+        "--stream-executor-max-outstanding",
+        type=int,
+        default=defaults.stream_executor_max_outstanding,
+    )
+    parser.add_argument(
+        "--stream-event-queue-max-size",
+        type=int,
+        default=defaults.stream_event_queue_max_size,
+    )
+    parser.add_argument(
         "--synthetic-model-latency-ms",
         type=float,
         default=defaults.synthetic_model_latency_ms,
@@ -80,6 +95,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         trace_queue_size=args.trace_queue_size,
         max_concurrent_answers=args.max_concurrent_answers,
         answer_acquire_timeout_seconds=args.answer_acquire_timeout_seconds,
+        stream_executor_max_workers=args.stream_executor_max_workers,
+        stream_executor_max_outstanding=args.stream_executor_max_outstanding,
+        stream_event_queue_max_size=args.stream_event_queue_max_size,
         synthetic_model_latency_ms=args.synthetic_model_latency_ms,
         synthetic_input_tokens_per_request=args.synthetic_input_tokens_per_request,
         synthetic_output_tokens_per_request=args.synthetic_output_tokens_per_request,
