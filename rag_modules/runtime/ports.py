@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import (
@@ -18,9 +18,6 @@ from ..contracts.runtime import (
 from ..kernel.documents import TextDocument
 from ..kernel.json_types import JsonObject, JsonValue
 
-if TYPE_CHECKING:
-    from ..contracts.graph_preparation import GraphLoadCounts, GraphPreparationStats
-
 
 class GraphDataModulePort(Protocol):
     """Graph data loader and document materializer behavior consumed by runtime services."""
@@ -28,7 +25,7 @@ class GraphDataModulePort(Protocol):
     documents: list[TextDocument]
     chunks: list[TextDocument]
 
-    def load_graph_data(self) -> GraphLoadCounts | JsonObject: ...
+    def load_graph_data(self) -> object: ...
 
     def build_recipe_documents(self) -> list[TextDocument]: ...
 
@@ -38,7 +35,7 @@ class GraphDataModulePort(Protocol):
         chunk_overlap: int = 50,
     ) -> list[TextDocument]: ...
 
-    def get_statistics(self) -> GraphPreparationStats | JsonObject: ...
+    def get_statistics(self) -> object: ...
 
     def close(self) -> None: ...
 
