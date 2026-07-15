@@ -237,43 +237,61 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
 
     def __init__(self, definitions: Mapping[str, ast.stmt]) -> None:
         self.definitions = definitions
+        self.aliases = {name: name for name in definitions}
         self.mutations: set[tuple[str, int]] = set()
 
     def _record_target(self, target: ast.AST, statement: ast.AST) -> None:
-        name = _mutation_root_name(target)
-        if name not in self.definitions:
+        binding = _mutation_root_name(target)
+        name = self.aliases.get(binding or "")
+        if name is None:
             return
-        if isinstance(target, ast.Name) and statement is self.definitions[name]:
+        if isinstance(target, ast.Name) and binding == name and statement is self.definitions[name]:
+            return
+        if isinstance(target, ast.Name) and binding != name:
             return
         self.mutations.add((name, statement.lineno))
 
+    def _update_alias(self, target: ast.AST, value: ast.AST) -> None:
+        if not isinstance(target, ast.Name):
+            return
+        if isinstance(value, ast.Name) and value.id in self.aliases:
+            self.aliases[target.id] = self.aliases[value.id]
+        elif target.id not in self.definitions:
+            self.aliases.pop(target.id, None)
+
     def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
         for target in node.targets:
             self._record_target(target, node)
-        self.generic_visit(node)
+            self._update_alias(target, node.value)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
+            self.visit(node.value)
             self._record_target(node.target, node)
-        self.generic_visit(node)
+            self._update_alias(node.target, node.value)
+        self.visit(node.annotation)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.value)
         self._record_target(node.target, node)
-        self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
         self._record_target(node.target, node)
-        self.generic_visit(node)
+        self._update_alias(node.target, node.value)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
             self._record_target(target, node)
-        self.generic_visit(node)
+            if isinstance(target, ast.Name):
+                self.aliases.pop(target.id, None)
 
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Attribute) and node.func.attr in self._MUTATING_METHODS:
-            name = _mutation_root_name(node.func.value)
-            if name in self.definitions:
+            binding = _mutation_root_name(node.func.value)
+            name = self.aliases.get(binding or "")
+            if name is not None:
                 self.mutations.add((name, node.lineno))
         self.generic_visit(node)
 
@@ -574,12 +592,20 @@ class _ImportVisitor(ast.NodeVisitor):
 
     def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
         initial = self.bindings.copy()
-        body_state = self._visit_branch(node.body, initial, kind=self.kind)
+        previous = self.bindings
+        self.bindings = initial.copy()
+        exception_prefixes = [initial]
+        for statement in node.body:
+            self.visit(statement)
+            exception_prefixes.append(self.bindings.copy())
+        body_state = self.bindings.copy()
+        self.bindings = previous
+        exception_state = _BindingState.merge(tuple(exception_prefixes))
         success_state = self._visit_branch(node.orelse, body_state, kind=self.kind)
         alternatives = [success_state]
         for handler in node.handlers:
             previous = self.bindings
-            self.bindings = initial.copy()
+            self.bindings = exception_state.copy()
             if handler.type is not None:
                 self.visit(handler.type)
             if handler.name is not None:
@@ -603,17 +629,23 @@ class _ImportVisitor(ast.NodeVisitor):
     def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
         self.visit(node.iter)
         initial = self.bindings.copy()
-        previous = self.bindings
-        self.bindings = initial.copy()
-        self.visit(node.target)
-        self._clear_target_bindings(node.target)
-        for statement in node.body:
-            self.visit(statement)
-        body_state = self.bindings.copy()
-        self.bindings = previous
-        loop_state = _BindingState.merge((initial, body_state))
+        loop_state = initial
+        while True:
+            previous = self.bindings
+            self.bindings = loop_state.copy()
+            self.visit(node.target)
+            self._clear_target_bindings(node.target)
+            for statement in node.body:
+                self.visit(statement)
+            body_state = self.bindings.copy()
+            self.bindings = previous
+            next_loop_state = _BindingState.merge((initial, body_state))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
         else_state = self._visit_branch(node.orelse, loop_state, kind=self.kind)
-        self.bindings = _BindingState.merge((initial, body_state, else_state))
+        self.bindings = _BindingState.merge((loop_state, else_state))
 
     def visit_For(self, node: ast.For) -> None:
         self._visit_for(node)
@@ -624,10 +656,16 @@ class _ImportVisitor(ast.NodeVisitor):
     def visit_While(self, node: ast.While) -> None:
         self.visit(node.test)
         initial = self.bindings.copy()
-        body_state = self._visit_branch(node.body, initial, kind=self.kind)
-        loop_state = _BindingState.merge((initial, body_state))
+        loop_state = initial
+        while True:
+            body_state = self._visit_branch(node.body, loop_state, kind=self.kind)
+            next_loop_state = _BindingState.merge((initial, body_state))
+            if next_loop_state == loop_state:
+                loop_state = next_loop_state
+                break
+            loop_state = next_loop_state
         else_state = self._visit_branch(node.orelse, loop_state, kind=self.kind)
-        self.bindings = _BindingState.merge((initial, body_state, else_state))
+        self.bindings = _BindingState.merge((loop_state, else_state))
 
     def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
         for item in node.items:
@@ -1163,6 +1201,53 @@ load("rag_modules.retrieval")
     } == {"rag_modules.generation", "rag_modules.retrieval"}
 
 
+def test_try_handlers_preserve_loader_bound_before_a_possible_exception() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib
+
+load = object()
+try:
+    load = importlib.import_module
+    might_raise()
+    load = object()
+except Exception:
+    pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
+def test_loops_reach_a_loader_binding_from_a_later_iteration() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+for_load = object()
+for item in items:
+    for_load("rag_modules.generation")
+    for_load = import_module
+
+while_load = object()
+while condition:
+    while_load("rag_modules.retrieval")
+    while_load = import_module
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert {
+        item.target_module for item in imports if item.target_module.startswith("rag_modules.")
+    } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
 def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
     source = """
 from importlib import import_module
@@ -1296,6 +1381,32 @@ def test_controlled_lazy_tables_reject_mutation_and_leave_no_static_targets() ->
             in visitor.dynamic_import_errors
         ), label
         assert _lazy_table_imports(tree, "rag_modules") == [], label
+
+
+def test_controlled_lazy_tables_reject_mutation_through_an_alias() -> None:
+    source = "\n".join(
+        (
+            "from importlib import import_module",
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            '_ALIAS.update({"Injected": requested})',
+            "module_name = _EXPORTS.get(name)",
+            "import_module(module_name, __name__)",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert (
+        "rag_modules/__init__.py:4: mutated lazy import table _EXPORTS"
+        in visitor.dynamic_import_errors
+    )
+    assert _lazy_table_imports(tree, "rag_modules") == []
 
 
 def test_type_checking_guard_requires_a_typing_binding() -> None:
