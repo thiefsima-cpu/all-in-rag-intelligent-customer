@@ -43,8 +43,12 @@ def test_contract_package_exports_graph_preparation_dtos() -> None:
 def test_build_pipeline_no_longer_exports_contract_owned_dtos() -> None:
     build_pipeline = import_module("rag_modules.build_pipeline")
     graph_preparation = import_module("rag_modules.build_pipeline.graph_preparation")
-    models = import_module("rag_modules.build_pipeline.graph_preparation.models")
-    statistics = import_module("rag_modules.build_pipeline.graph_preparation.statistics")
+    models = import_module(
+        ".".join(("rag_modules", "build_pipeline", "graph_preparation", "models"))
+    )
+    statistics = import_module(
+        ".".join(("rag_modules", "build_pipeline", "graph_preparation", "statistics"))
+    )
 
     assert not hasattr(build_pipeline, "GraphNode")
     assert "GraphNode" not in build_pipeline.__all__
