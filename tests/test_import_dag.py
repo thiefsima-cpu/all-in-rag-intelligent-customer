@@ -482,14 +482,17 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
             for item in value.values:
                 targets |= self._alias_targets_from_expression(item)
             return targets
-        if isinstance(value, (ast.List, ast.Tuple)):
-            targets = frozenset()
-            for item in value.elts:
-                targets |= self._alias_targets_from_expression(item)
-            return targets
         if isinstance(value, ast.Starred):
             return self._alias_targets_from_expression(value.value)
         return frozenset()
+
+    def _contained_alias_targets(self, value: ast.AST) -> frozenset[str]:
+        if isinstance(value, (ast.List, ast.Tuple)):
+            targets = frozenset()
+            for item in value.elts:
+                targets |= self._contained_alias_targets(item)
+            return targets
+        return self._alias_targets_from_expression(value)
 
     def _record_assignment_target(self, target: ast.AST, statement: ast.AST) -> None:
         if isinstance(target, (ast.List, ast.Tuple)):
@@ -514,7 +517,7 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
                 for target_item, value_item in zip(target.elts, value.elts, strict=True):
                     self._update_alias(target_item, value_item, statement)
                 return
-            possible_targets = self._alias_targets_from_expression(value)
+            possible_targets = self._contained_alias_targets(value)
             for name in self._target_names(target):
                 self._replace_alias(name, possible_targets)
             return
@@ -596,12 +599,146 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
                 )
                 current = self._merge_aliases(normal_states) if normal_states else None
                 continue
+            if isinstance(node, ast.Match):
+                previous = self.aliases
+                self.aliases = current.copy()
+                self.visit(node.subject)
+                match_state = self._copy_aliases()
+                self.aliases = previous
+                normal_states = [match_state]
+                for case in node.cases:
+                    previous = self.aliases
+                    self.aliases = match_state.copy()
+                    self.visit(case.pattern)
+                    for name in _pattern_bound_names(case.pattern):
+                        self._record_binding(name, case.pattern)
+                        self._replace_alias(name, frozenset())
+                    if case.guard is not None:
+                        self.visit(case.guard)
+                    case_state = self._copy_aliases()
+                    self.aliases = previous
+                    case_normal, case_breaks, case_continues = self._visit_loop_statements(
+                        case.body,
+                        case_state,
+                    )
+                    if case_normal is not None:
+                        normal_states.append(case_normal)
+                    break_states.extend(case_breaks)
+                    continue_states.extend(case_continues)
+                current = self._merge_aliases(tuple(normal_states))
+                continue
+            if isinstance(node, (ast.With, ast.AsyncWith)):
+                previous = self.aliases
+                self.aliases = current.copy()
+                for item in node.items:
+                    self.visit(item.context_expr)
+                    if item.optional_vars is not None:
+                        for name in self._target_names(item.optional_vars):
+                            self._record_binding(name, node)
+                        self._clear_target_aliases(item.optional_vars)
+                with_state = self._copy_aliases()
+                self.aliases = previous
+                with_normal, with_breaks, with_continues = self._visit_loop_statements(
+                    node.body,
+                    with_state,
+                )
+                current = with_normal
+                break_states.extend(with_breaks)
+                continue_states.extend(with_continues)
+                continue
+            if isinstance(node, (ast.Try, ast.TryStar)):
+                try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                    node.body,
+                    current,
+                )
+                normal_states: list[dict[str, frozenset[str]]] = []
+                outgoing_breaks = list(try_breaks)
+                outgoing_continues = list(try_continues)
+                if try_normal is not None:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        node.orelse,
+                        try_normal,
+                    )
+                    if else_normal is not None:
+                        normal_states.append(else_normal)
+                    outgoing_breaks.extend(else_breaks)
+                    outgoing_continues.extend(else_continues)
+                exception_candidates = [current, *try_breaks, *try_continues]
+                if try_normal is not None:
+                    exception_candidates.append(try_normal)
+                exception_state = self._merge_aliases(tuple(exception_candidates))
+                for handler in node.handlers:
+                    previous = self.aliases
+                    self.aliases = exception_state.copy()
+                    if handler.type is not None:
+                        self.visit(handler.type)
+                    if handler.name is not None:
+                        self._record_binding(handler.name, handler)
+                        self._replace_alias(handler.name, frozenset())
+                    handler_state = self._copy_aliases()
+                    self.aliases = previous
+                    handler_normal, handler_breaks, handler_continues = self._visit_loop_statements(
+                        handler.body, handler_state
+                    )
+                    if handler.name is not None:
+                        if handler_normal is not None:
+                            handler_normal.pop(handler.name, None)
+                        for state in (*handler_breaks, *handler_continues):
+                            state.pop(handler.name, None)
+                    if handler_normal is not None:
+                        normal_states.append(handler_normal)
+                    outgoing_breaks.extend(handler_breaks)
+                    outgoing_continues.extend(handler_continues)
+                current, finalized_breaks, finalized_continues = self._apply_loop_finally(
+                    node.finalbody,
+                    normal_states,
+                    outgoing_breaks,
+                    outgoing_continues,
+                )
+                break_states.extend(finalized_breaks)
+                continue_states.extend(finalized_continues)
+                continue
             previous = self.aliases
             self.aliases = current.copy()
             self.visit(node)
             current = self._copy_aliases()
             self.aliases = previous
         return current, break_states, continue_states
+
+    def _apply_loop_finally(
+        self,
+        finalbody: list[ast.stmt],
+        normal_states: list[dict[str, frozenset[str]]],
+        break_states: list[dict[str, frozenset[str]]],
+        continue_states: list[dict[str, frozenset[str]]],
+    ) -> tuple[
+        dict[str, frozenset[str]] | None,
+        list[dict[str, frozenset[str]]],
+        list[dict[str, frozenset[str]]],
+    ]:
+        finalized_normals: list[dict[str, frozenset[str]]] = []
+        finalized_breaks: list[dict[str, frozenset[str]]] = []
+        finalized_continues: list[dict[str, frozenset[str]]] = []
+        for state in normal_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_normals.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in break_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_breaks.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in continue_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_continues.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        normal_state = self._merge_aliases(tuple(finalized_normals)) if finalized_normals else None
+        return normal_state, finalized_breaks, finalized_continues
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
@@ -1083,8 +1220,151 @@ class _ImportVisitor(ast.NodeVisitor):
                 )
                 current = _BindingState.merge(normal_states) if normal_states else None
                 continue
+            if isinstance(statement, ast.Match):
+                previous = self.bindings
+                self.bindings = current.copy()
+                self.visit(statement.subject)
+                match_state = self.bindings.copy()
+                self.bindings = previous
+                normal_states = [match_state]
+                for case in statement.cases:
+                    previous = self.bindings
+                    self.bindings = match_state.copy()
+                    self.visit(case.pattern)
+                    for name in _pattern_bound_names(case.pattern):
+                        self._clear_binding(name)
+                    if case.guard is not None:
+                        self.visit(case.guard)
+                    case_state = self.bindings.copy()
+                    self.bindings = previous
+                    case_normal, case_breaks, case_continues = self._visit_loop_statements(
+                        case.body,
+                        case_state,
+                    )
+                    if case_normal is not None:
+                        normal_states.append(case_normal)
+                    break_states.extend(case_breaks)
+                    continue_states.extend(case_continues)
+                current = _BindingState.merge(tuple(normal_states))
+                continue
+            if isinstance(statement, (ast.With, ast.AsyncWith)):
+                previous = self.bindings
+                self.bindings = current.copy()
+                for item in statement.items:
+                    self.visit(item.context_expr)
+                    if item.optional_vars is not None:
+                        self.visit(item.optional_vars)
+                        self._clear_target_bindings(item.optional_vars)
+                with_state = self.bindings.copy()
+                self.bindings = previous
+                with_normal, with_breaks, with_continues = self._visit_loop_statements(
+                    statement.body,
+                    with_state,
+                )
+                current = with_normal
+                break_states.extend(with_breaks)
+                continue_states.extend(with_continues)
+                continue
+            if isinstance(statement, (ast.Try, ast.TryStar)):
+                try_normal, try_breaks, try_continues = self._visit_loop_statements(
+                    statement.body,
+                    current,
+                )
+                normal_states: list[_BindingState] = []
+                outgoing_breaks = list(try_breaks)
+                outgoing_continues = list(try_continues)
+                if try_normal is not None:
+                    else_normal, else_breaks, else_continues = self._visit_loop_statements(
+                        statement.orelse,
+                        try_normal,
+                    )
+                    if else_normal is not None:
+                        normal_states.append(else_normal)
+                    outgoing_breaks.extend(else_breaks)
+                    outgoing_continues.extend(else_continues)
+                exception_candidates = [current, *try_breaks, *try_continues]
+                if try_normal is not None:
+                    exception_candidates.append(try_normal)
+                exception_state = _BindingState.merge(tuple(exception_candidates))
+                for handler in statement.handlers:
+                    previous = self.bindings
+                    self.bindings = exception_state.copy()
+                    if handler.type is not None:
+                        self.visit(handler.type)
+                    if handler.name is not None:
+                        self._clear_binding(handler.name)
+                    handler_state = self.bindings.copy()
+                    self.bindings = previous
+                    handler_normal, handler_breaks, handler_continues = self._visit_loop_statements(
+                        handler.body, handler_state
+                    )
+                    if handler.name is not None:
+                        if handler_normal is not None:
+                            handler_normal = self._without_binding(
+                                handler_normal,
+                                handler.name,
+                            )
+                        handler_breaks = [
+                            self._without_binding(state, handler.name) for state in handler_breaks
+                        ]
+                        handler_continues = [
+                            self._without_binding(state, handler.name)
+                            for state in handler_continues
+                        ]
+                    if handler_normal is not None:
+                        normal_states.append(handler_normal)
+                    outgoing_breaks.extend(handler_breaks)
+                    outgoing_continues.extend(handler_continues)
+                current, finalized_breaks, finalized_continues = self._apply_loop_finally(
+                    statement.finalbody,
+                    normal_states,
+                    outgoing_breaks,
+                    outgoing_continues,
+                )
+                break_states.extend(finalized_breaks)
+                continue_states.extend(finalized_continues)
+                continue
             current = self._visit_branch([statement], current, kind=self.kind)
         return current, break_states, continue_states
+
+    def _without_binding(self, state: _BindingState, name: str) -> _BindingState:
+        previous = self.bindings
+        self.bindings = state.copy()
+        self._clear_binding(name)
+        result = self.bindings.copy()
+        self.bindings = previous
+        return result
+
+    def _apply_loop_finally(
+        self,
+        finalbody: list[ast.stmt],
+        normal_states: list[_BindingState],
+        break_states: list[_BindingState],
+        continue_states: list[_BindingState],
+    ) -> tuple[_BindingState | None, list[_BindingState], list[_BindingState]]:
+        finalized_normals: list[_BindingState] = []
+        finalized_breaks: list[_BindingState] = []
+        finalized_continues: list[_BindingState] = []
+        for state in normal_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_normals.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in break_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_breaks.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        for state in continue_states:
+            normal, breaks, continues = self._visit_loop_statements(finalbody, state)
+            if normal is not None:
+                finalized_continues.append(normal)
+            finalized_breaks.extend(breaks)
+            finalized_continues.extend(continues)
+        normal_state = _BindingState.merge(tuple(finalized_normals)) if finalized_normals else None
+        return normal_state, finalized_breaks, finalized_continues
 
     @staticmethod
     def _bound_names(target: ast.AST) -> tuple[str, ...]:
@@ -2134,6 +2414,29 @@ while_load("rag_modules.retrieval")
     } == {"rag_modules.generation", "rag_modules.retrieval"}
 
 
+def test_loop_control_preserves_loader_state_through_try_finally() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+load = object()
+for item in items:
+    try:
+        load = import_module
+        break
+        load = object()
+    finally:
+        pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
 def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
     source = """
 from importlib import import_module
@@ -2417,6 +2720,22 @@ def test_lazy_alias_propagates_structured_assignment_targets() -> None:
     assert tables == {}
 
 
+def test_lazy_alias_does_not_confuse_a_container_with_its_contents() -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_CONTAINER = [_EXPORTS]",
+            "_CONTAINER.clear()",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
+
+
 def test_lazy_alias_created_in_for_body_is_visible_after_the_loop() -> None:
     source = "\n".join(
         (
@@ -2454,6 +2773,30 @@ def test_lazy_alias_loop_control_ignores_unreachable_rebindings(loop: str) -> No
     tables, mutations = _lazy_export_table_analysis(tree)
 
     assert mutations == (("_EXPORTS", 6),)
+    assert tables == {}
+
+
+@pytest.mark.parametrize(
+    "loop",
+    (
+        "for _item in (1,):\n    try:\n        _LATE_ALIAS = _EXPORTS\n        break\n        _LATE_ALIAS = {}\n    finally:\n        pass",
+        "for _item in (1,):\n    with context:\n        _LATE_ALIAS = _EXPORTS\n        break\n        _LATE_ALIAS = {}",
+        "while condition:\n    match value:\n        case _:\n            _LATE_ALIAS = _EXPORTS\n            continue\n            _LATE_ALIAS = {}",
+    ),
+)
+def test_lazy_alias_loop_control_flows_through_compound_statements(loop: str) -> None:
+    source = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            loop,
+            '_LATE_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+
+    tables, mutations = _lazy_export_table_analysis(tree)
+
+    assert mutations[-1][0] == "_EXPORTS"
     assert tables == {}
 
 
