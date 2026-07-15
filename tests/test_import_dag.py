@@ -44,6 +44,33 @@ class ImportInventory:
     edges: tuple[ImportEdge, ...]
 
 
+def _inventory_edge_sort_key(
+    edge: ImportEdge,
+) -> tuple[str, int, str, str, DependencyKind, str, str]:
+    return (
+        edge.path.as_posix(),
+        edge.line,
+        edge.source_node,
+        edge.target_node,
+        edge.kind,
+        edge.source_module,
+        edge.target_module,
+    )
+
+
+def _concrete_cycle_edge_sort_key(
+    edge: ImportEdge,
+) -> tuple[str, str, int, DependencyKind, str, str]:
+    return (
+        edge.target_node,
+        edge.path.as_posix(),
+        edge.line,
+        edge.kind,
+        edge.source_module,
+        edge.target_module,
+    )
+
+
 def _module_name(path: Path, *, root: Path = ROOT) -> tuple[str, bool]:
     relative = path.relative_to(root).with_suffix("")
     parts = list(relative.parts)
@@ -224,6 +251,8 @@ class _ImportVisitor(ast.NodeVisitor):
                 node.func.attr == "get"
                 and isinstance(owner, ast.Name)
                 and owner.id in self.lazy_export_tables
+                and len(node.args) == 1
+                and not node.keywords
             ):
                 return owner.id
         if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
@@ -310,20 +339,26 @@ class _ImportVisitor(ast.NodeVisitor):
                 self.type_checking_names.add(binding)
 
     def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
         for target in node.targets:
+            self.visit(target)
             if isinstance(target, ast.Name):
                 self._clear_typing_binding(target.id)
             self._bind_dynamic_loader(target, node.value)
             self._bind_lazy_target(target, node.value)
-        self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        if node.value is not None:
-            if isinstance(node.target, ast.Name):
-                self._clear_typing_binding(node.target.id)
-            self._bind_dynamic_loader(node.target, node.value)
-            self._bind_lazy_target(node.target, node.value)
-        self.generic_visit(node)
+        if node.value is None:
+            self.visit(node.target)
+            self.visit(node.annotation)
+            return
+        self.visit(node.value)
+        self.visit(node.target)
+        if isinstance(node.target, ast.Name):
+            self._clear_typing_binding(node.target.id)
+        self._bind_dynamic_loader(node.target, node.value)
+        self._bind_lazy_target(node.target, node.value)
+        self.visit(node.annotation)
 
     def visit_Call(self, node: ast.Call) -> None:
         function_name = self._dynamic_import_function(node.func)
@@ -449,18 +484,7 @@ def _import_inventory() -> ImportInventory:
     return ImportInventory(
         classification_errors=tuple(sorted(set(classification_errors))),
         dynamic_import_errors=tuple(sorted(set(dynamic_import_errors))),
-        edges=tuple(
-            sorted(
-                edges,
-                key=lambda edge: (
-                    edge.path.as_posix(),
-                    edge.line,
-                    edge.source_node,
-                    edge.target_node,
-                    edge.kind,
-                ),
-            )
-        ),
+        edges=tuple(sorted(edges, key=_inventory_edge_sort_key)),
     )
 
 
@@ -527,7 +551,7 @@ def _concrete_cycle(
         path_nodes.append(node)
         for edge in sorted(
             adjacency[node],
-            key=lambda item: (item.target_node, item.path.as_posix(), item.line, item.kind),
+            key=_concrete_cycle_edge_sort_key,
         ):
             target = edge.target_node
             if target in active:
@@ -680,6 +704,28 @@ load(requested)
     assert visitor.dynamic_import_errors == []
 
 
+def test_assignment_rhs_uses_loader_binding_before_plain_and_annotated_rebinding() -> None:
+    source = """
+from importlib import import_module as load
+from importlib import import_module as annotated_load
+
+load = load("rag_modules.generation")
+annotated_load: object = annotated_load("rag_modules.retrieval")
+"""
+    tree = ast.parse(source, filename="rag_modules/runtime/sample.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+    visitor.visit(tree)
+
+    assert [item for item in visitor.imports if item.target_module.startswith("rag_modules.")] == [
+        RawImport("rag_modules.generation", 5, "runtime"),
+        RawImport("rag_modules.retrieval", 6, "runtime"),
+    ]
+
+
 def test_controlled_lazy_file_rejects_unrelated_non_literal_loader_target() -> None:
     source = """
 from importlib import import_module as load
@@ -702,6 +748,27 @@ def resolve(name, requested):
 
     assert RawImport("rag_modules.thing", 4, "runtime") in imports
     assert visitor.dynamic_import_errors == ["rag_modules/__init__.py:9: non-literal import_module"]
+
+
+def test_controlled_lazy_file_rejects_lazy_get_with_a_dynamic_default() -> None:
+    source = """
+from importlib import import_module as load
+
+_LAZY_EXPORTS = {"PublicThing": ".thing"}
+
+def resolve(name, requested):
+    module_name = _LAZY_EXPORTS.get(name, requested)
+    load(module_name, __name__)
+"""
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert visitor.dynamic_import_errors == ["rag_modules/__init__.py:8: non-literal import_module"]
 
 
 def test_type_checking_guard_requires_a_typing_binding() -> None:
@@ -777,6 +844,47 @@ def test_concrete_cycle_format_includes_closed_path_and_edge_evidence() -> None:
             f"  generation -[runtime {Path('rag_modules/generation/service.py')}:22]-> app",
         )
     )
+
+
+def test_edge_sort_keys_have_a_stable_total_module_level_order() -> None:
+    shared = {
+        "source_node": "runtime",
+        "target_node": "generation",
+        "path": ROOT / "rag_modules/runtime/sample.py",
+        "line": 11,
+        "kind": "runtime",
+    }
+    edges = (
+        ImportEdge(
+            source_module="rag_modules.runtime.zeta",
+            target_module="rag_modules.generation.alpha",
+            **shared,
+        ),
+        ImportEdge(
+            source_module="rag_modules.runtime.alpha",
+            target_module="rag_modules.generation.zeta",
+            **shared,
+        ),
+        ImportEdge(
+            source_module="rag_modules.runtime.alpha",
+            target_module="rag_modules.generation.alpha",
+            **shared,
+        ),
+    )
+    expected = [
+        ("rag_modules.runtime.alpha", "rag_modules.generation.alpha"),
+        ("rag_modules.runtime.alpha", "rag_modules.generation.zeta"),
+        ("rag_modules.runtime.zeta", "rag_modules.generation.alpha"),
+    ]
+
+    assert [
+        (edge.source_module, edge.target_module)
+        for edge in sorted(edges, key=_inventory_edge_sort_key)
+    ] == expected
+    assert [
+        (edge.source_module, edge.target_module)
+        for edge in sorted(edges, key=_concrete_cycle_edge_sort_key)
+    ] == expected
 
 
 def test_unknown_and_ambiguous_modules_do_not_receive_an_owner() -> None:
