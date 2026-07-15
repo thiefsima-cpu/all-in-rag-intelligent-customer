@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import tests.api_app_helpers as h
+from rag_modules.telemetry import get_runtime_telemetry
 
 json = h.json
 threading = h.threading
@@ -24,6 +25,7 @@ _BlockingApiSystem = h._BlockingApiSystem
 _ChunkFloodApiSystem = h._ChunkFloodApiSystem
 _StreamingControlCapturingSystem = h._StreamingControlCapturingSystem
 _BlockingStreamApiSystem = h._BlockingStreamApiSystem
+ErrorCode = h.ErrorCode
 
 
 class ApiSseTests(unittest.TestCase):
@@ -222,14 +224,16 @@ class ApiSseTests(unittest.TestCase):
                 "api": {
                     "access_token": _API_TOKEN,
                     "stream_executor_max_workers": 2,
-                    "stream_queue_max_size": 7,
+                    "stream_executor_max_outstanding": 3,
+                    "stream_event_queue_max_size": 7,
                 }
             }
         )
         service = GraphRAGServingApiService(system=system, config=config)
 
         self.assertEqual(service._stream_executor_max_workers, 2)
-        self.assertEqual(service._stream_queue_max_size, 7)
+        self.assertEqual(service._stream_executor_max_outstanding, 3)
+        self.assertEqual(service._stream_event_queue_max_size, 7)
 
     def test_serving_streams_emit_error_events_when_admission_limit_is_full(self) -> None:
         system = _BlockingApiSystem()
@@ -240,7 +244,8 @@ class ApiSseTests(unittest.TestCase):
                     "max_concurrent_answers": 1,
                     "answer_acquire_timeout_seconds": 0.01,
                     "stream_executor_max_workers": 2,
-                    "stream_queue_max_size": 4,
+                    "stream_executor_max_outstanding": 2,
+                    "stream_event_queue_max_size": 4,
                 }
             }
         )
@@ -280,6 +285,52 @@ class ApiSseTests(unittest.TestCase):
         self.assertIn(f'"request_id": "{response.headers["x-request-id"]}"', body)
         self.assertNotIn("error_type", body)
         self.assertIn("event: done", body)
+
+    def test_saturated_stream_executor_rejects_before_answer_work_and_exports_metrics(
+        self,
+    ) -> None:
+        system = _BlockingStreamApiSystem()
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "max_concurrent_answers": 1,
+                    "stream_executor_max_workers": 1,
+                    "stream_executor_max_outstanding": 1,
+                    "stream_event_queue_max_size": 4,
+                },
+                "observability": {
+                    "enable_prometheus": True,
+                    "otel_service_name": "sse-bounded-submission-test",
+                },
+            }
+        )
+        service = GraphRAGServingApiService(system=system, config=config)
+        first_events = service.stream_answer_question_events(question="first stream")
+
+        try:
+            first_event = next(first_events)
+            rejected_events = list(service.stream_answer_question_events(question="second stream"))
+            metrics = get_runtime_telemetry(config).prometheus_payload().decode("utf-8")
+
+            self.assertEqual(first_event.event, AnswerStreamEventType.message)
+            self.assertEqual(
+                [event.event for event in rejected_events],
+                [AnswerStreamEventType.error, AnswerStreamEventType.done],
+            )
+            self.assertEqual(
+                getattr(getattr(rejected_events[0].data, "error", None), "code", None),
+                ErrorCode.RATE_LIMITED,
+            )
+            self.assertFalse(system.second_stream_started.is_set())
+            self.assertEqual(service.stream_executor_snapshot().rejected, 1)
+            self.assertIn("graphrag_sse_executor_active 1.0", metrics)
+            self.assertIn("graphrag_sse_executor_queued 0.0", metrics)
+            self.assertIn("graphrag_sse_executor_rejected_total 1.0", metrics)
+        finally:
+            system.release_streams.set()
+            list(first_events)
+            service.shutdown()
 
     def test_closing_stream_consumer_stops_background_answer_runner(self) -> None:
         system = _ChunkFloodApiSystem()
@@ -351,7 +402,8 @@ class ApiSseTests(unittest.TestCase):
                     "access_token": _API_TOKEN,
                     "serving_hot_refresh_enabled": False,
                     "stream_executor_max_workers": 1,
-                    "stream_queue_max_size": 4,
+                    "stream_executor_max_outstanding": 2,
+                    "stream_event_queue_max_size": 4,
                 }
             }
         )

@@ -11,6 +11,7 @@ from ....contracts import RequestControl
 from ....kernel.json_types import JsonObject
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
+from ....telemetry import get_runtime_telemetry
 from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
@@ -21,6 +22,7 @@ from .serving_admission import (
 )
 from .serving_hot_refresh import ServingHotRefreshCoordinator
 from .serving_readiness import ServingRuntimeReadinessGuard
+from .serving_stream_executor import StreamExecutorSnapshot
 from .serving_streams import ServingSseRunner
 
 
@@ -54,7 +56,13 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             ),
         )
         stream_executor_max_workers = getattr(api_settings, "stream_executor_max_workers", 4)
-        stream_queue_max_size = getattr(api_settings, "stream_queue_max_size", 64)
+        stream_executor_max_outstanding = getattr(
+            api_settings,
+            "stream_executor_max_outstanding",
+            8,
+        )
+        stream_event_queue_max_size = getattr(api_settings, "stream_event_queue_max_size", 64)
+        telemetry = get_runtime_telemetry(resolved_config) if resolved_config is not None else None
         self._runtime_readiness = ServingRuntimeReadinessGuard(
             system=self.system,
             ensure_runtime_initialized=self._ensure_runtime_initialized,
@@ -84,10 +92,13 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             answer_payload_factory=self._answer_payload,
             request_control_factory=self._new_stream_request_control,
             max_workers=stream_executor_max_workers,
-            queue_max_size=stream_queue_max_size,
+            max_outstanding=stream_executor_max_outstanding,
+            event_queue_max_size=stream_event_queue_max_size,
+            executor_observer=telemetry,
         )
         self._stream_executor_max_workers = self._stream_runner.max_workers
-        self._stream_queue_max_size = self._stream_runner.queue_max_size
+        self._stream_executor_max_outstanding = self._stream_runner.max_outstanding
+        self._stream_event_queue_max_size = self._stream_runner.event_queue_max_size
 
     def _validate_required_model_api_key(self) -> None:
         if not self._validate_startup_config:
@@ -158,6 +169,9 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
     def shutdown(self) -> None:
         self._stream_runner.shutdown()
         super().shutdown()
+
+    def stream_executor_snapshot(self) -> StreamExecutorSnapshot:
+        return self._stream_runner.executor_snapshot()
 
     @staticmethod
     def _answer_payload(response: QuestionAnswerResponse) -> AnswerPayloadModel:

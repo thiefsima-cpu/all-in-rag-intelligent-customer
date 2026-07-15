@@ -175,24 +175,45 @@ class PressureRunnerTests(unittest.TestCase):
     def test_sse_runner_capacity_records_terminal_events_without_http(self) -> None:
         report = run_pressure_test(
             scenario_name="sse_runner_capacity",
-            requests=6,
-            workers=3,
+            requests=8,
+            workers=6,
             answer_delay_ms=50.0,
             trace_delay_ms=0.0,
             trace_queue_size=8,
             max_concurrent_answers=1,
             answer_acquire_timeout_seconds=0.01,
+            stream_executor_max_workers=1,
+            stream_executor_max_outstanding=2,
+            stream_event_queue_max_size=4,
         )
 
         payload = report.to_dict()
         sse = payload["metrics"]["sse"]
+        executor = sse["executor"]
         self.assertEqual(payload["scenario"]["name"], "sse_runner_capacity")
-        self.assertEqual(sse["attempted_streams"], 6)
-        self.assertEqual(sse["done_events"], 6)
+        self.assertEqual(sse["attempted_streams"], 8)
+        self.assertEqual(sse["done_events"], 8)
         self.assertEqual(sse["done_event_rate"], 1.0)
         self.assertGreaterEqual(sse["rate_limited_error_events"], 1)
         self.assertEqual(sse["unfinished_streams"], 0)
-        self.assertTrue(any(check["name"] == "done_event_rate" for check in payload["checks"]))
+        self.assertEqual(executor["max_workers"], 1)
+        self.assertEqual(executor["max_outstanding"], 2)
+        self.assertLessEqual(executor["peak_active"], 1)
+        self.assertLessEqual(executor["peak_outstanding"], 2)
+        self.assertGreaterEqual(executor["rejected"], 1)
+        self.assertEqual(executor["rejected"], sse["rate_limited_error_events"])
+        self.assertEqual((executor["active"], executor["queued"]), (0, 0))
+        check_names = {check["name"] for check in payload["checks"]}
+        self.assertTrue(
+            {
+                "done_event_rate",
+                "sse_executor_peak_active",
+                "sse_executor_peak_outstanding",
+                "sse_executor_rejections",
+                "sse_executor_rejection_accounting",
+                "sse_executor_idle",
+            }.issubset(check_names)
+        )
 
 
 if __name__ == "__main__":

@@ -22,6 +22,11 @@ class PressureThresholds:
     min_done_event_rate: float | None = None
     max_unfinished_streams: int | None = None
     max_cancelled_after_done: int | None = None
+    max_sse_executor_peak_active: int | None = None
+    max_sse_executor_peak_outstanding: int | None = None
+    min_sse_executor_rejections: int | None = None
+    require_sse_rejection_accounting: bool = False
+    require_sse_executor_idle: bool = False
     warn_retrieval_degraded_rate: float | None = None
     max_retrieval_degraded_rate: float | None = None
     max_single_source_degraded_rate: float | None = None
@@ -44,6 +49,11 @@ class PressureThresholds:
             "min_done_event_rate": self.min_done_event_rate,
             "max_unfinished_streams": self.max_unfinished_streams,
             "max_cancelled_after_done": self.max_cancelled_after_done,
+            "max_sse_executor_peak_active": self.max_sse_executor_peak_active,
+            "max_sse_executor_peak_outstanding": self.max_sse_executor_peak_outstanding,
+            "min_sse_executor_rejections": self.min_sse_executor_rejections,
+            "require_sse_rejection_accounting": self.require_sse_rejection_accounting,
+            "require_sse_executor_idle": self.require_sse_executor_idle,
             "warn_retrieval_degraded_rate": self.warn_retrieval_degraded_rate,
             "max_retrieval_degraded_rate": self.max_retrieval_degraded_rate,
             "max_single_source_degraded_rate": self.max_single_source_degraded_rate,
@@ -224,6 +234,53 @@ def _evaluate_pressure_checks(
         limit=thresholds.max_cancelled_after_done,
         message="SSE streams were not cancelled after terminal done events.",
     )
+    _max_check(
+        checks,
+        name="sse_executor_peak_active",
+        actual=metrics.sse.executor.peak_active,
+        limit=thresholds.max_sse_executor_peak_active,
+        message="SSE executor active tasks stayed within the worker limit.",
+    )
+    _max_check(
+        checks,
+        name="sse_executor_peak_outstanding",
+        actual=metrics.sse.executor.peak_outstanding,
+        limit=thresholds.max_sse_executor_peak_outstanding,
+        message="SSE executor outstanding tasks stayed within the submission limit.",
+    )
+    _min_check(
+        checks,
+        name="sse_executor_rejections",
+        actual=metrics.sse.executor.rejected,
+        limit=thresholds.min_sse_executor_rejections,
+        message="SSE executor rejections prove bounded saturation.",
+    )
+    if thresholds.require_sse_rejection_accounting:
+        rejection_accounting = (
+            metrics.sse.executor.rejected == metrics.sse.rate_limited_error_events
+        )
+        checks.append(
+            PressureCheck(
+                name="sse_executor_rejection_accounting",
+                status="pass" if rejection_accounting else "fail",
+                actual=rejection_accounting,
+                operator="is",
+                limit=True,
+                message="Executor rejections match RATE_LIMITED SSE events.",
+            )
+        )
+    if thresholds.require_sse_executor_idle:
+        executor_idle = metrics.sse.executor.active == 0 and metrics.sse.executor.queued == 0
+        checks.append(
+            PressureCheck(
+                name="sse_executor_idle",
+                status="pass" if executor_idle else "fail",
+                actual=executor_idle,
+                operator="is",
+                limit=True,
+                message="SSE executor returned to zero active and queued tasks.",
+            )
+        )
     _warn_max_check(
         checks,
         name="retrieval_degraded_rate",
@@ -315,6 +372,11 @@ def default_pressure_thresholds(scenario: PressureScenario) -> PressureThreshold
             min_done_event_rate=1.0,
             max_unfinished_streams=0,
             max_cancelled_after_done=0,
+            max_sse_executor_peak_active=scenario.stream_executor_max_workers,
+            max_sse_executor_peak_outstanding=scenario.stream_executor_max_outstanding,
+            min_sse_executor_rejections=1,
+            require_sse_rejection_accounting=True,
+            require_sse_executor_idle=True,
             max_trace_failed_events=0,
         )
     if scenario.name == "model_call_budget":

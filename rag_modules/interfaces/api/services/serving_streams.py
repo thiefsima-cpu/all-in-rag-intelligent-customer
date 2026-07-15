@@ -6,7 +6,7 @@ import logging
 import queue
 import threading
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from contextlib import AbstractContextManager
 from typing import Protocol
 
@@ -26,6 +26,11 @@ from .errors import (
     ApiBackpressureError,
     SystemNotReadyError,
     _StreamCancelledError,
+)
+from .serving_stream_executor import (
+    BoundedStreamExecutor,
+    StreamExecutorObserver,
+    StreamExecutorSnapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +69,7 @@ class _SseStreamSession:
         self.request_id = request_id
         self.include_traces = include_traces
         self.event_queue: "queue.Queue[AnswerStreamEventModel | _StreamEnd]" = queue.Queue(
-            maxsize=runner.queue_max_size
+            maxsize=runner.event_queue_max_size
         )
         self.stream_closed = threading.Event()
         self.request_control = runner.request_control_factory()
@@ -73,7 +78,14 @@ class _SseStreamSession:
 
     def events(self) -> Iterator[AnswerStreamEventModel]:
         try:
-            self.future = self.runner._resolve_executor().submit(self._run)
+            self.future = self.runner.schedule(self._run)
+        except ApiBackpressureError:
+            yield AnswerStreamEventModel.error(
+                code=ErrorCode.RATE_LIMITED,
+                request_id=self.request_id,
+            )
+            yield AnswerStreamEventModel.done()
+            return
         except RuntimeError:
             yield AnswerStreamEventModel.error(
                 code=ErrorCode.SYSTEM_NOT_READY,
@@ -234,7 +246,9 @@ class ServingSseRunner:
         answer_payload_factory: Callable[[QuestionAnswerResponse], AnswerPayloadModel],
         request_control_factory: Callable[[], RequestControl],
         max_workers: int,
-        queue_max_size: int,
+        max_outstanding: int,
+        event_queue_max_size: int,
+        executor_observer: StreamExecutorObserver | None = None,
     ) -> None:
         self.system = system
         self.admission_controller = admission_controller
@@ -243,16 +257,22 @@ class ServingSseRunner:
         self.answer_payload_factory = answer_payload_factory
         self.request_control_factory = request_control_factory
         self.max_workers = max(1, int(max_workers or 1))
-        self.queue_max_size = max(1, int(queue_max_size or 1))
-        self._executor: ThreadPoolExecutor | None = None
-        self._executor_lock = threading.Lock()
+        self.max_outstanding = max(self.max_workers, int(max_outstanding or self.max_workers))
+        self.event_queue_max_size = max(1, int(event_queue_max_size or 1))
+        self._executor = BoundedStreamExecutor(
+            max_workers=self.max_workers,
+            max_outstanding=self.max_outstanding,
+            observer=executor_observer,
+        )
 
     def shutdown(self) -> None:
-        with self._executor_lock:
-            executor = self._executor
-            self._executor = None
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
+        self._executor.shutdown()
+
+    def schedule(self, fn: Callable[[], None]) -> Future[None]:
+        return self._executor.submit(fn)
+
+    def executor_snapshot(self) -> StreamExecutorSnapshot:
+        return self._executor.snapshot()
 
     def stream_answer_question_events(
         self,
@@ -269,20 +289,6 @@ class ServingSseRunner:
             request_id=request_id,
             include_traces=include_traces,
         )
-
-    def _resolve_executor(self) -> ThreadPoolExecutor:
-        executor = self._executor
-        if executor is not None:
-            return executor
-        with self._executor_lock:
-            executor = self._executor
-            if executor is None:
-                executor = ThreadPoolExecutor(
-                    max_workers=self.max_workers,
-                    thread_name_prefix="graph-rag-answer",
-                )
-                self._executor = executor
-        return executor
 
 
 __all__ = ["ServingSseRunner"]

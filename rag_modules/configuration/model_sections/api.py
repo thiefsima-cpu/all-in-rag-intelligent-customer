@@ -20,7 +20,8 @@ class ApiSettings(ConfigSection):
     max_concurrent_answers: int = Field(default=4, ge=1)
     answer_acquire_timeout_seconds: float = Field(default=0.25, ge=0.0)
     stream_executor_max_workers: int = Field(default=4, ge=1)
-    stream_queue_max_size: int = Field(default=64, ge=1)
+    stream_executor_max_outstanding: int = Field(default=8, ge=1)
+    stream_event_queue_max_size: int = Field(default=64, ge=1)
     build_job_runner_backend: Literal["in_process", "external_worker"] = "in_process"
     build_job_runner_max_workers: int = Field(default=1, ge=1)
     build_job_worker_poll_interval_seconds: float = Field(default=1.0, ge=0.1)
@@ -42,6 +43,11 @@ class ApiSettings(ConfigSection):
         if self.build_job_heartbeat_seconds >= self.build_job_lease_seconds:
             raise ValueError(
                 "api.build_job_heartbeat_seconds must be less than api.build_job_lease_seconds."
+            )
+        if self.stream_executor_max_outstanding < self.stream_executor_max_workers:
+            raise ValueError(
+                "api.stream_executor_max_outstanding must be greater than or equal to "
+                "api.stream_executor_max_workers."
             )
         return self
 
