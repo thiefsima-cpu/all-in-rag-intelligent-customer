@@ -101,7 +101,7 @@ class InProcessBuildJobRunner:
         heartbeat_thread = self._heartbeat_thread
         if heartbeat_thread is not None:
             heartbeat_thread.join(timeout=1.0)
-        self._pool.shutdown(wait=False, cancel_futures=True)
+        self._pool.shutdown(wait=True, cancel_futures=True)
 
     def _dispatch_pending(self) -> None:
         while True:
