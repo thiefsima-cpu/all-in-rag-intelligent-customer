@@ -20,7 +20,12 @@ API_ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
         "float",
     ),
     _spec("API_STREAM_EXECUTOR_MAX_WORKERS", ("api", "stream_executor_max_workers"), "int"),
-    _spec("API_STREAM_QUEUE_MAX_SIZE", ("api", "stream_queue_max_size"), "int"),
+    _spec(
+        "API_STREAM_EXECUTOR_MAX_OUTSTANDING",
+        ("api", "stream_executor_max_outstanding"),
+        "int",
+    ),
+    _spec("API_STREAM_EVENT_QUEUE_MAX_SIZE", ("api", "stream_event_queue_max_size"), "int"),
     _spec("API_BUILD_JOB_RUNNER_BACKEND", ("api", "build_job_runner_backend"), "str"),
     _spec(
         "API_BUILD_JOB_RUNNER_MAX_WORKERS",

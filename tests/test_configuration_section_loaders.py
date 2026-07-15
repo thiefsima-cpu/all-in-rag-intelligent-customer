@@ -186,7 +186,8 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "API_MAX_CONCURRENT_ANSWERS": "3",
                     "API_ANSWER_ACQUIRE_TIMEOUT_SECONDS": "0.5",
                     "API_STREAM_EXECUTOR_MAX_WORKERS": "8",
-                    "API_STREAM_QUEUE_MAX_SIZE": "128",
+                    "API_STREAM_EXECUTOR_MAX_OUTSTANDING": "12",
+                    "API_STREAM_EVENT_QUEUE_MAX_SIZE": "128",
                     "API_BUILD_JOB_RUNNER_BACKEND": "external_worker",
                     "API_BUILD_JOB_RUNNER_MAX_WORKERS": "3",
                     "API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS": "0.25",
@@ -209,7 +210,9 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.max_concurrent_answers, 3)
         self.assertEqual(config.api.answer_acquire_timeout_seconds, 0.5)
         self.assertEqual(config.api.stream_executor_max_workers, 8)
-        self.assertEqual(config.api.stream_queue_max_size, 128)
+        self.assertEqual(config.api.stream_executor_max_outstanding, 12)
+        self.assertEqual(config.api.stream_event_queue_max_size, 128)
+        self.assertFalse(hasattr(config.api, "stream_queue_max_size"))
         self.assertEqual(config.api.build_job_runner_backend, "external_worker")
         self.assertEqual(config.api.build_job_runner_max_workers, 3)
         self.assertEqual(config.api.build_job_worker_poll_interval_seconds, 0.25)
@@ -233,6 +236,23 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     }
                 )
             )
+
+    def test_api_settings_reject_stream_outstanding_below_worker_count(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "API_STREAM_EXECUTOR_MAX_WORKERS": "4",
+                        "API_STREAM_EXECUTOR_MAX_OUTSTANDING": "3",
+                    }
+                )
+            )
+
+        self.assertIn(
+            "api.stream_executor_max_outstanding must be greater than or equal to "
+            "api.stream_executor_max_workers",
+            str(context.exception),
+        )
 
     def test_api_settings_reject_build_job_default_limit_above_max_limit(self) -> None:
         with self.assertRaises(ConfigurationError):
