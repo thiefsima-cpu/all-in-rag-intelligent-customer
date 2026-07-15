@@ -240,16 +240,56 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         self.aliases = {name: name for name in definitions}
         self.mutations: set[tuple[str, int]] = set()
 
-    def _record_target(self, target: ast.AST, statement: ast.AST) -> None:
+    def _record_target(
+        self,
+        target: ast.AST,
+        statement: ast.AST,
+        *,
+        alias_name_mutates: bool = False,
+    ) -> None:
         binding = _mutation_root_name(target)
         name = self.aliases.get(binding or "")
         if name is None:
             return
         if isinstance(target, ast.Name) and binding == name and statement is self.definitions[name]:
             return
-        if isinstance(target, ast.Name) and binding != name:
+        if isinstance(target, ast.Name) and binding != name and not alias_name_mutates:
             return
         self.mutations.add((name, statement.lineno))
+
+    @staticmethod
+    def _target_names(target: ast.AST) -> tuple[str, ...]:
+        if isinstance(target, ast.Name):
+            return (target.id,)
+        if isinstance(target, ast.Starred):
+            return _LazyTableMutationVisitor._target_names(target.value)
+        if isinstance(target, (ast.List, ast.Tuple)):
+            return tuple(
+                name
+                for element in target.elts
+                for name in _LazyTableMutationVisitor._target_names(element)
+            )
+        return ()
+
+    @staticmethod
+    def _argument_names(arguments: ast.arguments) -> tuple[str, ...]:
+        names = [
+            argument.arg
+            for argument in [
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+            ]
+        ]
+        if arguments.vararg is not None:
+            names.append(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            names.append(arguments.kwarg.arg)
+        return tuple(names)
+
+    def _clear_target_aliases(self, target: ast.AST) -> None:
+        for name in self._target_names(target):
+            self.aliases.pop(name, None)
 
     def _update_alias(self, target: ast.AST, value: ast.AST) -> None:
         if not isinstance(target, ast.Name):
@@ -264,17 +304,21 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
         for target in node.targets:
             self._record_target(target, node)
             self._update_alias(target, node.value)
+            if not isinstance(target, ast.Name):
+                self._clear_target_aliases(target)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
             self.visit(node.value)
             self._record_target(node.target, node)
             self._update_alias(node.target, node.value)
+            if not isinstance(node.target, ast.Name):
+                self._clear_target_aliases(node.target)
         self.visit(node.annotation)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.visit(node.value)
-        self._record_target(node.target, node)
+        self._record_target(node.target, node, alias_name_mutates=True)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         self.visit(node.value)
@@ -284,8 +328,7 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
             self._record_target(target, node)
-            if isinstance(target, ast.Name):
-                self.aliases.pop(target.id, None)
+            self._clear_target_aliases(target)
 
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Attribute) and node.func.attr in self._MUTATING_METHODS:
@@ -294,6 +337,108 @@ class _LazyTableMutationVisitor(ast.NodeVisitor):
             if name is not None:
                 self.mutations.add((name, node.lineno))
         self.generic_visit(node)
+
+    def _visit_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        for argument in arguments:
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._visit_function_signature(node)
+        self.aliases.pop(node.name, None)
+        outer = self.aliases.copy()
+        self.aliases = outer.copy()
+        for name in self._argument_names(node.args):
+            self.aliases.pop(name, None)
+        for statement in node.body:
+            self.visit(statement)
+        self.aliases = outer
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        outer = self.aliases
+        self.aliases = outer.copy()
+        for name in self._argument_names(node.args):
+            self.aliases.pop(name, None)
+        self.visit(node.body)
+        self.aliases = outer
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        self.aliases.pop(node.name, None)
+        outer = self.aliases.copy()
+        self.aliases = outer.copy()
+        for statement in node.body:
+            self.visit(statement)
+        self.aliases = outer
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        outer = self.aliases.copy()
+        self.aliases = outer.copy()
+        self._clear_target_aliases(node.target)
+        for statement in node.body:
+            self.visit(statement)
+        self.aliases = outer
+        for statement in node.orelse:
+            self.visit(statement)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_for(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_for(node)
+
+    def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self._clear_target_aliases(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_with(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_with(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.aliases.pop(alias.asname or alias.name.split(".", maxsplit=1)[0], None)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self.aliases.pop(alias.asname or alias.name, None)
 
 
 def _lazy_export_table_analysis(
@@ -340,6 +485,7 @@ class _ImportVisitor(ast.NodeVisitor):
         self.dynamic_import_errors: list[str] = []
         self.bindings = _BindingState()
         self.lazy_export_tables: set[str] = set()
+        self._exception_state_sinks: list[list[_BindingState]] = []
 
     @property
     def dynamic_loaders(self) -> dict[str, str]:
@@ -402,6 +548,10 @@ class _ImportVisitor(ast.NodeVisitor):
     def _clear_target_bindings(self, target: ast.AST) -> None:
         for name in self._bound_names(target):
             self._clear_binding(name)
+
+    def _checkpoint_bindings(self) -> None:
+        for sink in self._exception_state_sinks:
+            sink.append(self.bindings.copy())
 
     def _record(self, target_module: str, line: int) -> None:
         if target_module:
@@ -595,9 +745,13 @@ class _ImportVisitor(ast.NodeVisitor):
         previous = self.bindings
         self.bindings = initial.copy()
         exception_prefixes = [initial]
-        for statement in node.body:
-            self.visit(statement)
-            exception_prefixes.append(self.bindings.copy())
+        self._exception_state_sinks.append(exception_prefixes)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+                exception_prefixes.append(self.bindings.copy())
+        finally:
+            self._exception_state_sinks.pop()
         body_state = self.bindings.copy()
         self.bindings = previous
         exception_state = _BindingState.merge(tuple(exception_prefixes))
@@ -654,18 +808,22 @@ class _ImportVisitor(ast.NodeVisitor):
         self._visit_for(node)
 
     def visit_While(self, node: ast.While) -> None:
-        self.visit(node.test)
         initial = self.bindings.copy()
         loop_state = initial
         while True:
-            body_state = self._visit_branch(node.body, loop_state, kind=self.kind)
+            previous = self.bindings
+            self.bindings = loop_state.copy()
+            self.visit(node.test)
+            test_state = self.bindings.copy()
+            self.bindings = previous
+            body_state = self._visit_branch(node.body, test_state, kind=self.kind)
             next_loop_state = _BindingState.merge((initial, body_state))
             if next_loop_state == loop_state:
                 loop_state = next_loop_state
                 break
             loop_state = next_loop_state
-        else_state = self._visit_branch(node.orelse, loop_state, kind=self.kind)
-        self.bindings = _BindingState.merge((loop_state, else_state))
+        else_state = self._visit_branch(node.orelse, test_state, kind=self.kind)
+        self.bindings = _BindingState.merge((test_state, body_state, else_state))
 
     def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
         for item in node.items:
@@ -694,6 +852,7 @@ class _ImportVisitor(ast.NodeVisitor):
                 self.builtins_aliases.add(binding)
             elif alias.name == "typing":
                 self.typing_aliases.add(binding)
+            self._checkpoint_bindings()
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         target_module = _resolve_import_from(
@@ -716,6 +875,7 @@ class _ImportVisitor(ast.NodeVisitor):
                 self.dynamic_loaders[binding] = "__import__"
             elif node.level == 0 and node.module == "typing" and alias.name == "TYPE_CHECKING":
                 self.type_checking_names.add(binding)
+            self._checkpoint_bindings()
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
@@ -736,10 +896,12 @@ class _ImportVisitor(ast.NodeVisitor):
     def _bind_assignment_target(self, target: ast.AST, value: ast.AST) -> None:
         if not isinstance(target, ast.Name):
             self._clear_target_bindings(target)
+            self._checkpoint_bindings()
             return
         self._clear_typing_binding(target.id)
         self._bind_dynamic_loader(target, value)
         self._bind_lazy_target(target, value)
+        self._checkpoint_bindings()
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.visit(node.target)
@@ -1223,6 +1385,26 @@ load("rag_modules.generation")
     assert "rag_modules.generation" in {item.target_module for item in imports}
 
 
+def test_try_handlers_preserve_loader_bound_mid_expression() -> None:
+    imports = _collect_imports_from_source(
+        """
+import importlib
+
+load = object()
+try:
+    ((load := importlib.import_module), might_raise(), (load := object()))
+except Exception:
+    pass
+load("rag_modules.generation")
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
+
+
 def test_loops_reach_a_loader_binding_from_a_later_iteration() -> None:
     imports = _collect_imports_from_source(
         """
@@ -1246,6 +1428,26 @@ while condition:
     assert {
         item.target_module for item in imports if item.target_module.startswith("rag_modules.")
     } == {"rag_modules.generation", "rag_modules.retrieval"}
+
+
+def test_while_rechecks_its_condition_with_later_iteration_bindings() -> None:
+    imports = _collect_imports_from_source(
+        """
+from importlib import import_module
+
+def keep_running(name):
+    return condition
+
+load = keep_running
+while load("rag_modules.generation"):
+    load = import_module
+""",
+        source_module="rag_modules.runtime.sample",
+        is_package=False,
+        relative_path="rag_modules/runtime/sample.py",
+    )
+
+    assert "rag_modules.generation" in {item.target_module for item in imports}
 
 
 def test_lazy_target_must_be_safe_on_every_if_branch() -> None:
@@ -1407,6 +1609,59 @@ def test_controlled_lazy_tables_reject_mutation_through_an_alias() -> None:
         in visitor.dynamic_import_errors
     )
     assert _lazy_table_imports(tree, "rag_modules") == []
+
+
+def test_controlled_lazy_table_alias_augassign_is_a_mutation() -> None:
+    source = "\n".join(
+        (
+            "from importlib import import_module",
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            '_ALIAS |= {"Injected": requested}',
+            "module_name = _EXPORTS.get(name)",
+            "import_module(module_name, __name__)",
+        )
+    )
+    tree = ast.parse(source, filename="rag_modules/__init__.py")
+    visitor = _ImportVisitor(
+        source_module="rag_modules",
+        is_package=True,
+        relative_path="rag_modules/__init__.py",
+    )
+    visitor.visit(tree)
+
+    assert (
+        "rag_modules/__init__.py:4: mutated lazy import table _EXPORTS"
+        in visitor.dynamic_import_errors
+    )
+
+
+def test_lazy_alias_scope_shadow_does_not_hide_or_invent_mutation() -> None:
+    global_mutation = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "def helper():",
+            "    _ALIAS = other",
+            '_ALIAS.update({"Injected": requested})',
+        )
+    )
+    tree = ast.parse(global_mutation, filename="rag_modules/__init__.py")
+    _tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == (("_EXPORTS", 5),)
+
+    loop_shadow = "\n".join(
+        (
+            '_EXPORTS = {"Safe": ".safe"}',
+            "_ALIAS = _EXPORTS",
+            "for _ALIAS in values:",
+            '    _ALIAS.update({"Unrelated": requested})',
+        )
+    )
+    tree = ast.parse(loop_shadow, filename="rag_modules/__init__.py")
+    tables, mutations = _lazy_export_table_analysis(tree)
+    assert mutations == ()
+    assert set(tables) == {"_EXPORTS"}
 
 
 def test_type_checking_guard_requires_a_typing_binding() -> None:
