@@ -54,6 +54,65 @@ def _commit_tree_symlink(repository_root: Path, relative_path: str, target: Path
     return git(repository_root, "rev-parse", "HEAD")
 
 
+def _check_detail(
+    *,
+    name: str,
+    status: str,
+    code: str,
+    failure_type: str | None,
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "status": status,
+        "passed": status == "passed",
+        "failure_type": failure_type,
+        "code": code,
+        "expected": None,
+        "actual": None,
+        "duration_ms": 1.0,
+    }
+
+
+def _integration_case_detail(*, status: str = "passed") -> dict[str, object]:
+    return {
+        "case_id": "vector_recipe_lookup",
+        "executed": True,
+        "status": status,
+        "has_observation": True,
+        "evidence_count": 1,
+        "latency_ms": 1000.0,
+        "total_tokens": 10,
+        "estimated_cost_usd": 0.01,
+        "check_codes": ["CASE_OK"],
+    }
+
+
+def _live_case_detail(case_id: str, *, judge_passed: bool = True) -> dict[str, object]:
+    return {
+        "case_id": case_id,
+        "query_type": "single_recipe",
+        "cuisine": "sichuan",
+        "constraint_types": [],
+        "risk_tags": [],
+        "response_mode": "grounded_answer",
+        "strategy": "hybrid_traditional",
+        "passed": judge_passed,
+        "deterministic_passed": True,
+        "judge_passed": judge_passed,
+        "judge_scores": {
+            "faithfulness": 1.0,
+            "answer_relevance": 1.0,
+            "safety": 1.0,
+            "completeness": 1.0,
+        },
+        "failures": [],
+        "metrics": {"recall_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0},
+        "manual_review": None,
+        "answer_preview": "Mapo tofu uses tofu.",
+        "evidence": [],
+    }
+
+
 def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     inputs = capture_inputs(fixture)
@@ -205,12 +264,12 @@ def test_capture_rejects_blank_knowledge_signature(tmp_path: Path, field: str) -
 def test_capture_allows_semantic_secret_text_and_benign_url(tmp_path: Path) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["cases"] = [
-        {
-            "note": "The customer asks whether this is a secret recipe.",
-            "reference": "https://docs.example.com/search?q=secret+recipe",
-        }
-    ]
+    report["business_context"] = {
+        "note": "The customer asks whether this is a secret recipe.",
+        "reference": "https://docs.example.com/search?q=secret+recipe",
+        "public_feed": "ftp://public.example.com/recipes",
+        "metrics": {"prompt_tokens": 20, "total_tokens": 42},
+    }
     write_json(fixture.live_quality_report, report)
 
     capture_release_evidence(capture_inputs(fixture))
@@ -220,11 +279,18 @@ def test_capture_allows_semantic_secret_text_and_benign_url(tmp_path: Path) -> N
     "sensitive_value",
     [
         {"api_key": "actual-token-value"},
+        {"openai_api_key": "actual-token-value"},
+        {"token": "actual-token-value"},
+        {"accessToken": "actual-token-value"},
+        {"clientSecret": "actual-token-value"},
+        {"credential": "actual-token-value"},
         {"note": "Bearer actual-token-value"},
         {"note": "Authorization: actual-token-value"},
         {"note": "https://user:password@example.com/private"},
         {"note": "https://example.com/private?access_token=actual-token-value"},
+        {"note": "postgresql://dbuser:dbpass@db.example.com/app"},
         {"note": "C:\\Users\\alice\\private.txt"},
+        {"note": "D:/data/private.txt"},
         {"note": "\\\\server\\share\\private.txt"},
         {"note": "/home/alice/private.txt"},
         {"note": "/Users/alice/private.txt"},
@@ -232,6 +298,16 @@ def test_capture_allows_semantic_secret_text_and_benign_url(tmp_path: Path) -> N
         {"note": "/tmp/private.txt"},
         {"note": "/opt/private.txt"},
         {"note": "/workspace/private.txt"},
+        {"note": "/data/private.txt"},
+        {"note": "/usr/local/private.txt"},
+        {
+            "detail": (
+                "Traceback (most recent call last):\n"
+                '  File "provider.py", line 7, in request\n'
+                "RuntimeError: provider failed"
+            )
+        },
+        {"detail": "ProviderRuntimeException: raw provider response"},
     ],
 )
 def test_capture_rejects_sensitive_values(
@@ -240,7 +316,7 @@ def test_capture_rejects_sensitive_values(
 ) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["cases"] = [sensitive_value]
+    report["diagnostic_detail"] = sensitive_value
     write_json(fixture.live_quality_report, report)
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
@@ -471,3 +547,183 @@ def test_capture_rejects_snapshot_budget_immediately(
         capture_release_evidence(capture_inputs(fixture))
 
     assert read_count == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "failure_type"),
+    [("failed", "contract-regression"), ("blocked", None)],
+)
+def test_capture_rejects_integration_nonpassing_check_detail(
+    tmp_path: Path,
+    status: str,
+    failure_type: str | None,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["metrics"]["check_count"] = 1
+    report["checks"] = [
+        _check_detail(
+            name="dependency.neo4j",
+            status=status,
+            code="DEPENDENCY_FAILED",
+            failure_type=failure_type,
+        )
+    ]
+    write_json(fixture.integration_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="integration check details"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize("status", ["failed", "blocked", "error"])
+def test_capture_rejects_integration_nonpassing_case_detail(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["cases"] = [_integration_case_detail(status=status)]
+    write_json(fixture.integration_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="integration case details"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_integration_detail_aggregate_mismatch(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["checks"] = [
+        _check_detail(
+            name="dependency.neo4j",
+            status="passed",
+            code="DEPENDENCY_OK",
+            failure_type=None,
+        )
+    ]
+    write_json(fixture.integration_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="integration check details"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    ("status", "failure_type", "code"),
+    [
+        ("failed", "judge-unavailable", "JUDGE_RESPONSE_INVALID"),
+        ("blocked", None, "PREREQUISITE_FAILED"),
+    ],
+)
+def test_capture_rejects_live_quality_blocking_check_detail(
+    tmp_path: Path,
+    status: str,
+    failure_type: str | None,
+    code: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["checks"] = [
+        _check_detail(
+            name="case.grounded_mapo_tofu.judge",
+            status=status,
+            code=code,
+            failure_type=failure_type,
+        )
+    ]
+    report["failure_type_counts"] = {failure_type: 1} if failure_type is not None else {}
+    write_json(fixture.live_quality_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="live quality check details"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_live_quality_case_aggregate_mismatch(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    case = _live_case_detail("grounded_mapo_tofu")
+    case["deterministic_passed"] = False
+    case["failures"] = ["response_mode_mismatch"]
+    report["cases"] = [case]
+    write_json(fixture.live_quality_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="live quality case details"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    policy = json.loads(fixture.live_quality_policy.read_text(encoding="utf-8"))
+    template = policy["cases"][0]
+    policy_cases: list[dict[str, object]] = []
+    case_ids: list[str] = []
+    for index in range(20):
+        case_id = f"grounded_mapo_tofu_{index:02d}"
+        case_ids.append(case_id)
+        cloned = json.loads(json.dumps(template))
+        cloned["case_id"] = case_id
+        cloned["manual_review"]["sample"] = index == 0
+        policy_cases.append(cloned)
+    policy["cases"] = policy_cases
+    write_json(fixture.live_quality_policy, policy)
+    git(fixture.repository_root, "add", "eval/live_quality_gate.json")
+    git(fixture.repository_root, "commit", "-m", "test: expand live quality policy")
+    evaluated_commit = git(fixture.repository_root, "rev-parse", "HEAD")
+
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["metrics"].update(
+        {
+            "case_count": 20,
+            "pass_rate": 0.95,
+            "deterministic_pass_rate": 1.0,
+            "judge_pass_rate": 0.95,
+        }
+    )
+    report["cases"] = [
+        _live_case_detail(case_id, judge_passed=index != 0)
+        for index, case_id in enumerate(case_ids)
+    ]
+    report["checks"] = [
+        _check_detail(
+            name=f"case.{case_ids[0]}.judge",
+            status="failed",
+            code="JUDGE_QUALITY_FAILED",
+            failure_type="quality-regression",
+        )
+    ]
+    report["failure_type_counts"] = {"quality-regression": 1}
+    write_json(fixture.live_quality_report, report)
+
+    capture_release_evidence(replace(capture_inputs(fixture), evaluated_commit=evaluated_commit))
+
+
+@pytest.mark.parametrize(
+    ("integration_host", "live_host"),
+    [
+        ("QUALITY.EXAMPLE.COM", "quality.example.com:443"),
+        ("127.0.0.1", "127.0.0.1:8000"),
+        ("::1", "::1:8000"),
+    ],
+)
+def test_capture_accepts_same_gate_target_hostname(
+    tmp_path: Path,
+    integration_host: str,
+    live_host: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    integration_report["target"]["api_host"] = integration_host
+    write_json(fixture.integration_report, integration_report)
+    live_report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    live_report["target"]["api_host"] = live_host
+    write_json(fixture.live_quality_report, live_report)
+
+    capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_gate_target_hostname_mismatch(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    integration_report["target"]["api_host"] = "other.example.com"
+    write_json(fixture.integration_report, integration_report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target hostnames differ"):
+        capture_release_evidence(capture_inputs(fixture))

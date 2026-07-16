@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
 import tomllib
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from ipaddress import IPv6Address, ip_address
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, urlsplit
@@ -42,23 +45,67 @@ from .models import (
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_BUNDLE_SOURCE_BYTES = 50 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
-_CREDENTIAL_KEY_RE = re.compile(
-    r"^(?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|session[_-]?token|"
-    r"authorization|password|passwd|bearer[_-]?token|client[_-]?secret|secret[_-]?key|"
-    r"private[_-]?key|aws[_-]?secret[_-]?access[_-]?key|credentials?|raw[_-]?exception|"
-    r"traceback)$",
-    re.IGNORECASE,
+_CAMEL_CASE_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_NON_KEY_CHARACTER_RE = re.compile(r"[^A-Za-z0-9]+")
+_SENSITIVE_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "api_token",
+        "authorization",
+        "auth_token",
+        "aws_secret_access_key",
+        "bearer_token",
+        "client_secret",
+        "credential",
+        "credentials",
+        "password",
+        "passwd",
+        "private_key",
+        "raw_exception",
+        "refresh_token",
+        "secret_key",
+        "session_token",
+        "token",
+        "traceback",
+    }
+)
+_SENSITIVE_KEY_SUFFIXES = (
+    "_access_token",
+    "_api_key",
+    "_api_token",
+    "_auth_token",
+    "_bearer_token",
+    "_client_secret",
+    "_credential",
+    "_credentials",
+    "_private_key",
+    "_refresh_token",
+    "_secret_key",
+    "_session_token",
 )
 _BEARER_VALUE_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*\b", re.IGNORECASE)
 _AUTH_HEADER_RE = re.compile(r"\bAuthorization\s*:", re.IGNORECASE)
 _ABSOLUTE_WINDOWS_PATH_RE = re.compile(r"\b[A-Za-z]:[\\/]")
 _ABSOLUTE_WINDOWS_UNC_PATH_RE = re.compile(r"(?:^|[\s\"'=(])\\\\[^\\/\s]+\\[^\\/\s]+")
-_ABSOLUTE_UNIX_PATH_RE = re.compile(
-    r"(?:^|[\s\"'=(])/(?:home|Users|var|tmp|opt|workspace|root|etc|srv|mnt)/"
+_ABSOLUTE_UNIX_PATH_RE = re.compile(r"(?:^|[\s\"'=(])/(?!/)[^\s<>\"']+")
+_URI_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+")
+_TRACEBACK_RE = re.compile(
+    r"Traceback\s+\(most recent call last\):|"
+    r"(?:^|\n)\s*File\s+[\"'][^\"']+[\"'],\s+line\s+\d+|"
+    r"(?:^|\n)\s*at\s+\S+\([^)]*:\d+\)",
+    re.IGNORECASE,
 )
-_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+_EXCEPTION_VALUE_RE = re.compile(
+    r"\b[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception):\s*\S",
+    re.IGNORECASE,
+)
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+_GATE_STATUSES = frozenset({"passed", "failed", "blocked"})
+_NON_BLOCKING_LIVE_QUALITY_CODES = frozenset(
+    {"DETERMINISTIC_QUALITY_FAILED", "JUDGE_QUALITY_FAILED"}
+)
 
 
 class ReleaseEvidenceCaptureError(RuntimeError):
@@ -338,6 +385,43 @@ def _require_float(value: object, name: str) -> float:
     return result
 
 
+def _detail_list(report: Mapping[str, Any], key: str, name: str) -> list[dict[str, Any]]:
+    value = report.get(key)
+    if not isinstance(value, list):
+        raise ReleaseEvidenceCaptureError(f"{name} must be an array")
+    if not all(isinstance(item, dict) for item in value):
+        raise ReleaseEvidenceCaptureError(f"{name} contains an invalid entry")
+    return value
+
+
+def _check_detail(
+    value: Mapping[str, Any],
+    name: str,
+) -> tuple[str, str, str, str | None]:
+    status = value.get("status")
+    passed = value.get("passed")
+    check_name = value.get("name")
+    code = value.get("code")
+    failure_type = value.get("failure_type")
+    if (
+        status not in _GATE_STATUSES
+        or not isinstance(passed, bool)
+        or passed is not (status == "passed")
+        or not isinstance(check_name, str)
+        or not check_name
+        or not isinstance(code, str)
+        or not code
+        or (status == "failed" and not isinstance(failure_type, str))
+        or (status != "failed" and failure_type is not None)
+    ):
+        raise ReleaseEvidenceCaptureError(f"{name} are invalid")
+    return status, check_name, code, failure_type
+
+
+def _float_matches(left: float, right: float) -> bool:
+    return math.isclose(left, right, rel_tol=0.0, abs_tol=1e-12)
+
+
 def _report_member(report_path: Path, relative_name: object) -> Path:
     if not isinstance(relative_name, str) or not relative_name:
         raise ReleaseEvidenceCaptureError("report artifact name is invalid")
@@ -380,6 +464,56 @@ def _load_artifact_manifest(payload: Mapping[str, Any]) -> ArtifactManifest:
     return ArtifactManifest.from_dict(payload)
 
 
+def _validate_integration_details(
+    report: Mapping[str, Any],
+    policy: IntegrationGatePolicy,
+    metrics: IntegrationMetrics,
+) -> None:
+    checks = _detail_list(report, "checks", "integration check details")
+    if checks:
+        statuses = [_check_detail(check, "integration check details")[0] for check in checks]
+        if (
+            len(checks) != metrics.check_count
+            or statuses.count("failed") != metrics.failed_count
+            or statuses.count("blocked") != metrics.blocked_count
+            or any(status != "passed" for status in statuses)
+        ):
+            raise ReleaseEvidenceCaptureError("integration check details do not match aggregate")
+
+    cases = _detail_list(report, "cases", "integration case details")
+    if not cases:
+        return
+    case_ids: list[str] = []
+    executed_count = 0
+    observation_count = 0
+    for case in cases:
+        case_id = case.get("case_id")
+        executed = case.get("executed")
+        status = case.get("status")
+        has_observation = case.get("has_observation")
+        if (
+            not isinstance(case_id, str)
+            or not case_id
+            or not isinstance(executed, bool)
+            or status not in _GATE_STATUSES
+            or not isinstance(has_observation, bool)
+        ):
+            raise ReleaseEvidenceCaptureError("integration case details are invalid")
+        case_ids.append(case_id)
+        executed_count += int(executed)
+        observation_count += int(has_observation)
+        if not executed or status != "passed" or not has_observation:
+            raise ReleaseEvidenceCaptureError("integration case details did not pass")
+    if (
+        len(cases) != metrics.case_count
+        or executed_count != metrics.executed_case_count
+        or observation_count != metrics.observation_count
+        or len(case_ids) != len(set(case_ids))
+        or set(case_ids) != {case.case_id for case in policy.live_cases}
+    ):
+        raise ReleaseEvidenceCaptureError("integration case details do not match aggregate")
+
+
 def _project_integration(
     report: Mapping[str, Any],
     policy: IntegrationGatePolicy,
@@ -411,6 +545,7 @@ def _project_integration(
         raise ReleaseEvidenceCaptureError("integration cases were not all executed")
     if projected.case_count != len(policy.live_cases):
         raise ReleaseEvidenceCaptureError("integration policy and report case counts differ")
+    _validate_integration_details(report, policy, projected)
     return IntegrationEvidence(
         passed=True,
         report_schema_version=_require_int(
@@ -421,6 +556,113 @@ def _project_integration(
         generated_at=str(report.get("generated_at") or ""),
         metrics=projected,
     )
+
+
+def _validate_live_quality_details(
+    report: Mapping[str, Any],
+    policy: LiveQualityGatePolicy,
+    metrics: QualityMetrics,
+) -> None:
+    checks = _detail_list(report, "checks", "live quality check details")
+    check_identities: set[tuple[str, str, str]] = set()
+    if checks:
+        failure_counts: Counter[str] = Counter()
+        for check in checks:
+            status, check_name, code, failure_type = _check_detail(
+                check,
+                "live quality check details",
+            )
+            check_identities.add((check_name, code, status))
+            if status == "failed" and failure_type is not None:
+                failure_counts[failure_type] += 1
+            non_blocking = (
+                status == "failed"
+                and check_name.startswith("case.")
+                and code in _NON_BLOCKING_LIVE_QUALITY_CODES
+                and failure_type == "quality-regression"
+            )
+            if status != "passed" and not non_blocking:
+                raise ReleaseEvidenceCaptureError(
+                    "live quality check details contain a blocking failure"
+                )
+        reported_counts = report.get("failure_type_counts")
+        if not isinstance(reported_counts, dict) or reported_counts != dict(failure_counts):
+            raise ReleaseEvidenceCaptureError("live quality check details do not match aggregate")
+
+    cases = _detail_list(report, "cases", "live quality case details")
+    if not cases:
+        return
+    case_ids: list[str] = []
+    passed_count = 0
+    deterministic_passed_count = 0
+    judge_results: list[bool] = []
+    for case in cases:
+        case_id = case.get("case_id")
+        passed = case.get("passed")
+        deterministic_passed = case.get("deterministic_passed")
+        judge_passed = case.get("judge_passed")
+        failures = case.get("failures")
+        if (
+            not isinstance(case_id, str)
+            or not case_id
+            or not isinstance(passed, bool)
+            or not isinstance(deterministic_passed, bool)
+            or not isinstance(failures, list)
+            or not all(isinstance(failure, str) for failure in failures)
+            or (judge_passed is not None and not isinstance(judge_passed, bool))
+            or (policy.judge.required and not isinstance(judge_passed, bool))
+            or case.get("status") in {"failed", "blocked", "error"}
+        ):
+            raise ReleaseEvidenceCaptureError("live quality case details are invalid")
+        expected_deterministic = not failures
+        expected_passed = expected_deterministic and (
+            judge_passed if judge_passed is not None else True
+        )
+        if deterministic_passed is not expected_deterministic or passed is not expected_passed:
+            raise ReleaseEvidenceCaptureError("live quality case details do not match aggregate")
+        if (
+            not deterministic_passed
+            and (
+                f"case.{case_id}.deterministic",
+                "DETERMINISTIC_QUALITY_FAILED",
+                "failed",
+            )
+            not in check_identities
+        ):
+            raise ReleaseEvidenceCaptureError(
+                "live quality case details lack deterministic failure evidence"
+            )
+        if (
+            judge_passed is False
+            and (
+                f"case.{case_id}.judge",
+                "JUDGE_QUALITY_FAILED",
+                "failed",
+            )
+            not in check_identities
+        ):
+            raise ReleaseEvidenceCaptureError(
+                "live quality case details lack judge failure evidence"
+            )
+        case_ids.append(case_id)
+        passed_count += int(passed)
+        deterministic_passed_count += int(deterministic_passed)
+        if judge_passed is not None:
+            judge_results.append(judge_passed)
+    case_count = len(cases)
+    expected_judge_rate = sum(judge_results) / len(judge_results) if judge_results else 0.0
+    if (
+        case_count != metrics.case_count
+        or len(case_ids) != len(set(case_ids))
+        or set(case_ids) != {case.case_id for case in policy.cases}
+        or not _float_matches(metrics.pass_rate, passed_count / case_count)
+        or not _float_matches(
+            metrics.deterministic_pass_rate,
+            deterministic_passed_count / case_count,
+        )
+        or not _float_matches(metrics.judge_pass_rate, expected_judge_rate)
+    ):
+        raise ReleaseEvidenceCaptureError("live quality case details do not match aggregate")
 
 
 def _project_quality(
@@ -456,6 +698,7 @@ def _project_quality(
         p95_latency_ms=metric("p95_latency_ms"),
         estimated_cost_usd=metric("estimated_cost_usd"),
     )
+    _validate_live_quality_details(report, policy, projected)
     return QualityEvidence(
         passed=True,
         report_schema_version=_require_int(
@@ -540,6 +783,56 @@ def _artifact_profile_identity(
     return profile_name, profile_path, profile_hash
 
 
+def _normalized_target_hostname(value: object, *, live_quality: bool) -> str:
+    if not isinstance(value, str):
+        raise ReleaseEvidenceCaptureError("gate target hostname is invalid")
+    try:
+        TargetIdentity(api_host=value, judge_host="judge.example.com")
+    except ValidationError as exc:
+        raise ReleaseEvidenceCaptureError("gate target hostname is invalid") from exc
+    text = value.casefold()
+    if live_quality and text.count(":") >= 2:
+        ipv6_text, separator, port_text = text.rpartition(":")
+        if separator and port_text.isdecimal() and 1 <= int(port_text) <= 65535:
+            try:
+                address = ip_address(ipv6_text)
+            except ValueError:
+                pass
+            else:
+                if isinstance(address, IPv6Address):
+                    return str(address)
+    try:
+        return str(ip_address(text))
+    except ValueError:
+        pass
+    if text.count(":") == 1:
+        hostname, port_text = text.rsplit(":", 1)
+        if port_text.isdecimal() and 1 <= int(port_text) <= 65535:
+            try:
+                return str(ip_address(hostname))
+            except ValueError:
+                return hostname
+    return text
+
+
+def _require_same_gate_target(
+    integration_target: Mapping[str, Any],
+    live_target: Mapping[str, Any],
+) -> None:
+    integration_hostname = _normalized_target_hostname(
+        integration_target.get("api_host"),
+        live_quality=False,
+    )
+    live_hostname = _normalized_target_hostname(
+        live_target.get("api_host"),
+        live_quality=True,
+    )
+    if integration_hostname != live_hostname:
+        raise ReleaseEvidenceCaptureError(
+            "integration and live quality gate target hostnames differ"
+        )
+
+
 def _project_runtime(
     diagnostics_payload: Mapping[str, Any],
     *,
@@ -610,14 +903,28 @@ def _project_knowledge_base(manifest: ArtifactManifest) -> KnowledgeBaseIdentity
     )
 
 
+def _normalized_key(value: str) -> str:
+    separated = _CAMEL_CASE_BOUNDARY_RE.sub("_", value)
+    return _NON_KEY_CHARACTER_RE.sub("_", separated).strip("_").casefold()
+
+
+def _is_sensitive_key(value: str) -> bool:
+    normalized = _normalized_key(value)
+    return normalized in _SENSITIVE_KEYS or normalized.endswith(_SENSITIVE_KEY_SUFFIXES)
+
+
 def _credential_url_present(value: str) -> bool:
-    for match in _URL_RE.finditer(value):
+    for match in _URI_RE.finditer(value):
         url = match.group(0).rstrip(".,);]")
         try:
             parsed = urlsplit(url)
             if parsed.username is not None or parsed.password is not None:
                 return True
-            if any(_CREDENTIAL_KEY_RE.fullmatch(key) for key, _ in parse_qsl(parsed.query)):
+            if parsed.scheme.casefold() == "file":
+                return True
+            if any(
+                _is_sensitive_key(key) for key, _ in parse_qsl(parsed.query, keep_blank_values=True)
+            ):
                 return True
         except ValueError:
             continue
@@ -632,6 +939,8 @@ def _sensitive_text_present(value: str) -> bool:
         or _ABSOLUTE_WINDOWS_UNC_PATH_RE.search(value)
         or _ABSOLUTE_UNIX_PATH_RE.search(value)
         or _credential_url_present(value)
+        or _TRACEBACK_RE.search(value)
+        or _EXCEPTION_VALUE_RE.search(value)
     )
 
 
@@ -639,7 +948,7 @@ def _scan_json(value: object, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             key_text = str(key)
-            if _CREDENTIAL_KEY_RE.fullmatch(key_text):
+            if _is_sensitive_key(key_text):
                 raise ReleaseEvidenceCaptureError(
                     f"sensitive release evidence key at {path}.{key_text}"
                 )
@@ -822,6 +1131,11 @@ def capture_release_evidence(
         integration = _project_integration(integration_report, integration_policy)
         quality = _project_quality(live_report, live_policy)
         target = _require_mapping(live_report.get("target"), "live quality target")
+        integration_target = _require_mapping(
+            integration_report.get("target"),
+            "integration target",
+        )
+        _require_same_gate_target(integration_target, target)
         runtime = _project_runtime(
             diagnostics_payload,
             judge_model=inputs.judge_model,
