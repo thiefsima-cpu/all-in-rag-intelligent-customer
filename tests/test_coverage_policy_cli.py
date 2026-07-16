@@ -99,6 +99,43 @@ def test_main_returns_two_for_invalid_or_unreadable_input(
     assert captured.err.startswith("[ERROR] coverage policy:")
 
 
+def test_main_returns_two_for_malformed_config(tmp_path: Path, capsys) -> None:
+    config = tmp_path / "pyproject.toml"
+    config.write_text("[tool.graph_rag.coverage.package", encoding="utf-8")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
+
+
+def test_main_returns_two_for_evaluator_validation_error(tmp_path: Path, capsys) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (40, 40, 0, 0))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
+
+
+@pytest.mark.parametrize("error_type", [TypeError, KeyError])
+def test_main_propagates_unexpected_evaluator_errors(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+    error_type,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_unexpected_error(*_args) -> None:
+        raise error_type("unexpected evaluator failure")
+
+    monkeypatch.setattr("scripts.coverage_policy.cli.evaluate_policy", _raise_unexpected_error)
+
+    with pytest.raises(error_type, match="unexpected evaluator failure"):
+        main(["--config", str(config), "--coverage-json", str(report)])
+    assert capsys.readouterr().err == ""
+
+
 def test_direct_script_entry_point_loads_package_outside_repository(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(ROOT_DIR / "scripts" / "check_coverage_policy.py"), "--help"],

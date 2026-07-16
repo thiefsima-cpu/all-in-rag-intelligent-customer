@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -15,6 +13,11 @@ from .snapshot import CoverageSnapshot
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_REPORT_PATH = ROOT_DIR / "coverage.json"
 DEFAULT_CONFIG_PATH = ROOT_DIR / "pyproject.toml"
+
+
+def _report_input_error(exc: OSError | KeyError | TypeError | ValueError) -> int:
+    print(f"[ERROR] coverage policy: {exc}", file=sys.stderr)
+    return 2
 
 
 def _format_result(result: CoverageRuleResult) -> str:
@@ -42,18 +45,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         policy = load_policy(args.config)
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        return _report_input_error(exc)
+    try:
         snapshot = CoverageSnapshot.from_json(args.coverage_json)
+    except (OSError, ValueError) as exc:
+        return _report_input_error(exc)
+    try:
         evaluation = evaluate_policy(policy, snapshot)
-    except (
-        OSError,
-        KeyError,
-        TypeError,
-        ValueError,
-        json.JSONDecodeError,
-        tomllib.TOMLDecodeError,
-    ) as exc:
-        print(f"[ERROR] coverage policy: {exc}", file=sys.stderr)
-        return 2
+    except ValueError as exc:
+        return _report_input_error(exc)
     for result in evaluation.results:
         print(_format_result(result))
     return 0 if evaluation.passed else 1
