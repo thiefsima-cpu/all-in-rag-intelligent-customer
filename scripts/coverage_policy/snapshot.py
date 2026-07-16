@@ -13,12 +13,15 @@ class CoverageSnapshot:
 
     @classmethod
     def from_json(cls, path: Path) -> CoverageSnapshot:
-        return cls.from_payload(
-            json.loads(
-                path.read_text(encoding="utf-8"),
+        text = path.read_text(encoding="utf-8")
+        try:
+            payload = json.loads(
+                text,
                 object_pairs_hook=_reject_duplicate_json_object_keys,
             )
-        )
+        except RecursionError as exc:
+            raise ValueError("coverage report JSON nesting is too deep") from exc
+        return cls.from_payload(payload)
 
     @classmethod
     def from_payload(cls, payload: object) -> CoverageSnapshot:

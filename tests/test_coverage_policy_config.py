@@ -93,6 +93,37 @@ def test_load_policy_rejects_out_of_range_arbitrary_precision_integer(
         load_policy(_write(tmp_path, invalid))
 
 
+def test_load_policy_classifies_recursive_toml_parse_failure_as_invalid_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def _raise_recursion(_text: str) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.policy.tomllib.loads", _raise_recursion)
+
+    with pytest.raises(ValueError, match="coverage policy TOML nesting is too deep"):
+        load_policy(_write(tmp_path, VALID_POLICY))
+
+
+def test_load_policy_does_not_classify_recursive_file_read_as_invalid_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def _raise_recursion(
+        _path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        del encoding, errors
+        raise RecursionError("unexpected file read recursion")
+
+    monkeypatch.setattr(Path, "read_text", _raise_recursion)
+
+    with pytest.raises(RecursionError, match="unexpected file read recursion"):
+        load_policy(tmp_path / "pyproject.toml")
+
+
 @pytest.mark.parametrize(
     "text, message",
     [

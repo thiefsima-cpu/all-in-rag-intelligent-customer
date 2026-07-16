@@ -163,6 +163,40 @@ def test_snapshot_loads_from_json(tmp_path: Path) -> None:
     assert snapshot.file_counts("rag_modules/x.py").covered_lines == 1
 
 
+def test_snapshot_classifies_recursive_json_parse_failure_as_invalid_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    report = tmp_path / "coverage.json"
+    report.write_text('{"files": {}}', encoding="utf-8")
+
+    def _raise_recursion(_text: str, **_kwargs: object) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.snapshot.json.loads", _raise_recursion)
+
+    with pytest.raises(ValueError, match="coverage report JSON nesting is too deep"):
+        CoverageSnapshot.from_json(report)
+
+
+def test_snapshot_does_not_classify_recursive_file_read_as_invalid_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def _raise_recursion(
+        _path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        del encoding, errors
+        raise RecursionError("unexpected file read recursion")
+
+    monkeypatch.setattr(Path, "read_text", _raise_recursion)
+
+    with pytest.raises(RecursionError, match="unexpected file read recursion"):
+        CoverageSnapshot.from_json(tmp_path / "coverage.json")
+
+
 def test_snapshot_load_rejects_exact_duplicate_json_object_keys(tmp_path: Path) -> None:
     report = tmp_path / "coverage.json"
     report.write_text(

@@ -57,7 +57,11 @@ def _threshold(mapping: Mapping[str, object], field_name: str) -> float:
 
 
 def load_policy(path: Path) -> CoveragePolicy:
-    payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    try:
+        payload = tomllib.loads(text)
+    except RecursionError as exc:
+        raise ValueError("coverage policy TOML nesting is too deep") from exc
     coverage = _mapping(payload["tool"]["graph_rag"]["coverage"], "coverage")
     _require_exact_keys(coverage, _COVERAGE_KEYS, "coverage")
     package_payload = _mapping(coverage.get("package"), "package")

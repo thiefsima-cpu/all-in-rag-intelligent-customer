@@ -108,6 +108,44 @@ def test_main_returns_two_for_malformed_config(tmp_path: Path, capsys) -> None:
     assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
 
 
+def test_main_returns_two_for_recursive_toml_parse_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_recursion(_text: str) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.policy.tomllib.loads", _raise_recursion)
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ("[ERROR] coverage policy: coverage policy TOML nesting is too deep\n")
+
+
+def test_main_returns_two_for_recursive_json_parse_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_recursion(_text: str, **_kwargs: object) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.snapshot.json.loads", _raise_recursion)
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ("[ERROR] coverage policy: coverage report JSON nesting is too deep\n")
+
+
 def test_main_returns_two_for_arbitrary_precision_out_of_range_threshold(
     tmp_path: Path,
     capsys,
