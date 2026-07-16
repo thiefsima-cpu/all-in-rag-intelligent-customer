@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from scripts.release_evidence.models import (
     BundleIdentity,
+    FileIdentity,
     QualityMetrics,
     TransportIdentity,
 )
@@ -60,3 +61,37 @@ def test_transport_identity_requires_full_git_sha_and_prefixed_digest() -> None:
             artifact_name="evidence",
             artifact_digest="f" * 64,
         )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("/etc/passwd", id="posix-absolute"),
+        pytest.param("C:/Users/runner/report.json", id="windows-drive-absolute"),
+        pytest.param("C:report.json", id="windows-drive-relative"),
+        pytest.param(r"\\server\share\report.json", id="windows-unc"),
+        pytest.param("", id="empty"),
+        pytest.param(".", id="current-directory"),
+        pytest.param("..", id="parent-directory"),
+        pytest.param(r"artifacts\report.json", id="backslash"),
+    ],
+)
+def test_file_identity_rejects_non_repository_relative_paths(path: str) -> None:
+    with pytest.raises(ValidationError):
+        FileIdentity(
+            name="report",
+            path=path,
+            bytes=10,
+            sha256="a" * 64,
+        )
+
+
+def test_file_identity_accepts_repository_relative_posix_path() -> None:
+    artifact = FileIdentity(
+        name="report",
+        path="reports/integration_gate/report.json",
+        bytes=10,
+        sha256="a" * 64,
+    )
+
+    assert artifact.path == "reports/integration_gate/report.json"

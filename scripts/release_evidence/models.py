@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated, Literal, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -211,8 +211,17 @@ class FileIdentity(StrictEvidenceModel):
     @field_validator("path")
     @classmethod
     def validate_path(cls, value: str) -> str:
-        candidate = Path(value)
-        if candidate.is_absolute() or ".." in candidate.parts or "\\" in value:
+        posix_candidate = PurePosixPath(value)
+        windows_candidate = PureWindowsPath(value)
+        if (
+            not posix_candidate.parts
+            or posix_candidate.root
+            or posix_candidate.drive
+            or windows_candidate.root
+            or windows_candidate.drive
+            or ".." in posix_candidate.parts
+            or "\\" in value
+        ):
             raise ValueError("invalid artifact path")
         return value
 
