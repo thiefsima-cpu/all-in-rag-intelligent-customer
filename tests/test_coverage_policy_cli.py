@@ -1,0 +1,304 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from scripts.coverage_policy.cli import main
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+def _config(path: Path) -> Path:
+    path.write_text(
+        """
+[tool.graph_rag.coverage.package]
+path = "rag_modules"
+branch_fail_under = 70
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/fusion.py"
+combined_fail_under = 85
+branch_fail_under = 80
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _report(path: Path, values: tuple[int, int, int, int]) -> Path:
+    covered_lines, statements, covered_branches, branches = values
+    path.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "rag_modules/retrieval/fusion.py": {
+                        "summary": {
+                            "covered_lines": covered_lines,
+                            "num_statements": statements,
+                            "covered_branches": covered_branches,
+                            "num_branches": branches,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_main_returns_zero_and_prints_both_layers(tmp_path: Path, capsys) -> None:
+    code = main(
+        [
+            "--config",
+            str(_config(tmp_path / "pyproject.toml")),
+            "--coverage-json",
+            str(_report(tmp_path / "coverage.json", (39, 40, 8, 10))),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "[PASS] package rag_modules branch 80.00%" in output
+    assert "[PASS] risk_module rag_modules/retrieval/fusion.py" in output
+    assert "combined 94.00%" in output
+
+
+def test_main_returns_one_and_prints_every_threshold_failure(tmp_path: Path, capsys) -> None:
+    code = main(
+        [
+            "--config",
+            str(_config(tmp_path / "pyproject.toml")),
+            "--coverage-json",
+            str(_report(tmp_path / "coverage.json", (10, 40, 2, 10))),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert output.count("[FAIL]") == 2
+
+
+@pytest.mark.parametrize("missing_path", [False, True])
+def test_main_returns_two_for_invalid_or_unreadable_input(
+    tmp_path: Path,
+    capsys,
+    *,
+    missing_path: bool,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = tmp_path / "coverage.json"
+    if not missing_path:
+        report.write_text("not-json", encoding="utf-8")
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("[ERROR] coverage policy:")
+
+
+def test_main_returns_two_for_malformed_config(tmp_path: Path, capsys) -> None:
+    config = tmp_path / "pyproject.toml"
+    config.write_text("[tool.graph_rag.coverage.package", encoding="utf-8")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
+
+
+def test_main_returns_two_for_recursive_toml_parse_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_recursion(_text: str) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.policy.tomllib.loads", _raise_recursion)
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ("[ERROR] coverage policy: coverage policy TOML nesting is too deep\n")
+
+
+def test_main_returns_two_for_recursive_json_parse_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_recursion(_text: str, **_kwargs: object) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("scripts.coverage_policy.snapshot.json.loads", _raise_recursion)
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ("[ERROR] coverage policy: coverage report JSON nesting is too deep\n")
+
+
+def test_main_returns_two_for_arbitrary_precision_out_of_range_threshold(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    huge_threshold = "1" + ("0" * 400)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "branch_fail_under = 70",
+            f"branch_fail_under = {huge_threshold}",
+        ),
+        encoding="utf-8",
+    )
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "between 0 and 100" in captured.err
+
+
+def test_main_returns_two_for_conflicting_duplicate_coverage_file_key(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = tmp_path / "coverage.json"
+    report.write_text(
+        """
+{
+  "files": {
+    "rag_modules/retrieval/fusion.py": {
+      "summary": {
+        "covered_lines": 39,
+        "num_statements": 40,
+        "covered_branches": 8,
+        "num_branches": 10
+      }
+    },
+    "rag_modules/retrieval/fusion.py": {
+      "summary": {
+        "covered_lines": 1,
+        "num_statements": 40,
+        "covered_branches": 1,
+        "num_branches": 10
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "duplicate JSON object key" in captured.err
+
+
+def test_main_returns_two_for_evaluator_validation_error(tmp_path: Path, capsys) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (40, 40, 0, 0))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
+
+
+def test_main_prints_multi_risk_diagnostics_in_configuration_order(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = tmp_path / "pyproject.toml"
+    config.write_text(
+        """
+[tool.graph_rag.coverage.package]
+path = "rag_modules"
+branch_fail_under = 70
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/keyword_service.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/fusion.py"
+combined_fail_under = 85
+branch_fail_under = 80
+""",
+        encoding="utf-8",
+    )
+    report = tmp_path / "coverage.json"
+    report.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "rag_modules/retrieval/fusion.py": {
+                        "summary": {
+                            "covered_lines": 10,
+                            "num_statements": 40,
+                            "covered_branches": 2,
+                            "num_branches": 10,
+                        }
+                    },
+                    "rag_modules/retrieval/keyword_service.py": {
+                        "summary": {
+                            "covered_lines": 10,
+                            "num_statements": 40,
+                            "covered_branches": 2,
+                            "num_branches": 10,
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 1
+    risk_lines = [line for line in capsys.readouterr().out.splitlines() if "risk_module" in line]
+    assert [
+        "rag_modules/retrieval/keyword_service.py",
+        "rag_modules/retrieval/fusion.py",
+    ] == [next(path for path in line.split() if path.endswith(".py")) for line in risk_lines]
+
+
+@pytest.mark.parametrize("error_type", [TypeError, KeyError])
+def test_main_propagates_unexpected_evaluator_errors(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+    error_type,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    def _raise_unexpected_error(*_args) -> None:
+        raise error_type("unexpected evaluator failure")
+
+    monkeypatch.setattr("scripts.coverage_policy.cli.evaluate_policy", _raise_unexpected_error)
+
+    with pytest.raises(error_type, match="unexpected evaluator failure"):
+        main(["--config", str(config), "--coverage-json", str(report)])
+    assert capsys.readouterr().err == ""
+
+
+def test_direct_script_entry_point_loads_package_outside_repository(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(ROOT_DIR / "scripts" / "check_coverage_policy.py"), "--help"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Enforce repository coverage policy." in result.stdout

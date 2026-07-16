@@ -18,6 +18,9 @@ class FusionRanker:
         ranked_lists: List[Tuple[str, List[EvidenceDocument]]],
         top_k: int,
     ) -> List[EvidenceDocument]:
+        if top_k <= 0:
+            return []
+
         best_rank_per_source: Dict[str, Dict[str, int]] = {}
         chunk_hits_per_source: Dict[str, Dict[str, int]] = {}
         best_doc_info: Dict[str, Tuple[int, int, EvidenceDocument]] = {}

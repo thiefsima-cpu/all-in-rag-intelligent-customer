@@ -44,14 +44,86 @@ def test_ci_workflow_enforces_coverage_security_and_sbom_gates() -> None:
         assert fragment in workflow
 
 
-def test_ci_enforces_package_branch_coverage_after_json_report() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+def test_ci_enforces_package_and_risk_coverage_after_json_report() -> None:
+    workflow = _read(".github/workflows/ci.yml")
 
     assert "--cov-report=json:coverage.json" in workflow
-    assert "python scripts/check_branch_coverage.py" in workflow
+    assert "python scripts/check_coverage_policy.py" in workflow
+    assert "python scripts/check_branch_coverage.py" not in workflow
     assert workflow.index("--cov-report=json:coverage.json") < workflow.index(
-        "python scripts/check_branch_coverage.py"
+        "python scripts/check_coverage_policy.py"
     )
+
+
+def test_project_config_declares_every_risk_module_with_dual_thresholds() -> None:
+    pyproject = tomllib.loads(_read("pyproject.toml"))
+    expected_risk_rules = [
+        {
+            "path": "rag_modules/retrieval/fusion.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/adapters/constraint_retriever.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/keyword_service.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/adapters/bm25_retriever.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/hybrid_driver_service.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/infra/milvus/schema.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/infra/milvus/client.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/app/composition/build_runtime_executor.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/runtime/build_jobs/locks.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+    ]
+    coverage_policy = pyproject["tool"]["graph_rag"]["coverage"]
+
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 75
+    assert coverage_policy == {
+        "package": {"path": "rag_modules", "branch_fail_under": 70},
+        "risk_modules": expected_risk_rules,
+    }
+
+
+def test_readme_local_gate_chain_names_coverage_policy_between_pytest_and_release() -> None:
+    readme = _read("README.md")
+    before_policy_details = readme[: readme.index("The full suite writes")]
+    chain = before_policy_details[before_policy_details.rindex("`pre-commit run --all-files`") :]
+
+    pytest_position = chain.index("`python -m pytest -q`")
+    coverage_step_position = chain.index("`coverage_policy`")
+    coverage_position = chain.index("`python scripts/check_coverage_policy.py`")
+    release_position = chain.index("`python scripts/release_gate.py`")
+
+    assert pytest_position < coverage_step_position < coverage_position < release_position
 
 
 def test_ci_targets_all_long_lived_branches() -> None:

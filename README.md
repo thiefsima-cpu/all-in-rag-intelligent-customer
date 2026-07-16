@@ -97,13 +97,27 @@ The direct script and `graph-rag-pressure` console command both delegate to the 
 are owned by their matching `scripts.pressure` modules.
 
 发布前的最终本地门禁优先使用 `python scripts/local_gate.py`。它会按顺序串联
-`pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
+`pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q`、
+`coverage_policy`（`python scripts/check_coverage_policy.py`）和
 `python scripts/release_gate.py`，并在第一个失败点停止。
 
-The local gate now runs the full pytest suite with combined coverage enforcement, writes
-`coverage.json`, and then runs `python scripts/check_branch_coverage.py` as a distinct package
-branch-coverage step before the offline release gate. The configured thresholds are 75% combined
-coverage and 70% `rag_modules` branch coverage.
+The full suite writes `coverage.json` and then runs
+`python scripts/check_coverage_policy.py`. Coverage is enforced at three levels: 75% repository
+combined coverage, 70% `rag_modules` branch coverage, and 85% combined plus 80% branch coverage
+for every exact file listed under `tool.graph_rag.coverage.risk_modules`. Add a new risk file by
+adding an explicit TOML entry; directory aggregation and inherited thresholds are not supported.
+
+Protected risk files:
+
+- `rag_modules/retrieval/fusion.py`
+- `rag_modules/retrieval/adapters/constraint_retriever.py`
+- `rag_modules/retrieval/keyword_service.py`
+- `rag_modules/retrieval/adapters/bm25_retriever.py`
+- `rag_modules/retrieval/hybrid_driver_service.py`
+- `rag_modules/infra/milvus/schema.py`
+- `rag_modules/infra/milvus/client.py`
+- `rag_modules/app/composition/build_runtime_executor.py`
+- `rag_modules/runtime/build_jobs/locks.py`
 
 API capacity formulas and pressure threshold interpretation are documented in
 [docs/api_capacity_and_pressure_thresholds.md](docs/api_capacity_and_pressure_thresholds.md).

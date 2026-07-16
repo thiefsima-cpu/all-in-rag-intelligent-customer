@@ -100,8 +100,54 @@ exclude_lines = [
   "if __name__ == .__main__.:",
 ]
 
-[tool.graph_rag.coverage]
-rag_modules_branch_fail_under = 70
+[tool.graph_rag.coverage.package]
+path = "rag_modules"
+branch_fail_under = 70
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/fusion.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/adapters/constraint_retriever.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/keyword_service.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/adapters/bm25_retriever.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/hybrid_driver_service.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/infra/milvus/schema.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/infra/milvus/client.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/app/composition/build_runtime_executor.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/runtime/build_jobs/locks.py"
+combined_fail_under = 85
+branch_fail_under = 80
 
 [tool.ruff]
 target-version = "py311"

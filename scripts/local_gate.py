@@ -16,7 +16,7 @@ DEFAULT_STEP_NAMES = (
     "pre_commit",
     "encoding_audit",
     "pytest",
-    "branch_coverage",
+    "coverage_policy",
     "release_gate",
 )
 
@@ -129,9 +129,9 @@ def default_steps(
             ),
         ),
         GateStep(
-            name="branch_coverage",
-            command=(python_executable, str(scripts_dir / "check_branch_coverage.py")),
-            display_command=("python", "scripts/check_branch_coverage.py"),
+            name="coverage_policy",
+            command=(python_executable, str(scripts_dir / "check_coverage_policy.py")),
+            display_command=("python", "scripts/check_coverage_policy.py"),
         ),
         GateStep(
             name="release_gate",
@@ -192,7 +192,10 @@ def main() -> int:
         sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
 
     parser = argparse.ArgumentParser(
-        description="Run the final local gate: pre-commit, encoding audit, pytest, release gate."
+        description=(
+            "Run the final local gate: pre-commit, encoding audit, pytest, coverage_policy, "
+            "release gate."
+        )
     )
     parser.add_argument("--json", action="store_true", help="Emit a machine-readable summary.")
     args = parser.parse_args()

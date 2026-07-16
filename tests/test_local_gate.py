@@ -26,7 +26,15 @@ class LocalGateTests(unittest.TestCase):
     def test_default_steps_chain_engineering_checks_before_release_gate(self) -> None:
         steps = default_steps(python_executable="python")
 
-        self.assertEqual(tuple(step.name for step in steps), DEFAULT_STEP_NAMES)
+        expected_names = (
+            "pre_commit",
+            "encoding_audit",
+            "pytest",
+            "coverage_policy",
+            "release_gate",
+        )
+        self.assertEqual(DEFAULT_STEP_NAMES, expected_names)
+        self.assertEqual(tuple(step.name for step in steps), expected_names)
         self.assertEqual(
             [step.display_command for step in steps],
             [
@@ -43,7 +51,7 @@ class LocalGateTests(unittest.TestCase):
                     "--cov-report=term-missing",
                     "--cov-report=json:coverage.json",
                 ),
-                ("python", "scripts/check_branch_coverage.py"),
+                ("python", "scripts/check_coverage_policy.py"),
                 ("python", "scripts/release_gate.py"),
             ],
         )
@@ -120,6 +128,19 @@ class LocalGateTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 7)
         self.assertEqual(json.loads(output.getvalue())["failed_step"], "pre_commit")
+
+    def test_help_names_coverage_policy_step(self) -> None:
+        output = io.StringIO()
+
+        with (
+            patch.object(sys, "argv", ["local_gate.py", "--help"]),
+            patch("sys.stdout", output),
+            self.assertRaises(SystemExit) as exit_signal,
+        ):
+            main()
+
+        self.assertEqual(exit_signal.exception.code, 0)
+        self.assertIn("coverage_policy", output.getvalue())
 
     def test_run_subprocess_redirects_child_output_when_stream_is_provided(self) -> None:
         stream = io.StringIO()
