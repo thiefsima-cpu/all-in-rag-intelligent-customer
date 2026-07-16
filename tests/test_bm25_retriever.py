@@ -200,6 +200,50 @@ def test_cache_rejects_structurally_invalid_payloads(payload: dict) -> None:
     assert BM25Retriever().from_cache_dict(payload) is False
 
 
+def test_cache_restore_preserves_valid_state_when_token_row_is_invalid() -> None:
+    retriever = BM25Retriever()
+    original_docs = [TextDocument("existing", {"node_id": "existing"})]
+    original_index = _FakeBM25([["existing"]])
+    retriever.corpus_docs = original_docs
+    retriever.bm25 = original_index
+
+    restored = retriever.from_cache_dict(
+        {
+            "tokenized_corpus": ["not-a-token-row"],
+            "corpus_docs": [{"page_content": "replacement", "metadata": {"node_id": "new"}}],
+        }
+    )
+
+    assert restored is False
+    assert retriever.corpus_docs is original_docs
+    assert retriever.bm25 is original_index
+
+
+def test_cache_restore_preserves_valid_state_when_index_construction_fails(
+    monkeypatch,
+) -> None:
+    def _reject_index(_tokens: list[list[str]]) -> None:
+        raise ValueError("invalid index data")
+
+    monkeypatch.setattr(module, "BM25Okapi", _reject_index)
+    retriever = BM25Retriever()
+    original_docs = [TextDocument("existing", {"node_id": "existing"})]
+    original_index = _FakeBM25([["existing"]])
+    retriever.corpus_docs = original_docs
+    retriever.bm25 = original_index
+
+    restored = retriever.from_cache_dict(
+        {
+            "tokenized_corpus": [["replacement"]],
+            "corpus_docs": [{"page_content": "replacement", "metadata": {"node_id": "new"}}],
+        }
+    )
+
+    assert restored is False
+    assert retriever.corpus_docs is original_docs
+    assert retriever.bm25 is original_index
+
+
 def test_cache_restore_degrades_when_index_dependency_rejects_payload(monkeypatch) -> None:
     def _reject_index(_tokens: list[list[str]]) -> None:
         raise ValueError("invalid index data")

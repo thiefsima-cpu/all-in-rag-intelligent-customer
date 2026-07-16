@@ -34,13 +34,13 @@ class CoverageCounts:
         total = self.num_statements + self.num_branches
         if total == 0:
             raise ValueError("coverage counts contain no statements or branches")
-        return 100.0 * (self.covered_lines + self.covered_branches) / total
+        return (self.covered_lines + self.covered_branches) / total * 100.0
 
     @property
     def branch_percent(self) -> float:
         if self.num_branches == 0:
             raise ValueError("coverage counts contain no branch data")
-        return 100.0 * self.covered_branches / self.num_branches
+        return self.covered_branches / self.num_branches * 100.0
 
 
 @dataclass(frozen=True)

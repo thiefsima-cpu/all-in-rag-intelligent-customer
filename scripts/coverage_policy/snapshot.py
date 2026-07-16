@@ -13,7 +13,12 @@ class CoverageSnapshot:
 
     @classmethod
     def from_json(cls, path: Path) -> CoverageSnapshot:
-        return cls.from_payload(json.loads(path.read_text(encoding="utf-8")))
+        return cls.from_payload(
+            json.loads(
+                path.read_text(encoding="utf-8"),
+                object_pairs_hook=_reject_duplicate_json_object_keys,
+            )
+        )
 
     @classmethod
     def from_payload(cls, payload: object) -> CoverageSnapshot:
@@ -50,6 +55,17 @@ class CoverageSnapshot:
             covered_branches=sum(item.covered_branches for item in matching),
             num_branches=sum(item.num_branches for item in matching),
         )
+
+
+def _reject_duplicate_json_object_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        payload[key] = value
+    return payload
 
 
 def _required_non_negative_int(value: object, field_name: str) -> int:

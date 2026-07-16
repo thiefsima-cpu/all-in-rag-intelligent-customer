@@ -12,8 +12,15 @@ _PROCESS_FILE_LOCKS: dict[str, threading.Lock] = {}
 _PROCESS_FILE_LOCKS_LOCK = threading.Lock()
 
 
+def _process_file_lock_identity(path: str) -> str:
+    absolute_path = os.path.abspath(path)
+    if sys.platform == "win32":
+        return os.path.normcase(absolute_path)
+    return absolute_path
+
+
 def _process_file_lock(path: str) -> threading.Lock:
-    normalized_path = os.path.abspath(path)
+    normalized_path = _process_file_lock_identity(path)
     with _PROCESS_FILE_LOCKS_LOCK:
         lock = _PROCESS_FILE_LOCKS.get(normalized_path)
         if lock is None:

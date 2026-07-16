@@ -129,6 +129,19 @@ class LocalGateTests(unittest.TestCase):
         self.assertEqual(exit_code, 7)
         self.assertEqual(json.loads(output.getvalue())["failed_step"], "pre_commit")
 
+    def test_help_names_coverage_policy_step(self) -> None:
+        output = io.StringIO()
+
+        with (
+            patch.object(sys, "argv", ["local_gate.py", "--help"]),
+            patch("sys.stdout", output),
+            self.assertRaises(SystemExit) as exit_signal,
+        ):
+            main()
+
+        self.assertEqual(exit_signal.exception.code, 0)
+        self.assertIn("coverage_policy", output.getvalue())
+
     def test_run_subprocess_redirects_child_output_when_stream_is_provided(self) -> None:
         stream = io.StringIO()
 

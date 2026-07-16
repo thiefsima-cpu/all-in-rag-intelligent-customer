@@ -80,6 +80,56 @@ branch_fail_under = 80
         load_policy(_write(tmp_path, duplicated))
 
 
+def test_load_policy_rejects_out_of_range_arbitrary_precision_integer(
+    tmp_path: Path,
+) -> None:
+    huge_threshold = "1" + ("0" * 400)
+    invalid = VALID_POLICY.replace(
+        "branch_fail_under = 70",
+        f"branch_fail_under = {huge_threshold}",
+    )
+
+    with pytest.raises(ValueError, match="between 0 and 100"):
+        load_policy(_write(tmp_path, invalid))
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        (
+            VALID_POLICY.replace(
+                "[tool.graph_rag.coverage.package]",
+                "[tool.graph_rag.coverage]\nrag_modules_branch_fail_under = 70\n\n"
+                "[tool.graph_rag.coverage.package]",
+            ),
+            "coverage contains unknown keys",
+        ),
+        (
+            VALID_POLICY.replace(
+                "branch_fail_under = 70",
+                "branch_fail_under = 70\nretired = true",
+            ),
+            "package contains unknown keys",
+        ),
+        (
+            VALID_POLICY.replace(
+                "combined_fail_under = 85",
+                "combined_fail_under = 85\nretired = true",
+            ),
+            "risk_modules",
+        ),
+    ],
+    ids=["coverage", "package", "risk-rule"],
+)
+def test_load_policy_rejects_unknown_keys_at_every_policy_level(
+    tmp_path: Path,
+    text: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        load_policy(_write(tmp_path, text))
+
+
 def test_load_policy_requires_every_section_and_threshold(tmp_path: Path) -> None:
     with pytest.raises((KeyError, ValueError), match="risk_modules"):
         load_policy(

@@ -192,7 +192,10 @@ def main() -> int:
         sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
 
     parser = argparse.ArgumentParser(
-        description="Run the final local gate: pre-commit, encoding audit, pytest, release gate."
+        description=(
+            "Run the final local gate: pre-commit, encoding audit, pytest, coverage_policy, "
+            "release gate."
+        )
     )
     parser.add_argument("--json", action="store_true", help="Emit a machine-readable summary.")
     args = parser.parse_args()

@@ -155,21 +155,20 @@ class BM25Retriever:
                 return False
             if len(tokenized) != len(corpus_docs) or not corpus_docs:
                 return False
-            self.corpus_docs = [
+            restored_docs = [
                 TextDocument(
                     content=str(item["page_content"]),
                     metadata=dict(item.get("metadata") or {}),
                 )
                 for item in corpus_docs
             ]
-            normalized_tokens = [
-                [str(token) for token in row] for row in tokenized if isinstance(row, list)
-            ]
-            if len(normalized_tokens) != len(self.corpus_docs):
-                return False
-            self.bm25 = BM25Okapi(normalized_tokens)
-            return True
-        except Exception as exc:
+            normalized_tokens: list[list[str]] = []
+            for row in tokenized:
+                if not isinstance(row, list):
+                    return False
+                normalized_tokens.append([str(token) for token in row])
+            restored_index = BM25Okapi(normalized_tokens)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
             log_failure(
                 logger,
                 logging.WARNING,
@@ -178,3 +177,5 @@ class BM25Retriever:
                 error=exc,
             )
             return False
+        self.corpus_docs, self.bm25 = restored_docs, restored_index
+        return True

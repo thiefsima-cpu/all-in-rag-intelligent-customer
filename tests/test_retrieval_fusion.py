@@ -13,11 +13,23 @@ def _doc(node_id: str, content: str, *, score: float = 0.0) -> EvidenceDocument:
     )
 
 
-def test_rrf_merge_returns_empty_for_empty_sources_and_non_positive_limit() -> None:
+def test_rrf_merge_returns_empty_for_empty_sources() -> None:
     ranker = FusionRanker()
 
     assert ranker.rrf_merge([], top_k=5) == []
-    assert ranker.rrf_merge([("vector", [_doc("a", "a")])], top_k=0) == []
+
+
+@pytest.mark.parametrize("top_k", [0, -1])
+def test_rrf_merge_returns_empty_for_non_positive_limit(top_k: int) -> None:
+    ranker = FusionRanker()
+
+    assert (
+        ranker.rrf_merge(
+            [("vector", [_doc("a", "a"), _doc("b", "b")])],
+            top_k=top_k,
+        )
+        == []
+    )
 
 
 def test_rrf_merge_deduplicates_per_source_and_preserves_best_ranked_document() -> None:

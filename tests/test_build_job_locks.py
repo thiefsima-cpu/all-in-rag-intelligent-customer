@@ -121,6 +121,32 @@ def test_backend_loader_selects_posix_api() -> None:
     assert api.flock.call_args_list[1].args == (7, 4)
 
 
+def test_windows_process_lock_identity_collapses_case_aliases() -> None:
+    with (
+        patch.object(locks.sys, "platform", "win32"),
+        patch.object(locks.os.path, "abspath", side_effect=lambda value: value),
+        patch.object(locks.os.path, "normcase", side_effect=lambda value: value.casefold()),
+    ):
+        first = locks._process_file_lock("C:/TaskFix/Jobs.LOCK")
+        second = locks._process_file_lock("c:/taskfix/jobs.lock")
+
+    assert first is second
+
+
+def test_posix_process_lock_identity_preserves_case_distinctions() -> None:
+    normcase = Mock(side_effect=lambda value: value.casefold())
+    with (
+        patch.object(locks.sys, "platform", "linux"),
+        patch.object(locks.os.path, "abspath", side_effect=lambda value: value),
+        patch.object(locks.os.path, "normcase", normcase),
+    ):
+        upper = locks._process_file_lock("/tmp/TaskFix/Jobs.LOCK")
+        lower = locks._process_file_lock("/tmp/taskfix/jobs.lock")
+
+    assert upper is not lower
+    normcase.assert_not_called()
+
+
 def test_nonblocking_same_process_contention_and_context_failure(tmp_path: Path) -> None:
     path = tmp_path / "locks" / "jobs.lock"
     equivalent_path = path.parent / ".." / "locks" / "jobs.lock"

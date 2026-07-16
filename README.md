@@ -97,7 +97,8 @@ The direct script and `graph-rag-pressure` console command both delegate to the 
 are owned by their matching `scripts.pressure` modules.
 
 发布前的最终本地门禁优先使用 `python scripts/local_gate.py`。它会按顺序串联
-`pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q` 和
+`pre-commit run --all-files`、`python scripts/check_encoding.py`、`python -m pytest -q`、
+`coverage_policy`（`python scripts/check_coverage_policy.py`）和
 `python scripts/release_gate.py`，并在第一个失败点停止。
 
 The full suite writes `coverage.json` and then runs

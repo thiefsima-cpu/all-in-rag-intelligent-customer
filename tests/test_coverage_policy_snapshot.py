@@ -4,6 +4,7 @@ import pytest
 
 from scripts.coverage_policy.evaluator import evaluate_policy
 from scripts.coverage_policy.models import (
+    CoverageCounts,
     CoveragePolicy,
     PackageCoverageRule,
     RiskModuleCoverageRule,
@@ -81,6 +82,19 @@ def test_evaluation_keeps_all_threshold_failures() -> None:
     assert [result.passed for result in evaluation.results] == [False, False]
 
 
+def test_coverage_percentages_handle_arbitrary_precision_counts() -> None:
+    huge_count = 10**400
+    counts = CoverageCounts(
+        covered_lines=huge_count,
+        num_statements=huge_count,
+        covered_branches=huge_count,
+        num_branches=huge_count,
+    )
+
+    assert counts.combined_percent == pytest.approx(100.0)
+    assert counts.branch_percent == pytest.approx(100.0)
+
+
 @pytest.mark.parametrize(
     "payload, message",
     [
@@ -147,3 +161,35 @@ def test_snapshot_loads_from_json(tmp_path: Path) -> None:
     snapshot = CoverageSnapshot.from_json(report)
 
     assert snapshot.file_counts("rag_modules/x.py").covered_lines == 1
+
+
+def test_snapshot_load_rejects_exact_duplicate_json_object_keys(tmp_path: Path) -> None:
+    report = tmp_path / "coverage.json"
+    report.write_text(
+        """
+{
+  "files": {
+    "rag_modules/x.py": {
+      "summary": {
+        "covered_lines": 1,
+        "num_statements": 1,
+        "covered_branches": 1,
+        "num_branches": 1
+      }
+    },
+    "rag_modules/x.py": {
+      "summary": {
+        "covered_lines": 0,
+        "num_statements": 1,
+        "covered_branches": 0,
+        "num_branches": 1
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate JSON object key"):
+        CoverageSnapshot.from_json(report)

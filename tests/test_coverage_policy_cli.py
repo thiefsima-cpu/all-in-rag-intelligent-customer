@@ -108,12 +108,129 @@ def test_main_returns_two_for_malformed_config(tmp_path: Path, capsys) -> None:
     assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
 
 
+def test_main_returns_two_for_arbitrary_precision_out_of_range_threshold(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    huge_threshold = "1" + ("0" * 400)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "branch_fail_under = 70",
+            f"branch_fail_under = {huge_threshold}",
+        ),
+        encoding="utf-8",
+    )
+    report = _report(tmp_path / "coverage.json", (39, 40, 8, 10))
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "between 0 and 100" in captured.err
+
+
+def test_main_returns_two_for_conflicting_duplicate_coverage_file_key(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = _config(tmp_path / "pyproject.toml")
+    report = tmp_path / "coverage.json"
+    report.write_text(
+        """
+{
+  "files": {
+    "rag_modules/retrieval/fusion.py": {
+      "summary": {
+        "covered_lines": 39,
+        "num_statements": 40,
+        "covered_branches": 8,
+        "num_branches": 10
+      }
+    },
+    "rag_modules/retrieval/fusion.py": {
+      "summary": {
+        "covered_lines": 1,
+        "num_statements": 40,
+        "covered_branches": 1,
+        "num_branches": 10
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "duplicate JSON object key" in captured.err
+
+
 def test_main_returns_two_for_evaluator_validation_error(tmp_path: Path, capsys) -> None:
     config = _config(tmp_path / "pyproject.toml")
     report = _report(tmp_path / "coverage.json", (40, 40, 0, 0))
 
     assert main(["--config", str(config), "--coverage-json", str(report)]) == 2
     assert capsys.readouterr().err.startswith("[ERROR] coverage policy:")
+
+
+def test_main_prints_multi_risk_diagnostics_in_configuration_order(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = tmp_path / "pyproject.toml"
+    config.write_text(
+        """
+[tool.graph_rag.coverage.package]
+path = "rag_modules"
+branch_fail_under = 70
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/keyword_service.py"
+combined_fail_under = 85
+branch_fail_under = 80
+
+[[tool.graph_rag.coverage.risk_modules]]
+path = "rag_modules/retrieval/fusion.py"
+combined_fail_under = 85
+branch_fail_under = 80
+""",
+        encoding="utf-8",
+    )
+    report = tmp_path / "coverage.json"
+    report.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "rag_modules/retrieval/fusion.py": {
+                        "summary": {
+                            "covered_lines": 10,
+                            "num_statements": 40,
+                            "covered_branches": 2,
+                            "num_branches": 10,
+                        }
+                    },
+                    "rag_modules/retrieval/keyword_service.py": {
+                        "summary": {
+                            "covered_lines": 10,
+                            "num_statements": 40,
+                            "covered_branches": 2,
+                            "num_branches": 10,
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["--config", str(config), "--coverage-json", str(report)]) == 1
+    risk_lines = [line for line in capsys.readouterr().out.splitlines() if "risk_module" in line]
+    assert [
+        "rag_modules/retrieval/keyword_service.py",
+        "rag_modules/retrieval/fusion.py",
+    ] == [next(path for path in line.split() if path.endswith(".py")) for line in risk_lines]
 
 
 @pytest.mark.parametrize("error_type", [TypeError, KeyError])

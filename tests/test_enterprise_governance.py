@@ -56,24 +56,74 @@ def test_ci_enforces_package_and_risk_coverage_after_json_report() -> None:
 
 
 def test_project_config_declares_every_risk_module_with_dual_thresholds() -> None:
-    pyproject = _read("pyproject.toml")
-    risk_paths = [
-        "rag_modules/retrieval/fusion.py",
-        "rag_modules/retrieval/adapters/constraint_retriever.py",
-        "rag_modules/retrieval/keyword_service.py",
-        "rag_modules/retrieval/adapters/bm25_retriever.py",
-        "rag_modules/retrieval/hybrid_driver_service.py",
-        "rag_modules/infra/milvus/schema.py",
-        "rag_modules/infra/milvus/client.py",
-        "rag_modules/app/composition/build_runtime_executor.py",
-        "rag_modules/runtime/build_jobs/locks.py",
+    pyproject = tomllib.loads(_read("pyproject.toml"))
+    expected_risk_rules = [
+        {
+            "path": "rag_modules/retrieval/fusion.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/adapters/constraint_retriever.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/keyword_service.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/adapters/bm25_retriever.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/retrieval/hybrid_driver_service.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/infra/milvus/schema.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/infra/milvus/client.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/app/composition/build_runtime_executor.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
+        {
+            "path": "rag_modules/runtime/build_jobs/locks.py",
+            "combined_fail_under": 85,
+            "branch_fail_under": 80,
+        },
     ]
-    assert "rag_modules_branch_fail_under" not in pyproject
-    assert pyproject.count("[[tool.graph_rag.coverage.risk_modules]]") == 9
-    assert pyproject.count("combined_fail_under = 85") == 9
-    assert pyproject.count("branch_fail_under = 80") == 9
-    for path in risk_paths:
-        assert f'path = "{path}"' in pyproject
+    coverage_policy = pyproject["tool"]["graph_rag"]["coverage"]
+
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 75
+    assert coverage_policy == {
+        "package": {"path": "rag_modules", "branch_fail_under": 70},
+        "risk_modules": expected_risk_rules,
+    }
+
+
+def test_readme_local_gate_chain_names_coverage_policy_between_pytest_and_release() -> None:
+    readme = _read("README.md")
+    before_policy_details = readme[: readme.index("The full suite writes")]
+    chain = before_policy_details[before_policy_details.rindex("`pre-commit run --all-files`") :]
+
+    pytest_position = chain.index("`python -m pytest -q`")
+    coverage_step_position = chain.index("`coverage_policy`")
+    coverage_position = chain.index("`python scripts/check_coverage_policy.py`")
+    release_position = chain.index("`python scripts/release_gate.py`")
+
+    assert pytest_position < coverage_step_position < coverage_position < release_position
 
 
 def test_ci_targets_all_long_lived_branches() -> None:
