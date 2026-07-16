@@ -13,7 +13,7 @@ class _StatefulKnowledgeBaseService:
     def __init__(self) -> None:
         self.artifact_manifest = ArtifactManifest(stage="building")
         self.completed_manifest: ArtifactManifest | None = None
-        self.last_operation: tuple[str, dict[str, object]] | None = None
+        self.operations: list[tuple[str, dict[str, object]]] = []
 
     def build(self, **options: object) -> None:
         self._complete("build", options)
@@ -22,7 +22,7 @@ class _StatefulKnowledgeBaseService:
         self._complete("rebuild", options)
 
     def _complete(self, operation: str, options: dict[str, object]) -> None:
-        self.last_operation = (operation, options)
+        self.operations.append((operation, options))
         self.completed_manifest = ArtifactManifest(
             stage="ready",
             build_metadata={"operation": operation},
@@ -47,7 +47,7 @@ def _runtime(service: object | None) -> BuildRuntime:
         ("rebuild_knowledge_base", "rebuild"),
     ],
 )
-def test_executor_reads_manifest_after_selected_operation(
+def test_executor_runs_only_selected_operation_then_reads_manifest(
     method_name: str,
     service_method: str,
 ) -> None:
@@ -63,14 +63,16 @@ def test_executor_reads_manifest_after_selected_operation(
         build_job_id="job-1",
     )
 
-    assert service.last_operation == (
-        service_method,
-        {
-            "progress": progress,
-            "request_id": "request-1",
-            "build_job_id": "job-1",
-        },
-    )
+    assert service.operations == [
+        (
+            service_method,
+            {
+                "progress": progress,
+                "request_id": "request-1",
+                "build_job_id": "job-1",
+            },
+        )
+    ]
     assert service.completed_manifest is not None
     assert service.artifact_manifest is service.completed_manifest
     assert result is runtime
@@ -99,6 +101,8 @@ def test_executor_forwards_default_options(method_name: str, service_method: str
         request_id="",
         build_job_id="",
     )
+    unused_method = "rebuild" if service_method == "build" else "build"
+    getattr(service, unused_method).assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -145,4 +149,6 @@ def test_executor_propagates_service_failure_without_refreshing_manifest(
         request_id="",
         build_job_id="",
     )
+    unused_method = "rebuild" if service_method == "build" else "build"
+    getattr(service, unused_method).assert_not_called()
     assert runtime.artifact_manifest is initial_manifest
