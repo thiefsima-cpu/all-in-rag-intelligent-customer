@@ -24,6 +24,7 @@ class _Client:
         self.dropped: list[str] = []
         self.loaded: list[str] = []
         self.indexes: list[dict[str, object]] = []
+        self.stats_requested: list[str] = []
         self.stats: dict[str, object] = {
             "row_count": 4,
             "index_building_progress": 100,
@@ -62,6 +63,7 @@ class _Client:
 
     def get_collection_stats(self, name: str) -> dict[str, object]:
         self._raise()
+        self.stats_requested.append(name)
         return dict(self.stats)
 
     def load_collection(self, name: str) -> None:
@@ -160,6 +162,38 @@ def test_create_collection_builds_an_absent_named_collection() -> None:
     assert module.collection_created is True
 
 
+def test_create_collection_forwards_constructed_schema_to_sdk_client() -> None:
+    client = _Client()
+    module = _module(client)
+    constructed: list[SimpleNamespace] = []
+
+    def _collection_schema(*, fields: list[object], description: str) -> SimpleNamespace:
+        schema = SimpleNamespace(fields=fields, description=description)
+        constructed.append(schema)
+        return schema
+
+    with patch(
+        "rag_modules.infra.milvus.schema.CollectionSchema",
+        side_effect=_collection_schema,
+    ):
+        assert module.create_collection(collection_name="recipes__green") is True
+
+    [constructed_schema] = constructed
+    assert client.created == [
+        {
+            "collection_name": "recipes__green",
+            "schema": constructed_schema,
+            "metric_type": "COSINE",
+            "consistency_level": "Strong",
+        }
+    ]
+    assert client.created[0]["schema"] is constructed_schema
+    fields = {field.name: field for field in constructed_schema.fields}
+    assert fields["id"].is_primary is True
+    assert fields["vector"].params["dim"] == 512
+    assert fields["difficulty"].dtype.name == "INT64"
+
+
 def test_create_index_requires_collection_and_uses_hnsw() -> None:
     module = _module()
 
@@ -229,6 +263,7 @@ def test_stats_resolve_alias_and_degrade_when_unavailable() -> None:
     direct_stats = module.get_collection_stats("missing")
     assert direct_stats["collection_name"] == "missing"
     assert direct_stats["row_count"] == 4
+    assert client.stats_requested == ["recipes__blue", "missing"]
 
     client.failure = RuntimeError("stats down")
     assert module.get_collection_stats() == {"error": "MILVUS_STATS_UNAVAILABLE"}
