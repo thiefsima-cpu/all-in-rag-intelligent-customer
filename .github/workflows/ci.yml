@@ -88,8 +88,8 @@ jobs:
           --cov-report=json:coverage.json
           --cov-report=xml
 
-      - name: Package branch coverage
-        run: python scripts/check_branch_coverage.py
+      - name: Coverage policy
+        run: python scripts/check_coverage_policy.py
 
       - name: Incremental coverage
         if: github.event_name == 'pull_request'

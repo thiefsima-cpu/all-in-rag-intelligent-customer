@@ -44,14 +44,36 @@ def test_ci_workflow_enforces_coverage_security_and_sbom_gates() -> None:
         assert fragment in workflow
 
 
-def test_ci_enforces_package_branch_coverage_after_json_report() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+def test_ci_enforces_package_and_risk_coverage_after_json_report() -> None:
+    workflow = _read(".github/workflows/ci.yml")
 
     assert "--cov-report=json:coverage.json" in workflow
-    assert "python scripts/check_branch_coverage.py" in workflow
+    assert "python scripts/check_coverage_policy.py" in workflow
+    assert "python scripts/check_branch_coverage.py" not in workflow
     assert workflow.index("--cov-report=json:coverage.json") < workflow.index(
-        "python scripts/check_branch_coverage.py"
+        "python scripts/check_coverage_policy.py"
     )
+
+
+def test_project_config_declares_every_risk_module_with_dual_thresholds() -> None:
+    pyproject = _read("pyproject.toml")
+    risk_paths = [
+        "rag_modules/retrieval/fusion.py",
+        "rag_modules/retrieval/adapters/constraint_retriever.py",
+        "rag_modules/retrieval/keyword_service.py",
+        "rag_modules/retrieval/adapters/bm25_retriever.py",
+        "rag_modules/retrieval/hybrid_driver_service.py",
+        "rag_modules/infra/milvus/schema.py",
+        "rag_modules/infra/milvus/client.py",
+        "rag_modules/app/composition/build_runtime_executor.py",
+        "rag_modules/runtime/build_jobs/locks.py",
+    ]
+    assert "rag_modules_branch_fail_under" not in pyproject
+    assert pyproject.count("[[tool.graph_rag.coverage.risk_modules]]") == 9
+    assert pyproject.count("combined_fail_under = 85") == 9
+    assert pyproject.count("branch_fail_under = 80") == 9
+    for path in risk_paths:
+        assert f'path = "{path}"' in pyproject
 
 
 def test_ci_targets_all_long_lived_branches() -> None:

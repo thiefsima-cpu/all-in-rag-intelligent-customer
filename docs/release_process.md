@@ -59,11 +59,27 @@ single-maintainer repository. All three branches block deletion and non-fast-for
 
 ## Coverage Policy
 
-The full suite enforces combined coverage through `tool.coverage.report.fail_under = 75` and
-independently enforces `rag_modules` branch coverage at 70% through
-`python scripts/check_branch_coverage.py`. Pull requests continue to enforce 80% incremental
-coverage with `diff-cover`. Raise either baseline only after full-suite results remain stable; do
-not lower a baseline without recording the reason in `CHANGELOG.md`.
+The full suite writes `coverage.json` and then runs
+`python scripts/check_coverage_policy.py`. Coverage is enforced at three levels: 75% repository
+combined coverage, 70% `rag_modules` branch coverage, and 85% combined plus 80% branch coverage
+for every exact file listed under `tool.graph_rag.coverage.risk_modules`. Add a new risk file by
+adding an explicit TOML entry; directory aggregation and inherited thresholds are not supported.
+
+Protected risk files:
+
+- `rag_modules/retrieval/fusion.py`
+- `rag_modules/retrieval/adapters/constraint_retriever.py`
+- `rag_modules/retrieval/keyword_service.py`
+- `rag_modules/retrieval/adapters/bm25_retriever.py`
+- `rag_modules/retrieval/hybrid_driver_service.py`
+- `rag_modules/infra/milvus/schema.py`
+- `rag_modules/infra/milvus/client.py`
+- `rag_modules/app/composition/build_runtime_executor.py`
+- `rag_modules/runtime/build_jobs/locks.py`
+
+Pull requests continue to enforce 80% incremental coverage with `diff-cover`. Raise a baseline
+only after full-suite results remain stable; do not lower a baseline without recording the reason
+in `CHANGELOG.md`.
 
 ## Security Response Releases
 

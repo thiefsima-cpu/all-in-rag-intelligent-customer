@@ -16,7 +16,7 @@ DEFAULT_STEP_NAMES = (
     "pre_commit",
     "encoding_audit",
     "pytest",
-    "branch_coverage",
+    "coverage_policy",
     "release_gate",
 )
 
@@ -129,9 +129,9 @@ def default_steps(
             ),
         ),
         GateStep(
-            name="branch_coverage",
-            command=(python_executable, str(scripts_dir / "check_branch_coverage.py")),
-            display_command=("python", "scripts/check_branch_coverage.py"),
+            name="coverage_policy",
+            command=(python_executable, str(scripts_dir / "check_coverage_policy.py")),
+            display_command=("python", "scripts/check_coverage_policy.py"),
         ),
         GateStep(
             name="release_gate",
