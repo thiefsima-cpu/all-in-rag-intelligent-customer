@@ -128,6 +128,7 @@ def test_nonblocking_same_process_contention_and_context_failure(tmp_path: Path)
     second = InterprocessFileLock(str(equivalent_path), blocking=False)
 
     assert first.path == second.path
+    assert first._process_lock is second._process_lock
     assert first.acquire() is True
     assert first.acquire() is True
     assert second.acquire() is False
