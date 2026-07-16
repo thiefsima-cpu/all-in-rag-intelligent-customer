@@ -22,6 +22,43 @@ def _process_file_lock(path: str) -> threading.Lock:
         return lock
 
 
+class _WindowsFileLockBackend:
+    def __init__(self, api: Any) -> None:
+        self._api = api
+
+    def lock(self, file: BinaryIO, *, blocking: bool) -> None:
+        file.seek(0)
+        mode = self._api.LK_LOCK if blocking else self._api.LK_NBLCK
+        self._api.locking(file.fileno(), mode, 1)
+
+    def unlock(self, file: BinaryIO) -> None:
+        file.seek(0)
+        self._api.locking(file.fileno(), self._api.LK_UNLCK, 1)
+
+
+class _PosixFileLockBackend:
+    def __init__(self, api: Any) -> None:
+        self._api = api
+
+    def lock(self, file: BinaryIO, *, blocking: bool) -> None:
+        flags = self._api.LOCK_EX
+        if not blocking:
+            flags |= self._api.LOCK_NB
+        self._api.flock(file.fileno(), flags)
+
+    def unlock(self, file: BinaryIO) -> None:
+        self._api.flock(file.fileno(), self._api.LOCK_UN)
+
+
+def _load_file_lock_backend() -> _WindowsFileLockBackend | _PosixFileLockBackend:
+    if sys.platform == "win32":
+        import msvcrt
+
+        return _WindowsFileLockBackend(msvcrt)
+    fcntl = cast(Any, __import__("fcntl"))
+    return _PosixFileLockBackend(fcntl)
+
+
 class InterprocessFileLock:
     """Small cross-platform exclusive file lock."""
 
@@ -29,6 +66,7 @@ class InterprocessFileLock:
         self.path = os.path.abspath(path)
         self.blocking = bool(blocking)
         self._process_lock = _process_file_lock(self.path)
+        self._backend = _load_file_lock_backend()
         self._file: BinaryIO | None = None
         self._acquired = False
 
@@ -37,28 +75,22 @@ class InterprocessFileLock:
             return True
         if not self._process_lock.acquire(blocking=self.blocking):
             return False
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        file = open(self.path, "a+b")
         try:
-            if sys.platform == "win32":
-                import msvcrt
-
-                file.seek(0)
-                mode = msvcrt.LK_LOCK if self.blocking else msvcrt.LK_NBLCK
-                msvcrt.locking(file.fileno(), mode, 1)
-            else:
-                fcntl = cast(Any, __import__("fcntl"))
-
-                flags = fcntl.LOCK_EX
-                if not self.blocking:
-                    flags |= fcntl.LOCK_NB
-                fcntl.flock(file.fileno(), flags)
-        except OSError:
-            file.close()
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            file = open(self.path, "a+b")
+        except BaseException:
             self._process_lock.release()
-            if self.blocking:
-                raise
-            return False
+            raise
+        try:
+            self._backend.lock(file, blocking=self.blocking)
+        except BaseException as exc:
+            try:
+                file.close()
+            finally:
+                self._process_lock.release()
+            if isinstance(exc, OSError) and not self.blocking:
+                return False
+            raise
         self._file = file
         self._acquired = True
         return True
@@ -71,19 +103,13 @@ class InterprocessFileLock:
         self._acquired = False
         try:
             if file is not None:
-                if sys.platform == "win32":
-                    import msvcrt
-
-                    file.seek(0)
-                    msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    fcntl = cast(Any, __import__("fcntl"))
-
-                    fcntl.flock(file.fileno(), fcntl.LOCK_UN)
+                self._backend.unlock(file)
         finally:
-            if file is not None:
-                file.close()
-            self._process_lock.release()
+            try:
+                if file is not None:
+                    file.close()
+            finally:
+                self._process_lock.release()
 
     def __enter__(self) -> "InterprocessFileLock":
         if not self.acquire():
