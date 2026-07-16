@@ -148,7 +148,6 @@ runtime/diagnostics.json
 runtime/artifact_manifest.json
 policies/integration_gate.json
 policies/live_quality_gate.json
-capture-receipt.json
 checksums.json
 ```
 
@@ -156,9 +155,13 @@ The runtime diagnostics and artifact-manifest files are security projections, no
 payloads. They contain only the fields used by the manifest. Profile paths are retained only when
 they normalize to a repository-relative `profiles/` path; absolute or external paths are omitted.
 
+`checksums.json` records every other ZIP member and intentionally excludes itself. The capture
+receipt remains beside the ZIP rather than inside it, avoiding a self-reference between the receipt
+and the ZIP digest.
+
 The ZIP is created deterministically from sorted paths with normalized timestamps and permissions.
-Its SHA-256 and byte count are recorded in the capture receipt and final manifest. Individual file
-SHA-256 values and byte counts are recorded separately in `checksums.json`.
+Its SHA-256 and byte count are recorded in the external capture receipt and final manifest.
+Individual payload-file SHA-256 values and byte counts are recorded in `checksums.json`.
 
 ## Compact Manifest Contract
 
