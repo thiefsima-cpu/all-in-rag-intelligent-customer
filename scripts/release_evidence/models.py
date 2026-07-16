@@ -14,6 +14,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_ARTIFACT_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PositiveInt = Annotated[int, Field(ge=1)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
@@ -213,6 +214,7 @@ class FileIdentity(StrictEvidenceModel):
     def validate_path(cls, value: str) -> str:
         posix_candidate = PurePosixPath(value)
         windows_candidate = PureWindowsPath(value)
+        path_components = value.split("/")
         if (
             not posix_candidate.parts
             or posix_candidate.root
@@ -221,6 +223,10 @@ class FileIdentity(StrictEvidenceModel):
             or windows_candidate.drive
             or ".." in posix_candidate.parts
             or "\\" in value
+            or any(
+                component in {".", ".."} or not _ARTIFACT_PATH_COMPONENT_RE.fullmatch(component)
+                for component in path_components
+            )
         ):
             raise ValueError("invalid artifact path")
         return value

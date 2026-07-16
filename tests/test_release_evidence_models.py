@@ -86,12 +86,42 @@ def test_file_identity_rejects_non_repository_relative_paths(path: str) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "https://user:password@example.com/report.json",
+            id="credential-bearing-url",
+        ),
+        pytest.param(
+            "https://example.com/report.json?token=secret",
+            id="query-bearing-url",
+        ),
+        pytest.param("s3://bucket/report.json", id="uri-scheme"),
+        pytest.param("reports/report.json:secret", id="windows-ads"),
+        pytest.param("reports/report.json\nsecret", id="control-character"),
+        pytest.param("reports/private key/report.json", id="whitespace-component"),
+        pytest.param("reports/report.json#fragment", id="fragment"),
+        pytest.param("reports/report%20.json", id="percent-encoding"),
+        pytest.param("reports/报告.json", id="non-ascii"),
+    ],
+)
+def test_file_identity_rejects_unsafe_path_components(path: str) -> None:
+    with pytest.raises(ValidationError):
+        FileIdentity(
+            name="report",
+            path=path,
+            bytes=10,
+            sha256="a" * 64,
+        )
+
+
 def test_file_identity_accepts_repository_relative_posix_path() -> None:
     artifact = FileIdentity(
         name="report",
-        path="reports/integration_gate/report.json",
+        path="reports-1/integration_gate/report.v1.json",
         bytes=10,
         sha256="a" * 64,
     )
 
-    assert artifact.path == "reports/integration_gate/report.json"
+    assert artifact.path == "reports-1/integration_gate/report.v1.json"
