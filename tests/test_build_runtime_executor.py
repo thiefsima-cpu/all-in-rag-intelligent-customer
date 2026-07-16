@@ -9,6 +9,27 @@ from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest
 
 
+class _StatefulKnowledgeBaseService:
+    def __init__(self) -> None:
+        self.artifact_manifest = ArtifactManifest(stage="building")
+        self.completed_manifest: ArtifactManifest | None = None
+        self.last_operation: tuple[str, dict[str, object]] | None = None
+
+    def build(self, **options: object) -> None:
+        self._complete("build", options)
+
+    def rebuild(self, **options: object) -> None:
+        self._complete("rebuild", options)
+
+    def _complete(self, operation: str, options: dict[str, object]) -> None:
+        self.last_operation = (operation, options)
+        self.completed_manifest = ArtifactManifest(
+            stage="ready",
+            build_metadata={"operation": operation},
+        )
+        self.artifact_manifest = self.completed_manifest
+
+
 def _runtime(service: object | None) -> BuildRuntime:
     return BuildRuntime(
         config=build_test_config(),
@@ -26,23 +47,14 @@ def _runtime(service: object | None) -> BuildRuntime:
         ("rebuild_knowledge_base", "rebuild"),
     ],
 )
-def test_executor_delegates_once_despite_empty_result_and_refreshes_manifest(
+def test_executor_reads_manifest_after_selected_operation(
     method_name: str,
     service_method: str,
 ) -> None:
-    manifest = ArtifactManifest(
-        stage="ready",
-        total_documents=1,
-        total_chunks=1,
-        vector_rows=1,
-    )
-    service = SimpleNamespace(
-        build=Mock(return_value=None),
-        rebuild=Mock(return_value=None),
-        artifact_manifest=manifest,
-    )
+    service = _StatefulKnowledgeBaseService()
     runtime = _runtime(service)
     progress = Mock()
+    pre_operation_manifest = service.artifact_manifest
 
     result = getattr(BuildRuntimeExecutor(), method_name)(
         runtime,
@@ -51,15 +63,19 @@ def test_executor_delegates_once_despite_empty_result_and_refreshes_manifest(
         build_job_id="job-1",
     )
 
-    getattr(service, service_method).assert_called_once_with(
-        progress=progress,
-        request_id="request-1",
-        build_job_id="job-1",
+    assert service.last_operation == (
+        service_method,
+        {
+            "progress": progress,
+            "request_id": "request-1",
+            "build_job_id": "job-1",
+        },
     )
-    unused_method = "rebuild" if service_method == "build" else "build"
-    getattr(service, unused_method).assert_not_called()
+    assert service.completed_manifest is not None
+    assert service.artifact_manifest is service.completed_manifest
     assert result is runtime
-    assert runtime.artifact_manifest is manifest
+    assert runtime.artifact_manifest is service.completed_manifest
+    assert runtime.artifact_manifest is not pre_operation_manifest
 
 
 @pytest.mark.parametrize(
