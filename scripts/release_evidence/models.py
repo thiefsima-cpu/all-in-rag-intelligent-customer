@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
+from ipaddress import IPv6Address, ip_address
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated, Literal, Self, TypeVar
 
@@ -20,6 +21,7 @@ _DNS_LABEL_PATTERN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
 _TARGET_HOST_RE = re.compile(
     rf"^{_DNS_LABEL_PATTERN}(?:\.{_DNS_LABEL_PATTERN})*(?::(?P<port>[0-9]{{1,5}}))?$"
 )
+_IPV6_LITERAL_RE = re.compile(r"^[0-9A-Fa-f:.]+$")
 PositiveInt = Annotated[int, Field(ge=1)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 Rate = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -125,12 +127,20 @@ class TargetIdentity(StrictEvidenceModel):
     @classmethod
     def validate_safe_host(cls, value: str) -> str:
         match = _TARGET_HOST_RE.fullmatch(value)
-        if match is None:
-            raise ValueError("invalid safe host identity")
-        port = match.group("port")
-        if port is not None and not 1 <= int(port) <= 65535:
-            raise ValueError("invalid safe host identity")
-        return value
+        if match is not None:
+            port = match.group("port")
+            if port is not None and not 1 <= int(port) <= 65535:
+                raise ValueError("invalid safe host identity")
+            return value
+        if _IPV6_LITERAL_RE.fullmatch(value):
+            try:
+                address = ip_address(value)
+            except ValueError:
+                pass
+            else:
+                if isinstance(address, IPv6Address):
+                    return value
+        raise ValueError("invalid safe host identity")
 
 
 class ProfileIdentity(StrictEvidenceModel):

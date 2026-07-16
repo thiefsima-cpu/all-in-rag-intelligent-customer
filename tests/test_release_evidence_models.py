@@ -146,6 +146,14 @@ def test_knowledge_base_identity_accepts_non_blank_signatures() -> None:
         pytest.param("user@quality.example.com", id="userinfo"),
         pytest.param("quality.example.com?token=secret", id="query"),
         pytest.param("quality.example.com#fragment", id="fragment"),
+        pytest.param("http://[::1]:8000", id="bracketed-ipv6-url"),
+        pytest.param("fe80::1%eth0", id="ipv6-zone-id"),
+        pytest.param("2001:db8::g", id="ipv6-non-hex"),
+        pytest.param("1:2:3:4:5:6:7:8:9", id="ipv6-too-many-hextets"),
+        pytest.param("2001:db8::1/path", id="ipv6-slash"),
+        pytest.param(r"2001:db8::1\path", id="ipv6-backslash"),
+        pytest.param(" 2001:db8::1", id="ipv6-whitespace"),
+        pytest.param("2001:db8::1\x00", id="ipv6-control-character"),
     ],
 )
 def test_target_identity_rejects_unsafe_hosts(host: str) -> None:
@@ -172,6 +180,21 @@ def test_target_identity_accepts_expected_dns_hosts() -> None:
     ],
 )
 def test_target_identity_accepts_ascii_dns_hosts_with_numeric_ports(host: str) -> None:
+    target = TargetIdentity(api_host=host, judge_host="judge.example.com")
+
+    assert target.api_host == host
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        pytest.param("::1", id="integration-loopback"),
+        pytest.param("::1:8000", id="live-quality-loopback-with-port-shape"),
+        pytest.param("2001:db8::1", id="documentation-prefix"),
+        pytest.param("::ffff:192.0.2.128", id="ipv4-mapped"),
+    ],
+)
+def test_target_identity_accepts_ipv6_literals(host: str) -> None:
     target = TargetIdentity(api_host=host, judge_host="judge.example.com")
 
     assert target.api_host == host
