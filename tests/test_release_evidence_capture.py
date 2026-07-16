@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from scripts.release_evidence import capture as capture_module
 from scripts.release_evidence.capture import (
     CaptureInputs,
     ReleaseEvidenceCaptureError,
     capture_release_evidence,
 )
 from scripts.release_evidence.models import load_capture_receipt
-from tests.release_evidence_fixtures import make_release_evidence_fixture, write_json
+from tests.release_evidence_fixtures import git, make_release_evidence_fixture, write_json
 
 
 def capture_inputs(fixture) -> CaptureInputs:
@@ -32,6 +33,25 @@ def capture_inputs(fixture) -> CaptureInputs:
         judge_model="qwen3.7-plus",
         output_dir=fixture.output_dir,
     )
+
+
+def _commit_tree_symlink(repository_root: Path, relative_path: str, target: Path) -> str:
+    repository_root.joinpath(relative_path).write_text(
+        target.resolve().as_posix(),
+        encoding="utf-8",
+    )
+    blob = git(repository_root, "hash-object", "-w", relative_path)
+    git(
+        repository_root,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "120000",
+        blob,
+        relative_path,
+    )
+    git(repository_root, "commit", "-m", f"test: link {relative_path}")
+    return git(repository_root, "rev-parse", "HEAD")
 
 
 def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) -> None:
@@ -293,3 +313,161 @@ def test_capture_rejects_report_artifact_escape(tmp_path: Path) -> None:
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="escaped its output directory"):
         capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "pyproject.toml",
+        "eval/integration_gate.json",
+        "eval/live_quality_gate.json",
+        "profiles/base.toml",
+        "profiles/eval_quality.toml",
+    ],
+)
+def test_capture_rejects_assume_unchanged_commit_source_modification(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    git(fixture.repository_root, "update-index", "--assume-unchanged", relative_path)
+    path = fixture.repository_root / relative_path
+    path.write_bytes(path.read_bytes() + b"\n")
+    assert git(fixture.repository_root, "status", "--porcelain") == ""
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="does not match evaluated commit"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "pyproject.toml",
+        "eval/integration_gate.json",
+        "eval/live_quality_gate.json",
+        "profiles/base.toml",
+        "profiles/eval_quality.toml",
+    ],
+)
+def test_capture_rejects_non_regular_commit_source(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    outside = tmp_path / "outside-source"
+    outside.write_text("outside", encoding="utf-8")
+    evaluated_commit = _commit_tree_symlink(
+        fixture.repository_root,
+        relative_path,
+        outside,
+    )
+    assert git(fixture.repository_root, "status", "--porcelain") == ""
+    inputs = replace(capture_inputs(fixture), evaluated_commit=evaluated_commit)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="ordinary committed file"):
+        capture_release_evidence(inputs)
+
+
+def test_capture_uses_one_immutable_snapshot_when_source_changes_after_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    original_bytes = fixture.live_quality_report.read_bytes()
+    mutated_report = json.loads(original_bytes)
+    mutated_report["metrics"]["recall_at_k"] = 0.25
+    real_read = capture_module._read_bytes
+    changed = False
+
+    def mutate_after_read(path: Path) -> bytes:
+        nonlocal changed
+        data = real_read(path)
+        if path.resolve() == fixture.live_quality_report.resolve() and not changed:
+            changed = True
+            write_json(fixture.live_quality_report, mutated_report)
+        return data
+
+    monkeypatch.setattr(capture_module, "_read_bytes", mutate_after_read)
+    outputs = capture_release_evidence(capture_inputs(fixture))
+    receipt = load_capture_receipt(outputs.receipt_path)
+
+    with zipfile.ZipFile(outputs.bundle_path) as archive:
+        bundled_bytes = archive.read("live_quality_gate/report.json")
+        bundled_report = json.loads(bundled_bytes)
+        checksums = json.loads(archive.read("checksums.json"))
+
+    assert bundled_bytes == original_bytes
+    assert bundled_report["metrics"]["recall_at_k"] == receipt.quality.metrics.recall_at_k
+    assert checksums["live_quality_gate/report.json"]["sha256"] == capture_module._sha256_bytes(
+        original_bytes
+    )
+
+
+def test_capture_reads_each_source_path_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    real_read = capture_module._read_bytes
+    read_counts: dict[Path, int] = {}
+
+    def count_reads(path: Path) -> bytes:
+        resolved = path.resolve()
+        read_counts[resolved] = read_counts.get(resolved, 0) + 1
+        return real_read(path)
+
+    monkeypatch.setattr(capture_module, "_read_bytes", count_reads)
+    capture_release_evidence(capture_inputs(fixture))
+
+    assert read_counts
+    assert set(read_counts.values()) == {1}
+
+
+def test_bounded_reader_never_requests_more_than_member_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_sizes: list[int] = []
+
+    class GuardedStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, size: int = -1) -> bytes:
+            requested_sizes.append(size)
+            if size < 0 or size > capture_module.MAX_MEMBER_BYTES + 1:
+                raise AssertionError("unbounded source read")
+            return b"x" * size
+
+    monkeypatch.setattr(Path, "open", lambda *_args, **_kwargs: GuardedStream())
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="member is too large"):
+        capture_module._read_bytes(tmp_path / "virtual-source")
+
+    assert all(0 < size <= 64 * 1024 for size in requested_sizes)
+    assert sum(requested_sizes) == capture_module.MAX_MEMBER_BYTES + 1
+
+
+def test_capture_rejects_snapshot_budget_immediately(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    real_read = capture_module._read_bytes
+    read_count = 0
+
+    def count_reads(path: Path) -> bytes:
+        nonlocal read_count
+        read_count += 1
+        return real_read(path)
+
+    monkeypatch.setattr(capture_module, "_read_bytes", count_reads)
+    monkeypatch.setattr(capture_module, "MAX_BUNDLE_SOURCE_BYTES", 1)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="source snapshot is too large"):
+        capture_release_evidence(capture_inputs(fixture))
+
+    assert read_count == 1

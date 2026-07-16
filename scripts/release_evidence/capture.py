@@ -14,7 +14,6 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import ValidationError
 
-from rag_modules.configuration.profiles import load_profile
 from rag_modules.interfaces.api.diagnostics_models import DiagnosticsResponseModel
 from rag_modules.kernel.artifacts import ArtifactManifest, artifact_health
 from scripts.integration_gate.models import IntegrationGatePolicy
@@ -42,6 +41,7 @@ from .models import (
 
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_BUNDLE_SOURCE_BYTES = 50 * 1024 * 1024
+_READ_CHUNK_BYTES = 64 * 1024
 _CREDENTIAL_KEY_RE = re.compile(
     r"^(?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|session[_-]?token|"
     r"authorization|password|passwd|bearer[_-]?token|client[_-]?secret|secret[_-]?key|"
@@ -88,29 +88,60 @@ class CaptureOutputs:
     bundle_path: Path
 
 
+class _SourceSnapshots:
+    def __init__(self) -> None:
+        self._by_path: dict[Path, bytes] = {}
+        self._total_bytes = 0
+
+    def read(self, path: Path) -> bytes:
+        identity = path.resolve()
+        cached = self._by_path.get(identity)
+        if cached is not None:
+            return cached
+        data = _read_bytes(path)
+        self._total_bytes += len(data)
+        if self._total_bytes > MAX_BUNDLE_SOURCE_BYTES:
+            raise ReleaseEvidenceCaptureError("release evidence source snapshot is too large")
+        self._by_path[identity] = data
+        return data
+
+
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
 def _read_bytes(path: Path) -> bytes:
     try:
-        data = path.read_bytes()
+        chunks: list[bytes] = []
+        captured_bytes = 0
+        with path.open("rb") as source:
+            while captured_bytes <= MAX_MEMBER_BYTES:
+                requested = min(
+                    _READ_CHUNK_BYTES,
+                    MAX_MEMBER_BYTES + 1 - captured_bytes,
+                )
+                chunk = source.read(requested)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                captured_bytes += len(chunk)
     except OSError as exc:
         raise ReleaseEvidenceCaptureError(
             f"release evidence member could not be read: {path.name}"
         ) from exc
+    data = b"".join(chunks)
     if len(data) > MAX_MEMBER_BYTES:
         raise ReleaseEvidenceCaptureError(f"release evidence member is too large: {path.name}")
     return data
 
 
-def _read_json(path: Path) -> dict[str, Any]:
+def _parse_json(data: bytes, name: str) -> dict[str, Any]:
     try:
-        value = json.loads(_read_bytes(path).decode("utf-8"))
+        value = json.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ReleaseEvidenceCaptureError(f"release evidence JSON is invalid: {path.name}") from exc
+        raise ReleaseEvidenceCaptureError(f"release evidence JSON is invalid: {name}") from exc
     if not isinstance(value, dict):
-        raise ReleaseEvidenceCaptureError(f"release evidence JSON must be an object: {path.name}")
+        raise ReleaseEvidenceCaptureError(f"release evidence JSON must be an object: {name}")
     return value
 
 
@@ -143,10 +174,25 @@ def _git(repository_root: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _project_version(repository_root: Path) -> str:
+def _git_bytes(repository_root: Path, *args: str) -> bytes:
     try:
-        payload = tomllib.loads((repository_root / "pyproject.toml").read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=repository_root,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed") from exc
+    if completed.returncode != 0:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed")
+    return completed.stdout
+
+
+def _project_version(pyproject_bytes: bytes) -> str:
+    try:
+        payload = tomllib.loads(pyproject_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise ReleaseEvidenceCaptureError("package metadata is invalid") from exc
     project = payload.get("project")
     if not isinstance(project, dict) or not isinstance(project.get("version"), str):
@@ -166,8 +212,6 @@ def _validate_checkout(inputs: CaptureInputs) -> None:
         raise ReleaseEvidenceCaptureError("release tag is invalid") from exc
     if parsed_tag.package_version != inputs.package_version:
         raise ReleaseEvidenceCaptureError("release version and tag do not match")
-    if _project_version(inputs.repository_root) != inputs.package_version:
-        raise ReleaseEvidenceCaptureError("package version does not match checkout")
     canonical_policies = {
         inputs.integration_policy_path.resolve(): (
             inputs.repository_root / "eval" / "integration_gate.json"
@@ -178,6 +222,91 @@ def _validate_checkout(inputs: CaptureInputs) -> None:
     }
     if any(actual != expected for actual, expected in canonical_policies.items()):
         raise ReleaseEvidenceCaptureError("release evidence must use canonical repository policies")
+
+
+def _committed_regular_blob(
+    repository_root: Path,
+    evaluated_commit: str,
+    relative_path: str,
+) -> tuple[str, bytes]:
+    tree_entry = _git(
+        repository_root,
+        "ls-tree",
+        evaluated_commit,
+        "--",
+        relative_path,
+    )
+    try:
+        metadata, listed_path = tree_entry.split("\t", 1)
+        mode, object_type, object_id = metadata.split()
+    except ValueError as exc:
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence source is not an ordinary committed file: {relative_path}"
+        ) from exc
+    if listed_path != relative_path or mode not in {"100644", "100755"} or object_type != "blob":
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence source is not an ordinary committed file: {relative_path}"
+        )
+    try:
+        blob_size = int(_git(repository_root, "cat-file", "-s", object_id))
+    except ValueError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed") from exc
+    if blob_size > MAX_MEMBER_BYTES:
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence member is too large: {PurePosixPath(relative_path).name}"
+        )
+    data = _git_bytes(repository_root, "cat-file", "blob", object_id)
+    if len(data) != blob_size:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed")
+    return object_id, data
+
+
+def _git_clean_object_id(
+    repository_root: Path,
+    relative_path: str,
+    data: bytes,
+) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "hash-object", f"--path={relative_path}", "--stdin"],
+            cwd=repository_root,
+            input=data,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed") from exc
+    if completed.returncode != 0:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed")
+    try:
+        return completed.stdout.decode("ascii").strip()
+    except UnicodeDecodeError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence Git validation failed") from exc
+
+
+def _bind_commit_source(
+    inputs: CaptureInputs,
+    snapshots: _SourceSnapshots,
+    relative_path: str,
+) -> bytes:
+    object_id, committed = _committed_regular_blob(
+        inputs.repository_root,
+        inputs.evaluated_commit,
+        relative_path,
+    )
+    working_path = inputs.repository_root / PurePosixPath(relative_path)
+    if working_path.is_symlink():
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence source is not an ordinary committed file: {relative_path}"
+        )
+    captured = snapshots.read(working_path)
+    if captured != committed and (
+        _git_clean_object_id(inputs.repository_root, relative_path, captured) != object_id
+    ):
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence source does not match evaluated commit: {relative_path}"
+        )
+    return committed
 
 
 def _require_mapping(value: object, name: str) -> dict[str, Any]:
@@ -353,24 +482,46 @@ def _profile_path(repository_root: Path, profile_name: str) -> Path:
     return path
 
 
-def _project_runtime(
-    diagnostics_payload: Mapping[str, Any],
-    artifact_manifest: ArtifactManifest,
-    *,
-    repository_root: Path,
-    judge_model: str,
-    target: Mapping[str, Any],
-) -> RuntimeIdentity:
+def _merge_profile_payload(target: dict[str, Any], updates: Mapping[str, Any]) -> None:
+    for key, value in updates.items():
+        key_text = str(key)
+        if isinstance(value, Mapping):
+            child = target.get(key_text)
+            if not isinstance(child, dict):
+                child = {}
+                target[key_text] = child
+            _merge_profile_payload(child, value)
+        else:
+            target[key_text] = value
+
+
+def _parse_profile(data: bytes, name: str) -> dict[str, Any]:
     try:
-        diagnostics = DiagnosticsResponseModel.model_validate(diagnostics_payload).diagnostics
-    except ValidationError as exc:
-        raise ReleaseEvidenceCaptureError("runtime diagnostics are invalid") from exc
-    if not (
-        diagnostics.artifacts_ready
-        and diagnostics.system_ready
-        and diagnostics.retrieval_engines_initialized
-    ):
-        raise ReleaseEvidenceCaptureError("runtime diagnostics are not ready")
+        payload = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise ReleaseEvidenceCaptureError(f"artifact profile is invalid: {name}") from exc
+    if not isinstance(payload, dict):
+        raise ReleaseEvidenceCaptureError(f"artifact profile is invalid: {name}")
+    return payload
+
+
+def _resolved_profile_hash(
+    base_bytes: bytes,
+    selected_bytes: bytes,
+    *,
+    selected_is_base: bool,
+) -> str:
+    merged: dict[str, Any] = {}
+    _merge_profile_payload(merged, _parse_profile(base_bytes, "base.toml"))
+    if not selected_is_base:
+        _merge_profile_payload(merged, _parse_profile(selected_bytes, "selected profile"))
+    return _sha256_bytes(json.dumps(merged, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+
+
+def _artifact_profile_identity(
+    artifact_manifest: ArtifactManifest,
+    repository_root: Path,
+) -> tuple[str, Path, str]:
     profile_data = _require_mapping(
         artifact_manifest.build_metadata.get("config_profile"),
         "artifact config profile",
@@ -385,16 +536,29 @@ def _project_runtime(
         declared_profile_path = repository_root / declared_profile_path
     if declared_profile_path.resolve() != profile_path.resolve():
         raise ReleaseEvidenceCaptureError("artifact profile path does not match repository")
-    try:
-        resolved_profile = load_profile(
-            profile=profile_name,
-            profiles_dir=repository_root / "profiles",
-        )
-    except (OSError, ValueError) as exc:
-        raise ReleaseEvidenceCaptureError("artifact profile is invalid") from exc
     profile_hash = str(profile_data.get("hash") or "")
-    if not profile_hash or profile_hash != resolved_profile.profile_hash:
-        raise ReleaseEvidenceCaptureError("artifact profile hash does not match repository")
+    return profile_name, profile_path, profile_hash
+
+
+def _project_runtime(
+    diagnostics_payload: Mapping[str, Any],
+    *,
+    judge_model: str,
+    target: Mapping[str, Any],
+    profile_name: str,
+    profile_path: str,
+    profile_hash: str,
+) -> RuntimeIdentity:
+    try:
+        diagnostics = DiagnosticsResponseModel.model_validate(diagnostics_payload).diagnostics
+    except ValidationError as exc:
+        raise ReleaseEvidenceCaptureError("runtime diagnostics are invalid") from exc
+    if not (
+        diagnostics.artifacts_ready
+        and diagnostics.system_ready
+        and diagnostics.retrieval_engines_initialized
+    ):
+        raise ReleaseEvidenceCaptureError("runtime diagnostics are not ready")
     return RuntimeIdentity(
         target=TargetIdentity(
             api_host=str(target.get("api_host") or ""),
@@ -402,7 +566,7 @@ def _project_runtime(
         ),
         profile=ProfileIdentity(
             name=profile_name,
-            path=profile_path.relative_to(repository_root).as_posix(),
+            path=profile_path,
             resolved_sha256=profile_hash,
         ),
         models=ModelSuiteIdentity(
@@ -535,46 +699,60 @@ def _write_deterministic_zip(path: Path, entries: Mapping[str, bytes]) -> None:
             archive.writestr(info, entries[name])
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(_READ_CHUNK_BYTES):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence bundle could not be read") from exc
+    return digest.hexdigest()
+
+
 def capture_release_evidence(
     inputs: CaptureInputs,
     *,
     generated_at: str | None = None,
 ) -> CaptureOutputs:
     _validate_checkout(inputs)
-    integration_report = _read_json(inputs.integration_report_path)
-    live_report = _read_json(inputs.live_quality_report_path)
-    integration_policy_payload = _read_json(inputs.integration_policy_path)
-    live_policy_payload = _read_json(inputs.live_quality_policy_path)
-    diagnostics_payload = _read_json(inputs.diagnostics_path)
-    artifact_payload = _read_json(inputs.artifact_manifest_path)
-    try:
-        integration_policy = IntegrationGatePolicy.model_validate(integration_policy_payload)
-        live_policy = LiveQualityGatePolicy.model_validate(live_policy_payload)
-    except ValidationError as exc:
-        raise ReleaseEvidenceCaptureError("release evidence policy is invalid") from exc
-    artifact_manifest = _load_artifact_manifest(artifact_payload)
+    snapshots = _SourceSnapshots()
 
-    try:
-        integration = _project_integration(integration_report, integration_policy)
-        quality = _project_quality(live_report, live_policy)
-        target = _require_mapping(live_report.get("target"), "live quality target")
-        runtime = _project_runtime(
-            diagnostics_payload,
-            artifact_manifest,
-            repository_root=inputs.repository_root,
-            judge_model=inputs.judge_model,
-            target=target,
-        )
-        knowledge_base = _project_knowledge_base(artifact_manifest)
-        dataset_bytes = _read_bytes(inputs.live_quality_policy_path)
-        dataset = DatasetIdentity(
-            path="eval/live_quality_gate.json",
-            schema_version=live_policy.schema_version,
-            case_count=len(live_policy.cases),
-            sha256=_sha256_bytes(dataset_bytes),
-        )
-    except ValidationError as exc:
-        raise ReleaseEvidenceCaptureError("release evidence projection is invalid") from exc
+    pyproject_bytes = _bind_commit_source(inputs, snapshots, "pyproject.toml")
+    if _project_version(pyproject_bytes) != inputs.package_version:
+        raise ReleaseEvidenceCaptureError("package version does not match checkout")
+    integration_policy_bytes = _bind_commit_source(
+        inputs,
+        snapshots,
+        "eval/integration_gate.json",
+    )
+    live_policy_bytes = _bind_commit_source(
+        inputs,
+        snapshots,
+        "eval/live_quality_gate.json",
+    )
+    base_profile_bytes = _bind_commit_source(inputs, snapshots, "profiles/base.toml")
+
+    integration_report_bytes = snapshots.read(inputs.integration_report_path)
+    live_report_bytes = snapshots.read(inputs.live_quality_report_path)
+    diagnostics_bytes = snapshots.read(inputs.diagnostics_path)
+    artifact_bytes = snapshots.read(inputs.artifact_manifest_path)
+
+    integration_report = _parse_json(
+        integration_report_bytes,
+        inputs.integration_report_path.name,
+    )
+    live_report = _parse_json(live_report_bytes, inputs.live_quality_report_path.name)
+    integration_policy_payload = _parse_json(
+        integration_policy_bytes,
+        inputs.integration_policy_path.name,
+    )
+    live_policy_payload = _parse_json(
+        live_policy_bytes,
+        inputs.live_quality_policy_path.name,
+    )
+    diagnostics_payload = _parse_json(diagnostics_bytes, inputs.diagnostics_path.name)
+    artifact_payload = _parse_json(artifact_bytes, inputs.artifact_manifest_path.name)
 
     integration_artifacts = _require_mapping(
         integration_report.get("artifacts"),
@@ -597,12 +775,71 @@ def capture_release_evidence(
         != inputs.live_quality_report_path.resolve()
     ):
         raise ReleaseEvidenceCaptureError("live quality report identity is invalid")
-    manual_review_bytes = _read_bytes(
+    integration_summary_bytes = snapshots.read(
+        _report_member(
+            inputs.integration_report_path,
+            integration_artifacts.get("summary_md"),
+        )
+    )
+    live_summary_bytes = snapshots.read(
+        _report_member(
+            inputs.live_quality_report_path,
+            live_artifacts.get("summary_md"),
+        )
+    )
+    manual_review_bytes = snapshots.read(
         _report_member(
             inputs.live_quality_report_path,
             live_artifacts.get("manual_review_sample_jsonl"),
         )
     )
+
+    try:
+        integration_policy = IntegrationGatePolicy.model_validate(integration_policy_payload)
+        live_policy = LiveQualityGatePolicy.model_validate(live_policy_payload)
+    except ValidationError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence policy is invalid") from exc
+    artifact_manifest = _load_artifact_manifest(artifact_payload)
+    profile_name, profile_path, declared_profile_hash = _artifact_profile_identity(
+        artifact_manifest,
+        inputs.repository_root,
+    )
+    selected_profile_relative_path = profile_path.relative_to(inputs.repository_root).as_posix()
+    selected_profile_bytes = (
+        base_profile_bytes
+        if selected_profile_relative_path == "profiles/base.toml"
+        else _bind_commit_source(inputs, snapshots, selected_profile_relative_path)
+    )
+    resolved_profile_hash = _resolved_profile_hash(
+        base_profile_bytes,
+        selected_profile_bytes,
+        selected_is_base=selected_profile_relative_path == "profiles/base.toml",
+    )
+    if not declared_profile_hash or declared_profile_hash != resolved_profile_hash:
+        raise ReleaseEvidenceCaptureError("artifact profile hash does not match repository")
+
+    try:
+        integration = _project_integration(integration_report, integration_policy)
+        quality = _project_quality(live_report, live_policy)
+        target = _require_mapping(live_report.get("target"), "live quality target")
+        runtime = _project_runtime(
+            diagnostics_payload,
+            judge_model=inputs.judge_model,
+            target=target,
+            profile_name=profile_name,
+            profile_path=selected_profile_relative_path,
+            profile_hash=resolved_profile_hash,
+        )
+        knowledge_base = _project_knowledge_base(artifact_manifest)
+        dataset = DatasetIdentity(
+            path="eval/live_quality_gate.json",
+            schema_version=live_policy.schema_version,
+            case_count=len(live_policy.cases),
+            sha256=_sha256_bytes(live_policy_bytes),
+        )
+    except ValidationError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence projection is invalid") from exc
+
     try:
         manual_review_text = manual_review_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -612,22 +849,15 @@ def capture_release_evidence(
         raise ReleaseEvidenceCaptureError("manual review sample count does not match JSONL")
 
     source_entries = {
-        "integration_gate/report.json": _read_bytes(inputs.integration_report_path),
-        "integration_gate/summary.md": _read_bytes(
-            _report_member(
-                inputs.integration_report_path,
-                integration_artifacts.get("summary_md"),
-            )
-        ),
-        "live_quality_gate/report.json": _read_bytes(inputs.live_quality_report_path),
-        "live_quality_gate/summary.md": _read_bytes(
-            _report_member(inputs.live_quality_report_path, live_artifacts.get("summary_md"))
-        ),
+        "integration_gate/report.json": integration_report_bytes,
+        "integration_gate/summary.md": integration_summary_bytes,
+        "live_quality_gate/report.json": live_report_bytes,
+        "live_quality_gate/summary.md": live_summary_bytes,
         "live_quality_gate/manual_review_sample.jsonl": manual_review_bytes,
         "runtime/diagnostics.json": _canonical_json(runtime.model_dump(mode="json")),
         "runtime/artifact_manifest.json": _canonical_json(knowledge_base.model_dump(mode="json")),
-        "policies/integration_gate.json": _read_bytes(inputs.integration_policy_path),
-        "policies/live_quality_gate.json": dataset_bytes,
+        "policies/integration_gate.json": integration_policy_bytes,
+        "policies/live_quality_gate.json": live_policy_bytes,
     }
     if sum(len(value) for value in source_entries.values()) > MAX_BUNDLE_SOURCE_BYTES:
         raise ReleaseEvidenceCaptureError("release evidence source bundle is too large")
@@ -660,7 +890,11 @@ def capture_release_evidence(
     bundle_name = f"graph-rag-c9-{inputs.package_version}-quality-evidence.zip"
     bundle_path = inputs.output_dir / bundle_name
     _write_deterministic_zip(bundle_path, entries)
-    bundle_bytes = bundle_path.read_bytes()
+    try:
+        bundle_size = bundle_path.stat().st_size
+    except OSError as exc:
+        raise ReleaseEvidenceCaptureError("release evidence bundle could not be read") from exc
+    bundle_sha256 = _sha256_file(bundle_path)
     receipt = CaptureReceipt(
         release=ReleaseIdentity(
             package_version=inputs.package_version,
@@ -678,8 +912,8 @@ def capture_release_evidence(
         knowledge_base=knowledge_base,
         bundle=BundleIdentity(
             name=bundle_name,
-            bytes=len(bundle_bytes),
-            sha256=_sha256_bytes(bundle_bytes),
+            bytes=bundle_size,
+            sha256=bundle_sha256,
         ),
         artifacts=artifacts,
     )
