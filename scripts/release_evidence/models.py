@@ -16,6 +16,10 @@ _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _ARTIFACT_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_DNS_LABEL_PATTERN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+_TARGET_HOST_RE = re.compile(
+    rf"^{_DNS_LABEL_PATTERN}(?:\.{_DNS_LABEL_PATTERN})*(?::(?P<port>[0-9]{{1,5}}))?$"
+)
 PositiveInt = Annotated[int, Field(ge=1)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 Rate = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -120,9 +124,11 @@ class TargetIdentity(StrictEvidenceModel):
     @field_validator("*")
     @classmethod
     def validate_safe_host(cls, value: str) -> str:
-        if any(character in value for character in ("/", "@", "?", "#")):
+        match = _TARGET_HOST_RE.fullmatch(value)
+        if match is None:
             raise ValueError("invalid safe host identity")
-        if any(character.isspace() for character in value):
+        port = match.group("port")
+        if port is not None and not 1 <= int(port) <= 65535:
             raise ValueError("invalid safe host identity")
         return value
 
@@ -189,6 +195,18 @@ class KnowledgeBaseIdentity(StrictEvidenceModel):
     total_documents: PositiveInt
     total_chunks: PositiveInt
     vector_rows: PositiveInt
+
+    @field_validator(
+        "graph_signature",
+        "document_signature",
+        "embedding_signature",
+        "index_signature",
+    )
+    @classmethod
+    def validate_signature(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("knowledge base signature must not be blank")
+        return value
 
     @field_validator("published_at")
     @classmethod

@@ -8,7 +8,9 @@ from pydantic import ValidationError
 from scripts.release_evidence.models import (
     BundleIdentity,
     FileIdentity,
+    KnowledgeBaseIdentity,
     QualityMetrics,
+    TargetIdentity,
     TransportIdentity,
 )
 
@@ -61,6 +63,118 @@ def test_transport_identity_requires_full_git_sha_and_prefixed_digest() -> None:
             artifact_name="evidence",
             artifact_digest="f" * 64,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "signature"),
+    [
+        pytest.param("graph_signature", "   ", id="graph-spaces"),
+        pytest.param("document_signature", "\t", id="document-tab"),
+        pytest.param("embedding_signature", "\n", id="embedding-newline"),
+        pytest.param("index_signature", " \t\r\n", id="index-mixed-whitespace"),
+    ],
+)
+def test_knowledge_base_identity_rejects_blank_signatures(
+    field: str,
+    signature: str,
+) -> None:
+    payload: dict[str, object] = {
+        "schema_version": "1",
+        "manifest_version": 7,
+        "stage": "ready",
+        "health": "ready",
+        "published_at": "2026-07-16T07:30:00+00:00",
+        "index_version": "v000007",
+        "collection_name": "cooking_knowledge__active",
+        "graph_signature": "graph-signature",
+        "document_signature": "document-signature",
+        "embedding_signature": "embedding-signature",
+        "index_signature": "index-signature",
+        "total_documents": 323,
+        "total_chunks": 1543,
+        "vector_rows": 1543,
+    }
+    payload[field] = signature
+
+    with pytest.raises(ValidationError):
+        KnowledgeBaseIdentity.model_validate(payload)
+
+
+def test_knowledge_base_identity_accepts_non_blank_signatures() -> None:
+    identity = KnowledgeBaseIdentity(
+        schema_version="1",
+        manifest_version=7,
+        stage="ready",
+        health="ready",
+        published_at="2026-07-16T07:30:00+00:00",
+        index_version="v000007",
+        collection_name="cooking_knowledge__active",
+        graph_signature="graph-signature",
+        document_signature="document-signature",
+        embedding_signature="embedding-signature",
+        index_signature="index-signature",
+        total_documents=323,
+        total_chunks=1543,
+        vector_rows=1543,
+    )
+
+    assert identity.index_signature == "index-signature"
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        pytest.param(r"C:\Users\runner\.env", id="windows-path"),
+        pytest.param(r"quality\example.com", id="backslash"),
+        pytest.param("quality.example.com\x00secret", id="nul"),
+        pytest.param("quality.example.com\x01secret", id="control-character"),
+        pytest.param("https://quality.example.com/path", id="scheme-and-path"),
+        pytest.param("quality.example.com/path", id="path"),
+        pytest.param(" quality.example.com", id="leading-space"),
+        pytest.param("quality.example.com\t", id="trailing-tab"),
+        pytest.param("", id="empty"),
+        pytest.param("quality..example.com", id="empty-label"),
+        pytest.param("-quality.example.com", id="leading-label-hyphen"),
+        pytest.param("quality-.example.com", id="trailing-label-hyphen"),
+        pytest.param("quality_example.com", id="underscore"),
+        pytest.param("quälity.example.com", id="non-ascii"),
+        pytest.param("quality.example.com:", id="empty-port"),
+        pytest.param("quality.example.com:https", id="non-numeric-port"),
+        pytest.param("quality.example.com:443:444", id="multiple-ports"),
+        pytest.param("quality.example.com:0", id="zero-port"),
+        pytest.param("quality.example.com:65536", id="out-of-range-port"),
+        pytest.param("user@quality.example.com", id="userinfo"),
+        pytest.param("quality.example.com?token=secret", id="query"),
+        pytest.param("quality.example.com#fragment", id="fragment"),
+    ],
+)
+def test_target_identity_rejects_unsafe_hosts(host: str) -> None:
+    with pytest.raises(ValidationError):
+        TargetIdentity(api_host=host, judge_host="judge.example.com")
+
+
+def test_target_identity_accepts_expected_dns_hosts() -> None:
+    target = TargetIdentity(
+        api_host="quality.example.com",
+        judge_host="judge.example.com",
+    )
+
+    assert target.api_host == "quality.example.com"
+    assert target.judge_host == "judge.example.com"
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        pytest.param("quality-1.example.com:443", id="dns-with-port"),
+        pytest.param("localhost:7687", id="single-label-with-port"),
+        pytest.param("127.0.0.1:8000", id="ipv4-with-port"),
+    ],
+)
+def test_target_identity_accepts_ascii_dns_hosts_with_numeric_ports(host: str) -> None:
+    target = TargetIdentity(api_host=host, judge_host="judge.example.com")
+
+    assert target.api_host == host
 
 
 @pytest.mark.parametrize(
