@@ -8,6 +8,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from typing import Annotated, Literal, Mapping, Self
 from urllib.parse import urlsplit, urlunsplit
@@ -428,5 +429,12 @@ def _safe_host_identity(value: str) -> str:
     parsed = urlsplit(value)
     host = parsed.hostname or ""
     if parsed.port is not None:
+        try:
+            address = ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if isinstance(address, IPv6Address):
+                return f"[{address}]:{parsed.port}"
         return f"{host}:{parsed.port}"
     return host

@@ -22,6 +22,7 @@ _TARGET_HOST_RE = re.compile(
     rf"^{_DNS_LABEL_PATTERN}(?:\.{_DNS_LABEL_PATTERN})*(?::(?P<port>[0-9]{{1,5}}))?$"
 )
 _IPV6_LITERAL_RE = re.compile(r"^[0-9A-Fa-f:.]+$")
+_BRACKETED_IPV6_HOST_RE = re.compile(r"^\[(?P<host>[0-9A-Fa-f:.]+)\]:(?P<port>[0-9]{1,5})$")
 PositiveInt = Annotated[int, Field(ge=1)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 Rate = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -126,6 +127,16 @@ class TargetIdentity(StrictEvidenceModel):
     @field_validator("*")
     @classmethod
     def validate_safe_host(cls, value: str) -> str:
+        bracketed_match = _BRACKETED_IPV6_HOST_RE.fullmatch(value)
+        if bracketed_match is not None:
+            try:
+                address = ip_address(bracketed_match.group("host"))
+            except ValueError:
+                pass
+            else:
+                port = int(bracketed_match.group("port"))
+                if isinstance(address, IPv6Address) and 1 <= port <= 65535:
+                    return value
         match = _TARGET_HOST_RE.fullmatch(value)
         if match is not None:
             port = match.group("port")

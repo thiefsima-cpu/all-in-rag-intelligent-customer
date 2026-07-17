@@ -964,6 +964,42 @@ def test_safe_target_identity_includes_explicit_ports() -> None:
     }
 
 
+def test_safe_target_identity_brackets_ipv6_with_explicit_ports() -> None:
+    settings = LiveQualityGateSettings(
+        api_url="http://[2001:db8::1]:8000/v1/answers",
+        api_token=None,
+        judge=JudgeSettings(
+            api_url="http://[2001:db8::2]:9000/v1/chat/completions",
+            api_key="judge-key-secret",
+            model="judge.model-v1",
+            timeout_seconds=30.0,
+        ),
+    )
+
+    assert settings.safe_target_identity() == {
+        "api_host": "[2001:db8::1]:8000",
+        "judge_host": "[2001:db8::2]:9000",
+    }
+
+
+def test_safe_target_identity_keeps_ipv6_without_port_unbracketed() -> None:
+    settings = LiveQualityGateSettings(
+        api_url="http://[2001:db8::1]/v1/answers",
+        api_token=None,
+        judge=JudgeSettings(
+            api_url="http://[2001:db8::2]/v1/chat/completions",
+            api_key="judge-key-secret",
+            model="judge.model-v1",
+            timeout_seconds=30.0,
+        ),
+    )
+
+    assert settings.safe_target_identity() == {
+        "api_host": "2001:db8::1",
+        "judge_host": "2001:db8::2",
+    }
+
+
 @pytest.mark.parametrize(
     "name",
     [

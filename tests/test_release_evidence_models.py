@@ -154,6 +154,11 @@ def test_knowledge_base_identity_accepts_non_blank_signatures() -> None:
         pytest.param(r"2001:db8::1\path", id="ipv6-backslash"),
         pytest.param(" 2001:db8::1", id="ipv6-whitespace"),
         pytest.param("2001:db8::1\x00", id="ipv6-control-character"),
+        pytest.param("[::1]", id="bracketed-ipv6-without-port"),
+        pytest.param("[::1]:0", id="bracketed-ipv6-zero-port"),
+        pytest.param("[::1]:65536", id="bracketed-ipv6-out-of-range-port"),
+        pytest.param("[fe80::1%eth0]:8000", id="bracketed-ipv6-zone-id"),
+        pytest.param("[2001:db8::1]:8000/path", id="bracketed-ipv6-path"),
     ],
 )
 def test_target_identity_rejects_unsafe_hosts(host: str) -> None:
@@ -189,12 +194,26 @@ def test_target_identity_accepts_ascii_dns_hosts_with_numeric_ports(host: str) -
     "host",
     [
         pytest.param("::1", id="integration-loopback"),
-        pytest.param("::1:8000", id="live-quality-loopback-with-port-shape"),
+        pytest.param("::1:8000", id="numeric-final-hextet"),
         pytest.param("2001:db8::1", id="documentation-prefix"),
         pytest.param("::ffff:192.0.2.128", id="ipv4-mapped"),
     ],
 )
 def test_target_identity_accepts_ipv6_literals(host: str) -> None:
+    target = TargetIdentity(api_host=host, judge_host="judge.example.com")
+
+    assert target.api_host == host
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        pytest.param("[::1]:8000", id="loopback-with-port"),
+        pytest.param("[2001:db8::1]:443", id="documentation-prefix-with-port"),
+        pytest.param("[::ffff:192.0.2.128]:65535", id="ipv4-mapped-with-port"),
+    ],
+)
+def test_target_identity_accepts_bracketed_ipv6_with_numeric_port(host: str) -> None:
     target = TargetIdentity(api_host=host, judge_host="judge.example.com")
 
     assert target.api_host == host

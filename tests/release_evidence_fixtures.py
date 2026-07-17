@@ -7,6 +7,27 @@ from pathlib import Path
 
 from rag_modules.configuration.profiles import load_profile
 from rag_modules.kernel.artifacts import ArtifactManifest
+from scripts.gates import GateCheckResult, GateCheckStatus, aggregate_checks
+from scripts.integration_gate.evaluator import evaluate_integration_metrics, evaluate_live_case
+from scripts.integration_gate.models import (
+    IntegrationCaseSummary,
+    IntegrationGatePolicy,
+    IntegrationGateSettings,
+    LiveCaseObservation,
+)
+from scripts.integration_gate.reporter import build_integration_report
+from scripts.live_quality_gate.evaluator import (
+    aggregate_live_quality_metrics,
+    evaluate_deterministic_case,
+    evaluate_policy_thresholds,
+)
+from scripts.live_quality_gate.models import (
+    JudgeSettings,
+    LiveQualityGatePolicy,
+    LiveQualityGateSettings,
+)
+from scripts.live_quality_gate.reporter import build_live_quality_report
+from scripts.live_quality_gate.runtime_models import LiveQualityEvidence, LiveQualityObservation
 
 
 @dataclass(frozen=True)
@@ -40,6 +61,128 @@ def git(repository_root: Path, *args: str) -> str:
         check=True,
     )
     return completed.stdout.strip()
+
+
+def _integration_report(policy_payload: dict[str, object]) -> dict[str, object]:
+    policy = IntegrationGatePolicy.model_validate(policy_payload)
+    settings = IntegrationGateSettings(
+        api_url="https://quality.example.com",
+        api_token=None,
+        neo4j_uri="neo4j://neo4j.example.com",
+        neo4j_user="neo4j",
+        neo4j_password="fixture-password",
+        neo4j_database="neo4j",
+        milvus_host="milvus.example.com",
+        milvus_port="19530",
+        milvus_collection_name="cooking_knowledge",
+    )
+    case = policy.live_cases[0]
+    observation = LiveCaseObservation(
+        case_id=case.case_id,
+        strategy="hybrid_traditional",
+        sources=frozenset({"graph_rag", "vector"}),
+        evidence_count=2,
+        fallback_used=False,
+        retrieval_degraded=False,
+        latency_ms=1000.0,
+        total_tokens=10,
+        estimated_cost_usd=0.01,
+    )
+    probe_checks = (
+        GateCheckResult.pass_check(
+            "dependency.neo4j.recipe_count",
+            code="NEO4J_READY",
+            expected={"minimum": 1},
+            actual=323,
+        ),
+        GateCheckResult.pass_check(
+            "dependency.milvus.entity_count",
+            code="MILVUS_READY",
+            expected={"minimum": 1},
+            actual=1543,
+        ),
+        GateCheckResult.pass_check(
+            "dependency.serving.ready",
+            code="SERVING_API_READY",
+            expected=True,
+            actual=True,
+        ),
+    )
+    case_checks = evaluate_live_case(case, observation)
+    checks = probe_checks + case_checks + evaluate_integration_metrics(policy, (observation,))
+    report = build_integration_report(
+        policy=policy,
+        settings=settings,
+        evaluation=aggregate_checks(checks),
+        case_summaries=(
+            IntegrationCaseSummary(
+                case_id=case.case_id,
+                executed=True,
+                status=GateCheckStatus.PASSED,
+                observation=observation,
+                check_codes=tuple(check.code for check in case_checks),
+            ),
+        ),
+    )
+    report["generated_at"] = "2026-07-16T07:55:00+00:00"
+    return report
+
+
+def _live_quality_report(policy_payload: dict[str, object]) -> dict[str, object]:
+    policy = LiveQualityGatePolicy.model_validate(policy_payload)
+    settings = LiveQualityGateSettings(
+        api_url="https://quality.example.com",
+        api_token=None,
+        judge=JudgeSettings(
+            api_url="https://judge.example.com/v1/chat/completions",
+            api_key="fixture-key",
+            model="qwen3.7-plus",
+            timeout_seconds=45.0,
+        ),
+    )
+    case = policy.cases[0]
+    observation = LiveQualityObservation(
+        case_id=case.case_id,
+        answer="Mapo tofu uses tofu.",
+        strategy="hybrid_traditional",
+        evidence=(
+            LiveQualityEvidence(
+                recipe_name="Mapo Tofu",
+                source="vector",
+                content="Mapo tofu uses tofu and a spicy sauce.",
+                score=1.0,
+            ),
+        ),
+        ranked_recipe_names=("Mapo Tofu",),
+        sources=frozenset({"vector"}),
+        fallback_used=False,
+        retrieval_degraded=False,
+        latency_ms=1000.0,
+        prompt_tokens=6,
+        completion_tokens=4,
+        total_tokens=10,
+        estimated_cost_usd=0.02,
+    )
+    result = evaluate_deterministic_case(case, observation, top_k=policy.top_k)
+    judge_scores = {score_name: 1.0 for score_name in policy.judge.score_names}
+    result = result.with_judge_result(passed=True, scores=judge_scores)
+    metrics = aggregate_live_quality_metrics((result,))
+    judge_check = GateCheckResult.pass_check(
+        f"case.{case.case_id}.judge",
+        code="JUDGE_QUALITY_OK",
+        expected={"minimum_score": policy.judge.minimum_score},
+        actual=judge_scores,
+    )
+    checks = result.checks + (judge_check,) + evaluate_policy_thresholds(policy, metrics)
+    report = build_live_quality_report(
+        policy=policy,
+        settings=settings,
+        metrics=metrics,
+        checks=checks,
+        results=(result,),
+    )
+    report["generated_at"] = "2026-07-16T07:50:00+00:00"
+    return report
 
 
 def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
@@ -167,92 +310,28 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
 
     integration_dir = inputs_root / "integration_gate"
     live_dir = inputs_root / "live_quality_gate"
-    write_json(
-        integration_dir / "report.json",
-        {
-            "schema_version": 1,
-            "generated_at": "2026-07-16T07:55:00+00:00",
-            "passed": True,
-            "target": {
-                "api_host": "quality.example.com",
-                "neo4j_host": "neo4j.example.com",
-                "milvus_host": "milvus.example.com",
-            },
-            "metrics": {
-                "check_count": 10,
-                "failed_count": 0,
-                "blocked_count": 0,
-                "case_count": 1,
-                "executed_case_count": 1,
-                "observation_count": 1,
-                "failure_type_counts": {},
-                "total_estimated_cost_usd": 0.01,
-                "max_latency_ms": 1000.0,
-            },
-            "checks": [],
-            "cases": [],
-            "artifacts": {
-                "report_json": "report.json",
-                "summary_md": "summary.md",
-            },
-        },
+    integration_report = _integration_report(
+        json.loads(integration_policy.read_text(encoding="utf-8"))
     )
+    write_json(integration_dir / "report.json", integration_report)
     (integration_dir / "summary.md").write_text(
         "# Real-Dependency Integration Gate\n\nStatus: PASS\n",
         encoding="utf-8",
     )
-    write_json(
-        live_dir / "report.json",
-        {
-            "schema_version": 1,
-            "generated_at": "2026-07-16T07:50:00+00:00",
-            "passed": True,
-            "target": {
-                "api_host": "quality.example.com",
-                "judge_host": "judge.example.com",
-            },
-            "top_k": 6,
-            "metrics": {
-                "case_count": 1,
-                "pass_rate": 1.0,
-                "deterministic_pass_rate": 1.0,
-                "judge_pass_rate": 1.0,
-                "recall_at_k": 1.0,
-                "mrr": 1.0,
-                "ndcg_at_k": 1.0,
-                "fallback_rate": 0.0,
-                "retrieval_degradation_rate": 0.0,
-                "p95_latency_ms": 1000.0,
-                "estimated_cost_usd": 0.02,
-                "avg_judge_scores": {
-                    "faithfulness": 1.0,
-                    "answer_relevance": 1.0,
-                },
-                "by_query_type": {},
-                "by_cuisine": {},
-                "by_constraint_type": {},
-                "by_risk_tag": {},
-                "by_response_mode": {},
-                "by_strategy": {},
-            },
-            "failure_type_counts": {},
-            "checks": [],
-            "cases": [],
-            "manual_review_sample_count": 1,
-            "manual_review_sample": [],
-            "artifacts": {
-                "report_json": "report.json",
-                "summary_md": "summary.md",
-                "manual_review_sample_jsonl": "manual_review_sample.jsonl",
-            },
-        },
+    live_quality_report = _live_quality_report(
+        json.loads(live_quality_policy.read_text(encoding="utf-8"))
     )
+    write_json(live_dir / "report.json", live_quality_report)
     (live_dir / "summary.md").write_text(
         "# Live Quality Gate\n\nStatus: PASS\n",
         encoding="utf-8",
     )
+    manual_review_sample = live_quality_report["manual_review_sample"]
     (live_dir / "manual_review_sample.jsonl").write_text(
-        '{"case_id":"grounded_mapo_tofu","must_not_claim":"palace secret recipe"}\n',
+        "".join(
+            json.dumps(item, ensure_ascii=False, allow_nan=False) + "\n"
+            for item in manual_review_sample
+        ),
         encoding="utf-8",
     )
 
