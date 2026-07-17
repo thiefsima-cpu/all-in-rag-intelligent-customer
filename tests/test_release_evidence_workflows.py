@@ -227,6 +227,7 @@ def test_resolve_step_strictly_validates_manifest_before_safe_outputs() -> None:
     assert "PACKAGE_VERSION: ${{ inputs.package_version }}" in resolve
     assert "EXPECTED_TAG: ${{ inputs.tag }}" in resolve
     assert "EXPECTED_EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}" in resolve
+    assert "EXPECTED_REPOSITORY: ${{ github.repository }}" in resolve
     for contract in (
         "from scripts.validate_release_tag import parse_release_tag",
         "from scripts.release_evidence.models import load_release_evidence_manifest",
@@ -240,6 +241,7 @@ def test_resolve_step_strictly_validates_manifest_before_safe_outputs() -> None:
         "if manifest.release.package_version != validated_version:",
         "if manifest.release.tag != expected_tag:",
         "if manifest.provenance.evaluated_commit != expected_evaluated_commit:",
+        "if manifest.provenance.repository != expected_repository:",
         "if manifest.transport.artifact_name != expected_artifact_name:",
         "if manifest.bundle.name != expected_bundle_name:",
         'Path(os.environ["GITHUB_OUTPUT"]).open(',
@@ -274,6 +276,7 @@ def test_verify_workflow_queries_and_downloads_selected_artifact() -> None:
     )
     assert "ref: ${{ inputs.release_commit }}" in checkout
     assert "github.token" not in header + preflight + checkout
+    resolve = step_text(verify, "Resolve selected artifact identity")
     query = step_text(verify, "Query selected artifact metadata")
     assert "GH_TOKEN: ${{ github.token }}" in query
     assert "ARTIFACT_ID: ${{ steps.evidence.outputs.artifact_id }}" in query
@@ -285,6 +288,8 @@ def test_verify_workflow_queries_and_downloads_selected_artifact() -> None:
     assert "ARTIFACT_NAME: ${{ steps.evidence.outputs.artifact_name }}" in download
     assert 'gh run download "${RUN_ID}"' in run_text(download)
     assert '--name "${ARTIFACT_NAME}"' in run_text(download)
+    assert verify.index(resolve) < verify.index(query) < verify.index(download)
+    assert "manifest.provenance.repository != expected_repository" in run_text(resolve)
 
     verify_evidence = step_text(verify, "Verify release evidence before tagging")
     for binding in (

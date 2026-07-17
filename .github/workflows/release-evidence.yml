@@ -229,6 +229,7 @@ jobs:
           PACKAGE_VERSION: ${{ inputs.package_version }}
           EXPECTED_TAG: ${{ inputs.tag }}
           EXPECTED_EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
         run: |
           python - <<'PY'
           from __future__ import annotations
@@ -242,6 +243,7 @@ jobs:
           package_version = os.environ["PACKAGE_VERSION"]
           expected_tag = os.environ["EXPECTED_TAG"]
           expected_evaluated_commit = os.environ["EXPECTED_EVALUATED_COMMIT"]
+          expected_repository = os.environ["EXPECTED_REPOSITORY"]
           parsed_tag = parse_release_tag(expected_tag)
           validated_version = parsed_tag.package_version
           if validated_version != package_version:
@@ -259,6 +261,8 @@ jobs:
               raise SystemExit("manifest release tag does not match")
           if manifest.provenance.evaluated_commit != expected_evaluated_commit:
               raise SystemExit("manifest evaluated commit does not match")
+          if manifest.provenance.repository != expected_repository:
+              raise SystemExit("manifest repository does not match")
           if manifest.transport.artifact_name != expected_artifact_name:
               raise SystemExit("manifest artifact name does not match")
           if manifest.bundle.name != expected_bundle_name:
