@@ -137,7 +137,7 @@ def test_report_writes_safe_json_markdown_and_manual_review_sample(tmp_path: Pat
     assert paths == (report_json, summary_md, sample_jsonl)
     assert persisted["schema_version"] == 1
     assert persisted["target"] == {
-        "api_host": "serving.example.com",
+        "api_host": "serving.example.com:443",
         "judge_host": "judge.example.com",
     }
     assert persisted["artifacts"] == {
