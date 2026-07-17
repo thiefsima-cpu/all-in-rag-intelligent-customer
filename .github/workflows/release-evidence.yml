@@ -130,17 +130,22 @@ jobs:
 
       - name: Capture complete release evidence
         env:
+          REPOSITORY: ${{ github.repository }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}
           LIVE_QUALITY_API_URL: ${{ secrets.LIVE_QUALITY_API_URL }}
           LIVE_QUALITY_API_TOKEN: ${{ secrets.LIVE_QUALITY_API_TOKEN }}
           LIVE_QUALITY_JUDGE_MODEL: ${{ vars.LIVE_QUALITY_JUDGE_MODEL }}
           RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH: ${{ vars.RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH }}
+          RELEASE_EVIDENCE_OUTPUT_DIR: eval/reports/release_evidence/${{ inputs.package_version }}
         run: >
           python -m scripts.release_evidence capture
           --repository-root .
-          --repository "${{ github.repository }}"
-          --package-version "${{ inputs.package_version }}"
-          --tag "${{ inputs.tag }}"
-          --evaluated-commit "${{ inputs.evaluated_commit }}"
+          --repository "${REPOSITORY}"
+          --package-version "${PACKAGE_VERSION}"
+          --tag "${RELEASE_TAG}"
+          --evaluated-commit "${EVALUATED_COMMIT}"
           --integration-policy eval/integration_gate.json
           --live-quality-policy eval/live_quality_gate.json
           --integration-report eval/reports/integration_gate/report.json
@@ -148,7 +153,7 @@ jobs:
           --diagnostics-url "${LIVE_QUALITY_API_URL%/}/v1/diagnostics"
           --artifact-manifest "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}"
           --judge-model "${LIVE_QUALITY_JUDGE_MODEL}"
-          --output-dir "eval/reports/release_evidence/${{ inputs.package_version }}"
+          --output-dir "${RELEASE_EVIDENCE_OUTPUT_DIR}"
           --json
 
       - name: Upload complete evidence bundle
@@ -161,15 +166,22 @@ jobs:
           retention-days: 90
 
       - name: Finalize compact evidence manifest
+        env:
+          CAPTURE_RECEIPT: eval/reports/release_evidence/${{ inputs.package_version }}/capture-receipt.json
+          WORKFLOW_HEAD_SHA: ${{ github.sha }}
+          ARTIFACT_ID: ${{ steps.evidence-upload.outputs.artifact-id }}
+          ARTIFACT_NAME: graph-rag-c9-${{ inputs.package_version }}-quality-evidence
+          ARTIFACT_DIGEST: ${{ steps.evidence-upload.outputs.artifact-digest }}
+          MANIFEST_OUTPUT: eval/reports/release_evidence/${{ inputs.package_version }}/evidence-manifest.json
         run: >
           python -m scripts.release_evidence finalize
-          --capture-receipt "eval/reports/release_evidence/${{ inputs.package_version }}/capture-receipt.json"
+          --capture-receipt "${CAPTURE_RECEIPT}"
           --workflow-run-id "${GITHUB_RUN_ID}"
-          --workflow-head-sha "${{ github.sha }}"
-          --artifact-id "${{ steps.evidence-upload.outputs.artifact-id }}"
-          --artifact-name "graph-rag-c9-${{ inputs.package_version }}-quality-evidence"
-          --artifact-digest "${{ steps.evidence-upload.outputs.artifact-digest }}"
-          --output "eval/reports/release_evidence/${{ inputs.package_version }}/evidence-manifest.json"
+          --workflow-head-sha "${WORKFLOW_HEAD_SHA}"
+          --artifact-id "${ARTIFACT_ID}"
+          --artifact-name "${ARTIFACT_NAME}"
+          --artifact-digest "${ARTIFACT_DIGEST}"
+          --output "${MANIFEST_OUTPUT}"
           --json
 
       - name: Upload compact manifest for release pull request
@@ -213,39 +225,91 @@ jobs:
       - name: Resolve selected artifact identity
         id: evidence
         shell: bash
+        env:
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+          EXPECTED_TAG: ${{ inputs.tag }}
+          EXPECTED_EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}
         run: |
-          manifest="quality-evidence/releases/${{ inputs.package_version }}/evidence-manifest.json"
-          echo "manifest=${manifest}" >> "${GITHUB_OUTPUT}"
-          echo "artifact_id=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["artifact_id"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
-          echo "run_id=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["workflow_run_id"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
-          echo "artifact_name=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["artifact_name"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
-          echo "bundle_name=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["bundle"]["name"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
-          manifest_evaluated_commit=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["provenance"]["evaluated_commit"])' "${manifest}")
-          test "${manifest_evaluated_commit}" = "${{ inputs.evaluated_commit }}"
+          python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+
+          from scripts.release_evidence.models import load_release_evidence_manifest
+          from scripts.validate_release_tag import parse_release_tag
+
+          package_version = os.environ["PACKAGE_VERSION"]
+          expected_tag = os.environ["EXPECTED_TAG"]
+          expected_evaluated_commit = os.environ["EXPECTED_EVALUATED_COMMIT"]
+          parsed_tag = parse_release_tag(expected_tag)
+          validated_version = parsed_tag.package_version
+          if validated_version != package_version:
+              raise SystemExit("release tag and package version do not match")
+
+          manifest_path = Path("quality-evidence", "releases", validated_version,
+                               "evidence-manifest.json")
+          manifest = load_release_evidence_manifest(manifest_path)
+          expected_artifact_name = f"graph-rag-c9-{validated_version}-quality-evidence"
+          expected_bundle_name = f"{expected_artifact_name}.zip"
+
+          if manifest.release.package_version != validated_version:
+              raise SystemExit("manifest package version does not match")
+          if manifest.release.tag != expected_tag:
+              raise SystemExit("manifest release tag does not match")
+          if manifest.provenance.evaluated_commit != expected_evaluated_commit:
+              raise SystemExit("manifest evaluated commit does not match")
+          if manifest.transport.artifact_name != expected_artifact_name:
+              raise SystemExit("manifest artifact name does not match")
+          if manifest.bundle.name != expected_bundle_name:
+              raise SystemExit("manifest bundle name does not match")
+
+          output_lines = (
+              f"manifest={manifest_path.as_posix()}",
+              f"artifact_id={manifest.transport.artifact_id}",
+              f"run_id={manifest.transport.workflow_run_id}",
+              f"artifact_name={expected_artifact_name}",
+              f"bundle_name={expected_bundle_name}",
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open(
+              "a",
+              encoding="utf-8",
+          ) as output:
+              for line in output_lines:
+                  print(line, file=output)
+          PY
 
       - name: Query selected artifact metadata
         env:
           GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.evidence.outputs.artifact_id }}
         run: >
           gh api
-          "repos/${GITHUB_REPOSITORY}/actions/artifacts/${{ steps.evidence.outputs.artifact_id }}"
+          "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}"
           > artifact-metadata.json
 
       - name: Download selected complete evidence
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.evidence.outputs.run_id }}
+          ARTIFACT_NAME: ${{ steps.evidence.outputs.artifact_name }}
         run: >
-          gh run download "${{ steps.evidence.outputs.run_id }}"
-          --name "${{ steps.evidence.outputs.artifact_name }}"
+          gh run download "${RUN_ID}"
+          --name "${ARTIFACT_NAME}"
           --dir downloaded-evidence
 
       - name: Verify release evidence before tagging
+        env:
+          EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EVIDENCE_BUNDLE: downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}
         run: >
           python -m scripts.release_evidence verify
           --repository-root .
-          --manifest "${{ steps.evidence.outputs.manifest }}"
-          --release-commit "${{ inputs.release_commit }}"
-          --tag "${{ inputs.tag }}"
-          --bundle "downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}"
+          --manifest "${EVIDENCE_MANIFEST}"
+          --release-commit "${RELEASE_COMMIT}"
+          --tag "${RELEASE_TAG}"
+          --bundle "${EVIDENCE_BUNDLE}"
           --artifact-metadata artifact-metadata.json
           --json

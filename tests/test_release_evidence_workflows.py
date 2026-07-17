@@ -22,6 +22,12 @@ def step_text(job: str, name: str) -> str:
     return job[start:] if end == -1 else job[start:end]
 
 
+def run_text(step: str) -> str:
+    marker = "\n        run:"
+    assert marker in step
+    return step.split(marker, maxsplit=1)[1]
+
+
 def secret_names(fragment: str) -> set[str]:
     return set(re.findall(r"\$\{\{ secrets\.([A-Z0-9_]+) \}\}", fragment))
 
@@ -135,7 +141,6 @@ def test_capture_job_scopes_secrets_to_only_the_steps_that_need_them() -> None:
         "Set up Python",
         "Install dependencies",
         "Upload complete evidence bundle",
-        "Finalize compact evidence manifest",
         "Upload compact manifest for release pull request",
     ):
         step = step_text(capture, step_name)
@@ -144,13 +149,26 @@ def test_capture_job_scopes_secrets_to_only_the_steps_that_need_them() -> None:
 
 def test_capture_and_finalize_cli_receive_required_evidence_identity() -> None:
     workflow = workflow_text()
+    capture_job = job_text(workflow, "capture", next_job="verify")
+    capture = step_text(capture_job, "Capture complete release evidence")
+    capture_run = run_text(capture)
+    finalize = step_text(capture_job, "Finalize compact evidence manifest")
+    finalize_run = run_text(finalize)
 
+    for binding in (
+        "REPOSITORY: ${{ github.repository }}",
+        "PACKAGE_VERSION: ${{ inputs.package_version }}",
+        "RELEASE_TAG: ${{ inputs.tag }}",
+        "EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}",
+        "RELEASE_EVIDENCE_OUTPUT_DIR: eval/reports/release_evidence/${{ inputs.package_version }}",
+    ):
+        assert binding in capture
     for argument in (
         "--repository-root .",
-        '--repository "${{ github.repository }}"',
-        '--package-version "${{ inputs.package_version }}"',
-        '--tag "${{ inputs.tag }}"',
-        '--evaluated-commit "${{ inputs.evaluated_commit }}"',
+        '--repository "${REPOSITORY}"',
+        '--package-version "${PACKAGE_VERSION}"',
+        '--tag "${RELEASE_TAG}"',
+        '--evaluated-commit "${EVALUATED_COMMIT}"',
         "--integration-policy eval/integration_gate.json",
         "--live-quality-policy eval/live_quality_gate.json",
         "--integration-report eval/reports/integration_gate/report.json",
@@ -158,16 +176,77 @@ def test_capture_and_finalize_cli_receive_required_evidence_identity() -> None:
         '--diagnostics-url "${LIVE_QUALITY_API_URL%/}/v1/diagnostics"',
         '--artifact-manifest "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}"',
         '--judge-model "${LIVE_QUALITY_JUDGE_MODEL}"',
-        '--artifact-id "${{ steps.evidence-upload.outputs.artifact-id }}"',
-        '--artifact-digest "${{ steps.evidence-upload.outputs.artifact-digest }}"',
+        '--output-dir "${RELEASE_EVIDENCE_OUTPUT_DIR}"',
     ):
-        assert argument in workflow
+        assert argument in capture_run
 
-    capture = job_text(workflow, "capture", next_job="verify")
-    finalize = step_text(capture, "Finalize compact evidence manifest")
-    assert '--workflow-head-sha "${{ github.sha }}"' in finalize
-    assert "inputs.evaluated_commit" not in finalize
+    for binding in (
+        "CAPTURE_RECEIPT: eval/reports/release_evidence/${{ inputs.package_version }}/capture-receipt.json",
+        "WORKFLOW_HEAD_SHA: ${{ github.sha }}",
+        "ARTIFACT_ID: ${{ steps.evidence-upload.outputs.artifact-id }}",
+        "ARTIFACT_NAME: graph-rag-c9-${{ inputs.package_version }}-quality-evidence",
+        "ARTIFACT_DIGEST: ${{ steps.evidence-upload.outputs.artifact-digest }}",
+        "MANIFEST_OUTPUT: eval/reports/release_evidence/${{ inputs.package_version }}/evidence-manifest.json",
+    ):
+        assert binding in finalize
+    for argument in (
+        '--capture-receipt "${CAPTURE_RECEIPT}"',
+        '--workflow-head-sha "${WORKFLOW_HEAD_SHA}"',
+        '--artifact-id "${ARTIFACT_ID}"',
+        '--artifact-name "${ARTIFACT_NAME}"',
+        '--artifact-digest "${ARTIFACT_DIGEST}"',
+        '--output "${MANIFEST_OUTPUT}"',
+    ):
+        assert argument in finalize_run
     assert "secrets." not in finalize
+
+
+def test_run_scripts_do_not_inline_actions_expressions() -> None:
+    workflow = workflow_text()
+
+    for job in (
+        job_text(workflow, "capture", next_job="verify"),
+        job_text(workflow, "verify"),
+    ):
+        for raw_step in job.split("\n      - name:")[1:]:
+            step = "      - name:" + raw_step
+            if "\n        run:" in step:
+                assert "${{" not in run_text(step)
+
+
+def test_resolve_step_strictly_validates_manifest_before_safe_outputs() -> None:
+    workflow = workflow_text()
+    verify = job_text(workflow, "verify")
+    resolve = step_text(verify, "Resolve selected artifact identity")
+    run = run_text(resolve)
+
+    assert "PACKAGE_VERSION: ${{ inputs.package_version }}" in resolve
+    assert "EXPECTED_TAG: ${{ inputs.tag }}" in resolve
+    assert "EXPECTED_EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}" in resolve
+    for contract in (
+        "from scripts.validate_release_tag import parse_release_tag",
+        "from scripts.release_evidence.models import load_release_evidence_manifest",
+        "parsed_tag = parse_release_tag(expected_tag)",
+        "validated_version = parsed_tag.package_version",
+        "if validated_version != package_version:",
+        'manifest_path = Path("quality-evidence", "releases", validated_version,',
+        "manifest = load_release_evidence_manifest(manifest_path)",
+        'expected_artifact_name = f"graph-rag-c9-{validated_version}-quality-evidence"',
+        'expected_bundle_name = f"{expected_artifact_name}.zip"',
+        "if manifest.release.package_version != validated_version:",
+        "if manifest.release.tag != expected_tag:",
+        "if manifest.provenance.evaluated_commit != expected_evaluated_commit:",
+        "if manifest.transport.artifact_name != expected_artifact_name:",
+        "if manifest.bundle.name != expected_bundle_name:",
+        'Path(os.environ["GITHUB_OUTPUT"]).open(',
+        'f"artifact_id={manifest.transport.artifact_id}"',
+        'f"run_id={manifest.transport.workflow_run_id}"',
+        'f"artifact_name={expected_artifact_name}"',
+        'f"bundle_name={expected_bundle_name}"',
+    ):
+        assert contract in run
+    assert "json.load" not in run
+    assert "echo " not in run
 
 
 def test_verify_workflow_queries_and_downloads_selected_artifact() -> None:
@@ -191,15 +270,31 @@ def test_verify_workflow_queries_and_downloads_selected_artifact() -> None:
     )
     assert "ref: ${{ inputs.release_commit }}" in checkout
     assert "github.token" not in header + preflight + checkout
-    assert "GH_TOKEN: ${{ github.token }}" in step_text(verify, "Query selected artifact metadata")
-    assert "GH_TOKEN: ${{ github.token }}" in step_text(
-        verify, "Download selected complete evidence"
-    )
+    query = step_text(verify, "Query selected artifact metadata")
+    assert "GH_TOKEN: ${{ github.token }}" in query
+    assert "ARTIFACT_ID: ${{ steps.evidence.outputs.artifact_id }}" in query
+    assert 'actions/artifacts/${ARTIFACT_ID}"' in run_text(query)
+
+    download = step_text(verify, "Download selected complete evidence")
+    assert "GH_TOKEN: ${{ github.token }}" in download
+    assert "RUN_ID: ${{ steps.evidence.outputs.run_id }}" in download
+    assert "ARTIFACT_NAME: ${{ steps.evidence.outputs.artifact_name }}" in download
+    assert 'gh run download "${RUN_ID}"' in run_text(download)
+    assert '--name "${ARTIFACT_NAME}"' in run_text(download)
+
+    verify_evidence = step_text(verify, "Verify release evidence before tagging")
+    for binding in (
+        "EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}",
+        "RELEASE_COMMIT: ${{ inputs.release_commit }}",
+        "RELEASE_TAG: ${{ inputs.tag }}",
+        "EVIDENCE_BUNDLE: downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}",
+    ):
+        assert binding in verify_evidence
     for argument in (
-        '--manifest "${{ steps.evidence.outputs.manifest }}"',
-        '--release-commit "${{ inputs.release_commit }}"',
-        '--tag "${{ inputs.tag }}"',
-        '--bundle "downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}"',
+        '--manifest "${EVIDENCE_MANIFEST}"',
+        '--release-commit "${RELEASE_COMMIT}"',
+        '--tag "${RELEASE_TAG}"',
+        '--bundle "${EVIDENCE_BUNDLE}"',
         "--artifact-metadata artifact-metadata.json",
     ):
-        assert argument in workflow
+        assert argument in run_text(verify_evidence)
