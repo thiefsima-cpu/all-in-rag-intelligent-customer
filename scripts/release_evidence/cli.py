@@ -16,6 +16,26 @@ from .models import TransportIdentity
 from .verifier import VerifyInputs, verify_release_evidence
 
 
+class ReleaseEvidenceCliError(RuntimeError):
+    pass
+
+
+def _discard_temporary_diagnostics(path: Path) -> None:
+    for _attempt in range(2):
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            continue
+        return
+
+
+def _remove_temporary_diagnostics(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except Exception as exc:
+        raise ReleaseEvidenceCliError("temporary diagnostics cleanup failed") from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Capture and verify release quality evidence.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -75,10 +95,26 @@ def _fetch_diagnostics(url: str) -> Path:
         suffix=".json",
         delete=False,
     )
-    with handle:
+    path = Path(handle.name)
+    operation_error: Exception | None = None
+    try:
         json.dump(payload, handle, ensure_ascii=False, allow_nan=False)
         handle.write("\n")
-    return Path(handle.name)
+    except Exception as exc:
+        operation_error = exc
+    try:
+        handle.close()
+    except Exception as exc:
+        if operation_error is None:
+            operation_error = exc
+        try:
+            handle.close()
+        except Exception:
+            pass
+    if operation_error is not None:
+        _discard_temporary_diagnostics(path)
+        raise operation_error
+    return path
 
 
 def _emit(payload: dict[str, object], emit_json: bool) -> None:
@@ -115,6 +151,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     output_dir=args.output_dir,
                 )
             )
+            if temporary_diagnostics is not None:
+                _remove_temporary_diagnostics(temporary_diagnostics)
+                temporary_diagnostics = None
             _emit(
                 {
                     "capture_receipt": str(outputs.receipt_path),
@@ -175,4 +214,4 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     finally:
         if temporary_diagnostics is not None:
-            temporary_diagnostics.unlink(missing_ok=True)
+            _discard_temporary_diagnostics(temporary_diagnostics)
