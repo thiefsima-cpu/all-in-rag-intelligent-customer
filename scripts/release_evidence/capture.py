@@ -88,6 +88,9 @@ _SAFE_TOKEN_METRIC_KEYS = frozenset(
         "total_tokens",
     }
 )
+_SAFE_TOKEN_METRIC_PATH_RE = re.compile(
+    r"^integration_gate/report\.json:\$\.cases\[\d+\]\.total_tokens$"
+)
 _SENSITIVE_KEY_SUFFIXES = (
     "_access_token",
     "_api_key",
@@ -193,9 +196,130 @@ _LIVE_SLICE_FIELDS = {
     "by_response_mode": ("response_mode", False),
     "by_strategy": ("strategy", False),
 }
+_INTEGRATION_REPORT_KEYS = frozenset(
+    {
+        "schema_version",
+        "generated_at",
+        "passed",
+        "target",
+        "metrics",
+        "checks",
+        "cases",
+        "artifacts",
+    }
+)
+_INTEGRATION_TARGET_KEYS = frozenset({"api_host", "neo4j_host", "milvus_host"})
+_INTEGRATION_METRIC_KEYS = frozenset(
+    {
+        "check_count",
+        "failed_count",
+        "blocked_count",
+        "case_count",
+        "executed_case_count",
+        "observation_count",
+        "failure_type_counts",
+        "total_estimated_cost_usd",
+        "max_latency_ms",
+    }
+)
+_INTEGRATION_CASE_KEYS = frozenset(
+    {
+        "case_id",
+        "executed",
+        "status",
+        "has_observation",
+        "evidence_count",
+        "latency_ms",
+        "total_tokens",
+        "estimated_cost_usd",
+        "check_codes",
+    }
+)
+_INTEGRATION_ARTIFACT_KEYS = frozenset({"report_json", "summary_md"})
+_LIVE_REPORT_KEYS = frozenset(
+    {
+        "schema_version",
+        "generated_at",
+        "passed",
+        "target",
+        "top_k",
+        "metrics",
+        "failure_type_counts",
+        "checks",
+        "cases",
+        "manual_review_sample_count",
+        "manual_review_sample",
+        "artifacts",
+    }
+)
+_LIVE_TARGET_KEYS = frozenset({"api_host", "judge_host"})
+_LIVE_SUMMARY_KEYS = frozenset(
+    {
+        "case_count",
+        "pass_rate",
+        "deterministic_pass_rate",
+        "judge_pass_rate",
+        "recall_at_k",
+        "mrr",
+        "ndcg_at_k",
+        "fallback_rate",
+        "retrieval_degradation_rate",
+        "p95_latency_ms",
+        "estimated_cost_usd",
+        "avg_judge_scores",
+    }
+)
+_LIVE_METRIC_KEYS = _LIVE_SUMMARY_KEYS | frozenset(_LIVE_SLICE_FIELDS)
+_LIVE_CASE_KEYS = frozenset(
+    {
+        "case_id",
+        "query_type",
+        "cuisine",
+        "constraint_types",
+        "risk_tags",
+        "response_mode",
+        "strategy",
+        "passed",
+        "deterministic_passed",
+        "judge_passed",
+        "judge_scores",
+        "failures",
+        "metrics",
+        "manual_review",
+        "answer_preview",
+        "evidence",
+    }
+)
+_LIVE_CASE_METRIC_KEYS = frozenset(_CASE_RETRIEVAL_METRIC_NAMES)
+_LIVE_MANUAL_REVIEW_KEYS = frozenset({"owner", "sample"})
+_LIVE_EVIDENCE_KEYS = frozenset({"recipe_name", "source", "snippet"})
+_LIVE_ARTIFACT_KEYS = frozenset({"report_json", "summary_md", "manual_review_sample_jsonl"})
+_MANUAL_REVIEW_SAMPLE_KEYS = frozenset(
+    {
+        "case_id",
+        "owner",
+        "query_type",
+        "cuisine",
+        "risk_tags",
+        "constraint_types",
+        "expected_response_mode",
+        "query",
+        "passed",
+        "deterministic_passed",
+        "judge_passed",
+        "judge_scores",
+        "failures",
+        "answer_preview",
+        "evidence",
+    }
+)
 
 
 class ReleaseEvidenceCaptureError(RuntimeError):
+    pass
+
+
+class _DuplicateJsonKeyError(ValueError):
     pass
 
 
@@ -269,9 +393,27 @@ def _read_bytes(path: Path) -> bytes:
     return data
 
 
+def _json_object_without_duplicate_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise _DuplicateJsonKeyError(key)
+        payload[key] = value
+    return payload
+
+
 def _parse_json(data: bytes, name: str) -> dict[str, Any]:
     try:
-        value = json.loads(data.decode("utf-8"))
+        value = json.loads(
+            data.decode("utf-8"),
+            object_pairs_hook=_json_object_without_duplicate_keys,
+        )
+    except _DuplicateJsonKeyError as exc:
+        raise ReleaseEvidenceCaptureError(
+            f"release evidence JSON contains a duplicate key: {name}"
+        ) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReleaseEvidenceCaptureError(f"release evidence JSON is invalid: {name}") from exc
     if not isinstance(value, dict):
@@ -466,8 +608,11 @@ def _require_int(value: object, name: str, *, positive: bool = False) -> int:
 def _require_float(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ReleaseEvidenceCaptureError(f"{name} is invalid")
-    result = float(value)
-    if not (float("-inf") < result < float("inf")):
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        raise ReleaseEvidenceCaptureError(f"{name} is invalid") from exc
+    if not math.isfinite(result):
         raise ReleaseEvidenceCaptureError(f"{name} is invalid")
     return result
 
@@ -481,6 +626,378 @@ def _detail_list(report: Mapping[str, Any], key: str, name: str) -> list[dict[st
     if not all(isinstance(item, dict) for item in value):
         raise ReleaseEvidenceCaptureError(f"{name} contains an invalid entry")
     return value
+
+
+def _require_exact_keys(
+    value: Mapping[str, Any],
+    expected: frozenset[str],
+    name: str,
+) -> None:
+    if set(value) != expected:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+
+
+def _require_iso_timestamp(value: object, name: str) -> None:
+    if not isinstance(value, str):
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    try:
+        datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid") from exc
+
+
+def _validate_failure_counts(value: object, name: str) -> None:
+    if not isinstance(value, dict) or any(
+        not isinstance(key, str)
+        or not key
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 0
+        for key, count in value.items()
+    ):
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+
+
+def _validate_evidence_entries(
+    value: object,
+    name: str,
+    *,
+    maximum_items: int,
+    maximum_snippet_length: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > maximum_items:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    entries: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+        _require_exact_keys(item, _LIVE_EVIDENCE_KEYS, name)
+        if (
+            not isinstance(item["recipe_name"], str)
+            or not isinstance(item["source"], str)
+            or not isinstance(item["snippet"], str)
+            or len(item["snippet"]) > maximum_snippet_length
+        ):
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+        entries.append(item)
+    return entries
+
+
+def _validate_integration_report_schema(report: Mapping[str, Any]) -> None:
+    _detail_list(report, "checks", "integration check details")
+    _detail_list(report, "cases", "integration case details")
+    _require_exact_keys(report, _INTEGRATION_REPORT_KEYS, "integration report")
+    if report.get("schema_version") != 1 or not isinstance(report.get("passed"), bool):
+        raise ReleaseEvidenceCaptureError("integration report schema is invalid")
+    _require_iso_timestamp(report.get("generated_at"), "integration report")
+
+    target = _require_mapping(report.get("target"), "integration target")
+    _require_exact_keys(target, _INTEGRATION_TARGET_KEYS, "integration target")
+    if any(not isinstance(target[key], str) for key in _INTEGRATION_TARGET_KEYS):
+        raise ReleaseEvidenceCaptureError("integration target schema is invalid")
+
+    metrics = _require_mapping(report.get("metrics"), "integration metrics")
+    _require_exact_keys(metrics, _INTEGRATION_METRIC_KEYS, "integration metrics")
+    _validate_failure_counts(metrics.get("failure_type_counts"), "integration metrics")
+
+    artifacts = _require_mapping(report.get("artifacts"), "integration artifacts")
+    _require_exact_keys(artifacts, _INTEGRATION_ARTIFACT_KEYS, "integration artifacts")
+    if artifacts != {"report_json": "report.json", "summary_md": "summary.md"}:
+        raise ReleaseEvidenceCaptureError("integration artifacts schema is invalid")
+
+    for check in _detail_list(report, "checks", "integration check details"):
+        _require_exact_keys(check, _GATE_CHECK_DETAIL_KEYS, "integration check details")
+    for case in _detail_list(report, "cases", "integration case details"):
+        _require_exact_keys(case, _INTEGRATION_CASE_KEYS, "integration case details")
+
+
+def _validate_live_summary_schema(
+    value: object,
+    policy: LiveQualityGatePolicy,
+    name: str,
+) -> None:
+    summary = _require_mapping(value, name)
+    _require_exact_keys(summary, _LIVE_SUMMARY_KEYS, name)
+    case_count = summary.get("case_count")
+    if isinstance(case_count, bool) or not isinstance(case_count, int) or case_count < 0:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    for metric_name in _LIVE_SUMMARY_KEYS - {"case_count", "avg_judge_scores"}:
+        metric_value = summary.get(metric_name)
+        if metric_value is None and metric_name in {
+            "judge_pass_rate",
+            "recall_at_k",
+            "mrr",
+            "ndcg_at_k",
+        }:
+            continue
+        projected = _require_float(metric_value, f"{name} {metric_name}")
+        if (
+            metric_name
+            in {
+                "pass_rate",
+                "deterministic_pass_rate",
+                "judge_pass_rate",
+                "recall_at_k",
+                "mrr",
+                "ndcg_at_k",
+                "fallback_rate",
+                "retrieval_degradation_rate",
+            }
+            and not 0.0 <= projected <= 1.0
+        ):
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+        if metric_name in {"p95_latency_ms", "estimated_cost_usd"} and projected < 0:
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    scores = _require_mapping(summary.get("avg_judge_scores"), f"{name} avg judge scores")
+    expected_scores = set(policy.judge.score_names) if policy.judge.required else set()
+    if set(scores) != expected_scores:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    for score_name, score_value in scores.items():
+        score = _require_float(score_value, f"{name} avg judge score {score_name}")
+        if not 0.0 <= score <= 1.0:
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+
+
+def _validate_live_report_schema(
+    report: Mapping[str, Any],
+    policy: LiveQualityGatePolicy,
+) -> None:
+    _detail_list(report, "checks", "live quality check details")
+    _detail_list(report, "cases", "live quality case details")
+    _require_exact_keys(report, _LIVE_REPORT_KEYS, "live quality report")
+    if (
+        report.get("schema_version") != 1
+        or not isinstance(report.get("passed"), bool)
+        or isinstance(report.get("top_k"), bool)
+        or report.get("top_k") != policy.top_k
+    ):
+        raise ReleaseEvidenceCaptureError("live quality report schema is invalid")
+    _require_iso_timestamp(report.get("generated_at"), "live quality report")
+
+    target = _require_mapping(report.get("target"), "live quality target")
+    _require_exact_keys(target, _LIVE_TARGET_KEYS, "live quality target")
+    if any(not isinstance(target[key], str) for key in _LIVE_TARGET_KEYS):
+        raise ReleaseEvidenceCaptureError("live quality target schema is invalid")
+
+    metrics = _require_mapping(report.get("metrics"), "live quality metrics")
+    _require_exact_keys(metrics, _LIVE_METRIC_KEYS, "live quality metrics")
+    _validate_live_summary_schema(
+        {key: metrics[key] for key in _LIVE_SUMMARY_KEYS},
+        policy,
+        "live quality metrics",
+    )
+    for slice_name in _LIVE_SLICE_FIELDS:
+        slices = _require_mapping(metrics.get(slice_name), f"live quality metric {slice_name}")
+        if any(not isinstance(label, str) or not label for label in slices):
+            raise ReleaseEvidenceCaptureError(f"live quality metric {slice_name} schema is invalid")
+        for label, summary in slices.items():
+            _validate_live_summary_schema(
+                summary,
+                policy,
+                f"live quality metric {slice_name}.{label}",
+            )
+
+    _validate_failure_counts(report.get("failure_type_counts"), "live quality failures")
+    artifacts = _require_mapping(report.get("artifacts"), "live quality artifacts")
+    _require_exact_keys(artifacts, _LIVE_ARTIFACT_KEYS, "live quality artifacts")
+    if artifacts != {
+        "report_json": "report.json",
+        "summary_md": "summary.md",
+        "manual_review_sample_jsonl": "manual_review_sample.jsonl",
+    }:
+        raise ReleaseEvidenceCaptureError("live quality artifacts schema is invalid")
+
+    for check in _detail_list(report, "checks", "live quality check details"):
+        _require_exact_keys(check, _GATE_CHECK_DETAIL_KEYS, "live quality check details")
+    for case in _detail_list(report, "cases", "live quality case details"):
+        _require_exact_keys(case, _LIVE_CASE_KEYS, "live quality case details")
+        case_metrics = _require_mapping(case.get("metrics"), "live quality case metrics")
+        _require_exact_keys(case_metrics, _LIVE_CASE_METRIC_KEYS, "live quality case metrics")
+        manual_review = _require_mapping(
+            case.get("manual_review"),
+            "live quality case manual review",
+        )
+        _require_exact_keys(
+            manual_review,
+            _LIVE_MANUAL_REVIEW_KEYS,
+            "live quality case manual review",
+        )
+        if (
+            not isinstance(manual_review.get("owner"), str)
+            or not manual_review["owner"].strip()
+            or not isinstance(manual_review.get("sample"), bool)
+            or not isinstance(case.get("answer_preview"), str)
+            or len(case["answer_preview"]) > 300
+        ):
+            raise ReleaseEvidenceCaptureError("live quality case schema is invalid")
+        _validate_evidence_entries(
+            case.get("evidence"),
+            "live quality case evidence",
+            maximum_items=5,
+            maximum_snippet_length=160,
+        )
+
+    sample_count = report.get("manual_review_sample_count")
+    samples = report.get("manual_review_sample")
+    if (
+        isinstance(sample_count, bool)
+        or not isinstance(sample_count, int)
+        or sample_count < 0
+        or not isinstance(samples, list)
+    ):
+        raise ReleaseEvidenceCaptureError("manual review sample schema is invalid")
+    for sample in samples:
+        if not isinstance(sample, dict):
+            raise ReleaseEvidenceCaptureError("manual review sample schema is invalid")
+        _require_exact_keys(sample, _MANUAL_REVIEW_SAMPLE_KEYS, "manual review sample")
+        _validate_evidence_entries(
+            sample.get("evidence"),
+            "manual review sample evidence",
+            maximum_items=6,
+            maximum_snippet_length=240,
+        )
+
+
+def _parse_manual_review_jsonl(data: bytes, name: str) -> list[dict[str, Any]]:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReleaseEvidenceCaptureError("manual review JSONL is not UTF-8") from exc
+    if not text:
+        return []
+
+    def reject_non_finite(_: str) -> None:
+        raise ValueError("non-finite JSON number")
+
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            raise ReleaseEvidenceCaptureError(
+                f"manual review JSONL contains a blank line: {name}:{line_number}"
+            )
+        try:
+            row = json.loads(
+                line,
+                parse_constant=reject_non_finite,
+                object_pairs_hook=_json_object_without_duplicate_keys,
+            )
+        except _DuplicateJsonKeyError as exc:
+            raise ReleaseEvidenceCaptureError(
+                f"manual review JSONL contains a duplicate key: {name}:{line_number}"
+            ) from exc
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ReleaseEvidenceCaptureError(
+                f"manual review JSONL is invalid: {name}:{line_number}"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ReleaseEvidenceCaptureError(
+                f"manual review JSONL row must be an object: {name}:{line_number}"
+            )
+        rows.append(row)
+    return rows
+
+
+def _validate_manual_review_binding(
+    report: Mapping[str, Any],
+    policy: LiveQualityGatePolicy,
+    jsonl_rows: list[dict[str, Any]],
+) -> None:
+    report_rows = report.get("manual_review_sample")
+    sample_count = report.get("manual_review_sample_count")
+    if not isinstance(report_rows, list) or any(not isinstance(row, dict) for row in report_rows):
+        raise ReleaseEvidenceCaptureError("manual review sample schema is invalid")
+    try:
+        canonical_report_rows = [_canonical_json(row) for row in report_rows]
+        canonical_jsonl_rows = [_canonical_json(row) for row in jsonl_rows]
+    except (TypeError, ValueError) as exc:
+        raise ReleaseEvidenceCaptureError("manual review sample schema is invalid") from exc
+    if (
+        isinstance(sample_count, bool)
+        or not isinstance(sample_count, int)
+        or sample_count != len(report_rows)
+        or sample_count != len(jsonl_rows)
+        or canonical_report_rows != canonical_jsonl_rows
+    ):
+        raise ReleaseEvidenceCaptureError("manual review sample does not match JSONL")
+
+    sampled_policies = [case for case in policy.cases if case.manual_review.sample]
+    expected_case_ids = [case.case_id for case in sampled_policies]
+    actual_case_ids = [row.get("case_id") for row in report_rows]
+    if (
+        not all(isinstance(case_id, str) for case_id in actual_case_ids)
+        or actual_case_ids != expected_case_ids
+        or len(actual_case_ids) != len(set(actual_case_ids))
+    ):
+        raise ReleaseEvidenceCaptureError("manual review sample does not match policy order")
+
+    report_cases = report.get("cases")
+    if not isinstance(report_cases, list) or any(
+        not isinstance(case, dict) for case in report_cases
+    ):
+        raise ReleaseEvidenceCaptureError("manual review sample cannot be bound to report cases")
+    cases_by_id = {case.get("case_id"): case for case in report_cases}
+    for row, case_policy in zip(report_rows, sampled_policies, strict=True):
+        _require_exact_keys(row, _MANUAL_REVIEW_SAMPLE_KEYS, "manual review sample")
+        evidence = _validate_evidence_entries(
+            row.get("evidence"),
+            "manual review sample evidence",
+            maximum_items=6,
+            maximum_snippet_length=240,
+        )
+        judge_scores = row.get("judge_scores")
+        failures = row.get("failures")
+        answer_preview = row.get("answer_preview")
+        expected_score_names = set(policy.judge.score_names) if policy.judge.required else set()
+        if (
+            row.get("case_id") != case_policy.case_id
+            or row.get("owner") != case_policy.manual_review.owner
+            or row.get("query_type") != case_policy.query_type
+            or row.get("cuisine") != case_policy.cuisine
+            or row.get("risk_tags") != case_policy.risk_tags
+            or row.get("constraint_types") != case_policy.constraint_types
+            or row.get("expected_response_mode") != case_policy.expected_response_mode.value
+            or row.get("query") != case_policy.query
+            or not isinstance(row.get("passed"), bool)
+            or not isinstance(row.get("deterministic_passed"), bool)
+            or (row.get("judge_passed") is not None and not isinstance(row["judge_passed"], bool))
+            or not isinstance(judge_scores, dict)
+            or set(judge_scores) != expected_score_names
+            or not isinstance(failures, list)
+            or not all(isinstance(failure, str) and failure for failure in failures)
+            or failures != sorted(set(failures))
+            or not isinstance(answer_preview, str)
+            or len(answer_preview) > 500
+        ):
+            raise ReleaseEvidenceCaptureError("manual review sample does not match policy")
+        for score_name, score_value in judge_scores.items():
+            score = _require_float(score_value, f"manual review judge score {score_name}")
+            if not 0.0 <= score <= 1.0:
+                raise ReleaseEvidenceCaptureError("manual review sample schema is invalid")
+
+        case = cases_by_id.get(case_policy.case_id)
+        if not isinstance(case, dict):
+            raise ReleaseEvidenceCaptureError("manual review sample case is unknown")
+        if any(
+            row[field_name] != case[field_name]
+            for field_name in (
+                "passed",
+                "deterministic_passed",
+                "judge_passed",
+                "judge_scores",
+                "failures",
+            )
+        ) or answer_preview[:300] != case.get("answer_preview"):
+            raise ReleaseEvidenceCaptureError("manual review sample does not match report case")
+        case_evidence = case.get("evidence")
+        if not isinstance(case_evidence, list) or len(case_evidence) != min(len(evidence), 5):
+            raise ReleaseEvidenceCaptureError("manual review sample does not match report case")
+        for case_item, sample_item in zip(case_evidence, evidence[:5], strict=True):
+            if (
+                case_item.get("recipe_name") != sample_item["recipe_name"]
+                or case_item.get("source") != sample_item["source"]
+                or case_item.get("snippet") != sample_item["snippet"][:160]
+            ):
+                raise ReleaseEvidenceCaptureError("manual review sample does not match report case")
 
 
 def _check_detail(
@@ -524,7 +1041,12 @@ def _evidence_value_matches(left: object, right: object) -> bool:
         and isinstance(left, int | float)
         and isinstance(right, int | float)
     ):
-        return _float_matches(float(left), float(right))
+        if isinstance(left, int) and isinstance(right, int):
+            return left == right
+        try:
+            return _float_matches(float(left), float(right))
+        except OverflowError:
+            return False
     if isinstance(left, Mapping) and isinstance(right, Mapping):
         return set(left) == set(right) and all(
             _evidence_value_matches(left[key], right[key]) for key in left
@@ -865,6 +1387,7 @@ def _validate_integration_details(
     policy: IntegrationGatePolicy,
     metrics: IntegrationMetrics,
 ) -> None:
+    _validate_integration_report_schema(report)
     checks = _detail_list(report, "checks", "integration check details")
     check_details = [_check_detail(check, "integration check details") for check in checks]
     checks_by_name: dict[str, dict[str, Any]] = {}
@@ -894,7 +1417,8 @@ def _validate_integration_details(
         raise ReleaseEvidenceCaptureError("integration check details do not match aggregate")
 
     cases = _detail_list(report, "cases", "integration case details")
-    expected_case_ids = {case.case_id for case in policy.live_cases}
+    expected_case_ids = [case.case_id for case in policy.live_cases]
+    expected_case_id_set = set(expected_case_ids)
     case_ids: list[str] = []
     cases_by_id: dict[str, dict[str, Any]] = {}
     executed_count = 0
@@ -912,7 +1436,7 @@ def _validate_integration_details(
         if (
             not isinstance(case_id, str)
             or not case_id
-            or case_id not in expected_case_ids
+            or case_id not in expected_case_id_set
             or not isinstance(executed, bool)
             or status not in _GATE_STATUSES
             or not isinstance(has_observation, bool)
@@ -967,7 +1491,7 @@ def _validate_integration_details(
         or executed_count != metrics.executed_case_count
         or observation_count != metrics.observation_count
         or len(case_ids) != len(set(case_ids))
-        or set(case_ids) != expected_case_ids
+        or case_ids != expected_case_ids
         or not _float_matches(total_estimated_cost, round(sum(estimated_costs), 6))
         or not _float_matches(max_latency, round(max(latencies), 3))
     ):
@@ -1030,6 +1554,7 @@ def _validate_live_quality_details(
     policy: LiveQualityGatePolicy,
     metrics: QualityMetrics,
 ) -> None:
+    _validate_live_report_schema(report, policy)
     checks = _detail_list(report, "checks", "live quality check details")
     checks_by_name: dict[str, dict[str, Any]] = {}
     failure_counts: Counter[str] = Counter()
@@ -1083,6 +1608,7 @@ def _validate_live_quality_details(
         risk_tags = case.get("risk_tags")
         response_mode = case.get("response_mode")
         strategy = case.get("strategy")
+        manual_review = case.get("manual_review")
         if (
             not isinstance(case_id, str)
             or not case_id
@@ -1104,6 +1630,7 @@ def _validate_live_quality_details(
             or not isinstance(response_mode, str)
             or not isinstance(strategy, str)
             or not strategy
+            or not isinstance(manual_review, dict)
             or case.get("status") in {"failed", "blocked", "error"}
         ):
             raise ReleaseEvidenceCaptureError("live quality case details are invalid")
@@ -1115,6 +1642,11 @@ def _validate_live_quality_details(
             or constraint_types != case_policy.constraint_types
             or risk_tags != case_policy.risk_tags
             or response_mode != case_policy.expected_response_mode.value
+            or manual_review
+            != {
+                "owner": case_policy.manual_review.owner,
+                "sample": case_policy.manual_review.sample,
+            }
             or ("strategy_mismatch" in failures) == (strategy in case_policy.allowed_strategies)
         ):
             raise ReleaseEvidenceCaptureError("live quality case details are invalid")
@@ -1226,7 +1758,7 @@ def _validate_live_quality_details(
     if (
         case_count != metrics.case_count
         or len(case_ids) != len(set(case_ids))
-        or set(case_ids) != set(policies_by_id)
+        or case_ids != [case.case_id for case in policy.cases]
         or not _float_matches(metrics.pass_rate, passed_count / case_count)
         or not _float_matches(
             metrics.deterministic_pass_rate,
@@ -1500,9 +2032,22 @@ def _normalized_key(value: str) -> str:
 
 def _is_sensitive_key(value: str) -> bool:
     normalized = _normalized_key(value)
-    if normalized in _SAFE_TOKEN_METRIC_KEYS:
-        return False
-    return normalized in _SENSITIVE_KEYS or normalized.endswith(_SENSITIVE_KEY_SUFFIXES)
+    return (
+        normalized in _SAFE_TOKEN_METRIC_KEYS
+        or normalized in _SENSITIVE_KEYS
+        or normalized.endswith(_SENSITIVE_KEY_SUFFIXES)
+    )
+
+
+def _is_safe_token_metric(path: str, key: str, value: object) -> bool:
+    return (
+        _normalized_key(key) in _SAFE_TOKEN_METRIC_KEYS
+        and _SAFE_TOKEN_METRIC_PATH_RE.fullmatch(path) is not None
+        and not isinstance(value, bool)
+        and isinstance(value, int | float)
+        and (isinstance(value, int) or math.isfinite(value))
+        and value >= 0
+    )
 
 
 def _is_allowed_api_route(value: str, field_name: str | None) -> bool:
@@ -1554,11 +2099,14 @@ def _scan_json(
     if isinstance(value, dict):
         for key, item in value.items():
             key_text = str(key)
-            if _is_sensitive_key(key_text):
-                raise ReleaseEvidenceCaptureError(
-                    f"sensitive release evidence key at {path}.{key_text}"
-                )
-            _scan_json(item, f"{path}.{key_text}", field_name=key_text)
+            item_path = f"{path}.{key_text}"
+            if _is_sensitive_key(key_text) and not _is_safe_token_metric(
+                item_path,
+                key_text,
+                item,
+            ):
+                raise ReleaseEvidenceCaptureError(f"sensitive release evidence key at {item_path}")
+            _scan_json(item, item_path, field_name=key_text)
         return
     if isinstance(value, list):
         for index, item in enumerate(value):
@@ -1579,17 +2127,31 @@ def _scan_source(name: str, data: bytes) -> None:
         raise ReleaseEvidenceCaptureError(f"release evidence text is invalid: {name}") from exc
     if name.endswith(".json"):
         try:
-            payload = json.loads(text)
+            payload = json.loads(
+                text,
+                object_pairs_hook=_json_object_without_duplicate_keys,
+            )
+        except _DuplicateJsonKeyError as exc:
+            raise ReleaseEvidenceCaptureError(
+                f"release evidence JSON contains a duplicate key: {name}"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ReleaseEvidenceCaptureError(f"release evidence JSON is invalid: {name}") from exc
-        _scan_json(payload)
+        _scan_json(payload, f"{name}:$")
         return
     if name.endswith(".jsonl"):
         for line_number, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
             try:
-                payload = json.loads(line)
+                payload = json.loads(
+                    line,
+                    object_pairs_hook=_json_object_without_duplicate_keys,
+                )
+            except _DuplicateJsonKeyError as exc:
+                raise ReleaseEvidenceCaptureError(
+                    f"release evidence JSONL contains a duplicate key: {name}:{line_number}"
+                ) from exc
             except json.JSONDecodeError as exc:
                 raise ReleaseEvidenceCaptureError(
                     f"release evidence JSONL is invalid: {name}:{line_number}"
@@ -1673,6 +2235,9 @@ def capture_release_evidence(
     diagnostics_payload = _parse_json(diagnostics_bytes, inputs.diagnostics_path.name)
     artifact_payload = _parse_json(artifact_bytes, inputs.artifact_manifest_path.name)
 
+    _scan_json(integration_report, "integration_gate/report.json:$")
+    _scan_json(live_report, "live_quality_gate/report.json:$")
+
     integration_artifacts = _require_mapping(
         integration_report.get("artifacts"),
         "integration artifacts",
@@ -1712,6 +2277,12 @@ def capture_release_evidence(
             live_artifacts.get("manual_review_sample_jsonl"),
         )
     )
+    manual_review_rows = _parse_manual_review_jsonl(
+        manual_review_bytes,
+        "live_quality_gate/manual_review_sample.jsonl",
+    )
+    for line_number, row in enumerate(manual_review_rows, start=1):
+        _scan_json(row, f"live_quality_gate/manual_review_sample.jsonl:{line_number}")
 
     try:
         integration_policy = IntegrationGatePolicy.model_validate(integration_policy_payload)
@@ -1763,13 +2334,8 @@ def capture_release_evidence(
         )
     except ValidationError as exc:
         raise ReleaseEvidenceCaptureError("release evidence projection is invalid") from exc
-
-    try:
-        manual_review_text = manual_review_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ReleaseEvidenceCaptureError("manual review sample is not UTF-8") from exc
-    manual_review_line_count = sum(bool(line.strip()) for line in manual_review_text.splitlines())
-    if manual_review_line_count != quality.manual_review_sample_count:
+    _validate_manual_review_binding(live_report, live_policy, manual_review_rows)
+    if len(manual_review_rows) != quality.manual_review_sample_count:
         raise ReleaseEvidenceCaptureError("manual review sample count does not match JSONL")
 
     source_entries = {
@@ -1786,7 +2352,14 @@ def capture_release_evidence(
     if sum(len(value) for value in source_entries.values()) > MAX_BUNDLE_SOURCE_BYTES:
         raise ReleaseEvidenceCaptureError("release evidence source bundle is too large")
 
+    already_scanned = {
+        "integration_gate/report.json",
+        "live_quality_gate/report.json",
+        "live_quality_gate/manual_review_sample.jsonl",
+    }
     for name, data in source_entries.items():
+        if name in already_scanned:
+            continue
         _scan_source(name, data)
 
     checksums = {

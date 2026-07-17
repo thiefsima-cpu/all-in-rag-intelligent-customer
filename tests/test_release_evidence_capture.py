@@ -92,7 +92,12 @@ def _integration_case_detail(*, status: str = "passed") -> dict[str, object]:
     }
 
 
-def _live_case_detail(case_id: str, *, judge_passed: bool = True) -> dict[str, object]:
+def _live_case_detail(
+    case_id: str,
+    *,
+    judge_passed: bool = True,
+    manual_review_sample: bool = True,
+) -> dict[str, object]:
     return {
         "case_id": case_id,
         "query_type": "single_recipe",
@@ -112,10 +117,26 @@ def _live_case_detail(case_id: str, *, judge_passed: bool = True) -> dict[str, o
         },
         "failures": [],
         "metrics": {"recall_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0},
-        "manual_review": None,
+        "manual_review": {
+            "owner": "business-quality",
+            "sample": manual_review_sample,
+        },
         "answer_preview": "Mapo tofu uses tofu.",
-        "evidence": [],
+        "evidence": [
+            {
+                "recipe_name": "Mapo Tofu",
+                "source": "vector",
+                "snippet": "Mapo tofu uses tofu and a spicy sauce.",
+            }
+        ],
     }
+
+
+def _write_manual_review_jsonl(path: Path, rows: list[object]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) -> None:
@@ -269,23 +290,305 @@ def test_capture_rejects_blank_knowledge_signature(tmp_path: Path, field: str) -
 def test_capture_allows_semantic_secret_text_and_benign_url(tmp_path: Path) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["business_context"] = {
-        "note": "The customer asks whether this is a secret recipe.",
-        "reference": "https://docs.example.com/search?q=secret+recipe",
-        "public_feed": "ftp://public.example.com/recipes",
-        "metrics": {
-            "prompt_tokens": 20,
-            "total_tokens": 42,
-            "input_tokens": 20,
-            "output_tokens": 22,
-            "completion_tokens": 22,
-            "cached_tokens": 10,
-            "token_count": 42,
-        },
-    }
+    answer_preview = (
+        "The customer asks whether this is a secret recipe. "
+        "See https://docs.example.com/search?q=secret+recipe."
+    )
+    report["cases"][0]["answer_preview"] = answer_preview
+    report["manual_review_sample"][0]["answer_preview"] = answer_preview
     write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        report["manual_review_sample"],
+    )
 
     capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    ("report_name", "location"),
+    [
+        ("integration_report", "top_level"),
+        ("integration_report", "target"),
+        ("integration_report", "metrics"),
+        ("integration_report", "artifacts"),
+        ("integration_report", "case"),
+        ("live_quality_report", "top_level"),
+        ("live_quality_report", "target"),
+        ("live_quality_report", "metrics"),
+        ("live_quality_report", "artifacts"),
+        ("live_quality_report", "slice_summary"),
+        ("live_quality_report", "avg_judge_scores"),
+        ("live_quality_report", "case"),
+        ("live_quality_report", "case_metrics"),
+        ("live_quality_report", "manual_review"),
+        ("live_quality_report", "evidence"),
+        ("live_quality_report", "manual_sample"),
+        ("live_quality_report", "manual_evidence"),
+    ],
+)
+def test_capture_rejects_unknown_gate_report_fields(
+    tmp_path: Path,
+    report_name: str,
+    location: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report_path = getattr(fixture, report_name)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if location == "top_level":
+        target = report
+    elif location in {"target", "metrics", "artifacts"}:
+        target = report[location]
+    elif location == "slice_summary":
+        target = report["metrics"]["by_query_type"]["single_recipe"]
+    elif location == "avg_judge_scores":
+        target = report["metrics"]["avg_judge_scores"]
+    elif location == "case":
+        target = report["cases"][0]
+    elif location == "case_metrics":
+        target = report["cases"][0]["metrics"]
+    elif location == "manual_review":
+        target = report["cases"][0]["manual_review"]
+    elif location == "evidence":
+        target = report["cases"][0]["evidence"][0]
+    elif location == "manual_sample":
+        target = report["manual_review_sample"][0]
+    else:
+        target = report["manual_review_sample"][0]["evidence"][0]
+    target["unknown_producer_field"] = "benign"
+    write_json(report_path, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="schema"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    ("location", "metric_name", "value"),
+    [
+        ("top_level", "total_tokens", "ghp_actual-secret-value"),
+        ("target", "prompt_tokens", -1),
+        ("metrics", "completion_tokens", float("nan")),
+        ("case", "input_tokens", float("inf")),
+    ],
+)
+def test_capture_rejects_token_metric_outside_producer_schema(
+    tmp_path: Path,
+    location: str,
+    metric_name: str,
+    value: object,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    if location == "top_level":
+        target = report
+    elif location in {"target", "metrics"}:
+        target = report[location]
+    else:
+        target = report["cases"][0]
+    target[metric_name] = value
+    fixture.live_quality_report.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, allow_nan=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive|schema"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_accepts_numeric_token_metric_at_producer_path(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["cases"][0]["total_tokens"] = 20
+    model_usage_check = next(
+        check
+        for check in report["checks"]
+        if check["name"] == "case.vector_recipe_lookup.model_usage"
+    )
+    model_usage_check["actual"] = 20
+    write_json(fixture.integration_report, report)
+
+    capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["ghp_actual-secret-value", -1, float("nan"), float("inf")],
+)
+def test_capture_rejects_invalid_token_metric_at_producer_path(
+    tmp_path: Path,
+    value: object,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["cases"][0]["total_tokens"] = value
+    model_usage_check = next(
+        check
+        for check in report["checks"]
+        if check["name"] == "case.vector_recipe_lookup.model_usage"
+    )
+    model_usage_check["actual"] = value
+    fixture.integration_report.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, allow_nan=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive|schema"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_duplicate_token_metric_hiding_secret(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report_text = fixture.integration_report.read_text(encoding="utf-8")
+    duplicate = '"total_tokens": "Bearer duplicate-secret",\n      "total_tokens": 10'
+    fixture.integration_report.write_text(
+        report_text.replace('"total_tokens": 10', duplicate, 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="duplicate|JSON"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "same_count_different_row",
+        "extra_field",
+        "missing_field",
+        "unknown_case_id",
+        "private_customer_note",
+        "non_object",
+        "duplicate",
+        "numeric_representation",
+    ],
+)
+def test_capture_rejects_unbound_manual_review_jsonl(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report_rows: list[dict[str, object]] = json.loads(json.dumps(report["manual_review_sample"]))
+    jsonl_row_dicts: list[dict[str, object]] = json.loads(json.dumps(report_rows))
+    jsonl_rows: list[object] = jsonl_row_dicts
+    if tamper == "same_count_different_row":
+        jsonl_row_dicts[0]["owner"] = "different-owner"
+    elif tamper == "extra_field":
+        report_rows[0]["reviewer_note"] = "benign"
+        jsonl_rows = json.loads(json.dumps(report_rows))
+    elif tamper == "missing_field":
+        report_rows[0].pop("evidence")
+        jsonl_rows = json.loads(json.dumps(report_rows))
+    elif tamper == "unknown_case_id":
+        report_rows[0]["case_id"] = "unknown_case"
+        jsonl_rows = json.loads(json.dumps(report_rows))
+    elif tamper == "private_customer_note":
+        report_rows[0]["private_customer_note"] = "household allergy details"
+        jsonl_rows = json.loads(json.dumps(report_rows))
+    elif tamper == "non_object":
+        jsonl_rows = ["not-an-object"]
+    elif tamper == "numeric_representation":
+        judge_scores = jsonl_row_dicts[0]["judge_scores"]
+        assert isinstance(judge_scores, dict)
+        judge_scores["faithfulness"] = 1
+    else:
+        report_rows = [report_rows[0], json.loads(json.dumps(report_rows[0]))]
+        report["manual_review_sample_count"] = 2
+        jsonl_rows = json.loads(json.dumps(report_rows))
+    report["manual_review_sample"] = report_rows
+    write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        jsonl_rows,
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="manual review|JSONL"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_manual_review_jsonl_reordered_from_policy_order(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    policy = json.loads(fixture.live_quality_policy.read_text(encoding="utf-8"))
+    second_policy_case = json.loads(json.dumps(policy["cases"][0]))
+    second_policy_case["case_id"] = "grounded_mapo_tofu_2"
+    policy["cases"].append(second_policy_case)
+    write_json(fixture.live_quality_policy, policy)
+    git(fixture.repository_root, "add", "eval/live_quality_gate.json")
+    git(fixture.repository_root, "commit", "-m", "test: add manual review policy case")
+    evaluated_commit = git(fixture.repository_root, "rev-parse", "HEAD")
+
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["metrics"]["case_count"] = 2
+    for group_name, label in (
+        ("by_query_type", "single_recipe"),
+        ("by_cuisine", "sichuan"),
+        ("by_response_mode", "grounded_answer"),
+        ("by_strategy", "hybrid_traditional"),
+    ):
+        report["metrics"][group_name][label]["case_count"] = 2
+    second_case = json.loads(json.dumps(report["cases"][0]))
+    second_case["case_id"] = second_policy_case["case_id"]
+    report["cases"].append(second_case)
+    case_checks = [check for check in report["checks"] if check["name"].startswith("case.")]
+    second_case_checks = json.loads(json.dumps(case_checks))
+    for check in second_case_checks:
+        check["name"] = check["name"].replace(
+            "case.grounded_mapo_tofu.",
+            "case.grounded_mapo_tofu_2.",
+        )
+    gate_policy = LiveQualityGatePolicy.model_validate(policy)
+    threshold_checks = evaluate_policy_thresholds(gate_policy, report["metrics"])
+    report["checks"] = (
+        case_checks + second_case_checks + [check.to_dict() for check in threshold_checks]
+    )
+    second_sample = json.loads(json.dumps(report["manual_review_sample"][0]))
+    second_sample["case_id"] = second_policy_case["case_id"]
+    report["manual_review_sample"].append(second_sample)
+    report["manual_review_sample_count"] = 2
+    write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        list(reversed(report["manual_review_sample"])),
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="manual review|JSONL"):
+        capture_release_evidence(
+            replace(capture_inputs(fixture), evaluated_commit=evaluated_commit)
+        )
+
+
+def test_capture_rejects_invalid_manual_review_jsonl(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    sample_path = fixture.live_quality_report.parent / "manual_review_sample.jsonl"
+    sample_path.write_text("{invalid-json}\n", encoding="utf-8")
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="manual review|JSONL"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_blank_manual_review_jsonl_record(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    sample_path = fixture.live_quality_report.parent / "manual_review_sample.jsonl"
+    sample_path.write_bytes(sample_path.read_bytes() + b"\n")
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="manual review|JSONL"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_duplicate_manual_review_key_hiding_secret(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    sample_path = fixture.live_quality_report.parent / "manual_review_sample.jsonl"
+    sample_text = sample_path.read_text(encoding="utf-8")
+    duplicate = (
+        '"answer_preview": "Bearer duplicate-secret", "answer_preview": "Mapo tofu uses tofu."'
+    )
+    sample_path.write_text(
+        sample_text.replace('"answer_preview": "Mapo tofu uses tofu."', duplicate, 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="duplicate|JSONL"):
+        capture_release_evidence(capture_inputs(fixture))
 
 
 @pytest.mark.parametrize(
@@ -297,17 +600,11 @@ def test_capture_allows_semantic_secret_text_and_benign_url(tmp_path: Path) -> N
         ("api_route", "/v3/diagnostics"),
     ],
 )
-def test_capture_allows_versioned_api_route_in_route_context(
-    tmp_path: Path,
+def test_scan_json_allows_versioned_api_route_in_route_context(
     field_name: str,
     route: str,
 ) -> None:
-    fixture = make_release_evidence_fixture(tmp_path)
-    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["request_metadata"] = {field_name: route}
-    write_json(fixture.live_quality_report, report)
-
-    capture_release_evidence(capture_inputs(fixture))
+    capture_module._scan_json({field_name: route})
 
 
 @pytest.mark.parametrize(
@@ -322,14 +619,37 @@ def test_capture_allows_versioned_api_route_in_route_context(
         ("route", "/debug/answers"),
     ],
 )
-def test_capture_rejects_path_outside_versioned_api_route_context(
-    tmp_path: Path,
+def test_scan_json_rejects_path_outside_versioned_api_route_context(
     field_name: str,
     route: str,
 ) -> None:
+    with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
+        capture_module._scan_json({field_name: route})
+
+
+@pytest.mark.parametrize(
+    "sensitive_key",
+    [
+        "api_key",
+        "openai_api_key",
+        "token",
+        "accessToken",
+        "clientSecret",
+        "credential",
+        "db_password",
+        "github_token",
+        "provider_authorization",
+        "exception",
+        "stack_trace",
+    ],
+)
+def test_capture_rejects_sensitive_key_in_allowed_check_detail(
+    tmp_path: Path,
+    sensitive_key: str,
+) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["request_metadata"] = {field_name: route}
+    report["checks"][0]["expected"] = {sensitive_key: "actual-token-value"}
     write_json(fixture.live_quality_report, report)
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
@@ -339,55 +659,47 @@ def test_capture_rejects_path_outside_versioned_api_route_context(
 @pytest.mark.parametrize(
     "sensitive_value",
     [
-        {"api_key": "actual-token-value"},
-        {"openai_api_key": "actual-token-value"},
-        {"token": "actual-token-value"},
-        {"accessToken": "actual-token-value"},
-        {"clientSecret": "actual-token-value"},
-        {"credential": "actual-token-value"},
-        {"db_password": "actual-token-value"},
-        {"github_token": "actual-token-value"},
-        {"provider_authorization": "actual-token-value"},
-        {"exception": "provider failed"},
-        {"stack_trace": "provider failed"},
-        {"note": "Bearer actual-token-value"},
-        {"note": "Bearer x"},
-        {"note": "Authorization: actual-token-value"},
-        {"note": "https://user:password@example.com/private"},
-        {"note": "https://example.com/private?access_token=actual-token-value"},
-        {"note": "postgresql://dbuser:dbpass@db.example.com/app"},
-        {"note": "C:\\Users\\alice\\private.txt"},
-        {"note": "D:/data/private.txt"},
-        {"note": "\\\\server\\share\\private.txt"},
-        {"note": "//server/share/private.txt"},
-        {"note": "/home/alice/private.txt"},
-        {"note": "/Users/alice/private.txt"},
-        {"note": "/var/log/private.log"},
-        {"note": "/tmp/private.txt"},
-        {"note": "/opt/private.txt"},
-        {"note": "/workspace/private.txt"},
-        {"note": "/data/private.txt"},
-        {"note": "/usr/local/private.txt"},
-        {
-            "detail": (
-                "Traceback (most recent call last):\n"
-                '  File "provider.py", line 7, in request\n'
-                "RuntimeError: provider failed"
-            )
-        },
-        {"detail": "ProviderRuntimeException: raw provider response"},
-        {"detail": "RuntimeError('provider failed')"},
-        {"detail": "ProviderException('provider failed')"},
+        "Bearer actual-token-value",
+        "Bearer x",
+        "Authorization: actual-token-value",
+        "https://user:password@example.com/private",
+        "https://example.com/private?access_token=actual-token-value",
+        "postgresql://dbuser:dbpass@db.example.com/app",
+        "C:\\Users\\alice\\private.txt",
+        "D:/data/private.txt",
+        "\\\\server\\share\\private.txt",
+        "//server/share/private.txt",
+        "/home/alice/private.txt",
+        "/Users/alice/private.txt",
+        "/var/log/private.log",
+        "/tmp/private.txt",
+        "/opt/private.txt",
+        "/workspace/private.txt",
+        "/data/private.txt",
+        "/usr/local/private.txt",
+        (
+            "Traceback (most recent call last):\n"
+            '  File "provider.py", line 7, in request\n'
+            "RuntimeError: provider failed"
+        ),
+        "ProviderRuntimeException: raw provider response",
+        "RuntimeError('provider failed')",
+        "ProviderException('provider failed')",
     ],
 )
-def test_capture_rejects_sensitive_values(
+def test_capture_rejects_sensitive_value_in_allowed_evidence_snippet(
     tmp_path: Path,
-    sensitive_value: dict[str, str],
+    sensitive_value: str,
 ) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
-    report["diagnostic_detail"] = sensitive_value
+    report["cases"][0]["evidence"][0]["snippet"] = sensitive_value
+    report["manual_review_sample"][0]["evidence"][0]["snippet"] = sensitive_value
     write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        report["manual_review_sample"],
+    )
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
         capture_release_evidence(capture_inputs(fixture))
@@ -1098,7 +1410,11 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
         }
     )
     report["cases"] = [
-        _live_case_detail(case_id, judge_passed=index != 0)
+        _live_case_detail(
+            case_id,
+            judge_passed=index != 0,
+            manual_review_sample=index == 0,
+        )
         for index, case_id in enumerate(case_ids)
     ]
     for group_name, label in (
@@ -1142,7 +1458,24 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
     complete_checks.extend(evaluate_policy_thresholds(gate_policy, report["metrics"]))
     report["checks"] = [check.to_dict() for check in complete_checks]
     report["failure_type_counts"] = {"quality-regression": 1}
+    first_case = report["cases"][0]
+    manual_sample = report["manual_review_sample"][0]
+    for field_name in (
+        "case_id",
+        "passed",
+        "deterministic_passed",
+        "judge_passed",
+        "judge_scores",
+        "failures",
+        "answer_preview",
+        "evidence",
+    ):
+        manual_sample[field_name] = first_case[field_name]
     write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        report["manual_review_sample"],
+    )
 
     capture_release_evidence(replace(capture_inputs(fixture), evaluated_commit=evaluated_commit))
 
