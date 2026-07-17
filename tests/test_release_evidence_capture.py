@@ -1654,7 +1654,6 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
     [
         ("QUALITY.EXAMPLE.COM:443", "quality.example.com:443"),
         ("127.0.0.1:8000", "127.0.0.1:8000"),
-        ("::1", "0:0:0:0:0:0:0:1"),
         ("[2001:0DB8::1]:443", "[2001:db8::1]:443"),
     ],
 )
@@ -1698,18 +1697,38 @@ def test_capture_rejects_same_gate_hostname_with_different_ports(tmp_path: Path)
 def test_capture_rejects_gate_target_hostname_mismatch(tmp_path: Path) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
-    integration_report["target"]["api_host"] = "other.example.com"
+    integration_report["target"]["api_host"] = "other.example.com:443"
     write_json(fixture.integration_report, integration_report)
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="gate target identities differ"):
         capture_release_evidence(capture_inputs(fixture))
 
 
+@pytest.mark.parametrize("missing_port_host", ["quality.example.com", "2001:db8::1"])
+def test_capture_rejects_matching_gate_target_without_port(
+    tmp_path: Path,
+    missing_port_host: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    integration_report["target"]["api_host"] = missing_port_host
+    _write_integration_report_and_summary(fixture, integration_report)
+    live_report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    live_report["target"]["api_host"] = missing_port_host
+    _write_live_report_and_summary(fixture, live_report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target identity is invalid"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
 @pytest.mark.parametrize(
     ("integration_host", "live_host"),
     [
-        ("::1", "::1:8000"),
-        ("2001:db8::1", "[2001:db8::2]:8000"),
+        ("[::1]:443", "[::1]:8000"),
+        ("[2001:db8::1]:8000", "[2001:db8::2]:8000"),
     ],
 )
 def test_capture_rejects_different_ipv6_gate_target_hostname(

@@ -155,16 +155,17 @@ class IntegrationGateSettings:
 def _safe_api_host_identity(value: str) -> str:
     parsed_value = urlsplit(value)
     host = parsed_value.hostname or ""
-    if parsed_value.port is not None:
-        try:
-            address = ip_address(host)
-        except ValueError:
-            pass
-        else:
-            if isinstance(address, IPv6Address):
-                return f"[{address}]:{parsed_value.port}"
-        return f"{host}:{parsed_value.port}"
-    return host
+    port = parsed_value.port
+    if port is None:
+        port = 80 if parsed_value.scheme.casefold() == "http" else 443
+    try:
+        address = ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if isinstance(address, IPv6Address):
+            return f"[{address}]:{port}"
+    return f"{host}:{port}"
 
 
 def _safe_host_identity(value: str) -> str:

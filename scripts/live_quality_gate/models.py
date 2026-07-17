@@ -326,7 +326,7 @@ class LiveQualityGateSettings:
 
     def safe_target_identity(self) -> dict[str, str]:
         return {
-            "api_host": _safe_host_identity(self.api_url),
+            "api_host": _safe_api_host_identity(self.api_url),
             "judge_host": _safe_host_identity(self.judge.api_url),
         }
 
@@ -438,3 +438,19 @@ def _safe_host_identity(value: str) -> str:
                 return f"[{address}]:{parsed.port}"
         return f"{host}:{parsed.port}"
     return host
+
+
+def _safe_api_host_identity(value: str) -> str:
+    parsed = urlsplit(value)
+    host = parsed.hostname or ""
+    port = parsed.port
+    if port is None:
+        port = 80 if parsed.scheme.casefold() == "http" else 443
+    try:
+        address = ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if isinstance(address, IPv6Address):
+            return f"[{address}]:{port}"
+    return f"{host}:{port}"

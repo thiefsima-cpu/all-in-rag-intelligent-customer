@@ -199,6 +199,35 @@ def test_safe_target_identity_preserves_bracketed_ipv6_api_port() -> None:
 
 
 @pytest.mark.parametrize(
+    ("api_url", "expected_identity"),
+    [
+        ("http://quality.example.com", "quality.example.com:80"),
+        ("https://quality.example.com", "quality.example.com:443"),
+        ("http://[2001:0DB8::1]", "[2001:db8::1]:80"),
+        ("https://[2001:0DB8::1]", "[2001:db8::1]:443"),
+    ],
+)
+def test_safe_target_identity_includes_effective_api_port(
+    api_url: str,
+    expected_identity: str,
+) -> None:
+    settings = IntegrationGateSettings.from_environ(
+        {
+            "INTEGRATION_GATE_API_URL": api_url,
+            "NEO4J_URI": "bolt://graph.internal:7687",
+            "NEO4J_USER": "neo4j",
+            "NEO4J_PASSWORD": "password",
+            "NEO4J_DATABASE": "neo4j",
+            "MILVUS_HOST": "milvus.internal",
+            "MILVUS_PORT": "19530",
+            "MILVUS_COLLECTION_NAME": "cooking_knowledge",
+        }
+    )
+
+    assert settings.safe_target_identity()["api_host"] == expected_identity
+
+
+@pytest.mark.parametrize(
     ("name", "invalid_value"),
     [
         (

@@ -1980,11 +1980,9 @@ def _normalized_target_identity(value: object) -> str:
     text = value.casefold()
     if text.startswith("["):
         parsed = urlsplit(f"//{text}")
+        if parsed.port is None:
+            raise ReleaseEvidenceCaptureError("gate target identity is invalid")
         return f"[{ip_address(parsed.hostname or '')}]:{parsed.port}"
-    try:
-        return str(ip_address(text))
-    except ValueError:
-        pass
     if text.count(":") == 1:
         hostname, port_text = text.rsplit(":", 1)
         if port_text.isdecimal() and 1 <= int(port_text) <= 65535:
@@ -1993,7 +1991,7 @@ def _normalized_target_identity(value: object) -> str:
             except ValueError:
                 normalized_host = hostname
             return f"{normalized_host}:{int(port_text)}"
-    return text
+    raise ReleaseEvidenceCaptureError("gate target identity is invalid")
 
 
 def _require_same_gate_target(
