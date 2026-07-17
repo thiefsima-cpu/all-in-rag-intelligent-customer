@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.release_evidence import verifier as verifier_module
 from scripts.release_evidence.capture import CaptureInputs, capture_release_evidence
 from scripts.release_evidence.finalize import finalize_release_evidence
 from scripts.release_evidence.models import TransportIdentity
@@ -86,7 +87,6 @@ def _synchronize_bundle(
     fixture,
     capture,
     manifest_path: Path,
-    metadata_path: Path,
     entries: dict[str, bytes],
     manifest: dict[str, object] | None = None,
     bundle_path: Path | None = None,
@@ -127,9 +127,6 @@ def _synchronize_bundle(
         payload,
         "test: update release evidence",
     )
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    metadata["size_in_bytes"] = output_path.stat().st_size
-    write_json(metadata_path, metadata)
     return release_commit, output_path
 
 
@@ -175,7 +172,7 @@ def finalized_release(tmp_path: Path):
         {
             "id": 456,
             "name": "graph-rag-c9-0.4.0rc1-quality-evidence",
-            "size_in_bytes": capture.bundle_path.stat().st_size,
+            "size_in_bytes": capture.bundle_path.stat().st_size + 4096,
             "expired": False,
             "digest": "sha256:" + "a" * 64,
             "workflow_run": {
@@ -285,6 +282,34 @@ def test_verify_rejects_extra_or_modified_bundle_member(tmp_path: Path) -> None:
         )
 
 
+def test_verify_excludes_generated_checksums_from_source_size_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture, capture, manifest_path, release_commit, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    source_bytes = sum(len(data) for name, data in entries.items() if name != "checksums.json")
+    assert sum(map(len, entries.values())) > source_bytes
+    monkeypatch.setattr(verifier_module, "MAX_BUNDLE_SOURCE_BYTES", source_bytes)
+
+    manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+    assert manifest.bundle.bytes == capture.bundle_path.stat().st_size
+
+
+def test_verify_rejects_source_entries_over_size_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture, capture, manifest_path, release_commit, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    source_bytes = sum(len(data) for name, data in entries.items() if name != "checksums.json")
+    monkeypatch.setattr(verifier_module, "MAX_BUNDLE_SOURCE_BYTES", source_bytes - 1)
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="bundle contents are too large"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
 def test_verify_rejects_artifact_digest_mismatch(tmp_path: Path) -> None:
     fixture, capture, manifest_path, release_commit, metadata_path = finalized_release(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -343,7 +368,6 @@ def test_verify_rejects_raw_gate_passed_false_after_rehash(
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
     )
 
@@ -392,7 +416,6 @@ def test_verify_rejects_incomplete_integration_counts_when_manifest_matches_repo
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         manifest=manifest,
     )
@@ -430,7 +453,6 @@ def test_verify_rejects_incomplete_integration_case_counts(tmp_path: Path) -> No
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         manifest=manifest,
     )
@@ -445,7 +467,6 @@ def test_verify_rejects_incomplete_integration_case_counts(tmp_path: Path) -> No
         (("id",), 999, "artifact id"),
         (("name",), "other-artifact", "artifact name"),
         (("digest",), "sha256:" + "b" * 64, "artifact digest"),
-        (("size_in_bytes",), 1, "artifact size"),
         (("workflow_run", "id"), 999, "workflow run id"),
         (("workflow_run", "head_sha"), "b" * 40, "workflow head sha"),
     ],
@@ -478,6 +499,17 @@ def test_verify_accepts_unknown_artifact_metadata_fields(tmp_path: Path) -> None
     manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
 
     assert manifest.transport.artifact_id == 456
+
+
+def test_verify_accepts_outer_artifact_size_independent_of_inner_bundle(
+    tmp_path: Path,
+) -> None:
+    fixture, capture, manifest_path, release_commit, metadata_path = finalized_release(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+    assert metadata["size_in_bytes"] != manifest.bundle.bytes
 
 
 def test_verify_rejects_coerced_artifact_metadata_field(tmp_path: Path) -> None:
@@ -589,7 +621,6 @@ def test_verify_rejects_zip_policy_not_present_at_evaluated_commit(
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         manifest=manifest,
     )
@@ -606,7 +637,6 @@ def test_verify_rejects_self_consistent_extra_bundle_member(tmp_path: Path) -> N
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         extra_artifact_names={"notes.txt": "notes"},
     )
@@ -645,7 +675,6 @@ def test_verify_rejects_runtime_target_not_bound_to_reports(tmp_path: Path) -> N
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         manifest=manifest,
     )
@@ -680,7 +709,6 @@ def test_verify_rejects_bundle_name_not_derived_from_release(tmp_path: Path) -> 
         fixture=fixture,
         capture=capture,
         manifest_path=manifest_path,
-        metadata_path=metadata_path,
         entries=entries,
         bundle_path=alternate_bundle,
     )

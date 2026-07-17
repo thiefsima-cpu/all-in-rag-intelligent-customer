@@ -416,8 +416,6 @@ def _verify_transport(
     for name, (actual, expected) in comparisons.items():
         if actual != expected:
             raise ReleaseEvidenceVerificationError(f"{name} does not match manifest")
-    if metadata.size_in_bytes != manifest.bundle.bytes:
-        raise ReleaseEvidenceVerificationError("artifact size does not match manifest bundle")
     if transport.workflow_head_sha != manifest.provenance.evaluated_commit:
         raise ReleaseEvidenceVerificationError("transport head does not match evaluated commit")
 
@@ -500,7 +498,8 @@ def _verify_bundle(
                 raise ReleaseEvidenceVerificationError("bundle contains an unsafe member")
             if any(info.file_size > MAX_MEMBER_BYTES for info in infos):
                 raise ReleaseEvidenceVerificationError("bundle member is too large")
-            if sum(info.file_size for info in infos) > MAX_BUNDLE_SOURCE_BYTES:
+            source_size = sum(info.file_size for info in infos if info.filename != "checksums.json")
+            if source_size > MAX_BUNDLE_SOURCE_BYTES:
                 raise ReleaseEvidenceVerificationError("bundle contents are too large")
             for info in infos:
                 data = archive.read(info)
