@@ -16,10 +16,22 @@ from scripts.release_evidence import capture as capture_module
 from scripts.release_evidence.capture import (
     CaptureInputs,
     ReleaseEvidenceCaptureError,
-    capture_release_evidence,
+)
+from scripts.release_evidence.capture import (
+    capture_release_evidence as _capture_release_evidence,
 )
 from scripts.release_evidence.models import load_capture_receipt
 from tests.release_evidence_fixtures import git, make_release_evidence_fixture, write_json
+
+_FIXED_CAPTURE_TIME = "2026-07-16T08:00:00+00:00"
+
+
+def capture_release_evidence(
+    inputs: CaptureInputs,
+    *,
+    generated_at: str = _FIXED_CAPTURE_TIME,
+):
+    return _capture_release_evidence(inputs, generated_at=generated_at)
 
 
 def capture_inputs(fixture) -> CaptureInputs:
@@ -323,6 +335,19 @@ def test_capture_rejects_non_ready_knowledge_artifact(tmp_path: Path) -> None:
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="knowledge artifact is not ready"):
         capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_rejects_wrong_knowledge_artifact_schema(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    manifest = json.loads(fixture.artifact_manifest.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "graph-rag-artifact-manifest-v1"
+    write_json(fixture.artifact_manifest, manifest)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="schema_version"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
 
 
 @pytest.mark.parametrize(
@@ -742,6 +767,17 @@ def test_capture_rejects_sensitive_key_in_allowed_check_detail(
         "ProviderRuntimeException: raw provider response",
         "RuntimeError('provider failed')",
         "ProviderException('provider failed')",
+        "ghp_" + "A" * 36,
+        "gho_" + "B" * 36,
+        "ghu_" + "C" * 36,
+        "ghs_" + "D" * 36,
+        "ghr_" + "E" * 36,
+        "github_pat_" + "F" * 30,
+        "sk-" + "G" * 32,
+        "sk-proj-" + "H" * 32,
+        "AKIA" + "J" * 16,
+        "ASIA" + "K" * 16,
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "L" * 32,
     ],
 )
 def test_capture_rejects_sensitive_value_in_allowed_evidence_snippet(
@@ -760,6 +796,82 @@ def test_capture_rejects_sensitive_value_in_allowed_evidence_snippet(
 
     with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
         capture_release_evidence(capture_inputs(fixture))
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
+def test_capture_rejects_fake_shaped_credential_in_answer_preview(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    answer_preview = "Generated answer included github_pat_" + "A" * 30
+    report["cases"][0]["answer_preview"] = answer_preview
+    report["manual_review_sample"][0]["answer_preview"] = answer_preview
+    write_json(fixture.live_quality_report, report)
+    _write_manual_review_jsonl(
+        fixture.live_quality_report.parent / "manual_review_sample.jsonl",
+        report["manual_review_sample"],
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="sensitive release evidence"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
+@pytest.mark.parametrize("report_name", ["integration_report", "live_quality_report"])
+def test_capture_rejects_naive_report_timestamp(tmp_path: Path, report_name: str) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report_path = getattr(fixture, report_name)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["generated_at"] = "2026-07-16T07:55:00"
+    write_json(report_path, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="timezone-aware"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
+def test_capture_rejects_report_older_than_maximum_age(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["generated_at"] = "2026-07-16T04:59:59+00:00"
+    write_json(fixture.integration_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="more than 180 minutes old"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
+def test_capture_rejects_report_beyond_future_clock_skew(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["generated_at"] = "2026-07-16T08:05:01+00:00"
+    write_json(fixture.live_quality_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="more than 5 minutes in the future"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
+
+
+def test_capture_rejects_reversed_gate_execution_order(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    report["generated_at"] = "2026-07-16T07:56:00+00:00"
+    write_json(fixture.integration_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="execution order"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
 
 
 def test_capture_rejects_dirty_checkout(tmp_path: Path) -> None:
@@ -1540,10 +1652,10 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
 @pytest.mark.parametrize(
     ("integration_host", "live_host"),
     [
-        ("QUALITY.EXAMPLE.COM", "quality.example.com:443"),
-        ("127.0.0.1", "127.0.0.1:8000"),
-        ("::1", "[::1]:8000"),
-        ("2001:db8::1", "[2001:db8::1]:443"),
+        ("QUALITY.EXAMPLE.COM:443", "quality.example.com:443"),
+        ("127.0.0.1:8000", "127.0.0.1:8000"),
+        ("::1", "0:0:0:0:0:0:0:1"),
+        ("[2001:0DB8::1]:443", "[2001:db8::1]:443"),
     ],
 )
 def test_capture_accepts_same_gate_target_hostname(
@@ -1559,7 +1671,28 @@ def test_capture_accepts_same_gate_target_hostname(
     live_report["target"]["api_host"] = live_host
     _write_live_report_and_summary(fixture, live_report)
 
-    capture_release_evidence(capture_inputs(fixture))
+    outputs = capture_release_evidence(
+        capture_inputs(fixture),
+        generated_at=_FIXED_CAPTURE_TIME,
+    )
+
+    assert load_capture_receipt(outputs.receipt_path).runtime.target.api_host == live_host
+
+
+def test_capture_rejects_same_gate_hostname_with_different_ports(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    integration_report["target"]["api_host"] = "quality.example.com:8443"
+    write_json(fixture.integration_report, integration_report)
+    live_report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    live_report["target"]["api_host"] = "quality.example.com:443"
+    write_json(fixture.live_quality_report, live_report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="target identities differ"):
+        capture_release_evidence(capture_inputs(fixture), generated_at=_FIXED_CAPTURE_TIME)
+
+    assert not (fixture.output_dir / "capture-receipt.json").exists()
+    assert list(fixture.output_dir.glob("*.zip")) == []
 
 
 def test_capture_rejects_gate_target_hostname_mismatch(tmp_path: Path) -> None:
@@ -1568,7 +1701,7 @@ def test_capture_rejects_gate_target_hostname_mismatch(tmp_path: Path) -> None:
     integration_report["target"]["api_host"] = "other.example.com"
     write_json(fixture.integration_report, integration_report)
 
-    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target hostnames differ"):
+    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target identities differ"):
         capture_release_evidence(capture_inputs(fixture))
 
 
@@ -1592,5 +1725,5 @@ def test_capture_rejects_different_ipv6_gate_target_hostname(
     live_report["target"]["api_host"] = live_host
     write_json(fixture.live_quality_report, live_report)
 
-    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target hostnames differ"):
+    with pytest.raises(ReleaseEvidenceCaptureError, match="gate target identities differ"):
         capture_release_evidence(capture_inputs(fixture))

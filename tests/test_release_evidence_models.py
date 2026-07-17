@@ -5,6 +5,7 @@ import math
 import pytest
 from pydantic import ValidationError
 
+from rag_modules.kernel.artifacts import ARTIFACT_MANIFEST_SCHEMA_VERSION
 from scripts.release_evidence.models import (
     BundleIdentity,
     FileIdentity,
@@ -79,7 +80,7 @@ def test_knowledge_base_identity_rejects_blank_signatures(
     signature: str,
 ) -> None:
     payload: dict[str, object] = {
-        "schema_version": "1",
+        "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
         "manifest_version": 7,
         "stage": "ready",
         "health": "ready",
@@ -102,7 +103,7 @@ def test_knowledge_base_identity_rejects_blank_signatures(
 
 def test_knowledge_base_identity_accepts_non_blank_signatures() -> None:
     identity = KnowledgeBaseIdentity(
-        schema_version="1",
+        schema_version=ARTIFACT_MANIFEST_SCHEMA_VERSION,
         manifest_version=7,
         stage="ready",
         health="ready",
@@ -119,6 +120,26 @@ def test_knowledge_base_identity_accepts_non_blank_signatures() -> None:
     )
 
     assert identity.index_signature == "index-signature"
+
+
+def test_knowledge_base_identity_rejects_wrong_manifest_schema() -> None:
+    with pytest.raises(ValidationError):
+        KnowledgeBaseIdentity(
+            schema_version="graph-rag-artifact-manifest-v1",
+            manifest_version=7,
+            stage="ready",
+            health="ready",
+            published_at="2026-07-16T07:30:00+00:00",
+            index_version="v000007",
+            collection_name="cooking_knowledge__active",
+            graph_signature="graph-signature",
+            document_signature="document-signature",
+            embedding_signature="embedding-signature",
+            index_signature="index-signature",
+            total_documents=323,
+            total_chunks=1543,
+            vector_rows=1543,
+        )
 
 
 @pytest.mark.parametrize(

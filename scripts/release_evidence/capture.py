@@ -9,7 +9,7 @@ import tomllib
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -18,7 +18,11 @@ from urllib.parse import parse_qsl, urlsplit
 from pydantic import ValidationError
 
 from rag_modules.interfaces.api.diagnostics_models import DiagnosticsResponseModel
-from rag_modules.kernel.artifacts import ArtifactManifest, artifact_health
+from rag_modules.kernel.artifacts import (
+    ARTIFACT_MANIFEST_SCHEMA_VERSION,
+    ArtifactManifest,
+    artifact_health,
+)
 from scripts.gates import GateCheckResult, GateFailureType
 from scripts.integration_gate.models import IntegrationGatePolicy
 from scripts.integration_gate.reporter import render_integration_summary
@@ -134,10 +138,27 @@ _EXCEPTION_VALUE_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)(?::\s*\S|\s*\([^\r\n)]*\))",
     re.IGNORECASE,
 )
+_GITHUB_CLASSIC_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{36,255}(?![A-Za-z0-9])"
+)
+_GITHUB_FINE_GRAINED_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,255}(?![A-Za-z0-9_])"
+)
+_OPENAI_API_KEY_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"
+)
+_AWS_ACCESS_KEY_ID_RE = re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])")
+_JWT_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])"
+    r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}"
+    r"(?![A-Za-z0-9_-])"
+)
 _API_ROUTE_FIELD_KEYS = frozenset({"api_endpoint", "api_route", "endpoint", "route"})
 _VERSIONED_API_ROUTE_RE = re.compile(r"^/v[0-9]+(?:/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+$")
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+_MAX_REPORT_AGE = timedelta(minutes=180)
+_MAX_REPORT_FUTURE_SKEW = timedelta(minutes=5)
 _GATE_STATUSES = frozenset({"passed", "failed", "blocked"})
 _GATE_CHECK_DETAIL_KEYS = frozenset(
     {
@@ -639,13 +660,41 @@ def _require_exact_keys(
         raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
 
 
-def _require_iso_timestamp(value: object, name: str) -> None:
+def _require_iso_timestamp(value: object, name: str) -> datetime:
     if not isinstance(value, str):
         raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
     try:
-        datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ReleaseEvidenceCaptureError(f"{name} schema is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ReleaseEvidenceCaptureError(f"{name} timestamp must be timezone-aware")
+    return parsed.astimezone(UTC)
+
+
+def _validate_report_timestamps(
+    integration_report: Mapping[str, Any],
+    live_report: Mapping[str, Any],
+    capture_reference: datetime,
+) -> None:
+    integration_time = _require_iso_timestamp(
+        integration_report.get("generated_at"),
+        "integration report",
+    )
+    live_time = _require_iso_timestamp(
+        live_report.get("generated_at"),
+        "live quality report",
+    )
+    for name, report_time in (
+        ("integration report", integration_time),
+        ("live quality report", live_time),
+    ):
+        if capture_reference - report_time > _MAX_REPORT_AGE:
+            raise ReleaseEvidenceCaptureError(f"{name} is more than 180 minutes old")
+        if report_time - capture_reference > _MAX_REPORT_FUTURE_SKEW:
+            raise ReleaseEvidenceCaptureError(f"{name} is more than 5 minutes in the future")
+    if integration_time > live_time:
+        raise ReleaseEvidenceCaptureError("gate report execution order is invalid")
 
 
 def _validate_failure_counts(value: object, name: str) -> None:
@@ -1358,6 +1407,8 @@ def _report_member(report_path: Path, relative_name: object) -> Path:
 
 
 def _load_artifact_manifest(payload: Mapping[str, Any]) -> ArtifactManifest:
+    if payload.get("schema_version") != ARTIFACT_MANIFEST_SCHEMA_VERSION:
+        raise ReleaseEvidenceCaptureError("artifact manifest schema_version is invalid")
     integer_fields = (
         "manifest_version",
         "total_documents",
@@ -1919,17 +1970,17 @@ def _artifact_profile_identity(
     return profile_name, profile_path, profile_hash
 
 
-def _normalized_target_hostname(value: object) -> str:
+def _normalized_target_identity(value: object) -> str:
     if not isinstance(value, str):
-        raise ReleaseEvidenceCaptureError("gate target hostname is invalid")
+        raise ReleaseEvidenceCaptureError("gate target identity is invalid")
     try:
         TargetIdentity(api_host=value, judge_host="judge.example.com")
     except ValidationError as exc:
-        raise ReleaseEvidenceCaptureError("gate target hostname is invalid") from exc
+        raise ReleaseEvidenceCaptureError("gate target identity is invalid") from exc
     text = value.casefold()
     if text.startswith("["):
         parsed = urlsplit(f"//{text}")
-        return str(ip_address(parsed.hostname or ""))
+        return f"[{ip_address(parsed.hostname or '')}]:{parsed.port}"
     try:
         return str(ip_address(text))
     except ValueError:
@@ -1938,9 +1989,10 @@ def _normalized_target_hostname(value: object) -> str:
         hostname, port_text = text.rsplit(":", 1)
         if port_text.isdecimal() and 1 <= int(port_text) <= 65535:
             try:
-                return str(ip_address(hostname))
+                normalized_host = str(ip_address(hostname))
             except ValueError:
-                return hostname
+                normalized_host = hostname
+            return f"{normalized_host}:{int(port_text)}"
     return text
 
 
@@ -1948,15 +2000,15 @@ def _require_same_gate_target(
     integration_target: Mapping[str, Any],
     live_target: Mapping[str, Any],
 ) -> None:
-    integration_hostname = _normalized_target_hostname(
+    integration_identity = _normalized_target_identity(
         integration_target.get("api_host"),
     )
-    live_hostname = _normalized_target_hostname(
+    live_identity = _normalized_target_identity(
         live_target.get("api_host"),
     )
-    if integration_hostname != live_hostname:
+    if integration_identity != live_identity:
         raise ReleaseEvidenceCaptureError(
-            "integration and live quality gate target hostnames differ"
+            "integration and live quality gate target identities differ"
         )
 
 
@@ -2085,6 +2137,11 @@ def _sensitive_text_present(value: str) -> bool:
     return bool(
         _BEARER_VALUE_RE.search(value)
         or _AUTH_HEADER_RE.search(value)
+        or _GITHUB_CLASSIC_TOKEN_RE.search(value)
+        or _GITHUB_FINE_GRAINED_TOKEN_RE.search(value)
+        or _OPENAI_API_KEY_RE.search(value)
+        or _AWS_ACCESS_KEY_ID_RE.search(value)
+        or _JWT_RE.search(value)
         or _ABSOLUTE_WINDOWS_PATH_RE.search(value)
         or _ABSOLUTE_WINDOWS_UNC_PATH_RE.search(value)
         or _ABSOLUTE_FORWARD_UNC_PATH_RE.search(value)
@@ -2202,6 +2259,8 @@ def capture_release_evidence(
     generated_at: str | None = None,
 ) -> CaptureOutputs:
     _validate_checkout(inputs)
+    capture_generated_at = generated_at or datetime.now(UTC).isoformat()
+    capture_reference = _require_iso_timestamp(capture_generated_at, "capture generated_at")
     snapshots = _SourceSnapshots()
 
     pyproject_bytes = _bind_commit_source(inputs, snapshots, "pyproject.toml")
@@ -2239,6 +2298,8 @@ def capture_release_evidence(
     )
     diagnostics_payload = _parse_json(diagnostics_bytes, inputs.diagnostics_path.name)
     artifact_payload = _parse_json(artifact_bytes, inputs.artifact_manifest_path.name)
+
+    _validate_report_timestamps(integration_report, live_report, capture_reference)
 
     _scan_json(integration_report, "integration_gate/report.json:$")
     _scan_json(live_report, "live_quality_gate/report.json:$")
@@ -2409,7 +2470,7 @@ def capture_release_evidence(
         provenance=Provenance(
             repository=inputs.repository,
             evaluated_commit=inputs.evaluated_commit,
-            generated_at=generated_at or datetime.now(UTC).isoformat(),
+            generated_at=capture_generated_at,
         ),
         integration=integration,
         quality=quality,

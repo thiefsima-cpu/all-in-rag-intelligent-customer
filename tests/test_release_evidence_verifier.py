@@ -597,6 +597,21 @@ def test_verify_rejects_manifest_identity_not_present_in_bundle(
         _verify(fixture, capture, manifest_path, release_commit, metadata_path)
 
 
+def test_verify_rejects_wrong_knowledge_artifact_schema(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    manifest = _manifest_payload(manifest_path)
+    manifest["knowledge_base"]["schema_version"] = "graph-rag-artifact-manifest-v1"
+    release_commit = _commit_manifest(
+        fixture.repository_root,
+        manifest_path,
+        manifest,
+        "test: corrupt knowledge schema",
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="input is invalid"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
 @pytest.mark.parametrize(
     ("policy_path", "policy_kind"),
     [

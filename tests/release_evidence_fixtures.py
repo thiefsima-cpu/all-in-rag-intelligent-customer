@@ -130,7 +130,7 @@ def _integration_report(policy_payload: dict[str, object]) -> dict[str, object]:
             ),
         ),
     )
-    report["generated_at"] = "2026-07-16T07:55:00+00:00"
+    report["generated_at"] = "2026-07-16T07:50:00+00:00"
     return report
 
 
@@ -187,7 +187,7 @@ def _live_quality_report(policy_payload: dict[str, object]) -> dict[str, object]
         checks=checks,
         results=(result,),
     )
-    report["generated_at"] = "2026-07-16T07:50:00+00:00"
+    report["generated_at"] = "2026-07-16T07:55:00+00:00"
     return report
 
 

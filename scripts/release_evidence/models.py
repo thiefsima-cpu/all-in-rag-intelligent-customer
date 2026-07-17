@@ -9,6 +9,8 @@ from typing import Annotated, Literal, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rag_modules.kernel.artifacts import ARTIFACT_MANIFEST_SCHEMA_VERSION
+
 CAPTURE_SCHEMA_VERSION = "graph-rag-release-evidence-capture-v1"
 MANIFEST_SCHEMA_VERSION = "graph-rag-release-evidence-v1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -36,9 +38,11 @@ class StrictEvidenceModel(BaseModel):
 
 def _validate_timestamp(value: str) -> str:
     try:
-        datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("invalid ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timestamp must be timezone-aware")
     return value
 
 
@@ -202,7 +206,7 @@ class DatasetIdentity(StrictEvidenceModel):
 
 
 class KnowledgeBaseIdentity(StrictEvidenceModel):
-    schema_version: str = Field(min_length=1)
+    schema_version: Literal[ARTIFACT_MANIFEST_SCHEMA_VERSION]
     manifest_version: PositiveInt
     stage: Literal["ready"]
     health: Literal["ready"]

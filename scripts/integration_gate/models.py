@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from typing import Literal, Mapping, Self
 from urllib.parse import SplitResult, urlsplit
@@ -145,10 +146,25 @@ class IntegrationGateSettings:
 
     def safe_target_identity(self) -> dict[str, str]:
         return {
-            "api_host": _safe_host_identity(self.api_url),
+            "api_host": _safe_api_host_identity(self.api_url),
             "neo4j_host": _safe_host_identity(self.neo4j_uri),
             "milvus_host": _safe_host_identity(self.milvus_host),
         }
+
+
+def _safe_api_host_identity(value: str) -> str:
+    parsed_value = urlsplit(value)
+    host = parsed_value.hostname or ""
+    if parsed_value.port is not None:
+        try:
+            address = ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if isinstance(address, IPv6Address):
+                return f"[{address}]:{parsed_value.port}"
+        return f"{host}:{parsed_value.port}"
+    return host
 
 
 def _safe_host_identity(value: str) -> str:
