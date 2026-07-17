@@ -10,6 +10,10 @@ def workflow_text() -> str:
     return (ROOT / ".github/workflows/release-evidence.yml").read_text(encoding="utf-8")
 
 
+def release_workflow_text() -> str:
+    return (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+
 def job_text(workflow: str, name: str, *, next_job: str | None = None) -> str:
     start = workflow.index(f"  {name}:")
     end = len(workflow) if next_job is None else workflow.index(f"\n  {next_job}:", start)
@@ -298,3 +302,294 @@ def test_verify_workflow_queries_and_downloads_selected_artifact() -> None:
         "--artifact-metadata artifact-metadata.json",
     ):
         assert argument in run_text(verify_evidence)
+
+
+def test_tag_workflow_verifies_evidence_before_build_and_draft_release() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    publish = job_text(workflow, "publish-draft")
+
+    provenance = artifacts.index("- name: Validate tag provenance")
+    resolve = artifacts.index("- name: Resolve selected release evidence")
+    verify = artifacts.index("python -m scripts.release_evidence verify")
+    build = artifacts.index("python -m build --sdist --wheel")
+    metadata = artifacts.index("scripts/verify_distribution_metadata.py")
+    sbom = artifacts.index("anchore/sbom-action@v0")
+    upload = artifacts.index("actions/upload-artifact@v7")
+    draft = publish.index("gh release create")
+
+    assert provenance < resolve < verify < build < metadata < sbom < upload
+    assert draft > publish.index("gh run download")
+    assert "pypa/gh-action-pypi-publish" not in workflow
+
+
+def test_tag_workflow_separates_read_only_build_from_write_only_publication() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    publish = job_text(workflow, "publish-draft")
+    artifact_header, _artifact_steps = artifacts.split("    steps:", maxsplit=1)
+    publish_header, publish_steps = publish.split("    steps:", maxsplit=1)
+
+    assert "permissions: {}" in workflow.split("jobs:", maxsplit=1)[0]
+    assert "group: release-${{ github.ref_name }}" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "contents: read" in artifact_header
+    assert "actions: read" in artifact_header
+    assert "contents: write" not in artifact_header
+    assert "needs: release-artifacts" in publish_header
+    assert "contents: write" in publish_header
+    assert "actions: read" in publish_header
+    assert "uses:" not in publish_steps
+    for forbidden in (
+        "actions/checkout",
+        "actions/setup-python",
+        "anchore/sbom-action",
+        "pip install",
+        "python -m",
+        "scripts/",
+    ):
+        assert forbidden not in publish_steps
+
+
+def test_tag_workflow_strictly_resolves_committed_evidence_identity() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    resolve = step_text(artifacts, "Resolve selected release evidence")
+    run = run_text(resolve)
+
+    assert "RELEASE_TAG: ${{ github.ref_name }}" in resolve
+    assert "GITHUB_REPOSITORY: ${{ github.repository }}" in resolve
+    for contract in (
+        "from scripts.validate_release_tag import parse_release_tag",
+        "from scripts.release_evidence.models import load_release_evidence_manifest",
+        "parsed_tag = parse_release_tag(release_tag)",
+        "validated_version = parsed_tag.package_version",
+        'manifest_path = Path("quality-evidence", "releases", validated_version,',
+        "manifest = load_release_evidence_manifest(manifest_path)",
+        'expected_artifact_name = f"graph-rag-c9-{validated_version}-quality-evidence"',
+        'expected_bundle_name = f"{expected_artifact_name}.zip"',
+        "if manifest.release.package_version != validated_version:",
+        "if manifest.release.tag != release_tag:",
+        'if manifest.provenance.repository != os.environ["GITHUB_REPOSITORY"]:',
+        "if manifest.transport.artifact_name != expected_artifact_name:",
+        "if manifest.bundle.name != expected_bundle_name:",
+        'Path(os.environ["GITHUB_OUTPUT"]).open(',
+        'f"artifact_id={manifest.transport.artifact_id}',
+        'f"run_id={manifest.transport.workflow_run_id}',
+        'f"artifact_name={expected_artifact_name}',
+        'f"bundle_name={expected_bundle_name}',
+        'f"package_version={validated_version}',
+        'f"release_tag={parsed_tag.tag}',
+    ):
+        assert contract in run
+    assert "json.load" not in run
+    assert "echo " not in run
+
+
+def test_tag_workflow_queries_downloads_and_verifies_exact_selected_artifact() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+
+    query = step_text(artifacts, "Query selected evidence artifact")
+    assert "GH_TOKEN: ${{ github.token }}" in query
+    assert "GH_REPO: ${{ github.repository }}" in query
+    assert "ARTIFACT_ID: ${{ steps.evidence.outputs.artifact_id }}" in query
+    assert 'actions/artifacts/${ARTIFACT_ID}"' in run_text(query)
+
+    download = step_text(artifacts, "Download selected evidence artifact")
+    assert "GH_TOKEN: ${{ github.token }}" in download
+    assert "GH_REPO: ${{ github.repository }}" in download
+    assert "RUN_ID: ${{ steps.evidence.outputs.run_id }}" in download
+    assert "ARTIFACT_NAME: ${{ steps.evidence.outputs.artifact_name }}" in download
+    assert 'gh run download "${RUN_ID}"' in run_text(download)
+    assert '--name "${ARTIFACT_NAME}"' in run_text(download)
+    assert '--dir "downloaded-evidence"' in run_text(download)
+
+    verify = step_text(artifacts, "Verify selected release evidence")
+    assert "RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}" in verify
+    assert "RELEASE_TAG: ${{ steps.evidence.outputs.release_tag }}" in verify
+    assert "EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}" in verify
+    assert "EVIDENCE_BUNDLE: downloaded-evidence/${{" in verify
+    for argument in (
+        '--manifest "${EVIDENCE_MANIFEST}"',
+        '--release-commit "${RELEASE_COMMIT}"',
+        '--tag "${RELEASE_TAG}"',
+        '--bundle "${EVIDENCE_BUNDLE}"',
+        '--artifact-metadata "artifact-metadata.json"',
+    ):
+        assert argument in run_text(verify)
+
+
+def test_tag_workflow_run_blocks_never_inline_actions_expressions() -> None:
+    workflow = release_workflow_text()
+
+    for job in (
+        job_text(workflow, "release-artifacts", next_job="publish-draft"),
+        job_text(workflow, "publish-draft"),
+    ):
+        for raw_step in job.split("\n      - name:")[1:]:
+            step = "      - name:" + raw_step
+            if "\n        run:" in step:
+                assert "${{" not in run_text(step)
+
+
+def test_tag_workflow_publishes_exact_current_run_payload_as_draft() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    publish = job_text(workflow, "publish-draft")
+
+    upload = step_text(artifacts, "Upload verified release payload")
+    for path in (
+        "dist/*.whl",
+        "dist/*.tar.gz",
+        "sbom.cdx.json",
+        "${{ steps.evidence.outputs.manifest }}",
+        "downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}",
+    ):
+        assert path in upload
+    assert "if-no-files-found: error" in upload
+    assert "overwrite: true" in upload
+    assert "retention-days: 90" in upload
+
+    download = step_text(publish, "Download current run release payload")
+    assert "CURRENT_RUN_ID: ${{ github.run_id }}" in download
+    assert "GH_REPO: ${{ github.repository }}" in download
+    assert "RELEASE_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.artifact_name }}" in download
+    assert 'gh run download "${CURRENT_RUN_ID}"' in run_text(download)
+    assert '--name "${RELEASE_ARTIFACT_NAME}"' in run_text(download)
+    assert '--dir "release-payload"' in run_text(download)
+
+    release = step_text(publish, "Create or update draft GitHub Release")
+    release_run = run_text(release)
+    for binding in (
+        "RELEASE_TAG: ${{ needs.release-artifacts.outputs.release_tag }}",
+        "WHEEL_NAME: ${{ needs.release-artifacts.outputs.wheel_name }}",
+        "SDIST_NAME: ${{ needs.release-artifacts.outputs.sdist_name }}",
+        "MANIFEST_PATH: ${{ needs.release-artifacts.outputs.manifest_path }}",
+        "BUNDLE_NAME: ${{ needs.release-artifacts.outputs.bundle_name }}",
+        "GH_REPO: ${{ github.repository }}",
+    ):
+        assert binding in release
+    for asset in (
+        "release-payload/dist/${WHEEL_NAME}",
+        "release-payload/dist/${SDIST_NAME}",
+        "release-payload/sbom.cdx.json",
+        "release-payload/${MANIFEST_PATH}",
+        "release-payload/downloaded-evidence/${BUNDLE_NAME}",
+    ):
+        assert asset in release_run
+    assert 'test "${is_draft}" = "true"' in release_run
+    assert 'gh release upload "${RELEASE_TAG}"' in release_run
+    assert "--clobber" in release_run
+    assert 'gh release create "${RELEASE_TAG}"' in release_run
+    assert "--draft" in release_run
+    assert "--verify-tag" in release_run
+    assert "--prerelease" in release_run
+    assert "shopt -s nullglob" in release_run
+    assert 'test "${#wheels[@]}" -eq 1' in release_run
+    assert 'test "${#sdists[@]}" -eq 1' in release_run
+    assert 'test "${#assets[@]}" -eq 5' in release_run
+    assert 'test ! -L "${asset}"' in release_run
+    assert 'gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --slurp' in release_run
+    assert 'test "${release_count}" -le 1' in release_run
+    assert 'test "${is_prerelease}" = "${PRERELEASE}"' in release_run
+    assert 'test "${existing_tag}" = "${RELEASE_TAG}"' in release_run
+    assert 'for expected_name in "${expected_names[@]}"' in release_run
+    assert 'test "${matched}" = "true"' in release_run
+    assert "gh api \"repos/${GH_REPO}/commits/${RELEASE_TAG}\" --jq '.sha'" in release_run
+    assert 'test "${remote_tag_commit}" = "${TAG_COMMIT}"' in release_run
+    assert "repos/${GH_REPO}/releases/tags/${RELEASE_TAG}" in release_run
+    assert 'test "${final_draft}" = "true"' in release_run
+    assert 'test "${final_prerelease}" = "${PRERELEASE}"' in release_run
+    assert 'test "${final_tag}" = "${RELEASE_TAG}"' in release_run
+    assert 'test "${#final_assets[@]}" -eq 5' in release_run
+    assert 'test "${match_count}" -eq 1' in release_run
+    assert "declare -A" not in release_run
+
+
+def test_tag_workflow_revalidates_publication_identity_and_remote_tag() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    artifact_header, _artifact_steps = artifacts.split("    steps:", maxsplit=1)
+    publish = job_text(workflow, "publish-draft")
+    publish_header, _publish_steps = publish.split("    steps:", maxsplit=1)
+    identity = step_text(publish, "Validate publication identity")
+    identity_run = run_text(identity)
+
+    for output in (
+        "artifact_name: ${{ steps.evidence.outputs.release_artifact_name }}",
+        "bundle_name: ${{ steps.evidence.outputs.bundle_name }}",
+        "evidence_artifact_name: ${{ steps.evidence.outputs.artifact_name }}",
+        "manifest_path: ${{ steps.evidence.outputs.manifest }}",
+        "package_version: ${{ steps.evidence.outputs.package_version }}",
+        "release_tag: ${{ steps.evidence.outputs.release_tag }}",
+        "tag_commit: ${{ steps.provenance.outputs.tag_commit }}",
+    ):
+        assert output in artifact_header
+    assert "needs: release-artifacts" in publish_header
+    for binding in (
+        "EVENT_TAG: ${{ github.ref_name }}",
+        "PACKAGE_VERSION: ${{ needs.release-artifacts.outputs.package_version }}",
+        "RELEASE_TAG: ${{ needs.release-artifacts.outputs.release_tag }}",
+        "TAG_COMMIT: ${{ needs.release-artifacts.outputs.tag_commit }}",
+        "EVIDENCE_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.evidence_artifact_name }}",
+        "PAYLOAD_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.artifact_name }}",
+    ):
+        assert binding in identity
+    for contract in (
+        'test "${EVENT_TAG}" = "${RELEASE_TAG}"',
+        "-rc\\.([1-9][0-9]*)$",
+        'test "${PACKAGE_VERSION}" = "${expected_version}"',
+        'test "${PRERELEASE}" = "${expected_prerelease}"',
+        'test "${EVIDENCE_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-quality-evidence"',
+        'test "${BUNDLE_NAME}" = "${EVIDENCE_ARTIFACT_NAME}.zip"',
+        'test "${PAYLOAD_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-release-assets"',
+        'test "${MANIFEST_PATH}" = "quality-evidence/releases/${expected_version}/evidence-manifest.json"',
+        '[[ "${TAG_COMMIT}" =~ ^[0-9a-f]{40}$ ]]',
+    ):
+        assert contract in identity_run
+
+    remote = step_text(publish, "Validate remote tag commit")
+    assert "GH_TOKEN: ${{ github.token }}" in remote
+    assert "GH_REPO: ${{ github.repository }}" in remote
+    assert "EXPECTED_TAG_COMMIT: ${{ needs.release-artifacts.outputs.tag_commit }}" in remote
+    assert "gh api \"repos/${GH_REPO}/commits/${RELEASE_TAG}\" --jq '.sha'" in run_text(remote)
+    assert 'test "${remote_tag_commit}" = "${EXPECTED_TAG_COMMIT}"' in run_text(remote)
+
+    release_run = run_text(step_text(publish, "Create or update draft GitHub Release"))
+    assert 'test "${EVENT_TAG}" = "${RELEASE_TAG}"' in release_run
+    assert 'test "${PACKAGE_VERSION}" = "${expected_version}"' in release_run
+    assert (
+        'test "${PAYLOAD_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-release-assets"'
+        in release_run
+    )
+
+
+def test_tag_workflow_scopes_write_token_to_gh_only() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    publish = job_text(workflow, "publish-draft")
+
+    for step_name in (
+        "Check out tagged commit",
+        "Set up Python",
+        "Install build dependencies",
+        "Generate CycloneDX SBOM",
+        "Upload verified release payload",
+    ):
+        assert "GH_TOKEN:" not in step_text(artifacts, step_name)
+    for step_name in (
+        "Query selected evidence artifact",
+        "Download selected evidence artifact",
+    ):
+        assert "GH_TOKEN: ${{ github.token }}" in step_text(artifacts, step_name)
+    for step_name in (
+        "Download current run release payload",
+        "Validate remote tag commit",
+        "Create or update draft GitHub Release",
+    ):
+        step = step_text(publish, step_name)
+        assert "GH_TOKEN: ${{ github.token }}" in step
+        assert "GH_REPO: ${{ github.repository }}" in step
+        assert "gh " in run_text(step)
+    assert "GH_TOKEN:" not in step_text(publish, "Validate publication identity")

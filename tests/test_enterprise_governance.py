@@ -291,6 +291,12 @@ def test_release_workflow_validates_and_archives_without_pypi_publish() -> None:
     assert "scripts/verify_distribution_metadata.py" in workflow
     assert "anchore/sbom-action" in workflow
     assert "actions/upload-artifact" in workflow
+    assert "scripts.release_evidence verify" in workflow
+    assert "gh release create" in workflow
+    assert "--draft" in workflow
+    assert "--verify-tag" in workflow
+    assert "contents: write" in workflow
+    assert "actions: read" in workflow
     assert "pypa/gh-action-pypi-publish" not in workflow
     assert "id-token: write" not in workflow
 
