@@ -42,29 +42,41 @@ permissions:
 jobs:
   capture:
     if: inputs.operation == 'capture'
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted", "linux"]') || inputs.runner }}
     timeout-minutes: 180
     environment: release-quality
-    env:
-      INTEGRATION_GATE_API_URL: ${{ secrets.INTEGRATION_GATE_API_URL }}
-      INTEGRATION_GATE_API_TOKEN: ${{ secrets.INTEGRATION_GATE_API_TOKEN }}
-      NEO4J_URI: ${{ secrets.NEO4J_URI }}
-      NEO4J_USER: ${{ secrets.NEO4J_USER }}
-      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
-      NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE }}
-      MILVUS_HOST: ${{ vars.MILVUS_HOST }}
-      MILVUS_PORT: ${{ vars.MILVUS_PORT }}
-      MILVUS_COLLECTION_NAME: ${{ vars.MILVUS_COLLECTION_NAME }}
-      LIVE_QUALITY_API_URL: ${{ secrets.LIVE_QUALITY_API_URL }}
-      LIVE_QUALITY_API_TOKEN: ${{ secrets.LIVE_QUALITY_API_TOKEN }}
-      LIVE_QUALITY_JUDGE_API_URL: ${{ secrets.LIVE_QUALITY_JUDGE_API_URL }}
-      LIVE_QUALITY_JUDGE_API_KEY: ${{ secrets.LIVE_QUALITY_JUDGE_API_KEY }}
-      LIVE_QUALITY_JUDGE_MODEL: ${{ vars.LIVE_QUALITY_JUDGE_MODEL }}
-      LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS: ${{ vars.LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS || '45' }}
-      LIVE_QUALITY_JUDGE_ENABLE_THINKING: ${{ vars.LIVE_QUALITY_JUDGE_ENABLE_THINKING || 'false' }}
-      RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH: ${{ vars.RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
+      - name: Validate capture request
+        env:
+          WORKFLOW_HEAD_SHA: ${{ github.sha }}
+          EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}
+          REQUESTED_RUNNER: ${{ inputs.runner }}
+          RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH: ${{ vars.RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH }}
+        run: |
+          test "${WORKFLOW_HEAD_SHA}" = "${EVALUATED_COMMIT}"
+          if [[ "${REQUESTED_RUNNER}" != "self-hosted" ]]; then
+            echo "::error::Capture requires a prepared self-hosted Linux runner"
+            exit 1
+          fi
+          test -n "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}"
+          if ! [[ "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}" == /* ]]; then
+            echo "::error::Artifact manifest path must be absolute"
+            exit 1
+          fi
+          test -f "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}"
+          manifest_path="$(realpath "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}")"
+          workspace_path="$(realpath "${GITHUB_WORKSPACE}")"
+          case "${manifest_path}" in
+            "${workspace_path}" | "${workspace_path}"/*)
+              echo "::error::Artifact manifest must be outside GITHUB_WORKSPACE"
+              exit 1
+              ;;
+          esac
+
       - name: Check out evaluated commit
         uses: actions/checkout@v7
         with:
@@ -82,22 +94,46 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
 
       - name: Verify evaluated checkout
-        shell: bash
+        env:
+          EVALUATED_COMMIT: ${{ inputs.evaluated_commit }}
         run: |
-          test "$(git rev-parse HEAD)" = "${{ inputs.evaluated_commit }}"
+          test "$(git rev-parse HEAD)" = "${EVALUATED_COMMIT}"
           test -z "$(git status --porcelain)"
 
       - name: Run real-dependency integration gate
+        env:
+          INTEGRATION_GATE_API_URL: ${{ secrets.INTEGRATION_GATE_API_URL }}
+          INTEGRATION_GATE_API_TOKEN: ${{ secrets.INTEGRATION_GATE_API_TOKEN }}
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USER: ${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE }}
+          MILVUS_HOST: ${{ vars.MILVUS_HOST }}
+          MILVUS_PORT: ${{ vars.MILVUS_PORT }}
+          MILVUS_COLLECTION_NAME: ${{ vars.MILVUS_COLLECTION_NAME }}
         run: >
           python -m scripts.integration_gate
           --output-dir eval/reports/integration_gate
 
       - name: Run live quality gate
+        env:
+          LIVE_QUALITY_API_URL: ${{ secrets.LIVE_QUALITY_API_URL }}
+          LIVE_QUALITY_API_TOKEN: ${{ secrets.LIVE_QUALITY_API_TOKEN }}
+          LIVE_QUALITY_JUDGE_API_URL: ${{ secrets.LIVE_QUALITY_JUDGE_API_URL }}
+          LIVE_QUALITY_JUDGE_API_KEY: ${{ secrets.LIVE_QUALITY_JUDGE_API_KEY }}
+          LIVE_QUALITY_JUDGE_MODEL: ${{ vars.LIVE_QUALITY_JUDGE_MODEL }}
+          LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS: ${{ vars.LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS || '45' }}
+          LIVE_QUALITY_JUDGE_ENABLE_THINKING: ${{ vars.LIVE_QUALITY_JUDGE_ENABLE_THINKING || 'false' }}
         run: >
           python -m scripts.live_quality_gate
           --output-dir eval/reports/live_quality_gate
 
       - name: Capture complete release evidence
+        env:
+          LIVE_QUALITY_API_URL: ${{ secrets.LIVE_QUALITY_API_URL }}
+          LIVE_QUALITY_API_TOKEN: ${{ secrets.LIVE_QUALITY_API_TOKEN }}
+          LIVE_QUALITY_JUDGE_MODEL: ${{ vars.LIVE_QUALITY_JUDGE_MODEL }}
+          RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH: ${{ vars.RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH }}
         run: >
           python -m scripts.release_evidence capture
           --repository-root .
@@ -129,7 +165,7 @@ jobs:
           python -m scripts.release_evidence finalize
           --capture-receipt "eval/reports/release_evidence/${{ inputs.package_version }}/capture-receipt.json"
           --workflow-run-id "${GITHUB_RUN_ID}"
-          --workflow-head-sha "${{ inputs.evaluated_commit }}"
+          --workflow-head-sha "${{ github.sha }}"
           --artifact-id "${{ steps.evidence-upload.outputs.artifact-id }}"
           --artifact-name "graph-rag-c9-${{ inputs.package_version }}-quality-evidence"
           --artifact-digest "${{ steps.evidence-upload.outputs.artifact-digest }}"
@@ -148,10 +184,16 @@ jobs:
     if: inputs.operation == 'verify'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
+      - name: Validate verify request
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: test -n "${RELEASE_COMMIT}"
+
       - name: Check out release commit
         uses: actions/checkout@v7
         with:
@@ -182,12 +224,16 @@ jobs:
           test "${manifest_evaluated_commit}" = "${{ inputs.evaluated_commit }}"
 
       - name: Query selected artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >
           gh api
           "repos/${GITHUB_REPOSITORY}/actions/artifacts/${{ steps.evidence.outputs.artifact_id }}"
           > artifact-metadata.json
 
       - name: Download selected complete evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >
           gh run download "${{ steps.evidence.outputs.run_id }}"
           --name "${{ steps.evidence.outputs.artifact_name }}"
