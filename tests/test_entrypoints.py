@@ -91,6 +91,14 @@ class EntrypointTests(unittest.TestCase):
             "scripts.live_quality_gate.cli:main",
         )
 
+    def test_release_evidence_console_script_is_registered(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            pyproject["project"]["scripts"]["graph-rag-release-evidence"],
+            "scripts.release_evidence.cli:main",
+        )
+
     def test_build_worker_console_script_is_registered(self) -> None:
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -127,6 +135,20 @@ class EntrypointTests(unittest.TestCase):
         self.assertIn("--output-dir", completed.stdout)
         self.assertIn("--json", completed.stdout)
         self.assertIn("--deterministic-only", completed.stdout)
+
+    def test_release_evidence_module_help_exposes_subcommands(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.release_evidence", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("capture", completed.stdout)
+        self.assertIn("finalize", completed.stdout)
+        self.assertIn("verify", completed.stdout)
 
 
 if __name__ == "__main__":
