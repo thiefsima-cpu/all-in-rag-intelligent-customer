@@ -15,6 +15,7 @@ from scripts.live_quality_gate.models import (
 )
 from scripts.live_quality_gate.reporter import (
     build_live_quality_report,
+    render_live_quality_summary,
     write_live_quality_report,
 )
 from tests.test_live_quality_gate_client import policy, settings
@@ -151,6 +152,8 @@ def test_report_writes_safe_json_markdown_and_manual_review_sample(tmp_path: Pat
     assert "serving-token" not in combined
     assert "judge-key" not in combined
     assert "Authorization" not in combined
+    assert summary_md.read_bytes() == render_live_quality_summary(persisted)
+    assert b"\r\n" not in summary_md.read_bytes()
 
 
 def test_report_uses_aggregate_thresholds_for_valid_case_quality_failures() -> None:

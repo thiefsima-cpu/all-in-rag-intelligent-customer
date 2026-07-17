@@ -21,8 +21,10 @@ from rag_modules.interfaces.api.diagnostics_models import DiagnosticsResponseMod
 from rag_modules.kernel.artifacts import ArtifactManifest, artifact_health
 from scripts.gates import GateCheckResult, GateFailureType
 from scripts.integration_gate.models import IntegrationGatePolicy
+from scripts.integration_gate.reporter import render_integration_summary
 from scripts.live_quality_gate.evaluator import evaluate_policy_thresholds
 from scripts.live_quality_gate.models import LiveQualityGatePolicy
+from scripts.live_quality_gate.reporter import render_live_quality_summary
 from scripts.validate_release_tag import parse_release_tag
 
 from .models import (
@@ -765,11 +767,14 @@ def _validate_live_report_schema(
     _detail_list(report, "checks", "live quality check details")
     _detail_list(report, "cases", "live quality case details")
     _require_exact_keys(report, _LIVE_REPORT_KEYS, "live quality report")
+    top_k = report.get("top_k")
     if (
         report.get("schema_version") != 1
         or not isinstance(report.get("passed"), bool)
-        or isinstance(report.get("top_k"), bool)
-        or report.get("top_k") != policy.top_k
+        or isinstance(top_k, bool)
+        or not isinstance(top_k, int)
+        or top_k <= 0
+        or top_k != policy.top_k
     ):
         raise ReleaseEvidenceCaptureError("live quality report schema is invalid")
     _require_iso_timestamp(report.get("generated_at"), "live quality report")
@@ -2337,6 +2342,10 @@ def capture_release_evidence(
     _validate_manual_review_binding(live_report, live_policy, manual_review_rows)
     if len(manual_review_rows) != quality.manual_review_sample_count:
         raise ReleaseEvidenceCaptureError("manual review sample count does not match JSONL")
+    if integration_summary_bytes != render_integration_summary(integration_report):
+        raise ReleaseEvidenceCaptureError("integration summary does not match validated report")
+    if live_summary_bytes != render_live_quality_summary(live_report):
+        raise ReleaseEvidenceCaptureError("live quality summary does not match validated report")
 
     source_entries = {
         "integration_gate/report.json": integration_report_bytes,

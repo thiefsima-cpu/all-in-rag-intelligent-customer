@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from scripts.gates import GateCheckResult, GateFailureType
+from scripts.integration_gate.reporter import render_integration_summary
 from scripts.live_quality_gate.evaluator import evaluate_policy_thresholds
 from scripts.live_quality_gate.models import LiveQualityGatePolicy
+from scripts.live_quality_gate.reporter import render_live_quality_summary
 from scripts.release_evidence import capture as capture_module
 from scripts.release_evidence.capture import (
     CaptureInputs,
@@ -139,6 +141,20 @@ def _write_manual_review_jsonl(path: Path, rows: list[object]) -> None:
     )
 
 
+def _write_integration_report_and_summary(fixture, report: dict[str, object]) -> None:
+    write_json(fixture.integration_report, report)
+    fixture.integration_report.with_name("summary.md").write_bytes(
+        render_integration_summary(report)
+    )
+
+
+def _write_live_report_and_summary(fixture, report: dict[str, object]) -> None:
+    write_json(fixture.live_quality_report, report)
+    fixture.live_quality_report.with_name("summary.md").write_bytes(
+        render_live_quality_summary(report)
+    )
+
+
 def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) -> None:
     fixture = make_release_evidence_fixture(tmp_path)
     inputs = capture_inputs(fixture)
@@ -178,6 +194,33 @@ def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) ->
             assert member.external_attr >> 16 == 0o100644
 
 
+@pytest.mark.parametrize("report_name", ["integration_report", "live_quality_report"])
+@pytest.mark.parametrize(
+    "tamper",
+    ["status", "metrics", "content", "private_customer_field"],
+)
+def test_capture_rejects_summary_not_rendered_from_report(
+    tmp_path: Path,
+    report_name: str,
+    tamper: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    summary_path = getattr(fixture, report_name).parent / "summary.md"
+    summary = summary_path.read_text(encoding="utf-8")
+    if tamper == "status":
+        summary = summary.replace("Status: PASS", "Status: FAIL", 1)
+    elif tamper == "metrics":
+        summary += "\n- case_count: `999`\n"
+    elif tamper == "content":
+        summary += "\nUnexpected producer narrative.\n"
+    else:
+        summary += "\nprivate_customer_note: household allergy details\n"
+    summary_path.write_text(summary, encoding="utf-8")
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="summary"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -201,6 +244,20 @@ def test_capture_rejects_invalid_live_quality_success(
     write_json(fixture.live_quality_report, report)
 
     with pytest.raises(ReleaseEvidenceCaptureError, match=message):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize("top_k", [6.0, "6", True])
+def test_capture_rejects_non_integer_live_quality_top_k(
+    tmp_path: Path,
+    top_k: object,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["top_k"] = top_k
+    write_json(fixture.live_quality_report, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="schema"):
         capture_release_evidence(capture_inputs(fixture))
 
 
@@ -405,7 +462,7 @@ def test_capture_accepts_numeric_token_metric_at_producer_path(tmp_path: Path) -
         if check["name"] == "case.vector_recipe_lookup.model_usage"
     )
     model_usage_check["actual"] = 20
-    write_json(fixture.integration_report, report)
+    _write_integration_report_and_summary(fixture, report)
 
     capture_release_evidence(capture_inputs(fixture))
 
@@ -496,7 +553,7 @@ def test_capture_rejects_unbound_manual_review_jsonl(
         report["manual_review_sample_count"] = 2
         jsonl_rows = json.loads(json.dumps(report_rows))
     report["manual_review_sample"] = report_rows
-    write_json(fixture.live_quality_report, report)
+    _write_live_report_and_summary(fixture, report)
     _write_manual_review_jsonl(
         fixture.live_quality_report.parent / "manual_review_sample.jsonl",
         jsonl_rows,
@@ -1471,7 +1528,7 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
         "evidence",
     ):
         manual_sample[field_name] = first_case[field_name]
-    write_json(fixture.live_quality_report, report)
+    _write_live_report_and_summary(fixture, report)
     _write_manual_review_jsonl(
         fixture.live_quality_report.parent / "manual_review_sample.jsonl",
         report["manual_review_sample"],
@@ -1497,10 +1554,10 @@ def test_capture_accepts_same_gate_target_hostname(
     fixture = make_release_evidence_fixture(tmp_path)
     integration_report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
     integration_report["target"]["api_host"] = integration_host
-    write_json(fixture.integration_report, integration_report)
+    _write_integration_report_and_summary(fixture, integration_report)
     live_report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
     live_report["target"]["api_host"] = live_host
-    write_json(fixture.live_quality_report, live_report)
+    _write_live_report_and_summary(fixture, live_report)
 
     capture_release_evidence(capture_inputs(fixture))
 

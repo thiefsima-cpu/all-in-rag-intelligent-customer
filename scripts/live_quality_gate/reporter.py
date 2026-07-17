@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from scripts.gates import GateCheckResult, aggregate_checks, json_safe
 
@@ -89,12 +89,13 @@ def write_live_quality_report(
     summary_path = output_path / _ARTIFACTS["summary_md"]
     sample_path = output_path / _ARTIFACTS["manual_review_sample_jsonl"]
 
+    persisted_report = json_safe(report)
     report_path.write_text(
-        json.dumps(json_safe(report), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        json.dumps(persisted_report, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    summary_path.write_text(_markdown_summary(report), encoding="utf-8")
-    sample_path.write_text(_manual_review_jsonl(report), encoding="utf-8")
+    summary_path.write_bytes(render_live_quality_summary(persisted_report))
+    sample_path.write_text(_manual_review_jsonl(persisted_report), encoding="utf-8")
     return report_path, summary_path, sample_path
 
 
@@ -166,7 +167,13 @@ def _manual_review_sample(
     }
 
 
-def _markdown_summary(report: dict[str, Any]) -> str:
+def render_live_quality_summary(report: Mapping[str, Any]) -> bytes:
+    """Render the canonical UTF-8/LF summary for a persisted live-quality report."""
+
+    return _markdown_summary(report).encode("utf-8")
+
+
+def _markdown_summary(report: Mapping[str, Any]) -> str:
     lines = [
         "# Live Quality Gate",
         "",

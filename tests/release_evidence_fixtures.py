@@ -15,7 +15,10 @@ from scripts.integration_gate.models import (
     IntegrationGateSettings,
     LiveCaseObservation,
 )
-from scripts.integration_gate.reporter import build_integration_report
+from scripts.integration_gate.reporter import (
+    build_integration_report,
+    render_integration_summary,
+)
 from scripts.live_quality_gate.evaluator import (
     aggregate_live_quality_metrics,
     evaluate_deterministic_case,
@@ -26,7 +29,10 @@ from scripts.live_quality_gate.models import (
     LiveQualityGatePolicy,
     LiveQualityGateSettings,
 )
-from scripts.live_quality_gate.reporter import build_live_quality_report
+from scripts.live_quality_gate.reporter import (
+    build_live_quality_report,
+    render_live_quality_summary,
+)
 from scripts.live_quality_gate.runtime_models import LiveQualityEvidence, LiveQualityObservation
 
 
@@ -314,18 +320,12 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
         json.loads(integration_policy.read_text(encoding="utf-8"))
     )
     write_json(integration_dir / "report.json", integration_report)
-    (integration_dir / "summary.md").write_text(
-        "# Real-Dependency Integration Gate\n\nStatus: PASS\n",
-        encoding="utf-8",
-    )
+    (integration_dir / "summary.md").write_bytes(render_integration_summary(integration_report))
     live_quality_report = _live_quality_report(
         json.loads(live_quality_policy.read_text(encoding="utf-8"))
     )
     write_json(live_dir / "report.json", live_quality_report)
-    (live_dir / "summary.md").write_text(
-        "# Live Quality Gate\n\nStatus: PASS\n",
-        encoding="utf-8",
-    )
+    (live_dir / "summary.md").write_bytes(render_live_quality_summary(live_quality_report))
     manual_review_sample = live_quality_report["manual_review_sample"]
     (live_dir / "manual_review_sample.jsonl").write_text(
         "".join(
