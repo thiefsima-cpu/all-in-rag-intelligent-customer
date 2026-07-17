@@ -52,10 +52,32 @@ single-maintainer repository. All three branches block deletion and non-fast-for
    generation to pass on each promotion pull request.
 6. Release artifact review: download and retain the CI SBOM artifact
    `graph-rag-c9-sbom`.
-7. Tagging: create a protected RC tag on the checked `production` commit or a protected final tag
-   on the checked `main` commit. The release-candidate and final mappings are defined above.
-8. GitHub Release: create release notes from `CHANGELOG.md` and enable the prerelease flag for
-   release candidates.
+7. Evidence capture: run the `Release Quality Evidence` workflow in `capture`
+   mode on the prepared candidate commit. Its `evaluated_commit` must be the
+   exact commit exercised by the live gates, and the configured artifact
+   manifest must identify the active ready knowledge base used by the serving
+   API.
+8. Evidence review and finalization: review the complete quality evidence ZIP,
+   download the finalized compact manifest artifact, and commit that manifest
+   only at
+   `quality-evidence/releases/<package-version>/evidence-manifest.json`.
+9. Pre-tag verification: run the same workflow in `verify` mode against the
+   manifest commit, the original `evaluated_commit`, and the planned protected
+   tag. Treat `case_count=0` as ineligible for success evidence.
+10. Tagging: create the protected RC tag on the checked `production` commit or
+   the protected final tag on the checked `main` commit only while pre-tag
+   verification is green and its selected Actions artifact is unexpired. The
+   release-candidate and final mappings are defined above.
+11. Draft release: require the protected tag workflow to create a draft GitHub
+    Release containing exactly the wheel, sdist, SBOM, compact manifest, and
+    complete quality evidence ZIP. The ZIP is both the verified Actions
+    artifact and a GitHub Release asset; the workflow does not publish to PyPI.
+12. Publication review: review the draft assets and release notes before
+    publishing, and enable the prerelease flag for release candidates.
+
+Any code, profile, policy, prompt, dependency, or corpus change after the
+`evaluated_commit` invalidates the capture for release selection and requires a
+new live evidence run. Do not reuse the manifest or ZIP after such a change.
 
 ## Coverage Policy
 

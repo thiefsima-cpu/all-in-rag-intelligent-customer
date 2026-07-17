@@ -180,6 +180,40 @@ def test_release_evidence_workflow_is_manual_and_environment_scoped() -> None:
     assert "actions/upload-artifact@v7" in workflow
 
 
+def test_release_quality_evidence_is_documented_as_machine_traceable() -> None:
+    environment = _read(".env.example")
+    evidence_readme = _read("quality-evidence/README.md")
+    live_quality = _read("docs/live_quality_gate.md")
+    release_process = _read("docs/release_process.md")
+    documentation = "\n".join((environment, evidence_readme, live_quality, release_process))
+    normalized_live_quality = " ".join(live_quality.split()).lower()
+    normalized_release_process = " ".join(release_process.split())
+
+    assert "quality-evidence/releases/<package-version>/evidence-manifest.json" in evidence_readme
+    assert "20260708-203513" in evidence_readme
+    assert "historical failed attempt" in evidence_readme.lower()
+    assert "graph-rag-release-evidence capture --help" in live_quality
+    assert "graph-rag-release-evidence finalize --help" in live_quality
+    assert "graph-rag-release-evidence verify --help" in live_quality
+    assert "evaluated_commit" in live_quality
+    assert "case_count=0" in documentation
+    assert (
+        "RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH="
+        "/srv/graph-rag/release-evidence/artifact_manifest.json"
+    ) in environment
+    assert "absolute" in normalized_live_quality
+    assert "outside `GITHUB_WORKSPACE`" in live_quality
+    assert "self-hosted Linux" in live_quality
+    assert "hosted capture is rejected" in normalized_live_quality
+    assert "verify mode may run on a hosted runner" in normalized_live_quality
+    assert "pre-tag" in release_process.lower()
+    assert "complete quality evidence ZIP" in release_process
+    assert "draft GitHub Release" in normalized_release_process
+    assert "wheel, sdist, SBOM, compact manifest, and complete quality evidence ZIP" in (
+        normalized_release_process
+    )
+
+
 def test_ci_exposes_stable_branch_flow_check_in_enforce_mode() -> None:
     workflow = _read(".github/workflows/ci.yml")
 
