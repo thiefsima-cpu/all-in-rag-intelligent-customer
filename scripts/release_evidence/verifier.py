@@ -9,6 +9,7 @@ import subprocess
 import tomllib
 import zipfile
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
@@ -30,6 +31,8 @@ from .models import (
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_BUNDLE_SOURCE_BYTES = 50 * 1024 * 1024
 MAX_BUNDLE_BYTES = MAX_BUNDLE_SOURCE_BYTES + 1024 * 1024
+_MAX_REPORT_AGE = timedelta(minutes=180)
+_MAX_REPORT_FUTURE_SKEW = timedelta(minutes=5)
 _READ_CHUNK_BYTES = 1024 * 1024
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -531,6 +534,47 @@ def _require_list(value: object, name: str) -> list[Any]:
     return value
 
 
+def _report_timestamp(value: object, name: str) -> datetime:
+    if not isinstance(value, str):
+        raise ReleaseEvidenceVerificationError(f"{name} timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ReleaseEvidenceVerificationError(f"{name} timestamp is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ReleaseEvidenceVerificationError(f"{name} timestamp must be timezone-aware")
+    return parsed.astimezone(UTC)
+
+
+def _verify_report_timestamps(
+    integration_report: Mapping[str, Any],
+    live_report: Mapping[str, Any],
+    manifest: ReleaseEvidenceManifest,
+) -> None:
+    capture_reference = _report_timestamp(
+        manifest.provenance.generated_at,
+        "manifest provenance",
+    )
+    integration_time = _report_timestamp(
+        integration_report.get("generated_at"),
+        "integration report",
+    )
+    live_time = _report_timestamp(
+        live_report.get("generated_at"),
+        "live quality report",
+    )
+    for name, report_time in (
+        ("integration report", integration_time),
+        ("live quality report", live_time),
+    ):
+        if capture_reference - report_time > _MAX_REPORT_AGE:
+            raise ReleaseEvidenceVerificationError(f"{name} is more than 180 minutes old")
+        if report_time - capture_reference > _MAX_REPORT_FUTURE_SKEW:
+            raise ReleaseEvidenceVerificationError(f"{name} is more than 5 minutes in the future")
+    if integration_time > live_time:
+        raise ReleaseEvidenceVerificationError("gate report execution order is invalid")
+
+
 def _summary_value_matches(actual: object, expected: object) -> bool:
     if isinstance(expected, bool):
         return isinstance(actual, bool) and actual is expected
@@ -751,6 +795,7 @@ def _verify_semantics(
         raise ReleaseEvidenceVerificationError("integration report schema is invalid")
     if set(live_report) != _LIVE_REPORT_KEYS:
         raise ReleaseEvidenceVerificationError("live quality report schema is invalid")
+    _verify_report_timestamps(integration_report, live_report, manifest)
     integration_policy_payload = _parse_json_object(
         entries["policies/integration_gate.json"],
         "integration policy",

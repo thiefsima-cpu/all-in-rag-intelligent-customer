@@ -130,6 +130,41 @@ def _synchronize_bundle(
     return release_commit, output_path
 
 
+def _synchronize_report_timestamps(
+    *,
+    fixture,
+    capture,
+    manifest_path: Path,
+    integration_generated_at: str,
+    live_generated_at: str,
+    capture_generated_at: str = "2026-07-16T08:00:00+00:00",
+) -> tuple[str, Path]:
+    entries = _bundle_entries(capture.bundle_path)
+    integration_report = json.loads(entries["integration_gate/report.json"])
+    integration_report["generated_at"] = integration_generated_at
+    entries["integration_gate/report.json"] = _json_bytes(integration_report)
+    entries["integration_gate/summary.md"] = verifier_module.render_integration_summary(
+        json.loads(entries["integration_gate/report.json"])
+    )
+    live_report = json.loads(entries["live_quality_gate/report.json"])
+    live_report["generated_at"] = live_generated_at
+    entries["live_quality_gate/report.json"] = _json_bytes(live_report)
+    entries["live_quality_gate/summary.md"] = verifier_module.render_live_quality_summary(
+        json.loads(entries["live_quality_gate/report.json"])
+    )
+    manifest = _manifest_payload(manifest_path)
+    manifest["provenance"]["generated_at"] = capture_generated_at
+    manifest["integration"]["generated_at"] = integration_generated_at
+    manifest["quality"]["generated_at"] = live_generated_at
+    return _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+        manifest=manifest,
+    )
+
+
 def finalized_release(tmp_path: Path):
     fixture = make_release_evidence_fixture(tmp_path)
     capture = capture_release_evidence(
@@ -209,6 +244,81 @@ def test_verify_accepts_evidence_only_release_commit(tmp_path: Path) -> None:
     manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
 
     assert manifest.provenance.evaluated_commit == fixture.evaluated_commit
+
+
+@pytest.mark.parametrize(
+    ("integration_generated_at", "live_generated_at", "message"),
+    [
+        (
+            "2026-07-16T04:59:59+00:00",
+            "2026-07-16T07:55:00+00:00",
+            "more than 180 minutes old",
+        ),
+        (
+            "2026-07-16T07:50:00+00:00",
+            "2026-07-16T08:05:01+00:00",
+            "more than 5 minutes in the future",
+        ),
+        (
+            "2026-07-16T07:56:00+00:00",
+            "2026-07-16T07:55:00+00:00",
+            "execution order",
+        ),
+    ],
+)
+def test_verify_rejects_self_consistent_invalid_report_timestamps(
+    tmp_path: Path,
+    integration_generated_at: str,
+    live_generated_at: str,
+    message: str,
+) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    release_commit, _ = _synchronize_report_timestamps(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        integration_generated_at=integration_generated_at,
+        live_generated_at=live_generated_at,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match=message):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+def test_verify_rejects_naive_report_timestamp_after_rehash(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    report = json.loads(entries["integration_gate/report.json"])
+    report["generated_at"] = "2026-07-16T07:50:00"
+    entries["integration_gate/report.json"] = _json_bytes(report)
+    entries["integration_gate/summary.md"] = verifier_module.render_integration_summary(
+        json.loads(entries["integration_gate/report.json"])
+    )
+    release_commit, _ = _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="timezone-aware"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+def test_verify_accepts_inclusive_report_freshness_boundaries(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    release_commit, _ = _synchronize_report_timestamps(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        integration_generated_at="2026-07-16T05:00:00+00:00",
+        live_generated_at="2026-07-16T08:05:00+00:00",
+    )
+
+    manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+    assert manifest.integration.generated_at == "2026-07-16T05:00:00+00:00"
+    assert manifest.quality.generated_at == "2026-07-16T08:05:00+00:00"
 
 
 def test_verify_rejects_source_change_after_evaluation(tmp_path: Path) -> None:
