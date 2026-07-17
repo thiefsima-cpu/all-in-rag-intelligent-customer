@@ -1,0 +1,205 @@
+name: Release Quality Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Capture evidence or verify a committed manifest
+        required: true
+        type: choice
+        options:
+          - capture
+          - verify
+      evaluated_commit:
+        description: Exact commit evaluated by the live gates
+        required: true
+        type: string
+      release_commit:
+        description: Commit containing the selected manifest; required for verify
+        required: false
+        type: string
+      package_version:
+        description: PEP 440 package version
+        required: true
+        type: string
+      tag:
+        description: Planned protected release tag
+        required: true
+        type: string
+      runner:
+        description: Runner that can reach the prepared target environment
+        required: true
+        type: choice
+        default: self-hosted
+        options:
+          - self-hosted
+          - ubuntu-latest
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  capture:
+    if: inputs.operation == 'capture'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+    environment: release-quality
+    env:
+      INTEGRATION_GATE_API_URL: ${{ secrets.INTEGRATION_GATE_API_URL }}
+      INTEGRATION_GATE_API_TOKEN: ${{ secrets.INTEGRATION_GATE_API_TOKEN }}
+      NEO4J_URI: ${{ secrets.NEO4J_URI }}
+      NEO4J_USER: ${{ secrets.NEO4J_USER }}
+      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+      NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE }}
+      MILVUS_HOST: ${{ vars.MILVUS_HOST }}
+      MILVUS_PORT: ${{ vars.MILVUS_PORT }}
+      MILVUS_COLLECTION_NAME: ${{ vars.MILVUS_COLLECTION_NAME }}
+      LIVE_QUALITY_API_URL: ${{ secrets.LIVE_QUALITY_API_URL }}
+      LIVE_QUALITY_API_TOKEN: ${{ secrets.LIVE_QUALITY_API_TOKEN }}
+      LIVE_QUALITY_JUDGE_API_URL: ${{ secrets.LIVE_QUALITY_JUDGE_API_URL }}
+      LIVE_QUALITY_JUDGE_API_KEY: ${{ secrets.LIVE_QUALITY_JUDGE_API_KEY }}
+      LIVE_QUALITY_JUDGE_MODEL: ${{ vars.LIVE_QUALITY_JUDGE_MODEL }}
+      LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS: ${{ vars.LIVE_QUALITY_JUDGE_TIMEOUT_SECONDS || '45' }}
+      LIVE_QUALITY_JUDGE_ENABLE_THINKING: ${{ vars.LIVE_QUALITY_JUDGE_ENABLE_THINKING || 'false' }}
+      RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH: ${{ vars.RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH }}
+
+    steps:
+      - name: Check out evaluated commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.evaluated_commit }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Verify evaluated checkout
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ inputs.evaluated_commit }}"
+          test -z "$(git status --porcelain)"
+
+      - name: Run real-dependency integration gate
+        run: >
+          python -m scripts.integration_gate
+          --output-dir eval/reports/integration_gate
+
+      - name: Run live quality gate
+        run: >
+          python -m scripts.live_quality_gate
+          --output-dir eval/reports/live_quality_gate
+
+      - name: Capture complete release evidence
+        run: >
+          python -m scripts.release_evidence capture
+          --repository-root .
+          --repository "${{ github.repository }}"
+          --package-version "${{ inputs.package_version }}"
+          --tag "${{ inputs.tag }}"
+          --evaluated-commit "${{ inputs.evaluated_commit }}"
+          --integration-policy eval/integration_gate.json
+          --live-quality-policy eval/live_quality_gate.json
+          --integration-report eval/reports/integration_gate/report.json
+          --live-quality-report eval/reports/live_quality_gate/report.json
+          --diagnostics-url "${LIVE_QUALITY_API_URL%/}/v1/diagnostics"
+          --artifact-manifest "${RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH}"
+          --judge-model "${LIVE_QUALITY_JUDGE_MODEL}"
+          --output-dir "eval/reports/release_evidence/${{ inputs.package_version }}"
+          --json
+
+      - name: Upload complete evidence bundle
+        id: evidence-upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: graph-rag-c9-${{ inputs.package_version }}-quality-evidence
+          path: eval/reports/release_evidence/${{ inputs.package_version }}/graph-rag-c9-${{ inputs.package_version }}-quality-evidence.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Finalize compact evidence manifest
+        run: >
+          python -m scripts.release_evidence finalize
+          --capture-receipt "eval/reports/release_evidence/${{ inputs.package_version }}/capture-receipt.json"
+          --workflow-run-id "${GITHUB_RUN_ID}"
+          --workflow-head-sha "${{ inputs.evaluated_commit }}"
+          --artifact-id "${{ steps.evidence-upload.outputs.artifact-id }}"
+          --artifact-name "graph-rag-c9-${{ inputs.package_version }}-quality-evidence"
+          --artifact-digest "${{ steps.evidence-upload.outputs.artifact-digest }}"
+          --output "eval/reports/release_evidence/${{ inputs.package_version }}/evidence-manifest.json"
+          --json
+
+      - name: Upload compact manifest for release pull request
+        uses: actions/upload-artifact@v7
+        with:
+          name: graph-rag-c9-${{ inputs.package_version }}-quality-evidence-manifest
+          path: eval/reports/release_evidence/${{ inputs.package_version }}/evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+  verify:
+    if: inputs.operation == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_commit }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Resolve selected artifact identity
+        id: evidence
+        shell: bash
+        run: |
+          manifest="quality-evidence/releases/${{ inputs.package_version }}/evidence-manifest.json"
+          echo "manifest=${manifest}" >> "${GITHUB_OUTPUT}"
+          echo "artifact_id=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["artifact_id"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
+          echo "run_id=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["workflow_run_id"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
+          echo "artifact_name=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["transport"]["artifact_name"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
+          echo "bundle_name=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["bundle"]["name"])' "${manifest}")" >> "${GITHUB_OUTPUT}"
+          manifest_evaluated_commit=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["provenance"]["evaluated_commit"])' "${manifest}")
+          test "${manifest_evaluated_commit}" = "${{ inputs.evaluated_commit }}"
+
+      - name: Query selected artifact metadata
+        run: >
+          gh api
+          "repos/${GITHUB_REPOSITORY}/actions/artifacts/${{ steps.evidence.outputs.artifact_id }}"
+          > artifact-metadata.json
+
+      - name: Download selected complete evidence
+        run: >
+          gh run download "${{ steps.evidence.outputs.run_id }}"
+          --name "${{ steps.evidence.outputs.artifact_name }}"
+          --dir downloaded-evidence
+
+      - name: Verify release evidence before tagging
+        run: >
+          python -m scripts.release_evidence verify
+          --repository-root .
+          --manifest "${{ steps.evidence.outputs.manifest }}"
+          --release-commit "${{ inputs.release_commit }}"
+          --tag "${{ inputs.tag }}"
+          --bundle "downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}"
+          --artifact-metadata artifact-metadata.json
+          --json
