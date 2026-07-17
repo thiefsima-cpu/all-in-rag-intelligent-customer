@@ -386,6 +386,28 @@ def test_tag_workflow_strictly_resolves_committed_evidence_identity() -> None:
     assert "echo " not in run
 
 
+def test_tag_workflow_requires_manifest_to_be_a_regular_tracked_blob_before_loading() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    resolve = step_text(artifacts, "Resolve selected release evidence")
+    run = run_text(resolve)
+
+    tracked = run.index('["git", "ls-files", "--stage", "-z", "--",')
+    lstat = run.index("manifest_path.lstat()")
+    symlink = run.index("manifest_path.is_symlink()")
+    resolved = run.index("manifest_path.resolve(strict=True)")
+    load = run.index("load_release_evidence_manifest(manifest_path)")
+    assert tracked < lstat < symlink < resolved < load
+    for contract in (
+        'if mode != "100644" or stage != "0":',
+        're.fullmatch(r"[0-9a-f]{40}", object_id)',
+        "stat.S_ISREG(manifest_stat.st_mode)",
+        "manifest_resolved.relative_to(repository_root)",
+        "if tracked_path != manifest_path.as_posix():",
+    ):
+        assert contract in run
+
+
 def test_tag_workflow_queries_downloads_and_verifies_exact_selected_artifact() -> None:
     workflow = release_workflow_text()
     artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
@@ -439,14 +461,9 @@ def test_tag_workflow_publishes_exact_current_run_payload_as_draft() -> None:
     publish = job_text(workflow, "publish-draft")
 
     upload = step_text(artifacts, "Upload verified release payload")
-    for path in (
-        "dist/*.whl",
-        "dist/*.tar.gz",
-        "sbom.cdx.json",
-        "${{ steps.evidence.outputs.manifest }}",
-        "downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}",
-    ):
-        assert path in upload
+    assert "path: release-payload-stage/" in upload
+    assert "dist/*.whl" not in upload
+    assert "downloaded-evidence/${{" not in upload
     assert "if-no-files-found: error" in upload
     assert "overwrite: true" in upload
     assert "retention-days: 90" in upload
@@ -498,13 +515,114 @@ def test_tag_workflow_publishes_exact_current_run_payload_as_draft() -> None:
     assert 'test "${matched}" = "true"' in release_run
     assert "gh api \"repos/${GH_REPO}/commits/${RELEASE_TAG}\" --jq '.sha'" in release_run
     assert 'test "${remote_tag_commit}" = "${TAG_COMMIT}"' in release_run
-    assert "repos/${GH_REPO}/releases/tags/${RELEASE_TAG}" in release_run
+    assert (
+        release_run.count('gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --slurp') == 2
+    )
+    assert "repos/${GH_REPO}/releases/tags/${RELEASE_TAG}" not in release_run
+    assert '"existing-releases.json" > "selected-releases.json"' in release_run
+    assert '"final-releases.json" > "final-selected-releases.json"' in release_run
     assert 'test "${final_draft}" = "true"' in release_run
     assert 'test "${final_prerelease}" = "${PRERELEASE}"' in release_run
     assert 'test "${final_tag}" = "${RELEASE_TAG}"' in release_run
     assert 'test "${#final_assets[@]}" -eq 5' in release_run
     assert 'test "${match_count}" -eq 1' in release_run
     assert "declare -A" not in release_run
+
+
+def test_tag_workflow_finally_reverifies_after_sbom_before_staging_and_upload() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    freeze = step_text(artifacts, "Freeze and stage verified release payload")
+    freeze_run = run_text(freeze)
+
+    sbom = artifacts.index("- name: Generate CycloneDX SBOM")
+    final_verify = artifacts.index("- name: Freeze and stage verified release payload")
+    upload = artifacts.index("- name: Upload verified release payload")
+    assert sbom < final_verify < upload
+    assert artifacts.index("python -m scripts.release_evidence verify", final_verify) < upload
+    assert artifacts.index("scripts/verify_distribution_metadata.py", final_verify) < upload
+    for binding in (
+        "RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}",
+        "RELEASE_TAG: ${{ steps.evidence.outputs.release_tag }}",
+        "EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}",
+        "EVIDENCE_BUNDLE: downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}",
+        "PACKAGE_VERSION: ${{ steps.evidence.outputs.package_version }}",
+    ):
+        assert binding in freeze
+    for contract in (
+        'test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"',
+        'test -z "$(git status --porcelain --untracked-files=no)"',
+        '--artifact-metadata "artifact-metadata.json"',
+        '--expected-version "${PACKAGE_VERSION}"',
+    ):
+        assert contract in freeze_run
+    assert freeze_run.count('test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"') == 2
+    assert freeze_run.count('test -z "$(git status --porcelain --untracked-files=no)"') == 2
+
+
+def test_tag_workflow_stages_exact_hashed_five_file_payload() -> None:
+    workflow = release_workflow_text()
+    artifacts = job_text(workflow, "release-artifacts", next_job="publish-draft")
+    freeze = step_text(artifacts, "Freeze and stage verified release payload")
+    run = run_text(freeze)
+
+    for contract in (
+        'stage_root = Path("release-payload-stage")',
+        "os.path.lexists(stage_root)",
+        "source_path.lstat()",
+        "source_path.is_symlink()",
+        "stat.S_ISREG(source_stat.st_mode)",
+        "source_path.resolve(strict=True)",
+        'stage_root / "dist" / wheel.name',
+        'stage_root / "quality-evidence" / "releases" / package_version',
+        'stage_root / "downloaded-evidence" / bundle.name',
+        "shutil.copyfile(source_path, destination)",
+        "source_sha256 = sha256_file(source_path)",
+        "destination_sha256 = sha256_file(destination)",
+        "if destination_sha256 != source_sha256:",
+        "if actual_files != expected_files:",
+        "if actual_directories != expected_directories:",
+        "f\"wheel_sha256={hashes['wheel']}",
+        "f\"sdist_sha256={hashes['sdist']}",
+        "f\"sbom_sha256={hashes['sbom']}",
+        "f\"manifest_sha256={hashes['manifest']}",
+        "f\"bundle_sha256={hashes['bundle']}",
+    ):
+        assert contract in run
+
+    header, _steps = artifacts.split("    steps:", maxsplit=1)
+    for output in (
+        "wheel_name: ${{ steps.payload.outputs.wheel_name }}",
+        "sdist_name: ${{ steps.payload.outputs.sdist_name }}",
+        "wheel_sha256: ${{ steps.payload.outputs.wheel_sha256 }}",
+        "sdist_sha256: ${{ steps.payload.outputs.sdist_sha256 }}",
+        "sbom_sha256: ${{ steps.payload.outputs.sbom_sha256 }}",
+        "manifest_sha256: ${{ steps.payload.outputs.manifest_sha256 }}",
+        "bundle_sha256: ${{ steps.payload.outputs.bundle_sha256 }}",
+    ):
+        assert output in header
+    assert "Resolve distribution asset names" not in artifacts
+
+
+def test_publish_job_verifies_all_five_downloaded_asset_hashes_before_release_api() -> None:
+    workflow = release_workflow_text()
+    publish = job_text(workflow, "publish-draft")
+    identity = step_text(publish, "Validate publication identity")
+    release = step_text(publish, "Create or update draft GitHub Release")
+    release_run = run_text(release)
+
+    for prefix in ("WHEEL", "SDIST", "SBOM", "MANIFEST", "BUNDLE"):
+        assert f"{prefix}_SHA256: ${{{{ needs.release-artifacts.outputs." in identity
+        assert f'[[ "${{{prefix}_SHA256}}" =~ ^[0-9a-f]{{64}}$ ]]' in run_text(identity)
+        assert f"{prefix}_SHA256: ${{{{ needs.release-artifacts.outputs." in release
+    assert "expected_hashes=(" in release_run
+    assert 'actual_sha256="$(sha256sum -- "${asset}")"' in release_run
+    assert 'test "${actual_sha256}" = "${expected_hashes[${asset_index}]}"' in release_run
+    assert 'test "${regular_file_count}" -eq 5' in release_run
+    first_release_api = release_run.index(
+        'gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --slurp'
+    )
+    assert release_run.index('test "${actual_sha256}"') < first_release_api
 
 
 def test_tag_workflow_revalidates_publication_identity_and_remote_tag() -> None:
