@@ -68,6 +68,7 @@ def _commit_tree_symlink(repository_root: Path, relative_path: str, target: Path
         relative_path,
     )
     git(repository_root, "commit", "-m", f"test: link {relative_path}")
+    git(repository_root, "checkout-index", "--force", "--", relative_path)
     return git(repository_root, "rev-parse", "HEAD")
 
 
