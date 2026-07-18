@@ -12,7 +12,8 @@ bootstrap 脚本：
 .\scripts\bootstrap_env.ps1 -Profile dev
 ```
 
-脚本会创建或复用全局 conda 环境 `graphrag-c9-dev`。运行本地工程命令前先激活它：
+脚本会创建或复用全局 conda 环境 `graphrag-c9-dev`，安装开发依赖，把当前仓库以 editable
+模式安装到该环境，并执行环境校验。运行本地工程命令前先激活它：
 
 ```powershell
 conda activate graphrag-c9-dev
@@ -45,7 +46,7 @@ Copy-Item .env.example .env
 
 ## 工程入口
 
-以 editable 模式安装仓库后，可以使用 `pyproject.toml` 中定义的控制台命令：
+初始化脚本执行成功后，可以使用 `pyproject.toml` 中定义的控制台命令：
 
 ```powershell
 graph-rag-api
