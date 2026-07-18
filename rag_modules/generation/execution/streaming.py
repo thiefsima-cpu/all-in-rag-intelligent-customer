@@ -220,6 +220,8 @@ class StreamingGenerationRunner:
             control=control,
         ):
             _raise_if_cancelled(control)
+            if state.trace.first_token_latency_ms <= 0.0:
+                state.trace.first_token_latency_ms = state.deadline.total_elapsed_ms()
             yield chunk
 
     def _stream_failure_fallback(

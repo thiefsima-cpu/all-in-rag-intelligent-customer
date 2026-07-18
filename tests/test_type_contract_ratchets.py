@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NO_EXPLICIT_ANY_TARGETS = (
+    ROOT / "rag_modules" / "app" / "assembly.py",
     ROOT / "rag_modules" / "app" / "diagnostics.py",
     ROOT / "rag_modules" / "app" / "ports.py",
     ROOT / "rag_modules" / "app" / "composition" / "build_jobs.py",

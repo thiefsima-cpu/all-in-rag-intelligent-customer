@@ -41,6 +41,7 @@ class GenerationSnapshotResponseModel(BaseModel):
     error: JsonObject = Field(default_factory=dict)
     total_latency_ms: float = 0.0
     provider_latency_ms: float = 0.0
+    first_token_latency_ms: float = 0.0
     request_retries: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -66,6 +67,7 @@ class GenerationSnapshotResponseModel(BaseModel):
             error=public_answer_error(snapshot.error),
             total_latency_ms=snapshot.total_latency_ms,
             provider_latency_ms=snapshot.provider_latency_ms,
+            first_token_latency_ms=snapshot.first_token_latency_ms,
             request_retries=snapshot.request_retries,
             prompt_tokens=snapshot.prompt_tokens,
             completion_tokens=snapshot.completion_tokens,

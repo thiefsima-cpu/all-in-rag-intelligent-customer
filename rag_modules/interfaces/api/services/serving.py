@@ -11,7 +11,7 @@ from ....contracts import RequestControl
 from ....kernel.json_types import JsonObject
 from ....runtime.artifacts import ArtifactManifestStore
 from ....runtime.artifacts.registry import ArtifactRegistry
-from ....telemetry import get_runtime_telemetry
+from ....telemetry import RuntimeTelemetry, get_runtime_telemetry
 from ..answer_models import AnswerPayloadModel, AnswerStreamEventModel
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
@@ -43,7 +43,32 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         resolved_config = config or getattr(self.system, "config", None)
         self._config = resolved_config
         api_settings = getattr(resolved_config, "api", None)
-        self._answer_admission = ServingAnswerAdmissionController(
+        telemetry = get_runtime_telemetry(resolved_config) if resolved_config is not None else None
+        self._answer_admission = self._build_answer_admission(api_settings, telemetry)
+        self._runtime_readiness = self._build_runtime_readiness(telemetry)
+        resolved_artifact_registry = artifact_registry
+        if resolved_artifact_registry is None and resolved_config is not None:
+            resolved_artifact_registry = ArtifactRegistry(ArtifactManifestStore(resolved_config))
+        self._hot_refresh = self._build_hot_refresh(
+            api_settings,
+            resolved_artifact_registry,
+            telemetry,
+        )
+        self._stream_runner = self._build_stream_runner(api_settings, telemetry)
+        self._stream_executor_max_workers = self._stream_runner.max_workers
+        self._stream_executor_max_outstanding = self._stream_runner.max_outstanding
+        self._stream_event_queue_max_size = self._stream_runner.event_queue_max_size
+
+    def _build_answer_admission(
+        self,
+        api_settings: object,
+        telemetry: RuntimeTelemetry | None,
+    ) -> ServingAnswerAdmissionController:
+        def record_admission(wait_seconds: float, accepted: bool) -> None:
+            if telemetry is not None:
+                telemetry.record_admission(wait_seconds=wait_seconds, accepted=accepted)
+
+        return ServingAnswerAdmissionController(
             max_concurrent_answers=getattr(
                 api_settings,
                 "max_concurrent_answers",
@@ -54,27 +79,34 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
                 "answer_acquire_timeout_seconds",
                 0.25,
             ),
+            recorder=record_admission if telemetry is not None else None,
         )
-        stream_executor_max_workers = getattr(api_settings, "stream_executor_max_workers", 4)
-        stream_executor_max_outstanding = getattr(
-            api_settings,
-            "stream_executor_max_outstanding",
-            8,
-        )
-        stream_event_queue_max_size = getattr(api_settings, "stream_event_queue_max_size", 64)
-        telemetry = get_runtime_telemetry(resolved_config) if resolved_config is not None else None
-        self._runtime_readiness = ServingRuntimeReadinessGuard(
+
+    def _build_runtime_readiness(
+        self,
+        telemetry: RuntimeTelemetry | None,
+    ) -> ServingRuntimeReadinessGuard:
+        def record_readiness(ready: bool) -> None:
+            if telemetry is not None:
+                telemetry.record_readiness_state(component="serving", ready=ready)
+
+        return ServingRuntimeReadinessGuard(
             system=self.system,
             ensure_runtime_initialized=self._ensure_runtime_initialized,
             collect_startup_diagnostics=self._collect_startup_diagnostics_unlocked,
             mode=self._MODE,
+            state_recorder=record_readiness if telemetry is not None else None,
         )
-        resolved_artifact_registry = artifact_registry
-        if resolved_artifact_registry is None and resolved_config is not None:
-            resolved_artifact_registry = ArtifactRegistry(ArtifactManifestStore(resolved_config))
-        self._hot_refresh = ServingHotRefreshCoordinator(
+
+    def _build_hot_refresh(
+        self,
+        api_settings: object,
+        artifact_registry: ArtifactRegistry | None,
+        telemetry: RuntimeTelemetry | None,
+    ) -> ServingHotRefreshCoordinator:
+        return ServingHotRefreshCoordinator(
             system=self.system,
-            artifact_registry=resolved_artifact_registry,
+            artifact_registry=artifact_registry,
             enabled=getattr(api_settings, "serving_hot_refresh_enabled", True),
             interval_seconds=getattr(
                 api_settings,
@@ -83,22 +115,26 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             ),
             exclusive_runtime_operation=self._exclusive_runtime_operation,
             invalidate_runtime_cache=self._invalidate_runtime_cache,
+            event_recorder=telemetry.record_hot_refresh if telemetry is not None else None,
         )
-        self._stream_runner = ServingSseRunner(
+
+    def _build_stream_runner(
+        self,
+        api_settings: object,
+        telemetry: RuntimeTelemetry | None,
+    ) -> ServingSseRunner:
+        return ServingSseRunner(
             system=self.system,
             admission_controller=self._answer_admission,
             answer_operation=self._locks.answer_operation,
             readiness_guard=self._runtime_readiness,
             answer_payload_factory=self._answer_payload,
             request_control_factory=self._new_stream_request_control,
-            max_workers=stream_executor_max_workers,
-            max_outstanding=stream_executor_max_outstanding,
-            event_queue_max_size=stream_event_queue_max_size,
+            max_workers=getattr(api_settings, "stream_executor_max_workers", 4),
+            max_outstanding=getattr(api_settings, "stream_executor_max_outstanding", 8),
+            event_queue_max_size=getattr(api_settings, "stream_event_queue_max_size", 64),
             executor_observer=telemetry,
         )
-        self._stream_executor_max_workers = self._stream_runner.max_workers
-        self._stream_executor_max_outstanding = self._stream_runner.max_outstanding
-        self._stream_event_queue_max_size = self._stream_runner.event_queue_max_size
 
     def _validate_required_model_api_key(self) -> None:
         if not self._validate_startup_config:
@@ -140,6 +176,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
         if self.system.is_serving_initialized():
             self._refresh_serving_runtime_if_stale()
         diagnostics = self.collect_startup_diagnostics(self._MODE)
+        self._runtime_readiness.record_current_state()
         return self._readiness_payload(
             diagnostics,
             ready=bool(diagnostics["system_ready"]),
@@ -150,6 +187,7 @@ class GraphRAGServingApiService(_BaseGraphRAGApiService):
             if not self.system.is_serving_initialized():
                 self.system.initialize_serving_runtime()
             diagnostics = self._collect_startup_diagnostics_unlocked(self._MODE)
+            self._runtime_readiness.record_current_state()
             message = (
                 "Serving runtime initialized."
                 if diagnostics["system_ready"]

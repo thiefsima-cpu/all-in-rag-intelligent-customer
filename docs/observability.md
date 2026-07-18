@@ -28,17 +28,36 @@ Key metrics:
 - `graphrag_query_latency_seconds`
 - `graphrag_retrieved_documents`
 - `graphrag_generation_provider_latency_seconds`
+- `graphrag_generation_first_token_latency_seconds`
 - `graphrag_generation_tokens_total`
 - `graphrag_generation_cost_usd_total`
+- `graphrag_admission_wait_seconds`
+- `graphrag_admission_rejected_total`
 - `graphrag_sse_executor_active`
 - `graphrag_sse_executor_queued`
 - `graphrag_sse_executor_rejected_total`
+- `graphrag_sse_queue_wait_seconds`
+- `graphrag_retrieval_degradation_total`
+- `graphrag_circuit_breaker_state`
+- `graphrag_cache_access_total`
+- `graphrag_hot_refresh_total`
+- `graphrag_readiness_state`
+- `graphrag_readiness_transitions_total`
+- `graphrag_build_leases_active`
+- `graphrag_build_lease_events_total`
 
 The SSE executor gauges report currently running tasks and accepted tasks that
 have not started. The rejection counter increments when
 `stream_executor_max_outstanding` is full and a stream is immediately returned
 as `RATE_LIMITED`; it does not include answer-admission rejection after a task
 has started.
+
+Operational labels are deliberately bounded: admission outcomes, cache results,
+hot-refresh outcomes, readiness states, circuit states, build backends/events,
+and internal degradation reasons. Request IDs, queries, job IDs, paths, and raw
+exception text must never become metric labels. The first-token histogram is
+populated only for streamed model output; non-streaming provider latency remains
+in `graphrag_generation_provider_latency_seconds`.
 
 ## OpenTelemetry
 

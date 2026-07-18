@@ -12,12 +12,14 @@ from ...infra.providers.dashscope import DashScopeRerankClient
 from ...query_policy.models import QueryPolicyBundle
 from ...query_understanding.ports import QueryUnderstandingPort
 from ...query_understanding.service import QueryUnderstandingService
+from ...retrieval.hybrid_components import DefaultHybridRetrievalComponentFactory
 from ...retrieval.hybrid_service import HybridRetrievalService
 from ...retrieval.ports import Neo4jManagerPort as RetrievalNeo4jManagerPort
 from ...retrieval.ports import RerankClientPort
 from ...retrieval.post_processor import RetrievalPostProcessor
 from ...retrieval.runtime_profile import RetrievalRuntimeProfile, RetrievalRuntimeProfileFactory
 from ...routing import RoutingWorkflowProtocol, RoutingWorkflowService
+from ...telemetry import get_runtime_telemetry
 from ..ports import (
     GraphDataModulePort,
     Neo4jManagerPort,
@@ -74,6 +76,7 @@ class _DefaultRetrievalRuntimeProvider:
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> ServingHybridRetrievalPort:
         del policy_bundle
+        telemetry = get_runtime_telemetry(config)
         return HybridRetrievalService(
             config=config,
             milvus_module=milvus_module,
@@ -81,6 +84,11 @@ class _DefaultRetrievalRuntimeProvider:
             llm_client=llm_client,
             neo4j_manager=cast(RetrievalNeo4jManagerPort, neo4j_manager),
             retrieval_profile=retrieval_profile,
+            component_factory=DefaultHybridRetrievalComponentFactory(
+                circuit_state_recorder=lambda source, state: telemetry.record_circuit_breaker_state(
+                    source=source, state=state
+                )
+            ),
         )
 
     def provide_graph_rag_retrieval(

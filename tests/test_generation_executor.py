@@ -565,6 +565,7 @@ class GenerationExecutionEngineTests(unittest.TestCase):
         self.assertEqual(chunks, ["chunk-1", "chunk-2"])
         self.assertEqual(trace.mode, "direct")
         self.assertGreaterEqual(trace.direct_latency_ms, 0.0)
+        self.assertGreater(trace.first_token_latency_ms, 0.0)
 
     def test_empty_choices_degrades_without_second_model_call(self) -> None:
         client = _FakeClientAdapter(

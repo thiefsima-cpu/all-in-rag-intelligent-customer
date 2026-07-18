@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Dict, List, Sequence, Tuple
 
@@ -126,6 +127,7 @@ class RetrievalCandidateGenerator:
         source_degradation_strategy: _CandidateSourceDegradationStrategy | str = (
             _CandidateSourceDegradationStrategy.CONTINUE
         ),
+        circuit_state_recorder: Callable[[str, str], None] | None = None,
     ):
         self.sources = tuple(sources)
         self.source_failure_threshold = max(1, int(source_failure_threshold))
@@ -133,6 +135,7 @@ class RetrievalCandidateGenerator:
         self.source_degradation_strategy = _candidate_source_degradation_strategy(
             source_degradation_strategy
         )
+        self._circuit_state_recorder = circuit_state_recorder
         self._source_breakers = {
             source.spec.name: CircuitBreaker(
                 failure_threshold=self.source_failure_threshold,
@@ -140,6 +143,8 @@ class RetrievalCandidateGenerator:
             )
             for source in self.sources
         }
+        for source_name, breaker in self._source_breakers.items():
+            self._record_circuit_state(source_name, breaker)
 
     def generate(self, request: RetrievalRequest) -> CandidateSet:
         effective_request = self._calibrate_request(request)
@@ -216,6 +221,7 @@ class RetrievalCandidateGenerator:
         try:
             breaker.before_call()
         except CircuitOpenError as exc:
+            self._record_circuit_state(source.spec.name, breaker)
             if self._should_raise_degradation():
                 raise
             return [], self._degradation(
@@ -224,6 +230,7 @@ class RetrievalCandidateGenerator:
                 breaker=breaker,
                 error=exc,
             )
+        self._record_circuit_state(source.spec.name, breaker)
         try:
             documents = self._normalize_source_documents(
                 source.retrieve(request),
@@ -231,6 +238,7 @@ class RetrievalCandidateGenerator:
             )
         except Exception as exc:
             breaker.record_failure()
+            self._record_circuit_state(source.spec.name, breaker)
             logger.warning("Candidate source degraded: name=%s", source.spec.name)
             log_failure(
                 logger,
@@ -248,7 +256,13 @@ class RetrievalCandidateGenerator:
                 error=exc,
             )
         breaker.record_success()
+        self._record_circuit_state(source.spec.name, breaker)
         return documents, None
+
+    def _record_circuit_state(self, source: str, breaker: CircuitBreaker) -> None:
+        if self._circuit_state_recorder is None:
+            return
+        self._circuit_state_recorder(source, breaker.snapshot().state)
 
     def _should_raise_degradation(self) -> bool:
         return self.source_degradation_strategy is _CandidateSourceDegradationStrategy.FAIL_FAST

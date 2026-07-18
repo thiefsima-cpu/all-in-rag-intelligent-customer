@@ -81,6 +81,7 @@ class QuestionAnswerSummary:
     fallback_used: bool = False
     failure_code: str = ""
     provider_latency_ms: float = 0.0
+    first_token_latency_ms: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -99,6 +100,7 @@ class QuestionAnswerSummary:
             "fallback_used": self.fallback_used,
             "failure_code": self.failure_code,
             "provider_latency_ms": self.provider_latency_ms,
+            "first_token_latency_ms": self.first_token_latency_ms,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
@@ -172,6 +174,7 @@ class QuestionAnswerResponse:
                 fallback_used=bool(result.generation_trace.fallback_used),
                 failure_code=str(result.generation_trace.failure_code or ""),
                 provider_latency_ms=float(result.generation_trace.provider_latency_ms or 0.0),
+                first_token_latency_ms=float(result.generation_trace.first_token_latency_ms or 0.0),
                 prompt_tokens=int(result.generation_trace.prompt_tokens or 0),
                 completion_tokens=int(result.generation_trace.completion_tokens or 0),
                 total_tokens=int(result.generation_trace.total_tokens or 0),

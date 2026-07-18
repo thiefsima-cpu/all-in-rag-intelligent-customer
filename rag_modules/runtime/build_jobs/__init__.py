@@ -9,7 +9,7 @@ from .file_repository import (
     new_queued_event,
     validate_idempotency_key,
 )
-from .in_process_runner import InProcessBuildJobRunner
+from .in_process_runner import BuildLeaseRecorder, InProcessBuildJobRunner
 from .migration import BuildJobStoreMigrator
 from .serialization import (
     BUILD_JOB_ENVELOPE_SCHEMA_VERSION,
@@ -24,6 +24,7 @@ __all__ = [
     "BUILD_JOB_ENVELOPE_SCHEMA_VERSION",
     "BuildJobEnvelope",
     "BuildJobStoreMigrator",
+    "BuildLeaseRecorder",
     "ExternalBuildJobQueueRunner",
     "ExternalBuildJobWorkerRunner",
     "FileBuildJobRepository",

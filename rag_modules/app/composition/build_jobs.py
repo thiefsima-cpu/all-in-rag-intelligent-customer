@@ -10,6 +10,7 @@ from typing import Protocol, cast
 
 from ...configuration.models import GraphRAGConfig
 from ...kernel.json_types import coerce_json_object
+from ...telemetry import get_runtime_telemetry
 from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
     BuildJobApplicationService,
@@ -22,6 +23,8 @@ from ..build_jobs import (
 from ..runtime_operations import RuntimeOperationCoordinator
 
 _Clock = Callable[[], datetime]
+BuildJobRepositoryFactory = Callable[[GraphRAGConfig], BuildJobRepositoryPort]
+_BuildLeaseRecorder = Callable[[str, str, int], None]
 
 
 class _BuildJobStoreMigrator(Protocol):
@@ -51,6 +54,7 @@ class _InProcessBuildJobRunnerFactory(Protocol):
         max_workers: int,
         worker_id: str,
         heartbeat_seconds: float,
+        lease_recorder: _BuildLeaseRecorder | None = None,
     ) -> BuildJobRunnerPort: ...
 
 
@@ -75,6 +79,7 @@ class _ExternalBuildJobWorkerRunnerFactory(Protocol):
         worker_id: str,
         heartbeat_seconds: float,
         poll_interval_seconds: float,
+        lease_recorder: _BuildLeaseRecorder | None = None,
     ) -> BuildJobWorkerRunnerPort: ...
 
 
@@ -91,13 +96,16 @@ def compose_build_job_application(
     system: GraphRAGApplication,
     config: GraphRAGConfig,
     coordinator: RuntimeOperationCoordinator,
+    repository_factory: BuildJobRepositoryFactory | None = None,
 ) -> BuildJobApplicationService:
     api_settings = config.api
     runtime_build_jobs = _runtime_build_jobs_module()
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
+        repository_factory=repository_factory,
     )
+    telemetry = get_runtime_telemetry(config)
     runner = _compose_api_runner(
         runtime_build_jobs=runtime_build_jobs,
         backend=str(api_settings.build_job_runner_backend),
@@ -105,6 +113,11 @@ def compose_build_job_application(
         executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
         max_workers=int(api_settings.build_job_runner_max_workers),
         heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+            backend=backend,
+            event=event,
+            active_delta=active_delta,
+        ),
     )
     return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
 
@@ -115,6 +128,7 @@ def compose_build_job_worker(
     config: GraphRAGConfig,
     coordinator: RuntimeOperationCoordinator,
     worker_id: str = "external-worker",
+    repository_factory: BuildJobRepositoryFactory | None = None,
 ) -> BuildJobWorkerRunnerPort:
     """Compose a long-running external build-job worker runner."""
 
@@ -123,7 +137,9 @@ def compose_build_job_worker(
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
+        repository_factory=repository_factory,
     )
+    telemetry = get_runtime_telemetry(config)
     executor = _compose_executor(system=system, coordinator=coordinator)
     return runtime_build_jobs.ExternalBuildJobWorkerRunner(
         repository=repository,
@@ -132,6 +148,11 @@ def compose_build_job_worker(
         worker_id=worker_id,
         heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
         poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
+        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+            backend=backend,
+            event=event,
+            active_delta=active_delta,
+        ),
     )
 
 
@@ -139,7 +160,10 @@ def _compose_repository(
     *,
     runtime_build_jobs: _RuntimeBuildJobsModule,
     config: GraphRAGConfig,
+    repository_factory: BuildJobRepositoryFactory | None,
 ) -> BuildJobRepositoryPort:
+    if repository_factory is not None:
+        return repository_factory(config)
     api_settings = config.api
     store_path = default_build_job_store_path(config)
     runtime_build_jobs.BuildJobStoreMigrator(store_path, now=_utc_now).migrate()
@@ -163,6 +187,7 @@ def _compose_api_runner(
     executor_factory: Callable[[], BuildJobExecutor],
     max_workers: int,
     heartbeat_seconds: float,
+    lease_recorder: _BuildLeaseRecorder | None,
 ) -> BuildJobRunnerPort:
     if backend == "external_worker":
         return runtime_build_jobs.ExternalBuildJobQueueRunner()
@@ -173,6 +198,7 @@ def _compose_api_runner(
             max_workers=max_workers,
             worker_id="in_process",
             heartbeat_seconds=heartbeat_seconds,
+            lease_recorder=lease_recorder,
         )
     raise ValueError(f"Unsupported build job runner backend: {backend!r}")
 
@@ -243,6 +269,7 @@ def _utc_now() -> datetime:
 
 
 __all__ = [
+    "BuildJobRepositoryFactory",
     "compose_build_job_application",
     "compose_build_job_worker",
     "default_build_job_store_path",

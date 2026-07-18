@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import HybridRetrievalOutcome
@@ -31,6 +32,7 @@ class HybridSearchService:
         constraint_retriever: ConstraintRetriever,
         candidate_source_factory: HybridCandidateSourceFactory | None = None,
         candidate_generator: RetrievalCandidateGenerator | None = None,
+        circuit_state_recorder: Callable[[str, str], None] | None = None,
     ) -> None:
         self.config = config
         self.retrieval = config.retrieval
@@ -58,6 +60,7 @@ class HybridSearchService:
                 "degradation_strategy",
                 "continue",
             ),
+            circuit_state_recorder=circuit_state_recorder,
         )
 
     def prepare_hybrid_request(self, request: RetrievalRequest) -> RetrievalRequest:

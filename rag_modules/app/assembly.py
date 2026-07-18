@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..application.answering.answer_models import QuestionAnswerer
 from ..configuration import get_default_config
 from ..configuration.models import GraphRAGConfig
+from ..contracts.build_jobs import BuildJobRepositoryPort
+from .application_protocol import GraphRAGApplication
 from .composition import (
     AdvancedGraphRAGSystemComposer,
     AdvancedGraphRAGSystemOverrides,
@@ -19,6 +22,7 @@ from .runtime_operations import RuntimeOperationCoordinator
 
 if TYPE_CHECKING:
     from .bootstrap import BuildBootstrapper, GraphRAGBootstrapper, ServingBootstrapper
+    from .build_jobs import BuildJobApplicationService
     from .composition.build_jobs import BuildJobWorkerRunnerPort
     from .system import AdvancedGraphRAGSystem
 
@@ -125,23 +129,30 @@ def create_application_system(
 
 def assemble_build_job_application(
     *,
-    system,
+    system: GraphRAGApplication,
     config: GraphRAGConfig,
     coordinator: RuntimeOperationCoordinator,
-):
+    repository_factory: Callable[[GraphRAGConfig], BuildJobRepositoryPort] | None = None,
+) -> BuildJobApplicationService:
     """Assemble the default build-job application through internal composition."""
 
     from .composition.build_jobs import compose_build_job_application
 
-    return compose_build_job_application(system=system, config=config, coordinator=coordinator)
+    return compose_build_job_application(
+        system=system,
+        config=config,
+        coordinator=coordinator,
+        repository_factory=repository_factory,
+    )
 
 
 def compose_build_job_worker(
     *,
-    system,
+    system: GraphRAGApplication,
     config: GraphRAGConfig,
     coordinator: RuntimeOperationCoordinator,
     worker_id: str = "external-worker",
+    repository_factory: Callable[[GraphRAGConfig], BuildJobRepositoryPort] | None = None,
 ) -> BuildJobWorkerRunnerPort:
     """Compose the default external build-job worker runner."""
 
@@ -152,6 +163,7 @@ def compose_build_job_worker(
         config=config,
         coordinator=coordinator,
         worker_id=worker_id,
+        repository_factory=repository_factory,
     )
 
 

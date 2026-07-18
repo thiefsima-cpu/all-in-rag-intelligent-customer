@@ -148,9 +148,14 @@ Source requirements use route-stage identifiers. Combined cases require
 dedicated traditional/vector cases. A `hybrid_supplement` stage after valid
 graph evidence is normal augmentation and does not increase the fallback rate.
 
-The default policy enforces coverage for prompt injection, knowledge pollution,
-no-evidence inducement, cross-language, typo, long-query, and constraint-heavy
-scenarios. It also keeps LLM judge scores and deterministic checks separate so
+The default 47-case policy enforces coverage for prompt injection, knowledge
+pollution, no-evidence inducement, cross-language, typo, long-query,
+constraint-heavy, real customer-service long-tail, temporal, conflicting
+knowledge, ultra-long-context, and repeated regression-anchor scenarios. The
+customer-service slice covers order, billing, account, and policy questions in
+addition to the historical recipe cases. The aggregate p95 latency ratchet is
+25 seconds; streamed first-token latency is exposed separately by runtime and
+local pressure metrics. The gate also keeps LLM judge scores and deterministic checks separate so
 operators can see whether a failure is retrieval, generation, judge
 availability, coverage, or budget related.
 

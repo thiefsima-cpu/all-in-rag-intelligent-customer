@@ -39,6 +39,7 @@ how a runtime object graph is assembled.
 | Serving runtime wiring, including retrieval engines, routing workflow, generation, and answer workflow | `rag_modules/app/composition/serving_runtime_factory.py` | This is where query tracer, retrieval runtime, generation, and answer workflow become a serving runtime. |
 | Bootstrapper facade construction | `rag_modules/app/composition/bootstrapper_composer.py` | Keep public bootstrappers thin; compose their collaborators here. |
 | Provider surface resolution for full system assembly | `rag_modules/app/composition/provider_resolution.py` | This is the only composition helper that should unwrap provider surfaces from bootstrappers or explicit inputs. |
+| Build-job repository and runner wiring | `rag_modules/app/composition/build_jobs.py` | The file repository remains the local default. Control-plane deployments inject one `BuildJobRepositoryPort` factory through `assemble_build_job_application` and `compose_build_job_worker`, so API and worker processes resolve the same external repository without a forwarding adapter. |
 
 ## Lifecycle Map
 
@@ -62,6 +63,7 @@ refreshing, validating, or closing active runtime state.
 | A new retrieval strategy or routing dependency | `RetrievalRuntimeProvider` | `ServingRuntimeFactory` wires the strategy into `RoutingWorkflowService`. |
 | Answer workflow dependencies | `ApplicationServiceProvider.provide_answer_workflow` | `ServingRuntimeFactory` passes the resolved retrieval profile; the provider injects semantic settings, pipeline, trace/result assembly, telemetry, and latency budget. |
 | Knowledge-base build dependencies | `BuildPipelineProvider` or `ApplicationServiceProvider.provide_knowledge_base_service` | `BuildRuntimeFactory` supplies build ports; the provider constructs `KnowledgeBaseBuildWorkflow` and injects it into the application use case. |
+| A scalable build-job control-plane repository | `assemble_build_job_application(..., repository_factory=...)` and `compose_build_job_worker(..., repository_factory=...)` | Use the stable repository port directly. Keep migration and file scans inside the default file adapter only. |
 | Hot refresh after build/rebuild | `ServingRuntimeLifecycleService.refresh_from_build` | `BuildRuntimeLifecycleService` should delegate to it. |
 | Public bootstrapper behavior | `bootstrapper_composer.py` plus focused bootstrapper tests | Avoid adding new logic to public facade methods. |
 | Full system construction order | `system_composer.py` | Keep provider resolution in `provider_resolution.py` and lifecycle bundle assembly in `runtime_lifecycle_service_composer.py`. |
