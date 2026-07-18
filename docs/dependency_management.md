@@ -36,8 +36,9 @@ Create an isolated Miniconda-backed development environment:
 ```
 
 The script creates or reuses the global conda environment `graphrag-c9-dev`,
-installs `requirements-dev.txt`, rejects the base/global interpreter, checks
-that the runtime lock contains no development-only tools declared by
+installs `requirements-dev.txt`, installs the current repository in editable
+mode without resolving dependencies again, rejects the base/global interpreter,
+checks that the runtime lock contains no development-only tools declared by
 `pyproject.toml`, and runs `pip check`.
 
 Activate the development environment before running local commands:

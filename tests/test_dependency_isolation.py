@@ -400,6 +400,12 @@ class DependencyIsolationTests(unittest.TestCase):
         self.assertIn('if ($Profile -ne "agent")', script)
         self.assertIn('"uninstall" "--yes" "jieba"', script)
 
+    def test_bootstrap_installs_main_project_in_editable_mode(self) -> None:
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn('"--no-deps" "--no-build-isolation" "--editable" $RepositoryRoot', script)
+
     def test_bootstrap_agent_path_is_windows_powershell_safe(self) -> None:
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_env.ps1"
 

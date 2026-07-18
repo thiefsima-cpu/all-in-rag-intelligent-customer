@@ -91,6 +91,10 @@ if ($Profile -ne "agent") {
 }
 Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" `
     "--requirement" $RequirementsPath
+if ($Profile -ne "agent") {
+    Invoke-Checked $CondaCommand "run" "--name" $CondaEnvName "python" "-m" "pip" "install" `
+        "--no-deps" "--no-build-isolation" "--editable" $RepositoryRoot
+}
 
 $Verifier = Join-Path $RepositoryRoot "scripts\verify_environment.py"
 if ($Profile -eq "agent") {
