@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .json_types import JsonObject
@@ -22,34 +23,56 @@ class RouteStatistics:
     graph_rag_count: int = 0
     combined_count: int = 0
     total_queries: int = 0
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def record(self, strategy: SearchStrategy) -> None:
-        self.total_queries += 1
-        if strategy == SearchStrategy.HYBRID_TRADITIONAL:
-            self.traditional_count += 1
-        elif strategy == SearchStrategy.GRAPH_RAG:
-            self.graph_rag_count += 1
-        elif strategy == SearchStrategy.COMBINED:
-            self.combined_count += 1
+        with self._lock:
+            self.total_queries += 1
+            if strategy == SearchStrategy.HYBRID_TRADITIONAL:
+                self.traditional_count += 1
+            elif strategy == SearchStrategy.GRAPH_RAG:
+                self.graph_rag_count += 1
+            elif strategy == SearchStrategy.COMBINED:
+                self.combined_count += 1
 
     def to_dict(self) -> JsonObject:
+        traditional, graph_rag, combined, total = self._snapshot()
         return {
-            "traditional_count": self.traditional_count,
-            "graph_rag_count": self.graph_rag_count,
-            "combined_count": self.combined_count,
-            "total_queries": self.total_queries,
+            "traditional_count": traditional,
+            "graph_rag_count": graph_rag,
+            "combined_count": combined,
+            "total_queries": total,
         }
 
+    def _snapshot(self) -> tuple[int, int, int, int]:
+        with self._lock:
+            return (
+                self.traditional_count,
+                self.graph_rag_count,
+                self.combined_count,
+                self.total_queries,
+            )
+
     def summary(self) -> JsonObject:
-        payload = self.to_dict()
-        total = self.total_queries
+        traditional, graph_rag, combined, total = self._snapshot()
+        payload: JsonObject = {
+            "traditional_count": traditional,
+            "graph_rag_count": graph_rag,
+            "combined_count": combined,
+            "total_queries": total,
+        }
         if total == 0:
             return payload
         return {
             **payload,
-            "traditional_ratio": self.traditional_count / total,
-            "graph_rag_ratio": self.graph_rag_count / total,
-            "combined_ratio": self.combined_count / total,
+            "traditional_ratio": traditional / total,
+            "graph_rag_ratio": graph_rag / total,
+            "combined_ratio": combined / total,
         }
 
 

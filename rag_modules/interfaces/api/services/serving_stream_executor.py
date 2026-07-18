@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ class StreamExecutorObserver(Protocol):
         active_delta: int = 0,
         queued_delta: int = 0,
         rejected_delta: int = 0,
+        queue_wait_seconds: float | None = None,
     ) -> None: ...
 
 
@@ -50,6 +52,7 @@ class StreamExecutorSnapshot:
 class _Submission:
     def __init__(self) -> None:
         self.state = "queued"
+        self.enqueued_at = time.perf_counter()
 
 
 class BoundedStreamExecutor:
@@ -130,7 +133,11 @@ class BoundedStreamExecutor:
             self._queued -= 1
             self._active += 1
             self._peak_active = max(self._peak_active, self._active)
-            self._observe(active_delta=1, queued_delta=-1)
+            self._observe(
+                active_delta=1,
+                queued_delta=-1,
+                queue_wait_seconds=time.perf_counter() - submission.enqueued_at,
+            )
 
     def _finish(self, submission: _Submission) -> None:
         with self._state_lock:
@@ -161,12 +168,14 @@ class BoundedStreamExecutor:
         active_delta: int = 0,
         queued_delta: int = 0,
         rejected_delta: int = 0,
+        queue_wait_seconds: float | None = None,
     ) -> None:
         if self._observer is not None:
             self._observer.record_sse_executor_state(
                 active_delta=active_delta,
                 queued_delta=queued_delta,
                 rejected_delta=rejected_delta,
+                queue_wait_seconds=queue_wait_seconds,
             )
 
     def snapshot(self) -> StreamExecutorSnapshot:

@@ -59,6 +59,7 @@ class GenerationSnapshot:
     error: RuntimeErrorDetail = field(default_factory=RuntimeErrorDetail)
     total_latency_ms: float = 0.0
     provider_latency_ms: float = 0.0
+    first_token_latency_ms: float = 0.0
     request_retries: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -97,6 +98,7 @@ class GenerationSnapshot:
             error=ensure_runtime_error_detail(payload.get("error")),
             total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
             provider_latency_ms=coerce_json_float(payload.get("provider_latency_ms")),
+            first_token_latency_ms=coerce_json_float(payload.get("first_token_latency_ms")),
             request_retries=coerce_json_int(payload.get("request_retries")),
             prompt_tokens=coerce_json_int(payload.get("prompt_tokens")),
             completion_tokens=coerce_json_int(payload.get("completion_tokens")),
@@ -122,6 +124,7 @@ class GenerationSnapshot:
             "error": self.error.to_dict(),
             "total_latency_ms": self.total_latency_ms,
             "provider_latency_ms": self.provider_latency_ms,
+            "first_token_latency_ms": self.first_token_latency_ms,
             "request_retries": self.request_retries,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
@@ -148,6 +151,7 @@ class GenerationSnapshot:
                 bool(self.error),
                 self.total_latency_ms != 0.0,
                 self.provider_latency_ms != 0.0,
+                self.first_token_latency_ms != 0.0,
                 self.request_retries != 0,
                 self.prompt_tokens != 0,
                 self.completion_tokens != 0,

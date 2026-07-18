@@ -26,6 +26,7 @@ class ServingHotRefreshCoordinator:
         interval_seconds: float,
         exclusive_runtime_operation: Callable[[], AbstractContextManager[None]],
         invalidate_runtime_cache: Callable[[], None],
+        event_recorder: Callable[[str], None] | None = None,
     ) -> None:
         self.system = system
         self.artifact_registry = artifact_registry
@@ -33,6 +34,7 @@ class ServingHotRefreshCoordinator:
         self.interval_seconds = max(0.1, float(interval_seconds or 0.0))
         self._exclusive_runtime_operation = exclusive_runtime_operation
         self._invalidate_runtime_cache = invalidate_runtime_cache
+        self._event_recorder = event_recorder or (lambda _outcome: None)
         self._last_check = 0.0
         self._check_lock = threading.Lock()
 
@@ -44,28 +46,43 @@ class ServingHotRefreshCoordinator:
             if not force_check and now - self._last_check < self.interval_seconds:
                 return False
             self._last_check = now
+        self._event_recorder("checked")
         current_manifest = getattr(self.system, "artifact_manifest", None)
         if not self.artifact_registry.has_newer_active(current_manifest):
+            self._event_recorder("unchanged")
             return False
         refresher = getattr(self.system, "refresh_serving_runtime", None)
         if not callable(refresher):
+            self._event_recorder("unsupported")
             return False
-        with self._exclusive_runtime_operation():
-            current_manifest = getattr(self.system, "artifact_manifest", None)
-            if not self.artifact_registry.has_newer_active(current_manifest):
-                return False
-            refresher(force=True)
-            self._invalidate_runtime_cache()
+        try:
+            with self._exclusive_runtime_operation():
+                current_manifest = getattr(self.system, "artifact_manifest", None)
+                if not self.artifact_registry.has_newer_active(current_manifest):
+                    self._event_recorder("unchanged")
+                    return False
+                refresher(force=True)
+                self._invalidate_runtime_cache()
+        except Exception:
+            self._event_recorder("failed")
+            raise
+        self._event_recorder("refreshed")
         return True
 
     def refresh_runtime(self, *, after_refresh: Callable[[], _T]) -> _T:
         refresher = getattr(self.system, "refresh_serving_runtime", None)
         if not callable(refresher):
             raise RuntimeError("Application does not support serving-runtime refresh.")
-        with self._exclusive_runtime_operation():
-            refresher(force=True)
-            self._invalidate_runtime_cache()
-            return after_refresh()
+        try:
+            with self._exclusive_runtime_operation():
+                refresher(force=True)
+                self._invalidate_runtime_cache()
+                result = after_refresh()
+        except Exception:
+            self._event_recorder("manual_failed")
+            raise
+        self._event_recorder("manual_refreshed")
+        return result
 
 
 __all__ = ["ServingHotRefreshCoordinator"]

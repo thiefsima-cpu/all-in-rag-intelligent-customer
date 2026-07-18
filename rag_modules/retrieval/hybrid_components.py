@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -67,6 +68,13 @@ class HybridRetrievalComponentFactory(Protocol):
 class DefaultHybridRetrievalComponentFactory:
     """Default wiring for the hybrid retrieval runtime stack."""
 
+    def __init__(
+        self,
+        *,
+        circuit_state_recorder: Callable[[str, str], None] | None = None,
+    ) -> None:
+        self._circuit_state_recorder = circuit_state_recorder
+
     def _build_search_stack(
         self,
         *,
@@ -86,6 +94,7 @@ class DefaultHybridRetrievalComponentFactory:
             fusion_ranker=fusion_ranker,
             constraint_retriever=constraint_retriever,
             candidate_source_factory=DefaultHybridCandidateSourceFactory(),
+            circuit_state_recorder=self._circuit_state_recorder,
         )
         executor = HybridRetrievalExecutor(
             runtime=runtime,

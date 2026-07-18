@@ -76,6 +76,7 @@ class SseMetrics:
     rate_limited_error_events: int = 0
     unfinished_streams: int = 0
     cancelled_after_done: int = 0
+    p95_first_token_latency_ms: float = 0.0
     executor: SseExecutorMetrics = field(default_factory=SseExecutorMetrics)
 
     @property
@@ -101,6 +102,7 @@ class SseMetrics:
             "rate_limited_error_rate": round(self.rate_limited_error_rate, 4),
             "unfinished_streams": self.unfinished_streams,
             "cancelled_after_done": self.cancelled_after_done,
+            "p95_first_token_latency_ms": round(self.p95_first_token_latency_ms, 2),
             "executor": self.executor.to_dict(),
         }
 

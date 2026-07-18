@@ -4,6 +4,9 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_ROOT = ROOT / "rag_modules"
+MAX_PRODUCTION_PROTOCOLS = 155
+MAX_PRODUCTION_MODULES_UNDER_60_LINES = 97
 SCOPED_ROOTS = (
     ROOT / "rag_modules" / "app",
     ROOT / "rag_modules" / "application",
@@ -65,6 +68,16 @@ def _protocol_definitions(path: Path) -> set[str]:
         if isinstance(node, ast.ClassDef)
         and any(_base_name(base) == "Protocol" for base in node.bases)
     }
+
+
+def _all_protocol_definitions(path: Path) -> list[ast.ClassDef]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        and any(_base_name(base) == "Protocol" for base in node.bases)
+    ]
 
 
 def _is_docstring(node: ast.stmt) -> bool:
@@ -145,3 +158,32 @@ def test_concrete_adapters_do_not_explicitly_inherit_protocols() -> None:
                     )
 
     assert violations == []
+
+
+def test_production_protocol_count_does_not_exceed_ratchet() -> None:
+    definitions = [
+        (path.relative_to(ROOT), node.name)
+        for path in PRODUCTION_ROOT.rglob("*.py")
+        for node in _all_protocol_definitions(path)
+    ]
+
+    assert len(definitions) <= MAX_PRODUCTION_PROTOCOLS, (
+        "Production Protocol count exceeded the approved ratchet. Prefer a concrete type or "
+        "Callable for single-implementation seams, or lower the baseline after deleting one. "
+        f"count={len(definitions)} baseline={MAX_PRODUCTION_PROTOCOLS}"
+    )
+
+
+def test_small_production_module_count_does_not_exceed_ratchet() -> None:
+    small_modules = [
+        path.relative_to(ROOT)
+        for path in PRODUCTION_ROOT.rglob("*.py")
+        if path.name != "__init__.py"
+        and len(path.read_text(encoding="utf-8-sig").splitlines()) < 60
+    ]
+
+    assert len(small_modules) <= MAX_PRODUCTION_MODULES_UNDER_60_LINES, (
+        "Sub-60-line production module count exceeded the approved ratchet. Add a module only "
+        "when it owns a stable responsibility; otherwise keep behavior with its owner. "
+        f"count={len(small_modules)} baseline={MAX_PRODUCTION_MODULES_UNDER_60_LINES}"
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,10 @@ class _RunningJob:
     control: RequestControl
     snapshot: BuildJobSnapshot
     future: Future[None] | None = None
+    lease_lost: bool = False
+
+
+BuildLeaseRecorder = Callable[[str, str, int], None]
 
 
 class InProcessBuildJobRunner:
@@ -48,6 +53,7 @@ class InProcessBuildJobRunner:
         worker_id: str,
         heartbeat_seconds: float = 10.0,
         heartbeat_trigger: threading.Event | None = None,
+        lease_recorder: BuildLeaseRecorder | None = None,
     ) -> None:
         self._repository = repository
         self._executor = executor
@@ -55,6 +61,7 @@ class InProcessBuildJobRunner:
         self._worker = WorkerIdentity(str(worker_id or "in-process-worker"), self.backend)
         self._heartbeat_seconds = max(0.1, float(heartbeat_seconds or 10.0))
         self._heartbeat_trigger = heartbeat_trigger
+        self._lease_recorder = lease_recorder or (lambda _backend, _event, _active_delta: None)
         self._pool = ThreadPoolExecutor(
             max_workers=self._max_workers,
             thread_name_prefix="graph-rag-build",
@@ -119,11 +126,13 @@ class InProcessBuildJobRunner:
             with self._lock:
                 self._pending.discard(lease.job_id)
                 self._running[lease.job_id] = handle
+            self._record_lease_event("claimed", active_delta=1)
             try:
                 handle.future = self._pool.submit(self._run_claimed_job, handle)
             except Exception:
                 with self._lock:
                     self._running.pop(lease.job_id, None)
+                self._record_lease_event("released", active_delta=-1)
                 raise
 
     def _run_claimed_job(self, handle: _RunningJob) -> None:
@@ -167,12 +176,14 @@ class InProcessBuildJobRunner:
         except BuildJobConcurrentUpdateError:
             self._append_cancelled_if_requested(handle)
         except BuildJobLeaseLostError:
+            self._record_lease_lost(handle)
             return
         except Exception:
             self._append_failed(handle)
         finally:
             with self._lock:
                 self._running.pop(handle.lease.job_id, None)
+            self._record_lease_event("released", active_delta=-1)
 
     def _append_started(self, handle: _RunningJob) -> BuildJobSnapshot:
         current = handle.snapshot
@@ -259,8 +270,20 @@ class InProcessBuildJobRunner:
                     with self._lock:
                         if handle.lease.job_id in self._running:
                             handle.lease = renewed
+                    self._record_lease_event("renewed")
                 except BuildJobLeaseLostError:
+                    self._record_lease_lost(handle)
                     handle.control.cancel("build_job_lease_lost")
+
+    def _record_lease_lost(self, handle: _RunningJob) -> None:
+        with self._lock:
+            if handle.lease_lost:
+                return
+            handle.lease_lost = True
+        self._record_lease_event("lost")
+
+    def _record_lease_event(self, event: str, *, active_delta: int = 0) -> None:
+        self._lease_recorder(self.backend, event, active_delta)
 
     @staticmethod
     def _lease_for_revision(lease: BuildJobLease, revision: int) -> BuildJobLease:
@@ -290,4 +313,4 @@ class InProcessBuildJobRunner:
         )
 
 
-__all__ = ["InProcessBuildJobRunner"]
+__all__ = ["BuildLeaseRecorder", "InProcessBuildJobRunner"]

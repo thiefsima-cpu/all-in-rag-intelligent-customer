@@ -140,6 +140,7 @@ class GenerationTrace:
     failure_code: str = ""
     total_latency_ms: float = 0.0
     provider_latency_ms: float = 0.0
+    first_token_latency_ms: float = 0.0
     request_retries: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -169,6 +170,7 @@ class GenerationTrace:
             "failure_code": self.failure_code,
             "total_latency_ms": round(self.total_latency_ms, 2),
             "provider_latency_ms": round(self.provider_latency_ms, 2),
+            "first_token_latency_ms": round(self.first_token_latency_ms, 2),
             "request_retries": self.request_retries,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,

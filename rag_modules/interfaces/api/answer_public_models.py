@@ -38,6 +38,7 @@ class AnswerSummaryModel(BaseModel):
     fallback_used: bool = False
     failure_code: str = ""
     provider_latency_ms: float = 0.0
+    first_token_latency_ms: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -57,6 +58,7 @@ class AnswerSummaryModel(BaseModel):
             fallback_used=summary.fallback_used,
             failure_code=summary.failure_code,
             provider_latency_ms=summary.provider_latency_ms,
+            first_token_latency_ms=summary.first_token_latency_ms,
             prompt_tokens=summary.prompt_tokens,
             completion_tokens=summary.completion_tokens,
             total_tokens=summary.total_tokens,

@@ -22,6 +22,7 @@ class PressureThresholds:
     min_done_event_rate: float | None = None
     max_unfinished_streams: int | None = None
     max_cancelled_after_done: int | None = None
+    max_sse_p95_first_token_latency_ms: float | None = None
     max_sse_executor_peak_active: int | None = None
     max_sse_executor_peak_outstanding: int | None = None
     min_sse_executor_rejections: int | None = None
@@ -49,6 +50,7 @@ class PressureThresholds:
             "min_done_event_rate": self.min_done_event_rate,
             "max_unfinished_streams": self.max_unfinished_streams,
             "max_cancelled_after_done": self.max_cancelled_after_done,
+            "max_sse_p95_first_token_latency_ms": self.max_sse_p95_first_token_latency_ms,
             "max_sse_executor_peak_active": self.max_sse_executor_peak_active,
             "max_sse_executor_peak_outstanding": self.max_sse_executor_peak_outstanding,
             "min_sse_executor_rejections": self.min_sse_executor_rejections,
@@ -236,6 +238,13 @@ def _evaluate_pressure_checks(
     )
     _max_check(
         checks,
+        name="sse_p95_first_token_latency_ms",
+        actual=metrics.sse.p95_first_token_latency_ms,
+        limit=thresholds.max_sse_p95_first_token_latency_ms,
+        message="SSE first-token p95 latency is within the interactive budget.",
+    )
+    _max_check(
+        checks,
         name="sse_executor_peak_active",
         actual=metrics.sse.executor.peak_active,
         limit=thresholds.max_sse_executor_peak_active,
@@ -372,6 +381,7 @@ def default_pressure_thresholds(scenario: PressureScenario) -> PressureThreshold
             min_done_event_rate=1.0,
             max_unfinished_streams=0,
             max_cancelled_after_done=0,
+            max_sse_p95_first_token_latency_ms=scenario.answer_delay_ms + 150.0,
             max_sse_executor_peak_active=scenario.stream_executor_max_workers,
             max_sse_executor_peak_outstanding=scenario.stream_executor_max_outstanding,
             min_sse_executor_rejections=1,

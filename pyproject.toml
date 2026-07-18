@@ -187,6 +187,7 @@ files = ["rag_modules", "main.py", "main_build_service.py", "main_build_worker.p
 [[tool.mypy.overrides]]
 module = [
   "rag_modules.app.application_protocol",
+  "rag_modules.app.assembly",
   "rag_modules.app.bootstrap",
   "rag_modules.app.composition.build_jobs",
   "rag_modules.app.composition.contracts",

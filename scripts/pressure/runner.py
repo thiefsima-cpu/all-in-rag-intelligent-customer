@@ -138,9 +138,11 @@ class _PressureTestSystem:
         chunk_callback=None,
         control=None,
     ):
-        del stream, explain_routing, message_callback, chunk_callback
+        del explain_routing, message_callback
         if control is not None:
             control.raise_if_cancelled()
+        if stream and chunk_callback is not None:
+            chunk_callback("synthetic-first-token")
         with self._lock:
             self.answer_calls += 1
         start = time.perf_counter()
@@ -199,6 +201,7 @@ class _SseRunState:
     error_events: int = 0
     rate_limited_error_events: int = 0
     unfinished_streams: int = 0
+    first_token_latencies_ms: list[float] = field(default_factory=list)
     request_lock: threading.Lock = field(default_factory=threading.Lock)
     counts_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -349,13 +352,17 @@ def _run_sse_worker(
         request_id = state.claim_request()
         if request_id is None:
             return
-        events = list(
-            service.stream_answer_question_events(
-                question=f"sse-pressure-{worker_id}-{request_id}",
-                request_id=f"sse-pressure-{request_id}",
-                include_traces=False,
-            )
-        )
+        started = time.perf_counter()
+        events = []
+        first_token_latency_ms = None
+        for event in service.stream_answer_question_events(
+            question=f"sse-pressure-{worker_id}-{request_id}",
+            request_id=f"sse-pressure-{request_id}",
+            include_traces=False,
+        ):
+            events.append(event)
+            if first_token_latency_ms is None and str(event.event.value) == "chunk":
+                first_token_latency_ms = (time.perf_counter() - started) * 1000
         event_names = [str(event.event.value) for event in events]
         stream_done = "done" in event_names
         stream_result_events = event_names.count("result")
@@ -371,6 +378,8 @@ def _run_sse_worker(
             state.error_events += stream_error_events
             state.rate_limited_error_events += 1 if stream_rate_limited else 0
             state.unfinished_streams += 0 if stream_done else 1
+            if first_token_latency_ms is not None:
+                state.first_token_latencies_ms.append(first_token_latency_ms)
 
 
 def _run_threads(*, name: str, workers: int, target: Callable[[int], None]) -> None:
@@ -434,6 +443,7 @@ def _sse_metrics(
         rate_limited_error_events=state.rate_limited_error_events,
         unfinished_streams=state.unfinished_streams,
         cancelled_after_done=0,
+        p95_first_token_latency_ms=_percentile(state.first_token_latencies_ms, 0.95),
         executor=executor,
     )
     return _empty_pressure_metrics(scenario=scenario, trace=trace, sse=sse)

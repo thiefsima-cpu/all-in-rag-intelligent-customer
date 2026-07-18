@@ -135,6 +135,8 @@ This applies to `python scripts/pressure_api_service.py`, the
 - `metrics.sse.executor.peak_active`: highest observed running SSE task count.
 - `metrics.sse.executor.peak_outstanding`: highest observed running-plus-submitted count.
 - `metrics.sse.executor.rejected`: submissions rejected immediately at the hard capacity.
+- `metrics.sse.p95_first_token_latency_ms`: p95 time from stream submission to the first
+  emitted model chunk; rejected streams are excluded.
 - `metrics.model.p95_latency_ms`: synthetic model latency configured for the scenario.
 - `metrics.model.estimated_cost_usd`: synthetic token cost for completed requests.
 - `metrics.retrieval.degraded_rate`: deterministic degraded retrieval count divided by completed requests.
@@ -149,7 +151,8 @@ overload rejects quickly instead of creating unbounded latency.
 Use `sse_runner_capacity` after changing stream execution or event buffering.
 Its checks fail if worker or outstanding peaks exceed configuration, rejected
 submissions do not match `RATE_LIMITED` events, any stream lacks `done`, or the
-executor fails to return to zero activity.
+executor fails to return to zero activity. It also ratchets synthetic first-token
+latency against the configured model delay plus a bounded local scheduling margin.
 
 Use `model_call_budget` to review model latency and cost policy changes without
 provider calls. Use live observability for production provider SLOs.

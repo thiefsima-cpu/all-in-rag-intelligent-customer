@@ -6,7 +6,7 @@ import threading
 
 from rag_modules.contracts.build_jobs import BuildJobExecutor, BuildJobId, BuildJobRepositoryPort
 
-from .in_process_runner import InProcessBuildJobRunner
+from .in_process_runner import BuildLeaseRecorder, InProcessBuildJobRunner
 
 
 class ExternalBuildJobQueueRunner:
@@ -45,6 +45,7 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
         poll_interval_seconds: float = 1.0,
         heartbeat_trigger: threading.Event | None = None,
         poll_trigger: threading.Event | None = None,
+        lease_recorder: BuildLeaseRecorder | None = None,
     ) -> None:
         super().__init__(
             repository=repository,
@@ -53,6 +54,7 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
             worker_id=worker_id,
             heartbeat_seconds=heartbeat_seconds,
             heartbeat_trigger=heartbeat_trigger,
+            lease_recorder=lease_recorder,
         )
         self._poll_interval_seconds = max(0.1, float(poll_interval_seconds or 1.0))
         self._poll_trigger = poll_trigger

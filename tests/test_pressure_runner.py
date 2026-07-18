@@ -196,6 +196,8 @@ class PressureRunnerTests(unittest.TestCase):
         self.assertEqual(sse["done_event_rate"], 1.0)
         self.assertGreaterEqual(sse["rate_limited_error_events"], 1)
         self.assertEqual(sse["unfinished_streams"], 0)
+        self.assertGreater(sse["p95_first_token_latency_ms"], 0.0)
+        self.assertLessEqual(sse["p95_first_token_latency_ms"], 200.0)
         self.assertEqual(executor["max_workers"], 1)
         self.assertEqual(executor["max_outstanding"], 2)
         self.assertLessEqual(executor["peak_active"], 1)
@@ -210,6 +212,7 @@ class PressureRunnerTests(unittest.TestCase):
                 "sse_executor_peak_active",
                 "sse_executor_peak_outstanding",
                 "sse_executor_rejections",
+                "sse_p95_first_token_latency_ms",
                 "sse_executor_rejection_accounting",
                 "sse_executor_idle",
             }.issubset(check_names)
