@@ -902,6 +902,28 @@ class ReleaseGateTests(unittest.TestCase):
         quality_checks = [item for item in report["checks"] if item["name"].startswith("metric_")]
         self.assertEqual(len(quality_checks), 2)
 
+    def test_quality_gate_documentation_names_release_evidence_manifest(self) -> None:
+        documentation = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "docs" / "live_quality_gate.md",
+                ROOT / "docs" / "release_process.md",
+                ROOT / "quality-evidence" / "README.md",
+            )
+        )
+        normalized_documentation = " ".join(documentation.split()).lower()
+
+        self.assertIn("graph-rag-release-evidence", documentation)
+        self.assertIn("evidence-manifest.json", documentation)
+        self.assertIn("case_count=0", documentation)
+        self.assertIn("Release asset", documentation)
+        self.assertIn("evaluated_commit", documentation)
+        self.assertIn("active ready knowledge base", documentation)
+        self.assertIn("only the compact manifest", normalized_documentation)
+        self.assertIn("protected tag", documentation)
+        self.assertIn("unexpired", documentation)
+        self.assertIn("code, profile, policy, prompt, dependency, or corpus", documentation)
+
 
 if __name__ == "__main__":
     unittest.main()

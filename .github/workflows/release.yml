@@ -5,14 +5,39 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release-artifacts:
-    name: Release Artifacts
+    name: Verify And Build Release Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      artifact_name: ${{ steps.evidence.outputs.release_artifact_name }}
+      bundle_name: ${{ steps.evidence.outputs.bundle_name }}
+      bundle_sha256: ${{ steps.payload.outputs.bundle_sha256 }}
+      evidence_artifact_name: ${{ steps.evidence.outputs.artifact_name }}
+      manifest_sha256: ${{ steps.payload.outputs.manifest_sha256 }}
+      manifest_path: ${{ steps.evidence.outputs.manifest }}
+      package_version: ${{ steps.evidence.outputs.package_version }}
+      prerelease: ${{ steps.evidence.outputs.prerelease }}
+      release_tag: ${{ steps.evidence.outputs.release_tag }}
+      sbom_sha256: ${{ steps.payload.outputs.sbom_sha256 }}
+      sdist_name: ${{ steps.payload.outputs.sdist_name }}
+      sdist_sha256: ${{ steps.payload.outputs.sdist_sha256 }}
+      tag_commit: ${{ steps.provenance.outputs.tag_commit }}
+      wheel_name: ${{ steps.payload.outputs.wheel_name }}
+      wheel_sha256: ${{ steps.payload.outputs.wheel_sha256 }}
 
     steps:
       - name: Check out tagged commit
@@ -39,34 +64,193 @@ jobs:
 
       - name: Resolve tag provenance
         id: provenance
-        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-rc.* ]]; then
-            branch=production
-          else
-            branch=main
-          fi
-          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
-          echo "tag_commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")" >> "${GITHUB_OUTPUT}"
-          echo "branch_commit=$(git rev-parse "origin/${branch}")" >> "${GITHUB_OUTPUT}"
-          echo "package_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" >> "${GITHUB_OUTPUT}"
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          from scripts.validate_release_tag import parse_release_tag
+
+          release_tag = os.environ["RELEASE_TAG"]
+          parsed_tag = parse_release_tag(release_tag)
+          with Path("pyproject.toml").open("rb") as stream:
+              package_version = tomllib.load(stream)["project"]["version"]
+          if package_version != parsed_tag.package_version:
+              raise SystemExit("release tag and package version do not match")
+
+          tag_commit = subprocess.run(
+              ["git", "rev-list", "-n", "1", release_tag],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.strip()
+          branch_commit = subprocess.run(
+              ["git", "rev-parse", f"origin/{parsed_tag.branch}"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.strip()
+          for name, value in (
+              ("tag_commit", tag_commit),
+              ("branch_commit", branch_commit),
+          ):
+              if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+                  raise SystemExit(f"invalid {name}")
+
+          output_lines = (
+              f"branch={parsed_tag.branch}\n"
+              f"tag_commit={tag_commit}\n"
+              f"branch_commit={branch_commit}\n"
+              f"package_version={parsed_tag.package_version}\n"
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
+              stream.write(output_lines)
+          PY
 
       - name: Validate tag provenance
+        env:
+          BRANCH_COMMIT: ${{ steps.provenance.outputs.branch_commit }}
+          PACKAGE_VERSION: ${{ steps.provenance.outputs.package_version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
         run: >
           python scripts/validate_release_tag.py
-          --tag "${{ github.ref_name }}"
-          --package-version "${{ steps.provenance.outputs.package_version }}"
-          --tag-commit "${{ steps.provenance.outputs.tag_commit }}"
-          --branch-commit "${{ steps.provenance.outputs.branch_commit }}"
+          --tag "${RELEASE_TAG}"
+          --package-version "${PACKAGE_VERSION}"
+          --tag-commit "${TAG_COMMIT}"
+          --branch-commit "${BRANCH_COMMIT}"
+
+      - name: Resolve selected release evidence
+        id: evidence
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import stat
+          import subprocess
+          from pathlib import Path
+
+          from scripts.release_evidence.models import load_release_evidence_manifest
+          from scripts.validate_release_tag import parse_release_tag
+
+          release_tag = os.environ["RELEASE_TAG"]
+          parsed_tag = parse_release_tag(release_tag)
+          validated_version = parsed_tag.package_version
+          manifest_path = Path("quality-evidence", "releases", validated_version,
+                               "evidence-manifest.json")
+          repository_root = Path.cwd().resolve(strict=True)
+          tracked_output = subprocess.run(
+              ["git", "ls-files", "--stage", "-z", "--", manifest_path.as_posix()],
+              check=True,
+              capture_output=True,
+          ).stdout
+          if tracked_output.count(b"\0") != 1 or not tracked_output.endswith(b"\0"):
+              raise SystemExit("release evidence manifest must have one index entry")
+          metadata, raw_tracked_path = tracked_output[:-1].split(b"\t", maxsplit=1)
+          mode, object_id, stage = metadata.decode("ascii").split()
+          tracked_path = raw_tracked_path.decode("utf-8")
+          if mode != "100644" or stage != "0":
+              raise SystemExit("release evidence manifest must be a stage-zero regular blob")
+          if re.fullmatch(r"[0-9a-f]{40}", object_id) is None:
+              raise SystemExit("release evidence manifest has an invalid object id")
+          if tracked_path != manifest_path.as_posix():
+              raise SystemExit("release evidence manifest index path does not match")
+          manifest_stat = manifest_path.lstat()
+          if manifest_path.is_symlink():
+              raise SystemExit("release evidence manifest must not be a symlink")
+          if not stat.S_ISREG(manifest_stat.st_mode):
+              raise SystemExit("release evidence manifest is not a regular file")
+          manifest_resolved = manifest_path.resolve(strict=True)
+          try:
+              manifest_resolved.relative_to(repository_root)
+          except ValueError as exc:
+              raise SystemExit("release evidence manifest resolves outside repository") from exc
+          manifest = load_release_evidence_manifest(manifest_path)
+          expected_artifact_name = f"graph-rag-c9-{validated_version}-quality-evidence"
+          expected_bundle_name = f"{expected_artifact_name}.zip"
+          if manifest.release.package_version != validated_version:
+              raise SystemExit("manifest package version does not match release tag")
+          if manifest.release.tag != release_tag:
+              raise SystemExit("manifest tag does not match release tag")
+          if manifest.provenance.repository != os.environ["GITHUB_REPOSITORY"]:
+              raise SystemExit("manifest repository does not match workflow repository")
+          if manifest.transport.artifact_name != expected_artifact_name:
+              raise SystemExit("manifest artifact name is not release-derived")
+          if manifest.bundle.name != expected_bundle_name:
+              raise SystemExit("manifest bundle name is not release-derived")
+
+          release_artifact_name = f"graph-rag-c9-{validated_version}-release-assets"
+          output_lines = (
+              f"manifest={manifest_path.as_posix()}\n"
+              f"artifact_id={manifest.transport.artifact_id}\n"
+              f"run_id={manifest.transport.workflow_run_id}\n"
+              f"artifact_name={expected_artifact_name}\n"
+              f"bundle_name={expected_bundle_name}\n"
+              f"package_version={validated_version}\n"
+              f"release_tag={parsed_tag.tag}\n"
+              f"prerelease={str(parsed_tag.prerelease).lower()}\n"
+              f"release_artifact_name={release_artifact_name}\n"
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
+              stream.write(output_lines)
+          PY
+
+      - name: Query selected evidence artifact
+        env:
+          ARTIFACT_ID: ${{ steps.evidence.outputs.artifact_id }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh api
+          "repos/${GH_REPO}/actions/artifacts/${ARTIFACT_ID}"
+          > "artifact-metadata.json"
+
+      - name: Download selected evidence artifact
+        env:
+          ARTIFACT_NAME: ${{ steps.evidence.outputs.artifact_name }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.evidence.outputs.run_id }}
+        run: >
+          gh run download "${RUN_ID}"
+          --repo "${GH_REPO}"
+          --name "${ARTIFACT_NAME}"
+          --dir "downloaded-evidence"
+
+      - name: Verify selected release evidence
+        env:
+          EVIDENCE_BUNDLE: downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}
+          EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          RELEASE_TAG: ${{ steps.evidence.outputs.release_tag }}
+        run: >
+          python -m scripts.release_evidence verify
+          --repository-root .
+          --manifest "${EVIDENCE_MANIFEST}"
+          --release-commit "${RELEASE_COMMIT}"
+          --tag "${RELEASE_TAG}"
+          --bundle "${EVIDENCE_BUNDLE}"
+          --artifact-metadata "artifact-metadata.json"
+          --json
 
       - name: Build wheel and sdist
         run: python -m build --sdist --wheel --outdir dist
 
       - name: Verify distribution metadata
+        env:
+          PACKAGE_VERSION: ${{ steps.evidence.outputs.package_version }}
         run: >
           python scripts/verify_distribution_metadata.py
           --directory dist
-          --expected-version "${{ steps.provenance.outputs.package_version }}"
+          --expected-version "${PACKAGE_VERSION}"
 
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
@@ -75,10 +259,441 @@ jobs:
           format: cyclonedx-json
           output-file: sbom.cdx.json
 
-      - name: Upload release evidence
+      - name: Freeze and stage verified release payload
+        id: payload
+        env:
+          BUNDLE_NAME: ${{ steps.evidence.outputs.bundle_name }}
+          EVIDENCE_BUNDLE: downloaded-evidence/${{ steps.evidence.outputs.bundle_name }}
+          EVIDENCE_MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          PACKAGE_VERSION: ${{ steps.evidence.outputs.package_version }}
+          RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          RELEASE_TAG: ${{ steps.evidence.outputs.release_tag }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          python -m scripts.release_evidence verify \
+            --repository-root . \
+            --manifest "${EVIDENCE_MANIFEST}" \
+            --release-commit "${RELEASE_COMMIT}" \
+            --tag "${RELEASE_TAG}" \
+            --bundle "${EVIDENCE_BUNDLE}" \
+            --artifact-metadata "artifact-metadata.json" \
+            --json
+          python scripts/verify_distribution_metadata.py \
+            --directory dist \
+            --expected-version "${PACKAGE_VERSION}"
+          test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          python - <<'PY'
+          import hashlib
+          import os
+          import re
+          import shutil
+          import stat
+          from pathlib import Path
+
+          package_version = os.environ["PACKAGE_VERSION"]
+          bundle_name = os.environ["BUNDLE_NAME"]
+          repository_root = Path.cwd().resolve(strict=True)
+          manifest = Path(os.environ["EVIDENCE_MANIFEST"])
+          expected_manifest = Path(
+              "quality-evidence", "releases", package_version, "evidence-manifest.json"
+          )
+          if manifest != expected_manifest:
+              raise SystemExit("manifest staging path does not match validated release")
+
+          def one_distribution(pattern: str) -> Path:
+              matches = sorted(Path("dist").glob(pattern))
+              if len(matches) != 1:
+                  raise SystemExit(f"expected one distribution matching {pattern}")
+              if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", matches[0].name) is None:
+                  raise SystemExit("unsafe distribution filename")
+              return matches[0]
+
+          def require_regular_source(source_path: Path, expected_parent: Path) -> None:
+              source_stat = source_path.lstat()
+              if source_path.is_symlink():
+                  raise SystemExit(f"release source must not be a symlink: {source_path}")
+              if not stat.S_ISREG(source_stat.st_mode):
+                  raise SystemExit(f"release source must be regular: {source_path}")
+              source_resolved = source_path.resolve(strict=True)
+              parent_resolved = expected_parent.resolve(strict=True)
+              if source_resolved.parent != parent_resolved:
+                  raise SystemExit(f"release source escaped its controlled directory: {source_path}")
+              try:
+                  source_resolved.relative_to(repository_root)
+              except ValueError as exc:
+                  raise SystemExit(f"release source escaped repository: {source_path}") from exc
+
+          def sha256_file(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          wheel = one_distribution("*.whl")
+          sdist = one_distribution("*.tar.gz")
+          sbom = Path("sbom.cdx.json")
+          bundle = Path("downloaded-evidence", bundle_name)
+          sources = {
+              "wheel": wheel,
+              "sdist": sdist,
+              "sbom": sbom,
+              "manifest": manifest,
+              "bundle": bundle,
+          }
+          expected_parents = {
+              "wheel": Path("dist"),
+              "sdist": Path("dist"),
+              "sbom": Path("."),
+              "manifest": expected_manifest.parent,
+              "bundle": Path("downloaded-evidence"),
+          }
+          for label, source_path in sources.items():
+              require_regular_source(source_path, expected_parents[label])
+
+          stage_root = Path("release-payload-stage")
+          if os.path.lexists(stage_root):
+              raise SystemExit("release payload stage must not already exist")
+          destinations = {
+              "wheel": stage_root / "dist" / wheel.name,
+              "sdist": stage_root / "dist" / sdist.name,
+              "sbom": stage_root / "sbom.cdx.json",
+              "manifest": (
+                  stage_root / "quality-evidence" / "releases" / package_version
+                  / "evidence-manifest.json"
+              ),
+              "bundle": stage_root / "downloaded-evidence" / bundle.name,
+          }
+          hashes: dict[str, str] = {}
+          for label, source_path in sources.items():
+              destination = destinations[label]
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              source_sha256 = sha256_file(source_path)
+              shutil.copyfile(source_path, destination)
+              destination_sha256 = sha256_file(destination)
+              if destination_sha256 != source_sha256:
+                  raise SystemExit(f"release payload copy changed bytes: {label}")
+              hashes[label] = source_sha256
+
+          expected_files = {
+              destination.relative_to(stage_root) for destination in destinations.values()
+          }
+          expected_directories = {
+              Path("dist"),
+              Path("quality-evidence"),
+              Path("quality-evidence", "releases"),
+              Path("quality-evidence", "releases", package_version),
+              Path("downloaded-evidence"),
+          }
+          actual_files: set[Path] = set()
+          actual_directories: set[Path] = set()
+          for entry in stage_root.rglob("*"):
+              if entry.is_symlink():
+                  raise SystemExit(f"staged payload contains symlink: {entry}")
+              entry_stat = entry.lstat()
+              relative = entry.relative_to(stage_root)
+              if stat.S_ISREG(entry_stat.st_mode):
+                  actual_files.add(relative)
+              elif stat.S_ISDIR(entry_stat.st_mode):
+                  actual_directories.add(relative)
+              else:
+                  raise SystemExit(f"staged payload contains special file: {entry}")
+          if actual_files != expected_files:
+              raise SystemExit("staged payload does not contain exactly five files")
+          if actual_directories != expected_directories:
+              raise SystemExit("staged payload directory structure is not exact")
+
+          output_lines = (
+              f"wheel_name={wheel.name}\n"
+              f"sdist_name={sdist.name}\n"
+              f"wheel_sha256={hashes['wheel']}\n"
+              f"sdist_sha256={hashes['sdist']}\n"
+              f"sbom_sha256={hashes['sbom']}\n"
+              f"manifest_sha256={hashes['manifest']}\n"
+              f"bundle_sha256={hashes['bundle']}\n"
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
+              stream.write(output_lines)
+          PY
+
+      - name: Upload verified release payload
         uses: actions/upload-artifact@v7
         with:
-          name: graph-rag-c9-${{ github.ref_name }}
-          path: |
-            dist/
-            sbom.cdx.json
+          name: ${{ steps.evidence.outputs.release_artifact_name }}
+          path: release-payload-stage/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+  publish-draft:
+    name: Publish Draft GitHub Release
+    needs: release-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Validate publication identity
+        env:
+          BUNDLE_NAME: ${{ needs.release-artifacts.outputs.bundle_name }}
+          BUNDLE_SHA256: ${{ needs.release-artifacts.outputs.bundle_sha256 }}
+          EVENT_TAG: ${{ github.ref_name }}
+          EVIDENCE_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.evidence_artifact_name }}
+          MANIFEST_PATH: ${{ needs.release-artifacts.outputs.manifest_path }}
+          MANIFEST_SHA256: ${{ needs.release-artifacts.outputs.manifest_sha256 }}
+          PACKAGE_VERSION: ${{ needs.release-artifacts.outputs.package_version }}
+          PAYLOAD_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.artifact_name }}
+          PRERELEASE: ${{ needs.release-artifacts.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.release-artifacts.outputs.release_tag }}
+          SBOM_SHA256: ${{ needs.release-artifacts.outputs.sbom_sha256 }}
+          SDIST_SHA256: ${{ needs.release-artifacts.outputs.sdist_sha256 }}
+          TAG_COMMIT: ${{ needs.release-artifacts.outputs.tag_commit }}
+          WHEEL_SHA256: ${{ needs.release-artifacts.outputs.wheel_sha256 }}
+        run: |
+          test "${EVENT_TAG}" = "${RELEASE_TAG}"
+          if [[ "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            expected_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            expected_prerelease=false
+          elif [[ "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$ ]]; then
+            expected_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}rc${BASH_REMATCH[4]}"
+            expected_prerelease=true
+          else
+            echo "Invalid release tag identity." >&2
+            exit 1
+          fi
+          test "${PACKAGE_VERSION}" = "${expected_version}"
+          test "${PRERELEASE}" = "${expected_prerelease}"
+          test "${EVIDENCE_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-quality-evidence"
+          test "${BUNDLE_NAME}" = "${EVIDENCE_ARTIFACT_NAME}.zip"
+          test "${PAYLOAD_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-release-assets"
+          test "${MANIFEST_PATH}" = "quality-evidence/releases/${expected_version}/evidence-manifest.json"
+          [[ "${TAG_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${WHEEL_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${SDIST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${SBOM_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${BUNDLE_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+
+      - name: Download current run release payload
+        env:
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.artifact_name }}
+        run: >
+          gh run download "${CURRENT_RUN_ID}"
+          --repo "${GH_REPO}"
+          --name "${RELEASE_ARTIFACT_NAME}"
+          --dir "release-payload"
+
+      - name: Validate remote tag commit
+        env:
+          EXPECTED_TAG_COMMIT: ${{ needs.release-artifacts.outputs.tag_commit }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-artifacts.outputs.release_tag }}
+        run: |
+          remote_tag_commit="$(
+            gh api "repos/${GH_REPO}/commits/${RELEASE_TAG}" --jq '.sha'
+          )"
+          [[ "${remote_tag_commit}" =~ ^[0-9a-f]{40}$ ]]
+          test "${remote_tag_commit}" = "${EXPECTED_TAG_COMMIT}"
+
+      - name: Create or update draft GitHub Release
+        env:
+          BUNDLE_NAME: ${{ needs.release-artifacts.outputs.bundle_name }}
+          BUNDLE_SHA256: ${{ needs.release-artifacts.outputs.bundle_sha256 }}
+          EVENT_TAG: ${{ github.ref_name }}
+          EVIDENCE_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.evidence_artifact_name }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_PATH: ${{ needs.release-artifacts.outputs.manifest_path }}
+          MANIFEST_SHA256: ${{ needs.release-artifacts.outputs.manifest_sha256 }}
+          PACKAGE_VERSION: ${{ needs.release-artifacts.outputs.package_version }}
+          PAYLOAD_ARTIFACT_NAME: ${{ needs.release-artifacts.outputs.artifact_name }}
+          PRERELEASE: ${{ needs.release-artifacts.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.release-artifacts.outputs.release_tag }}
+          SBOM_SHA256: ${{ needs.release-artifacts.outputs.sbom_sha256 }}
+          SDIST_NAME: ${{ needs.release-artifacts.outputs.sdist_name }}
+          SDIST_SHA256: ${{ needs.release-artifacts.outputs.sdist_sha256 }}
+          TAG_COMMIT: ${{ needs.release-artifacts.outputs.tag_commit }}
+          WHEEL_NAME: ${{ needs.release-artifacts.outputs.wheel_name }}
+          WHEEL_SHA256: ${{ needs.release-artifacts.outputs.wheel_sha256 }}
+        run: |
+          test "${EVENT_TAG}" = "${RELEASE_TAG}"
+          if [[ "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            expected_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            expected_prerelease=false
+          elif [[ "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$ ]]; then
+            expected_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}rc${BASH_REMATCH[4]}"
+            expected_prerelease=true
+          else
+            echo "Invalid release tag identity." >&2
+            exit 1
+          fi
+          test "${PACKAGE_VERSION}" = "${expected_version}"
+          test "${PRERELEASE}" = "${expected_prerelease}"
+          test "${EVIDENCE_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-quality-evidence"
+          test "${BUNDLE_NAME}" = "${EVIDENCE_ARTIFACT_NAME}.zip"
+          test "${PAYLOAD_ARTIFACT_NAME}" = "graph-rag-c9-${expected_version}-release-assets"
+          test "${MANIFEST_PATH}" = "quality-evidence/releases/${expected_version}/evidence-manifest.json"
+          [[ "${WHEEL_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${SDIST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${SBOM_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${BUNDLE_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+
+          shopt -s nullglob
+          wheels=(release-payload/dist/*.whl)
+          sdists=(release-payload/dist/*.tar.gz)
+          test "${#wheels[@]}" -eq 1
+          test "${#sdists[@]}" -eq 1
+          test "$(basename "${wheels[0]}")" = "${WHEEL_NAME}"
+          test "$(basename "${sdists[0]}")" = "${SDIST_NAME}"
+          assets=(
+            "release-payload/dist/${WHEEL_NAME}"
+            "release-payload/dist/${SDIST_NAME}"
+            "release-payload/sbom.cdx.json"
+            "release-payload/${MANIFEST_PATH}"
+            "release-payload/downloaded-evidence/${BUNDLE_NAME}"
+          )
+          for asset in "${assets[@]}"; do
+            test -f "${asset}"
+            test ! -L "${asset}"
+          done
+          test "${#assets[@]}" -eq 5
+
+          regular_file_count=0
+          while IFS= read -r -d '' payload_entry; do
+            test ! -L "${payload_entry}"
+            if [[ -f "${payload_entry}" ]]; then
+              ((regular_file_count += 1))
+            elif [[ ! -d "${payload_entry}" ]]; then
+              echo "Downloaded payload contains a special file." >&2
+              exit 1
+            fi
+          done < <(find "release-payload" -mindepth 1 -print0)
+          test "${regular_file_count}" -eq 5
+
+          expected_hashes=(
+            "${WHEEL_SHA256}"
+            "${SDIST_SHA256}"
+            "${SBOM_SHA256}"
+            "${MANIFEST_SHA256}"
+            "${BUNDLE_SHA256}"
+          )
+          for asset_index in "${!assets[@]}"; do
+            asset="${assets[${asset_index}]}"
+            actual_sha256="$(sha256sum -- "${asset}")"
+            actual_sha256="${actual_sha256%% *}"
+            [[ "${actual_sha256}" =~ ^[0-9a-f]{64}$ ]]
+            test "${actual_sha256}" = "${expected_hashes[${asset_index}]}"
+          done
+
+          expected_names=()
+          for asset in "${assets[@]}"; do
+            asset_name="$(basename "${asset}")"
+            for expected_name in "${expected_names[@]}"; do
+              test "${asset_name}" != "${expected_name}"
+            done
+            expected_names+=("${asset_name}")
+          done
+          test "${#expected_names[@]}" -eq 5
+
+          gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --slurp \
+            > "existing-releases.json"
+          jq --arg tag "${RELEASE_TAG}" \
+            '[.[][] | select(.tag_name == $tag)]' \
+            "existing-releases.json" > "selected-releases.json"
+          release_count="$(jq 'length' "selected-releases.json")"
+          test "${release_count}" -le 1
+          if [[ "${release_count}" == "1" ]]; then
+            is_draft="$(jq -r '.[0].draft' "selected-releases.json")"
+            is_prerelease="$(jq -r '.[0].prerelease' "selected-releases.json")"
+            existing_tag="$(jq -r '.[0].tag_name' "selected-releases.json")"
+            test "${is_draft}" = "true"
+            test "${is_prerelease}" = "${PRERELEASE}"
+            test "${existing_tag}" = "${RELEASE_TAG}"
+            mapfile -t existing_assets < <(
+              jq -r '.[0].assets[].name' "selected-releases.json"
+            )
+            for asset_name in "${existing_assets[@]}"; do
+              matched=false
+              for expected_name in "${expected_names[@]}"; do
+                if [[ "${asset_name}" == "${expected_name}" ]]; then
+                  matched=true
+                  break
+                fi
+              done
+              test "${matched}" = "true"
+            done
+            release_exists=true
+          else
+            release_exists=false
+          fi
+
+          remote_tag_commit="$(
+            gh api "repos/${GH_REPO}/commits/${RELEASE_TAG}" --jq '.sha'
+          )"
+          [[ "${remote_tag_commit}" =~ ^[0-9a-f]{40}$ ]]
+          test "${remote_tag_commit}" = "${TAG_COMMIT}"
+          if [[ "${release_exists}" == "true" ]]; then
+            gh release upload "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GH_REPO}" --clobber
+          else
+            release_args=(
+              --draft
+              --verify-tag
+              --title "${RELEASE_TAG}"
+              --notes "Draft release assets generated from verified repository evidence."
+            )
+            if [[ "${PRERELEASE}" == "true" ]]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GH_REPO}" "${release_args[@]}"
+          fi
+
+          gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --slurp \
+            > "final-releases.json"
+          jq --arg tag "${RELEASE_TAG}" \
+            '[.[][] | select(.tag_name == $tag)]' \
+            "final-releases.json" > "final-selected-releases.json"
+          final_release_count="$(jq 'length' "final-selected-releases.json")"
+          test "${final_release_count}" -eq 1
+          final_draft="$(jq -r '.[0].draft' "final-selected-releases.json")"
+          final_prerelease="$(jq -r '.[0].prerelease' "final-selected-releases.json")"
+          final_tag="$(jq -r '.[0].tag_name' "final-selected-releases.json")"
+          test "${final_draft}" = "true"
+          test "${final_prerelease}" = "${PRERELEASE}"
+          test "${final_tag}" = "${RELEASE_TAG}"
+          mapfile -t final_assets < <(
+            jq -r '.[0].assets[].name' "final-selected-releases.json"
+          )
+          test "${#final_assets[@]}" -eq 5
+          for asset_name in "${final_assets[@]}"; do
+            matched=false
+            for expected_name in "${expected_names[@]}"; do
+              if [[ "${asset_name}" == "${expected_name}" ]]; then
+                matched=true
+                break
+              fi
+            done
+            test "${matched}" = "true"
+          done
+          for expected_name in "${expected_names[@]}"; do
+            match_count=0
+            for asset_name in "${final_assets[@]}"; do
+              if [[ "${asset_name}" == "${expected_name}" ]]; then
+                ((match_count += 1))
+              fi
+            done
+            test "${match_count}" -eq 1
+          done

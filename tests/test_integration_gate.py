@@ -17,6 +17,7 @@ from scripts.integration_gate.models import (
     LiveCasePolicy,
     LiveCaseRunResult,
 )
+from scripts.integration_gate.reporter import render_integration_summary
 from scripts.integration_gate.service import (
     IntegrationGateConfigurationError,
     IntegrationGateExecutionError,
@@ -307,6 +308,7 @@ def test_report_json_and_markdown_use_safe_allowlisted_fields(tmp_path: Path) ->
     report_text = report_json.read_text(encoding="utf-8")
     summary_text = summary_md.read_text(encoding="utf-8")
     combined = f"{report_text}\n{summary_text}"
+    persisted_report = json.loads(report_text)
 
     assert {
         "schema_version",
@@ -336,6 +338,8 @@ def test_report_json_and_markdown_use_safe_allowlisted_fields(tmp_path: Path) ->
     assert "exception" not in combined.lower()
     assert "RuntimeError" not in combined
     assert "response body" not in combined.lower()
+    assert summary_md.read_bytes() == render_integration_summary(persisted_report)
+    assert b"\r\n" not in summary_md.read_bytes()
 
 
 def test_passing_report_markdown_cases_section_lists_case_ids_and_codes(tmp_path: Path) -> None:

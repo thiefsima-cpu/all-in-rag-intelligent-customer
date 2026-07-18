@@ -8,7 +8,7 @@ import re
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from scripts.gates import (
     GateCheckResult,
@@ -80,7 +80,7 @@ def write_integration_report(
         json.dumps(persisted_report, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    summary_path.write_text(_render_markdown_summary(persisted_report), encoding="utf-8")
+    summary_path.write_bytes(render_integration_summary(persisted_report))
     return report_path, summary_path
 
 
@@ -284,7 +284,13 @@ def _project_case_payload(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _render_markdown_summary(report: dict[str, Any]) -> str:
+def render_integration_summary(report: Mapping[str, Any]) -> bytes:
+    """Render the canonical UTF-8/LF summary for a persisted integration report."""
+
+    return _render_markdown_summary(report).encode("utf-8")
+
+
+def _render_markdown_summary(report: Mapping[str, Any]) -> str:
     lines = [
         "# Real-Dependency Integration Gate",
         "",

@@ -149,7 +149,7 @@ def test_settings_require_explicit_endpoints_and_keep_token_optional() -> None:
     assert settings.api_url == "http://localhost:8000"
     assert settings.api_token is None
     assert settings.safe_target_identity() == {
-        "api_host": "localhost",
+        "api_host": "localhost:8000",
         "neo4j_host": "localhost",
         "milvus_host": "localhost",
     }
@@ -175,10 +175,56 @@ def test_safe_target_identity_uses_only_validated_host_parts() -> None:
 
     assert settings.api_token == "super-secret-token"
     assert settings.safe_target_identity() == {
-        "api_host": "example.com",
+        "api_host": "example.com:8443",
         "neo4j_host": "graph.internal",
         "milvus_host": "milvus.internal",
     }
+
+
+def test_safe_target_identity_preserves_bracketed_ipv6_api_port() -> None:
+    settings = IntegrationGateSettings.from_environ(
+        {
+            "INTEGRATION_GATE_API_URL": "https://[2001:0DB8::1]:8443",
+            "NEO4J_URI": "bolt://graph.internal:7687",
+            "NEO4J_USER": "neo4j",
+            "NEO4J_PASSWORD": "password",
+            "NEO4J_DATABASE": "neo4j",
+            "MILVUS_HOST": "milvus.internal",
+            "MILVUS_PORT": "19530",
+            "MILVUS_COLLECTION_NAME": "cooking_knowledge",
+        }
+    )
+
+    assert settings.safe_target_identity()["api_host"] == "[2001:db8::1]:8443"
+
+
+@pytest.mark.parametrize(
+    ("api_url", "expected_identity"),
+    [
+        ("http://quality.example.com", "quality.example.com:80"),
+        ("https://quality.example.com", "quality.example.com:443"),
+        ("http://[2001:0DB8::1]", "[2001:db8::1]:80"),
+        ("https://[2001:0DB8::1]", "[2001:db8::1]:443"),
+    ],
+)
+def test_safe_target_identity_includes_effective_api_port(
+    api_url: str,
+    expected_identity: str,
+) -> None:
+    settings = IntegrationGateSettings.from_environ(
+        {
+            "INTEGRATION_GATE_API_URL": api_url,
+            "NEO4J_URI": "bolt://graph.internal:7687",
+            "NEO4J_USER": "neo4j",
+            "NEO4J_PASSWORD": "password",
+            "NEO4J_DATABASE": "neo4j",
+            "MILVUS_HOST": "milvus.internal",
+            "MILVUS_PORT": "19530",
+            "MILVUS_COLLECTION_NAME": "cooking_knowledge",
+        }
+    )
+
+    assert settings.safe_target_identity()["api_host"] == expected_identity
 
 
 @pytest.mark.parametrize(

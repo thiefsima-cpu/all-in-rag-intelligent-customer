@@ -61,6 +61,58 @@ python -m scripts.live_quality_gate --policy eval/live_quality_gate.json
 `--deterministic-only` is for diagnostics with a policy that does not require a
 judge. A release-quality run must keep the judge enabled.
 
+## Release Evidence
+
+The `Release Quality Evidence` workflow turns a successful integration run and
+live-quality run into machine-traceable release evidence. Its capture job must
+run at the exact `evaluated_commit`: dispatch the workflow from that same commit
+and pass the identical full commit SHA. A later code, profile, policy, prompt,
+dependency, or corpus change requires a new capture.
+
+Capture is restricted to a prepared **self-hosted Linux** runner that can reach
+the target environment. Configure the repository/environment variable with an
+absolute mounted path, for example:
+
+```dotenv
+RELEASE_EVIDENCE_ARTIFACT_MANIFEST_PATH=/srv/graph-rag/release-evidence/artifact_manifest.json
+```
+
+The path must resolve outside `GITHUB_WORKSPACE`. It must name the manifest for
+the exact active ready knowledge base used by the serving API during the gates;
+do not point it at a repository fixture, a stale build, or a manifest for an
+inactive index. Hosted capture is rejected until a trusted
+preparation-artifact handoff is implemented. Verify mode may run on a hosted
+runner because it checks committed provenance and the selected immutable
+Actions artifact without accessing the prepared live environment.
+
+The workflow runs the real-dependency integration gate and live quality gate,
+then invokes the release-evidence CLI. The supported command surfaces can be
+inspected without reproducing the workflow's arguments manually:
+
+```powershell
+graph-rag-release-evidence capture --help
+graph-rag-release-evidence finalize --help
+graph-rag-release-evidence verify --help
+```
+
+Capture fails closed unless both source reports are successful, non-empty, and
+consistent with their policies. In particular, `case_count=0` cannot create a
+success manifest. The capture job uploads the complete deterministic quality
+evidence ZIP, finalizes its Actions artifact identity into a compact
+`evidence-manifest.json`, and uploads that compact manifest for the release pull
+request. Only the compact manifest is committed at
+`quality-evidence/releases/<package-version>/evidence-manifest.json`; the
+complete ZIP remains an Actions artifact and later becomes a GitHub Release
+asset.
+
+Before tagging, commit the finalized compact manifest and run the workflow in
+`verify` mode with the manifest commit as `release_commit`, the original
+`evaluated_commit`, package version, and planned tag. Verification downloads the
+recorded artifact and validates Git provenance, release identity, artifact
+metadata, ZIP digest and members, profile, policies, dataset, knowledge-base
+summary, and gate semantics. A green pre-tag verification is required; a
+historical narrative or a standalone report is not a substitute.
+
 ## Exit Codes and Reports
 
 - Exit `0`: live quality gate evaluated, all aggregate/slice thresholds passed,

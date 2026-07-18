@@ -940,7 +940,7 @@ def test_safe_target_identity_exposes_only_parsed_hosts() -> None:
     identity = settings.safe_target_identity()
 
     assert identity == {
-        "api_host": "serving.example.com",
+        "api_host": "serving.example.com:443",
         "judge_host": "judge.example.com",
     }
     assert all(isinstance(value, str) for value in identity.values())
@@ -961,6 +961,54 @@ def test_safe_target_identity_includes_explicit_ports() -> None:
     assert settings.safe_target_identity() == {
         "api_host": "localhost:8000",
         "judge_host": "localhost:9000",
+    }
+
+
+def test_safe_target_identity_brackets_ipv6_with_explicit_ports() -> None:
+    settings = LiveQualityGateSettings(
+        api_url="http://[2001:db8::1]:8000/v1/answers",
+        api_token=None,
+        judge=JudgeSettings(
+            api_url="http://[2001:db8::2]:9000/v1/chat/completions",
+            api_key="judge-key-secret",
+            model="judge.model-v1",
+            timeout_seconds=30.0,
+        ),
+    )
+
+    assert settings.safe_target_identity() == {
+        "api_host": "[2001:db8::1]:8000",
+        "judge_host": "[2001:db8::2]:9000",
+    }
+
+
+@pytest.mark.parametrize(
+    ("api_url", "expected_api_host"),
+    [
+        ("http://[2001:db8::1]/v1/answers", "[2001:db8::1]:80"),
+        ("https://[2001:db8::1]/v1/answers", "[2001:db8::1]:443"),
+        ("http://serving.example.com/v1/answers", "serving.example.com:80"),
+        ("https://serving.example.com/v1/answers", "serving.example.com:443"),
+    ],
+)
+def test_safe_target_identity_includes_effective_api_port(
+    api_url: str,
+    expected_api_host: str,
+) -> None:
+    settings = LiveQualityGateSettings(
+        api_url=api_url,
+        api_token=None,
+        judge=JudgeSettings(
+            api_url="http://[2001:db8::2]/v1/chat/completions",
+            api_key="judge-key-secret",
+            model="judge.model-v1",
+            timeout_seconds=30.0,
+        ),
+    )
+
+    assert settings.safe_target_identity() == {
+        "api_host": expected_api_host,
+        "judge_host": "2001:db8::2",
     }
 
 
