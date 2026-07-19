@@ -119,7 +119,7 @@ class RouteSearchOrchestrator:
         if control is not None:
             control.raise_if_cancelled()
         post_start = time.perf_counter()
-        processed_documents = self.post_processor.post_process(
+        outcome = self.post_processor.post_process_with_trace(
             evidence_documents,
             top_k=request.top_k,
             context=RetrievalPostProcessContext(
@@ -132,7 +132,25 @@ class RouteSearchOrchestrator:
                 control=control,
             ),
         )
-        trace.add_stage("post_process", start_time=post_start, documents=processed_documents)
+        details: JsonObject = {
+            "rerank_attempted": outcome.rerank_attempted,
+            "rerank_succeeded": outcome.rerank_succeeded,
+            "rerank_latency_ms": outcome.rerank_latency_ms,
+        }
+        if outcome.rerank_attempted and not outcome.rerank_succeeded:
+            details.update(
+                {
+                    "retrieval_degraded": True,
+                    "degraded_sources": ["rerank"],
+                }
+            )
+        processed_documents = list(outcome.documents)
+        trace.add_stage(
+            "post_process",
+            start_time=post_start,
+            documents=processed_documents,
+            details=details,
+        )
         return processed_documents
 
     def execute_exception_fallback(
