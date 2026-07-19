@@ -27,7 +27,14 @@ class LiveQualityObservation:
     sources: frozenset[str]
     fallback_used: bool
     retrieval_degraded: bool
+    ttft_ms: float
     latency_ms: float
+    retrieval_latency_ms: float
+    rerank_attempted: bool
+    rerank_succeeded: bool
+    rerank_latency_ms: float | None
+    generation_latency_ms: float
+    generation_first_token_latency_ms: float
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
