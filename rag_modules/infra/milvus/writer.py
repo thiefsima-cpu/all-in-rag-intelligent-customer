@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from typing import List, Optional
 
 from ...kernel.documents import TextDocument
@@ -34,19 +35,36 @@ class _MilvusWriterOperations(MilvusOperationHost):
         chunk: TextDocument,
         vector: object,
         index: int,
+        *,
+        default_chunk_id: str | None = None,
     ) -> dict[str, object]:
+        metadata = chunk.metadata or {}
+        entity_id = (
+            metadata.get("entity_id") or metadata.get("node_id") or metadata.get("recipe_id", "")
+        )
+        entity_name = metadata.get("entity_name") or metadata.get("recipe_name", "")
+        entity_type = metadata.get("entity_type") or metadata.get("node_type", "")
+        raw_attributes = metadata.get("attributes")
+        attributes = dict(raw_attributes) if isinstance(raw_attributes, Mapping) else {}
+        chunk_id = chunk.metadata.get("chunk_id") or default_chunk_id or f"chunk_{index}"
         return {
-            "id": self._safe_truncate(chunk.metadata.get("chunk_id", f"chunk_{index}"), 150),
+            "id": self._safe_truncate(chunk_id, 150),
             "vector": vector,
             "text": self._safe_truncate(chunk.page_content, 15000),
-            "node_id": self._safe_truncate(chunk.metadata.get("node_id", ""), 100),
-            "recipe_name": self._safe_truncate(chunk.metadata.get("recipe_name", ""), 300),
-            "node_type": self._safe_truncate(chunk.metadata.get("node_type", ""), 100),
+            "entity_id": self._safe_truncate(entity_id, 150),
+            "entity_name": self._safe_truncate(entity_name, 300),
+            "entity_type": self._safe_truncate(entity_type, 100),
+            "domain": self._safe_truncate(self.domain_name, 100),
+            "attributes": attributes,
+            # Physical compatibility columns for pre-DomainPack recipe filters.
+            "node_id": self._safe_truncate(entity_id, 100),
+            "recipe_name": self._safe_truncate(entity_name, 300),
+            "node_type": self._safe_truncate(entity_type, 100),
             "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
             "cuisine_type": self._safe_truncate(chunk.metadata.get("cuisine_type", ""), 200),
             "difficulty": int(chunk.metadata.get("difficulty", 0)),
             "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
-            "chunk_id": self._safe_truncate(chunk.metadata.get("chunk_id", f"chunk_{index}"), 150),
+            "chunk_id": self._safe_truncate(chunk_id, 150),
             "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),
         }
 
@@ -157,29 +175,15 @@ class _MilvusWriterOperations(MilvusOperationHost):
             vectors = self.embeddings.embed_documents(texts)
 
             # 准备插入数据
-            entities = []
-            for i, (chunk, vector) in enumerate(zip(new_chunks, vectors)):
-                entity = {
-                    "id": self._safe_truncate(
-                        chunk.metadata.get("chunk_id", f"new_chunk_{i}_{int(time.time())}"), 150
-                    ),
-                    "vector": vector,
-                    "text": self._safe_truncate(chunk.page_content, 15000),
-                    "node_id": self._safe_truncate(chunk.metadata.get("node_id", ""), 100),
-                    "recipe_name": self._safe_truncate(chunk.metadata.get("recipe_name", ""), 300),
-                    "node_type": self._safe_truncate(chunk.metadata.get("node_type", ""), 100),
-                    "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
-                    "cuisine_type": self._safe_truncate(
-                        chunk.metadata.get("cuisine_type", ""), 200
-                    ),
-                    "difficulty": int(chunk.metadata.get("difficulty", 0)),
-                    "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
-                    "chunk_id": self._safe_truncate(
-                        chunk.metadata.get("chunk_id", f"new_chunk_{i}_{int(time.time())}"), 150
-                    ),
-                    "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),
-                }
-                entities.append(entity)
+            entities = [
+                self._vector_entity(
+                    chunk,
+                    vector,
+                    i,
+                    default_chunk_id=f"new_chunk_{i}_{int(time.time())}",
+                )
+                for i, (chunk, vector) in enumerate(zip(new_chunks, vectors))
+            ]
 
             # 插入数据
             self.client.insert(collection_name=self.collection_name, data=entities)

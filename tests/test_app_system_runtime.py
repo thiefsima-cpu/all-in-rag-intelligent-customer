@@ -227,6 +227,7 @@ def _build_runtime() -> BuildRuntime:
     )
     return BuildRuntime(
         config=SimpleNamespace(
+            domain=SimpleNamespace(name="recipe"),
             models=SimpleNamespace(
                 llm_model="qwen3.7-plus",
                 embedding_model="qwen3-vl-embedding",

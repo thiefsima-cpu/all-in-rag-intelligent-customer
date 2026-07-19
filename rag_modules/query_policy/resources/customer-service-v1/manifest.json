@@ -1,0 +1,14 @@
+{
+  "schema_version": "policy-bundle-v1",
+  "policy_version": "customer-service-policy-v1",
+  "prompt_version": "customer-service-prompts-v1",
+  "name": "customer-service-v1",
+  "extends": "c9-default-v1",
+  "policy_path": "policy.json",
+  "prompts": {
+    "query_planner": "prompts/query_planner.txt",
+    "answer_plan": "prompts/answer_plan.txt",
+    "answer_compose": "prompts/answer_compose.txt",
+    "answer_direct": "prompts/answer_direct.txt"
+  }
+}

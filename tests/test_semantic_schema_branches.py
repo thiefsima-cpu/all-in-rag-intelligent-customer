@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from rag_modules.domain.shared import semantic_schema as schema
+from rag_modules.domains.recipe import semantic_schema as schema
 
 
 def test_tag_normalization_and_unique_helpers_handle_supported_shapes() -> None:

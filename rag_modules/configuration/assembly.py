@@ -34,6 +34,7 @@ def query_policy_default_overlay(bundle: QueryPolicyBundle) -> dict[str, object]
     postprocess = runtime.postprocess
     return {
         "query_understanding": {
+            "policy": {"bundle": bundle.metadata.bundle_name},
             "planner": {
                 "cache_size": planner.cache_size,
                 "fast_rule_planning": planner.fast_rule_planning,

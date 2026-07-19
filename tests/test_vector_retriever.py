@@ -8,6 +8,7 @@ class _Milvus:
     def __init__(self, results=None, error: Exception | None = None) -> None:
         self.results = list(results or [])
         self.error = error
+        self.domain_name = "recipe"
 
     def similarity_search(self, request):
         if self.error:
@@ -78,6 +79,7 @@ def test_search_enriches_neighbors_coerces_metadata_and_limits_candidates() -> N
     assert document.score == 0.8
     assert all(name in document.content for name in ("Pepper", "Tofu", "Sauce"))
     assert session.calls[0][1]["timeout"] == 2.5
+    assert session.calls[0][0]["domain_name"] == "recipe"
     assert control.checks >= 3
 
 

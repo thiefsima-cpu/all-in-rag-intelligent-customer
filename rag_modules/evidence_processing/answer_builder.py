@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, cast
 
 from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
-from .aggregation import aggregate_recipe_evidence
+from .aggregation import aggregate_evidence
 
 
 def _float_value(value: object, default: float = 0.0) -> float:
@@ -66,11 +66,11 @@ def _bounded_dicts(
     return bounded
 
 
-@dataclass
+@dataclass(init=False)
 class AnswerEvidenceItem:
     citation: str
-    recipe_id: str
-    recipe_name: str
+    entity_id: str
+    entity_name: str
     confidence: float
     retrieval_sources: List[str] = field(default_factory=list)
     matched_terms: List[str] = field(default_factory=list)
@@ -80,13 +80,51 @@ class AnswerEvidenceItem:
     document_evidence: List[dict] = field(default_factory=list)
     content: str = ""
 
+    def __init__(
+        self,
+        citation: str,
+        recipe_id: str = "",
+        recipe_name: str = "",
+        confidence: float = 0.0,
+        retrieval_sources: List[str] | None = None,
+        matched_terms: List[str] | None = None,
+        constraint_reasons: List[str] | None = None,
+        graph_paths: List[dict] | None = None,
+        evidence_units: List[dict] | None = None,
+        document_evidence: List[dict] | None = None,
+        content: str = "",
+        *,
+        entity_id: str = "",
+        entity_name: str = "",
+    ) -> None:
+        self.citation = str(citation or "")
+        self.entity_id = str(entity_id or recipe_id or "")
+        self.entity_name = str(entity_name or recipe_name or "")
+        self.confidence = float(confidence or 0.0)
+        self.retrieval_sources = list(retrieval_sources or [])
+        self.matched_terms = list(matched_terms or [])
+        self.constraint_reasons = list(constraint_reasons or [])
+        self.graph_paths = list(graph_paths or [])
+        self.evidence_units = list(evidence_units or [])
+        self.document_evidence = list(document_evidence or [])
+        self.content = str(content or "")
+        self._legacy_recipe_compat = bool(recipe_id or recipe_name)
+
+    @property
+    def recipe_id(self) -> str:
+        return self.entity_id
+
+    @property
+    def recipe_name(self) -> str:
+        return self.entity_name
+
     @classmethod
     def from_dict(cls, payload: Mapping[str, object] | None) -> "AnswerEvidenceItem":
         data = dict(payload or {})
         return cls(
             citation=str(data.get("citation") or ""),
-            recipe_id=str(data.get("recipe_id") or ""),
-            recipe_name=str(data.get("recipe_name") or ""),
+            entity_id=str(data.get("entity_id") or data.get("recipe_id") or ""),
+            entity_name=str(data.get("entity_name") or data.get("recipe_name") or ""),
             confidence=_float_value(data.get("confidence")),
             retrieval_sources=_string_list(data.get("retrieval_sources")),
             matched_terms=_string_list(data.get("matched_terms")),
@@ -98,10 +136,10 @@ class AnswerEvidenceItem:
         )
 
     def to_dict(self) -> Dict[str, object]:
-        return {
+        payload = {
             "citation": self.citation,
-            "recipe_id": self.recipe_id,
-            "recipe_name": self.recipe_name,
+            "entity_id": self.entity_id,
+            "entity_name": self.entity_name,
             "confidence": self.confidence,
             "retrieval_sources": list(self.retrieval_sources or []),
             "matched_terms": list(self.matched_terms or []),
@@ -111,6 +149,9 @@ class AnswerEvidenceItem:
             "document_evidence": [dict(item) for item in self.document_evidence],
             "content": self.content,
         }
+        if self._legacy_recipe_compat:
+            payload.update({"recipe_id": self.entity_id, "recipe_name": self.entity_name})
+        return payload
 
     def to_summary_dict(
         self,
@@ -120,7 +161,7 @@ class AnswerEvidenceItem:
     ) -> Dict[str, object]:
         return {
             "citation": self.citation,
-            "recipe_name": self.recipe_name,
+            "entity_name": self.entity_name,
             "confidence": round(float(self.confidence or 0.0), 4),
             "retrieval_sources": self.retrieval_sources[:4],
             "matched_terms": self.matched_terms[:8],
@@ -148,8 +189,8 @@ class AnswerEvidenceItem:
     ) -> str:
         payload = {
             "citation": self.citation,
-            "recipe_id": self.recipe_id,
-            "recipe_name": self.recipe_name,
+            "entity_id": self.entity_id,
+            "entity_name": self.entity_name,
             "confidence": round(float(self.confidence or 0.0), 4),
             "retrieval_sources": self.retrieval_sources[:4],
             "matched_terms": self.matched_terms[:8],
@@ -251,30 +292,31 @@ class AnswerEvidencePackage:
 class AnswerEvidenceBuilder:
     """Build structured answer evidence from retrieved documents."""
 
-    def __init__(self, max_content_chars: int = 1800):
+    def __init__(self, max_content_chars: int = 1800, *, citation_label: str = "菜谱证据"):
         self.max_content_chars = max(300, int(max_content_chars or 1800))
+        self.citation_label = str(citation_label or "菜谱证据").strip()
 
     def build(
         self, question: str, evidence_documents: List[EvidenceDocument]
     ) -> AnswerEvidencePackage:
         items: List[AnswerEvidenceItem] = []
-        recipe_evidence = aggregate_recipe_evidence(list(evidence_documents or []))
-        for index, recipe in enumerate(recipe_evidence, start=1):
-            content = (recipe.full_recipe_doc or "").strip()
+        aggregated_evidence = aggregate_evidence(list(evidence_documents or []))
+        for index, aggregate in enumerate(aggregated_evidence, start=1):
+            content = (aggregate.full_document or "").strip()
             if not content:
                 continue
             if len(content) > self.max_content_chars:
                 content = content[: self.max_content_chars].rstrip() + "\n...[内容已截断]"
             items.append(
                 AnswerEvidenceItem(
-                    citation=f"菜谱证据 {index}",
-                    recipe_id=recipe.recipe_id,
-                    recipe_name=recipe.recipe_name,
-                    confidence=recipe.confidence,
-                    retrieval_sources=recipe.retrieval_sources,
-                    matched_terms=recipe.matched_terms,
-                    constraint_reasons=recipe.constraint_reasons,
-                    graph_paths=recipe.graph_paths[:4],
+                    citation=f"{self.citation_label} {index}",
+                    entity_id=aggregate.entity_id,
+                    entity_name=aggregate.entity_name,
+                    confidence=aggregate.confidence,
+                    retrieval_sources=aggregate.retrieval_sources,
+                    matched_terms=aggregate.matched_terms,
+                    constraint_reasons=aggregate.constraint_reasons,
+                    graph_paths=aggregate.graph_paths[:4],
                     evidence_units=[
                         {
                             "claim": unit.get("claim"),
@@ -283,7 +325,7 @@ class AnswerEvidenceBuilder:
                             "entities": unit.get("entities"),
                             "is_graph_evidence": unit.get("is_graph_evidence"),
                         }
-                        for unit in recipe.evidence_units[:10]
+                        for unit in aggregate.evidence_units[:10]
                         if unit.get("claim")
                     ],
                     document_evidence=[
@@ -293,7 +335,7 @@ class AnswerEvidenceBuilder:
                             "score": doc.score,
                             "evidence_type": doc.evidence_type,
                         }
-                        for doc in recipe.documents[:8]
+                        for doc in aggregate.documents[:8]
                     ],
                     content=content,
                 )

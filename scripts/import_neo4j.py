@@ -29,17 +29,37 @@ def split_cypher(script: str) -> list[str]:
     return statements
 
 
-def _load_import_statements() -> list[str]:
-    script_path = Path(__file__).resolve().parents[1] / "cypher" / "neo4j_import.cypher"
+def _domain_name(config) -> str:
+    domain = getattr(config, "domain", None)
+    return str(getattr(domain, "name", "recipe") or "recipe").strip().lower()
+
+
+def _load_import_statements(domain_name: str = "recipe") -> list[str]:
+    script_name = (
+        "customer_service_seed.cypher"
+        if domain_name == "customer_service"
+        else "neo4j_import.cypher"
+    )
+    script_path = Path(__file__).resolve().parents[1] / "cypher" / script_name
     script = script_path.read_text(encoding="utf-8")
-    script = script.replace("file:///nodes.csv", "file:///cypher/nodes.csv")
-    script = script.replace("file:///relationships.csv", "file:///cypher/relationships.csv")
+    if domain_name == "recipe":
+        script = script.replace("file:///nodes.csv", "file:///cypher/nodes.csv")
+        script = script.replace("file:///relationships.csv", "file:///cypher/relationships.csv")
     return split_cypher(script)
 
 
 def _has_recipe_data(session) -> bool:
     record = session.run("MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_count").single()
     return bool(record and int(record["recipe_count"] or 0) > 0)
+
+
+def _has_domain_data(session, domain_name: str) -> bool:
+    if domain_name != "customer_service":
+        return _has_recipe_data(session)
+    record = session.run(
+        "MATCH (n {domain: 'customer_service'}) RETURN count(n) AS domain_entity_count"
+    ).single()
+    return bool(record and int(record["domain_entity_count"] or 0) > 0)
 
 
 def import_graph(
@@ -56,11 +76,12 @@ def import_graph(
     )
     try:
         with driver.session(database=storage.neo4j_database) as session:
-            if only_if_empty and _has_recipe_data(session):
-                print("Neo4j recipe data already exists; skipping CSV import.")
+            domain_name = _domain_name(config)
+            if only_if_empty and _has_domain_data(session, domain_name):
+                print(f"Neo4j {domain_name} data already exists; skipping graph import.")
                 return False
 
-            statements = _load_import_statements()
+            statements = _load_import_statements(domain_name)
             for index, statement in enumerate(statements, start=1):
                 preview = statement.splitlines()[0][:80]
                 print(f"[{index}/{len(statements)}] {preview}")
@@ -80,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--if-empty",
         action="store_true",
-        help="Skip CSV import when Neo4j already contains Recipe nodes.",
+        help="Skip graph import when Neo4j already contains data for the selected domain.",
     )
     args = parser.parse_args(argv)
     import_graph(load_config(), only_if_empty=args.if_empty)

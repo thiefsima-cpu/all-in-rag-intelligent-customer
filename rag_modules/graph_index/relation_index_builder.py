@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES
-from ..query_policy import get_query_policy
+from ..query_policy.models import QueryPolicyBundle
+from ..query_policy.selector import resolve_query_policy_bundle
 from ..query_understanding.registry import dedupe_preserve_order, relation_index_terms
 from .models import EntityKeyValue, RelationKeyValue
 from .store import GraphIndexStore
@@ -14,16 +14,30 @@ from .store import GraphIndexStore
 logger = logging.getLogger(__name__)
 
 
+def _entity_domain(entity: EntityKeyValue) -> str:
+    metadata = entity.metadata or {}
+    properties = metadata.get("properties")
+    nested_domain = properties.get("domain") if isinstance(properties, dict) else ""
+    return str(metadata.get("domain") or nested_domain or "").strip()
+
+
 class RelationIndexBuilder:
     """Build relation key-value payloads from graph edges and semantic tags."""
 
-    def __init__(self, config, llm_client=None) -> None:
+    def __init__(
+        self,
+        config,
+        llm_client=None,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+    ) -> None:
         self.config = config
         self.llm_client = llm_client
-        policy = get_query_policy()
+        policy = policy_bundle or resolve_query_policy_bundle(config)
         self.relation_index_keywords = policy.relations.relation_index_keywords
         self.relation_index_suffix_templates = policy.relations.relation_index_suffix_templates
         self.semantic_relation_key_specs = dict(policy.graph.reasoning.semantic_relation_key_specs)
+        self.semantic_relation_types = tuple(policy.relations.graph_relation_types)
 
     def build(
         self,
@@ -36,6 +50,15 @@ class RelationIndexBuilder:
             source_entity = store.entity_kv_store.get(str(source_id))
             target_entity = store.entity_kv_store.get(str(target_id))
             if not source_entity or not target_entity:
+                continue
+            source_domain = _entity_domain(source_entity)
+            target_domain = _entity_domain(target_entity)
+            if source_domain != target_domain:
+                logger.warning(
+                    "Skipping cross-domain relation %s -> %s.",
+                    source_id,
+                    target_id,
+                )
                 continue
 
             relation_id = f"rel_{index}_{source_id}_{target_id}"
@@ -60,6 +83,7 @@ class RelationIndexBuilder:
                 metadata={
                     "source_name": source_entity.entity_name,
                     "target_name": target_entity.entity_name,
+                    "domain": source_domain,
                     "created_from_graph": True,
                 },
             )
@@ -76,7 +100,7 @@ class RelationIndexBuilder:
         counter = len(store.relation_kv_store)
         simple_semantic_relations = [
             rel_type
-            for rel_type in SEMANTIC_RELATION_TYPES
+            for rel_type in self.semantic_relation_types
             if rel_type not in self.semantic_relation_key_specs
         ]
 
@@ -113,6 +137,7 @@ class RelationIndexBuilder:
                     metadata={
                         "source_name": source_entity.entity_name,
                         "target_name": target_name,
+                        "domain": _entity_domain(source_entity),
                         "created_from_semantic_schema": True,
                     },
                 )

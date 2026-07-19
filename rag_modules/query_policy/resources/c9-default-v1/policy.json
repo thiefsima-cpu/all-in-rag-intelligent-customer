@@ -1237,6 +1237,7 @@
     }
   },
   "generation": {
+    "citation_label": "菜谱证据",
     "answer_types": {
       "direct_answer": {
         "markers": []
@@ -1289,7 +1290,7 @@
       "missing_relation_evidence": "当前证据缺少足够的图谱关系来完整解释关系链。",
       "sparse_evidence": "当前候选证据较少，覆盖面有限。",
       "missing_information_caution": "证据不足的部分需要显式说明，不要补充未检索到的事实。",
-      "fallback_claim_template": "{recipe_name} 是当前问题的相关证据。"
+      "fallback_claim_template": "{entity_name} 是当前问题的相关证据。"
     },
     "decision": {
       "default_answer_type": "direct_answer",
@@ -1330,7 +1331,7 @@
       "strategy_icon_default": "[ROUTE]",
       "document_summary_template": "Found {document_count} relevant documents: {document_summaries}",
       "document_summary_total_template": "\n    Total results: {document_count}",
-      "unknown_recipe_name": "unknown",
+      "unknown_entity_name": "unknown",
       "unknown_search_type": "unknown"
     }
   },

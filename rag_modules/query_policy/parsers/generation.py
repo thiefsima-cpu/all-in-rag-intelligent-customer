@@ -94,7 +94,7 @@ _ANSWER_WORKFLOW_COPY_DEFAULTS = {
     "strategy_icon_default": "[ROUTE]",
     "document_summary_template": "Found {document_count} relevant documents: {document_summaries}",
     "document_summary_total_template": "\n    Total results: {document_count}",
-    "unknown_recipe_name": "unknown",
+    "unknown_entity_name": "unknown",
     "unknown_search_type": "unknown",
 }
 
@@ -131,6 +131,7 @@ def parse_generation(policy_payload: Mapping[str, object], root: Path) -> Genera
             "generation.fallback_answer",
         ),
         answer_workflow_copy=_to_answer_workflow_copy(answer_workflow_copy, root),
+        citation_label=str(payload.get("citation_label") or "Evidence"),
     )
 
 
@@ -243,7 +244,12 @@ def _to_answer_workflow_copy(
         strategy_icon_default=str(payload.get("strategy_icon_default") or ""),
         document_summary_template=str(payload.get("document_summary_template") or ""),
         document_summary_total_template=str(payload.get("document_summary_total_template") or ""),
-        unknown_recipe_name=str(payload.get("unknown_recipe_name") or ""),
+        unknown_recipe_name=str(
+            value.get("unknown_entity_name")
+            or value.get("unknown_recipe_name")
+            or payload.get("unknown_entity_name")
+            or ""
+        ),
         unknown_search_type=str(payload.get("unknown_search_type") or ""),
     )
 

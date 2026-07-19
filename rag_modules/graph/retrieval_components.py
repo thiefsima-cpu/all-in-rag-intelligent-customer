@@ -7,6 +7,7 @@ from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
 from ..contracts import QuerySemanticRuntimeSettings
+from ..domains import DomainPack, get_domain_pack
 from ..query_policy.models import QueryPolicyBundle
 from .cache_stats import GraphCacheStatsStore
 from .cache_warmup import GraphCacheWarmupService
@@ -70,6 +71,7 @@ class DefaultGraphRetrievalComponentFactory:
         policy_bundle: QueryPolicyBundle | None = None,
     ) -> GraphRetrievalComponents:
         del llm_client
+        domain_pack = get_domain_pack(config.domain.name)
         query_factory = GraphQueryFactory(
             semantic_settings=semantic_settings,
             policy_bundle=policy_bundle,
@@ -79,11 +81,28 @@ class DefaultGraphRetrievalComponentFactory:
             None,
             database=database_name,
             graph_settings=config.graph,
+            preferred_labels=domain_pack.ontology.primary_labels,
+            lookup_fields=domain_pack.ontology.entity_lookup_fields,
+            allowed_labels=domain_pack.ontology.primary_labels,
+            domain_name=domain_pack.name,
         )
         graph_plan_builder = GraphPlanBuilder(entity_linker)
-        graph_executor = GraphQueryExecutor(None, database=database_name)
+        graph_executor = GraphQueryExecutor(
+            None,
+            database=database_name,
+            domain_name=domain_pack.name,
+            primary_node_labels=domain_pack.ontology.primary_labels,
+            semantic_relation_types=tuple(
+                relation.name for relation in domain_pack.ontology.relation_types
+            ),
+            semantic_node_labels=(),
+            allowed_node_labels=domain_pack.ontology.node_labels,
+        )
         postprocessor = GraphRetrievalPostProcessor(
-            evidence_builder=GraphEvidenceBuilder(),
+            evidence_builder=GraphEvidenceBuilder(
+                domain_name=domain_pack.name,
+                primary_labels=domain_pack.ontology.primary_labels,
+            ),
             ranker=GraphDocumentRanker(config.graph),
         )
         reasoning_strategy = GraphReasoningStrategy(policy_bundle=policy_bundle)
@@ -93,8 +112,7 @@ class DefaultGraphRetrievalComponentFactory:
             postprocessor=postprocessor,
             reasoning_strategy=reasoning_strategy,
         )
-        graph_cache_stats_store = GraphCacheStatsStore(config)
-        cache_warmup = GraphCacheWarmupService(graph_cache_stats_store)
+        graph_cache_stats_store, cache_warmup = _cache_warmup_services(config, domain_pack)
         services = GraphRetrievalExecutorServices(
             config=config,
             runtime=runtime,
@@ -106,9 +124,7 @@ class DefaultGraphRetrievalComponentFactory:
             neo4j_manager=neo4j_manager,
             database_name=database_name,
         )
-        executor = GraphRetrievalExecutor(
-            services=services,
-        )
+        executor = GraphRetrievalExecutor(services=services)
         return GraphRetrievalComponents(
             query_factory=query_factory,
             runtime=runtime,
@@ -122,3 +138,15 @@ class DefaultGraphRetrievalComponentFactory:
             cache_warmup=cache_warmup,
             executor=executor,
         )
+
+
+def _cache_warmup_services(
+    config: GraphRAGConfig,
+    domain_pack: DomainPack,
+) -> tuple[GraphCacheStatsStore, GraphCacheWarmupService]:
+    store = GraphCacheStatsStore(config)
+    return store, GraphCacheWarmupService(
+        store,
+        domain_name=domain_pack.name,
+        allowed_node_labels=domain_pack.ontology.node_labels,
+    )

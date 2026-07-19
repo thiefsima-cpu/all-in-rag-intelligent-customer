@@ -64,6 +64,33 @@ class KnowledgeBaseStatsPresenterTests(unittest.TestCase):
         self.assertEqual(row_count, 7)
         self.assertEqual(stats_access.vector_stats_calls, 1)
 
+    def test_show_uses_domain_neutral_labels_for_customer_service(self) -> None:
+        stats_access = _FakeRuntimeStatsAccess()
+        presenter = KnowledgeBaseStatsPresenter(
+            runtime_stats_access=stats_access,
+            data_module=type(
+                "DataModule",
+                (),
+                {
+                    "get_statistics": lambda self: {
+                        "domain_name": "customer_service",
+                        "total_entities": 7,
+                        "total_documents": 7,
+                        "total_chunks": 7,
+                        "entity_types": {"Order": 1, "RefundPolicy": 2},
+                    }
+                },
+            )(),
+            index_module=type("IndexModule", (), {"stats": {"row_count": 7}})(),
+        )
+        messages: list[str] = []
+
+        presenter.show(messages.append)
+
+        self.assertTrue(any("Entities: 7" in message for message in messages))
+        self.assertTrue(any("Entity types: Order, RefundPolicy" in message for message in messages))
+        self.assertFalse(any("Recipes:" in message for message in messages))
+
 
 if __name__ == "__main__":
     unittest.main()

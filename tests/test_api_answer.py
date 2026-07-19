@@ -88,11 +88,15 @@ class ApiAnswerTests(unittest.TestCase):
             set(payload["grounding"]["evidence_documents"][0]),
             {
                 "content",
+                "entity_id",
+                "entity_name",
                 "recipe_name",
+                "entity_type",
                 "score",
                 "source",
                 "evidence_type",
                 "matched_terms",
+                "attributes",
             },
         )
         self.assertEqual(payload["diagnostics"]["overall_bucket"], "ok")
@@ -167,11 +171,15 @@ class ApiAnswerTests(unittest.TestCase):
             set(public_evidence_properties),
             {
                 "content",
+                "entity_id",
+                "entity_name",
                 "recipe_name",
+                "entity_type",
                 "score",
                 "source",
                 "evidence_type",
                 "matched_terms",
+                "attributes",
             },
         )
         public_diagnostics_properties = schema["components"]["schemas"][

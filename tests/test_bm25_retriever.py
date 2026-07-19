@@ -113,6 +113,8 @@ def test_build_and_search_order_positive_scores_and_normalize_metadata(monkeypat
     assert documents[0].metadata == {
         "recipe_name": "C",
         "parent_id": "c",
+        "entity_id": "c",
+        "entity_name": "C",
         "search_method": "bm25",
         "search_type": "bm25",
         "bm25_score": 0.9,

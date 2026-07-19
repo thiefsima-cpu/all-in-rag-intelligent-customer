@@ -29,7 +29,7 @@ class StrictPolicyModel(BaseModel):
 
 
 class DependencyMinimums(StrictPolicyModel):
-    neo4j_recipe_count: int = Field(ge=1)
+    neo4j_entity_count: int = Field(ge=1)
     milvus_entity_count: int = Field(ge=1)
 
 
@@ -40,9 +40,12 @@ class GateTimeouts(StrictPolicyModel):
 
 class LiveCasePolicy(StrictPolicyModel):
     case_id: str = Field(min_length=1)
+    evaluation_case_id: str = ""
     question: str = Field(min_length=1)
     allowed_strategies: list[str] = Field(min_length=1)
     required_sources: list[str] = Field(min_length=1)
+    expected_entity_ids: list[str] = Field(min_length=1)
+    must_include_facts: list[str] = Field(min_length=1)
     minimum_evidence_count: int = Field(ge=1)
     generation_required: bool
     timeout_seconds: float = Field(gt=0)
@@ -51,6 +54,13 @@ class LiveCasePolicy(StrictPolicyModel):
     @classmethod
     def reject_noncanonical_case_id(cls, value: str) -> str:
         return _canonical_policy_identifier(value, "case_id")
+
+    @field_validator("evaluation_case_id")
+    @classmethod
+    def reject_noncanonical_evaluation_case_id(cls, value: str) -> str:
+        if not value:
+            return value
+        return _canonical_policy_identifier(value, "evaluation_case_id")
 
     @field_validator("allowed_strategies", "required_sources")
     @classmethod
@@ -63,6 +73,32 @@ class LiveCasePolicy(StrictPolicyModel):
             seen_values.add(canonical_value)
         return values
 
+    @field_validator("expected_entity_ids")
+    @classmethod
+    def reject_invalid_expected_entity_ids(cls, values: list[str]) -> list[str]:
+        seen_values: set[str] = set()
+        for value in values:
+            canonical_value = _canonical_setting_identifier(value, "expected_entity_ids")
+            normalized_value = canonical_value.casefold()
+            if normalized_value in seen_values:
+                raise ValueError("Duplicate expected entity ID")
+            seen_values.add(normalized_value)
+        return values
+
+    @field_validator("must_include_facts")
+    @classmethod
+    def reject_invalid_required_facts(cls, values: list[str]) -> list[str]:
+        seen_values: set[str] = set()
+        for value in values:
+            normalized_value = str(value).strip()
+            if not normalized_value or len(normalized_value) > 128:
+                raise ValueError("Invalid required answer fact")
+            dedupe_key = normalized_value.casefold()
+            if dedupe_key in seen_values:
+                raise ValueError("Duplicate required answer fact")
+            seen_values.add(dedupe_key)
+        return values
+
 
 class IntegrationThresholds(StrictPolicyModel):
     maximum_fallback_rate: float = Field(ge=0, le=1)
@@ -73,10 +109,17 @@ class IntegrationThresholds(StrictPolicyModel):
 
 class IntegrationGatePolicy(StrictPolicyModel):
     schema_version: Literal[1]
+    domain_name: str
+    domain_evaluation_resource: str = ""
     dependency_minimums: DependencyMinimums
     timeouts: GateTimeouts
     thresholds: IntegrationThresholds
     live_cases: list[LiveCasePolicy] = Field(min_length=1)
+
+    @field_validator("domain_name")
+    @classmethod
+    def reject_noncanonical_domain_name(cls, value: str) -> str:
+        return _canonical_policy_identifier(value, "domain_name")
 
     @model_validator(mode="after")
     def reject_duplicate_case_ids(self) -> Self:
@@ -98,7 +141,46 @@ def load_integration_policy(path: str | Path = DEFAULT_POLICY_PATH) -> Integrati
     policy_path = Path(path)
     with policy_path.open("r", encoding="utf-8") as file:
         payload = json.load(file)
-    return IntegrationGatePolicy.model_validate(payload)
+    policy = IntegrationGatePolicy.model_validate(payload)
+    _validate_domain_evaluation_references(policy)
+    return policy
+
+
+def _validate_domain_evaluation_references(policy: IntegrationGatePolicy) -> None:
+    if not policy.domain_evaluation_resource:
+        return
+
+    from rag_modules.domains import get_domain_pack, load_domain_evaluation
+
+    pack = get_domain_pack(policy.domain_name)
+    if pack.evaluation_resource != policy.domain_evaluation_resource:
+        raise ValueError("Integration gate domain evaluation resource does not match DomainPack.")
+    evaluation = load_domain_evaluation(pack)
+    if str(evaluation.get("domain") or "") != policy.domain_name:
+        raise ValueError("Integration gate domain evaluation has the wrong domain.")
+    cases = {
+        str(item.get("case_id") or ""): item
+        for item in evaluation.get("cases") or []
+        if isinstance(item, dict)
+    }
+    for live_case in policy.live_cases:
+        if not live_case.evaluation_case_id:
+            raise ValueError("Integration gate live case is not bound to domain evaluation.")
+        evaluation_case = cases.get(live_case.evaluation_case_id)
+        if evaluation_case is None:
+            raise ValueError("Integration gate references an unknown domain evaluation case.")
+        relevant_entities = set((evaluation_case.get("relevant_entities") or {}).keys())
+        if not set(live_case.expected_entity_ids) <= relevant_entities:
+            raise ValueError("Integration gate entity expectations diverge from domain evaluation.")
+        required_facts = {
+            "".join(str(fact).casefold().split())
+            for fact in evaluation_case.get("must_include_facts") or []
+        }
+        live_facts = {
+            "".join(str(fact).casefold().split()) for fact in live_case.must_include_facts
+        }
+        if not live_facts <= required_facts:
+            raise ValueError("Integration gate fact expectations diverge from domain evaluation.")
 
 
 @dataclass(frozen=True)
@@ -112,6 +194,7 @@ class IntegrationGateSettings:
     milvus_host: str
     milvus_port: str
     milvus_collection_name: str
+    domain_name: str
 
     @classmethod
     def from_environ(cls, environment: Mapping[str, str] | None = None) -> IntegrationGateSettings:
@@ -141,6 +224,10 @@ class IntegrationGateSettings:
             milvus_collection_name=_canonical_setting_identifier(
                 _required_env(source, "MILVUS_COLLECTION_NAME"),
                 "MILVUS_COLLECTION_NAME",
+            ),
+            domain_name=_canonical_policy_identifier(
+                str(source.get("GRAPH_RAG_DOMAIN") or "customer_service").strip(),
+                "GRAPH_RAG_DOMAIN",
             ),
         )
 
@@ -303,6 +390,10 @@ class LiveCaseObservation:
     latency_ms: float
     total_tokens: int
     estimated_cost_usd: float
+    expected_entity_count: int = 0
+    matched_expected_entity_count: int = 0
+    expected_fact_count: int = 0
+    matched_expected_fact_count: int = 0
 
 
 @dataclass(frozen=True)

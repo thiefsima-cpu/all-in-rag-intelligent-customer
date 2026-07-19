@@ -28,8 +28,9 @@ from scripts.integration_gate.service import (
 def _policy_payload() -> dict[str, Any]:
     return {
         "schema_version": 1,
+        "domain_name": "customer_service",
         "dependency_minimums": {
-            "neo4j_recipe_count": 1,
+            "neo4j_entity_count": 1,
             "milvus_entity_count": 1,
         },
         "timeouts": {
@@ -44,10 +45,12 @@ def _policy_payload() -> dict[str, Any]:
         },
         "live_cases": [
             {
-                "case_id": "vector_recipe_lookup",
+                "case_id": "vector_customer_lookup",
                 "question": "宫保鸡丁怎么做？",
                 "allowed_strategies": ["hybrid_traditional", "combined"],
                 "required_sources": ["vector"],
+                "expected_entity_ids": ["CS-1001"],
+                "must_include_facts": ["已发货"],
                 "minimum_evidence_count": 1,
                 "generation_required": True,
                 "timeout_seconds": 60.0,
@@ -57,6 +60,8 @@ def _policy_payload() -> dict[str, Any]:
                 "question": "花生和辣椒之间是什么关系？",
                 "allowed_strategies": ["graph_rag", "combined"],
                 "required_sources": ["graph_rag"],
+                "expected_entity_ids": ["POL-REFUND-2026-07"],
+                "must_include_facts": ["2026.07"],
                 "minimum_evidence_count": 1,
                 "generation_required": True,
                 "timeout_seconds": 90.0,
@@ -66,6 +71,8 @@ def _policy_payload() -> dict[str, Any]:
                 "question": "推荐一道清淡豆腐菜，并解释食材、风味和减脂条件。",
                 "allowed_strategies": ["combined"],
                 "required_sources": ["vector", "graph_rag"],
+                "expected_entity_ids": ["POL-WARRANTY-A-2026"],
+                "must_include_facts": ["2 年"],
                 "minimum_evidence_count": 1,
                 "generation_required": True,
                 "timeout_seconds": 90.0,
@@ -95,13 +102,14 @@ def _required_environ() -> dict[str, str]:
         "MILVUS_HOST": "milvus.internal",
         "MILVUS_PORT": "19530",
         "MILVUS_COLLECTION_NAME": "cooking_knowledge",
+        "GRAPH_RAG_DOMAIN": "customer_service",
     }
 
 
 def _passing_probe_checks() -> tuple[GateCheckResult, ...]:
     return (
         GateCheckResult.pass_check(
-            "dependency.neo4j.recipe_count",
+            "dependency.neo4j.entity_count",
             code="NEO4J_READY",
             expected={"minimum": 1},
             actual=3,
@@ -136,6 +144,10 @@ def _observation(
         latency_ms=100.0,
         total_tokens=42,
         estimated_cost_usd=0.01,
+        expected_entity_count=1,
+        matched_expected_entity_count=1,
+        expected_fact_count=1,
+        matched_expected_fact_count=1,
     )
 
 
@@ -155,6 +167,8 @@ def _passing_case_result(case: LiveCasePolicy) -> LiveCaseRunResult:
             ("strategy", "STRATEGY_OK"),
             ("sources", "REQUIRED_SOURCES_OK"),
             ("evidence_count", "EVIDENCE_COUNT_OK"),
+            ("entity_coverage", "EXPECTED_ENTITY_COVERAGE_OK"),
+            ("answer_facts", "REQUIRED_ANSWER_FACTS_OK"),
             ("fallback", "FALLBACK_OK"),
             ("retrieval_degradation", "RETRIEVAL_DEGRADATION_OK"),
             ("model_usage", "MODEL_USAGE_OK"),
@@ -168,6 +182,18 @@ def _passing_case_result(case: LiveCasePolicy) -> LiveCaseRunResult:
     )
 
 
+def test_rejects_policy_and_runtime_domain_mismatch(tmp_path: Path) -> None:
+    environment = _required_environ()
+    environment["GRAPH_RAG_DOMAIN"] = "recipe"
+
+    with pytest.raises(IntegrationGateConfigurationError):
+        run_integration_gate(
+            policy_path=_write_policy(tmp_path),
+            output_dir=tmp_path / "reports",
+            environ=environment,
+        )
+
+
 def test_failed_probe_blocks_live_cases_without_calling_case_runner(tmp_path: Path) -> None:
     policy_path = _write_policy(tmp_path)
     case_runner = Mock()
@@ -175,7 +201,7 @@ def test_failed_probe_blocks_live_cases_without_calling_case_runner(tmp_path: Pa
     def probe_runner(**_kwargs: object) -> tuple[GateCheckResult, ...]:
         return (
             GateCheckResult.fail_check(
-                "dependency.neo4j.recipe_count",
+                "dependency.neo4j.entity_count",
                 failure_type=GateFailureType.DEPENDENCY_UNAVAILABLE,
                 code="NEO4J_UNAVAILABLE",
                 expected={"minimum": 1},
@@ -196,7 +222,7 @@ def test_failed_probe_blocks_live_cases_without_calling_case_runner(tmp_path: Pa
     blocked_checks = [check for check in report["checks"] if check["code"] == "PREREQUISITE_FAILED"]
 
     assert [check["name"] for check in blocked_checks] == [
-        "case.vector_recipe_lookup",
+        "case.vector_customer_lookup",
         "case.graph_relationship_reasoning",
         "case.combined_constrained_recommendation",
     ]
@@ -214,7 +240,7 @@ def test_failed_probe_blocks_live_cases_without_calling_case_runner(tmp_path: Pa
             "check_codes": ["PREREQUISITE_FAILED"],
         }
         for case_id in (
-            "vector_recipe_lookup",
+            "vector_customer_lookup",
             "graph_relationship_reasoning",
             "combined_constrained_recommendation",
         )
@@ -257,7 +283,7 @@ def test_successful_probes_run_every_case_even_after_case_failure(tmp_path: Path
     )
 
     assert called_case_ids == [
-        "vector_recipe_lookup",
+        "vector_customer_lookup",
         "graph_relationship_reasoning",
         "combined_constrained_recommendation",
     ]
@@ -318,7 +344,7 @@ def test_report_json_and_markdown_use_safe_allowlisted_fields(tmp_path: Path) ->
         "checks",
         "cases",
     } <= set(report)
-    assert "vector_recipe_lookup" in combined
+    assert "vector_customer_lookup" in combined
     assert "SERVING_API_REQUEST_FAILED" in combined
     assert "CustomerQuestionAlpha" not in combined
     assert "ProviderPayloadABC" not in combined
@@ -366,7 +392,7 @@ def test_passing_report_markdown_cases_section_lists_case_ids_and_codes(tmp_path
         "| case_id | executed | status | has_observation | evidence_count | latency_ms | "
         "total_tokens | estimated_cost_usd | check_codes |"
     ) in summary_text
-    assert "vector_recipe_lookup" in summary_text
+    assert "vector_customer_lookup" in summary_text
     assert "STRATEGY_OK" in summary_text
 
 
@@ -715,7 +741,7 @@ def test_building_safe_report_from_models_keeps_policy_question_out() -> None:
 
     policy = _policy_model()
     evaluation = GateCheckResult.fail_check(
-        "case.vector_recipe_lookup.request",
+        "case.vector_customer_lookup.request",
         failure_type=GateFailureType.DEPENDENCY_UNAVAILABLE,
         code="SERVING_API_REQUEST_FAILED",
         expected=True,
@@ -739,7 +765,7 @@ def test_building_safe_report_from_models_keeps_policy_question_out() -> None:
         )(),
         case_summaries=(
             IntegrationCaseSummary(
-                case_id="vector_recipe_lookup",
+                case_id="vector_customer_lookup",
                 executed=True,
                 status=GateCheckStatus.FAILED,
                 observation=None,

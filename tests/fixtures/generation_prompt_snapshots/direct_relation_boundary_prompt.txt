@@ -1,7 +1,7 @@
 你是一位专业的中式烹饪检索问答助手。请只根据下面的检索证据回答问题。
 检索证据：
 [菜谱证据 1]
-{"citation": "菜谱证据 1", "recipe_id": "recipe-4", "recipe_name": "宫保鸡丁", "confidence": 0.9, "retrieval_sources": ["unknown"], "matched_terms": ["花生", "辣椒", "风味"], "evidence_units": [{"claim": "花生补充香脆口感。", "type": "text", "relation_type": "", "entities": ["花生", "香脆口感"], "is_graph_evidence": false}, {"claim": "辣椒提供辣味和香气。", "type": "text", "relation_type": "", "entities": ["辣椒", "辣味", "香气"], "is_graph_evidence": false}]}
+{"citation": "菜谱证据 1", "entity_id": "recipe-4", "entity_name": "宫保鸡丁", "confidence": 0.9, "retrieval_sources": ["unknown"], "matched_terms": ["花生", "辣椒", "风味"], "evidence_units": [{"claim": "花生补充香脆口感。", "type": "text", "relation_type": "", "entities": ["花生", "香脆口感"], "is_graph_evidence": false}, {"claim": "辣椒提供辣味和香气。", "type": "text", "relation_type": "", "entities": ["辣椒", "辣味", "香气"], "is_graph_evidence": false}]}
 内容摘要:
 宫保鸡丁常用花生补充香脆口感，辣椒提供辣味和香气，但当前证据没有直接给出两者之间的图谱关系链。
 

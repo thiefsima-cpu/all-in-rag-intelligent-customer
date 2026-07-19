@@ -18,8 +18,9 @@ class _FakeResult:
 
 
 class _FakeSession:
-    def __init__(self, *, recipe_count: int) -> None:
+    def __init__(self, *, recipe_count: int, domain_entity_count: int = 0) -> None:
         self.recipe_count = recipe_count
+        self.domain_entity_count = domain_entity_count
         self.statements: list[str] = []
 
     def __enter__(self):
@@ -32,6 +33,8 @@ class _FakeSession:
         self.statements.append(statement)
         if "AS recipe_count" in statement:
             return _FakeResult({"recipe_count": self.recipe_count})
+        if "AS domain_entity_count" in statement:
+            return _FakeResult({"domain_entity_count": self.domain_entity_count})
         if "MATCH (n) RETURN count(n) AS c" in statement:
             return _FakeResult({"c": 12})
         if "MATCH ()-[r]->() RETURN count(r) AS c" in statement:
@@ -40,8 +43,11 @@ class _FakeSession:
 
 
 class _FakeDriver:
-    def __init__(self, *, recipe_count: int) -> None:
-        self.fake_session = _FakeSession(recipe_count=recipe_count)
+    def __init__(self, *, recipe_count: int, domain_entity_count: int = 0) -> None:
+        self.fake_session = _FakeSession(
+            recipe_count=recipe_count,
+            domain_entity_count=domain_entity_count,
+        )
         self.closed = False
 
     def session(self, *, database: str):
@@ -52,14 +58,15 @@ class _FakeDriver:
         self.closed = True
 
 
-def _config():
+def _config(domain_name: str = "recipe"):
     return SimpleNamespace(
+        domain=SimpleNamespace(name=domain_name),
         storage=SimpleNamespace(
             neo4j_uri="bolt://neo4j:7687",
             neo4j_user="neo4j",
             neo4j_password="password",
             neo4j_database="neo4j",
-        )
+        ),
     )
 
 
@@ -95,6 +102,36 @@ class ImportNeo4jTests(unittest.TestCase):
             any("LOAD CSV WITH HEADERS" in item for item in driver.fake_session.statements)
         )
         self.assertTrue(driver.closed)
+
+    def test_customer_service_domain_imports_customer_knowledge_seed(self) -> None:
+        driver = _FakeDriver(recipe_count=99, domain_entity_count=0)
+
+        imported = import_neo4j.import_graph(
+            _config("customer_service"),
+            only_if_empty=True,
+            driver_factory=lambda *args: driver,
+        )
+
+        self.assertTrue(imported)
+        self.assertTrue(
+            any("POL-REFUND-2026-07" in item for item in driver.fake_session.statements)
+        )
+        self.assertFalse(
+            any("LOAD CSV WITH HEADERS" in item for item in driver.fake_session.statements)
+        )
+
+    def test_customer_service_domain_skips_only_when_customer_data_exists(self) -> None:
+        driver = _FakeDriver(recipe_count=0, domain_entity_count=2)
+
+        imported = import_neo4j.import_graph(
+            _config("customer_service"),
+            only_if_empty=True,
+            driver_factory=lambda *args: driver,
+        )
+
+        self.assertFalse(imported)
+        self.assertEqual(1, len(driver.fake_session.statements))
+        self.assertIn("AS domain_entity_count", driver.fake_session.statements[0])
 
 
 if __name__ == "__main__":

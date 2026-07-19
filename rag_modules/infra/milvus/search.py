@@ -32,7 +32,9 @@ class _MilvusSearchOperations(MilvusOperationHost):
                 request.query,
                 timeout_seconds=control.remaining_seconds() if control is not None else None,
             )
-            filter_expr = _filter_expression(_metadata_filter(request.metadata))
+            metadata_filter = _metadata_filter(request.metadata)
+            metadata_filter["domain"] = self.domain_name
+            filter_expr = _filter_expression(metadata_filter)
             search_params = {"metric_type": "COSINE", "params": {"ef": search_ef}}
             search_kwargs: dict[str, object] = {
                 "collection_name": self.collection_name,
@@ -41,6 +43,11 @@ class _MilvusSearchOperations(MilvusOperationHost):
                 "limit": requested_k,
                 "output_fields": [
                     "text",
+                    "entity_id",
+                    "entity_name",
+                    "entity_type",
+                    "domain",
+                    "attributes",
                     "node_id",
                     "recipe_name",
                     "node_type",
@@ -62,7 +69,7 @@ class _MilvusSearchOperations(MilvusOperationHost):
             results = self.client.search(**search_kwargs)
             if control is not None:
                 control.raise_if_cancelled()
-            return _format_hits(results)
+            return _format_hits(results, default_domain=self.domain_name)
 
         except Exception as exc:
             log_failure(
@@ -100,28 +107,36 @@ def _filter_expression(filters: Mapping[str, JsonValue]) -> str:
     return " and ".join(filter_conditions)
 
 
-def _format_hits(results: object) -> list[JsonObject]:
+def _format_hits(results: object, *, default_domain: str = "recipe") -> list[JsonObject]:
     formatted_results: list[JsonObject] = []
     if not results:
         return formatted_results
     first_result = results[0] if isinstance(results, list) and results else []
     for hit in first_result:
         entity = hit["entity"]
+        entity_id = entity.get("entity_id") or entity.get("node_id") or ""
+        entity_name = entity.get("entity_name") or entity.get("recipe_name") or ""
+        entity_type = entity.get("entity_type") or entity.get("node_type") or ""
         formatted_results.append(
             {
                 "id": hit["id"],
                 "score": hit["distance"],
                 "text": entity["text"],
                 "metadata": {
-                    "node_id": entity["node_id"],
-                    "recipe_name": entity["recipe_name"],
-                    "node_type": entity["node_type"],
-                    "category": entity["category"],
-                    "cuisine_type": entity["cuisine_type"],
-                    "difficulty": entity["difficulty"],
-                    "doc_type": entity["doc_type"],
-                    "chunk_id": entity["chunk_id"],
-                    "parent_id": entity["parent_id"],
+                    "entity_id": entity_id,
+                    "entity_name": entity_name,
+                    "entity_type": entity_type,
+                    "domain": entity.get("domain") or default_domain,
+                    "attributes": entity.get("attributes") or {},
+                    "node_id": entity_id,
+                    "recipe_name": entity_name,
+                    "node_type": entity_type,
+                    "category": entity.get("category") or "",
+                    "cuisine_type": entity.get("cuisine_type") or "",
+                    "difficulty": entity.get("difficulty") or 0,
+                    "doc_type": entity.get("doc_type") or "",
+                    "chunk_id": entity.get("chunk_id") or "",
+                    "parent_id": entity.get("parent_id") or "",
                 },
             }
         )

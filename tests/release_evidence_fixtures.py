@@ -81,6 +81,7 @@ def _integration_report(policy_payload: dict[str, object]) -> dict[str, object]:
         milvus_host="milvus.example.com",
         milvus_port="19530",
         milvus_collection_name="cooking_knowledge",
+        domain_name="customer_service",
     )
     case = policy.live_cases[0]
     observation = LiveCaseObservation(
@@ -93,10 +94,14 @@ def _integration_report(policy_payload: dict[str, object]) -> dict[str, object]:
         latency_ms=1000.0,
         total_tokens=10,
         estimated_cost_usd=0.01,
+        expected_entity_count=1,
+        matched_expected_entity_count=1,
+        expected_fact_count=1,
+        matched_expected_fact_count=1,
     )
     probe_checks = (
         GateCheckResult.pass_check(
-            "dependency.neo4j.recipe_count",
+            "dependency.neo4j.entity_count",
             code="NEO4J_READY",
             expected={"minimum": 1},
             actual=323,
@@ -217,8 +222,9 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
         eval_dir / "integration_gate.json",
         {
             "schema_version": 1,
+            "domain_name": "customer_service",
             "dependency_minimums": {
-                "neo4j_recipe_count": 1,
+                "neo4j_entity_count": 1,
                 "milvus_entity_count": 1,
             },
             "timeouts": {"probe_seconds": 10.0, "request_seconds": 90.0},
@@ -230,10 +236,12 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
             },
             "live_cases": [
                 {
-                    "case_id": "vector_recipe_lookup",
+                    "case_id": "vector_customer_lookup",
                     "question": "How do I make mapo tofu?",
                     "allowed_strategies": ["hybrid_traditional"],
                     "required_sources": ["vector"],
+                    "expected_entity_ids": ["CS-1001"],
+                    "must_include_facts": ["已发货"],
                     "minimum_evidence_count": 1,
                     "generation_required": True,
                     "timeout_seconds": 60.0,
@@ -340,6 +348,7 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
         {
             "diagnostics": {
                 "mode": "serve",
+                "domain_name": "customer_service",
                 "llm_model": "qwen3.7-plus",
                 "embedding_model": "qwen3-vl-embedding",
                 "rerank_model": "qwen3-vl-rerank",

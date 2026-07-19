@@ -8,6 +8,7 @@ from .errors import ConfigErrorDetail, ConfigurationError
 from .loader import load_config
 from .models import (
     ApiSettings,
+    DomainSettings,
     GenerationSettings,
     GraphRAGConfig,
     GraphSettings,
@@ -45,6 +46,7 @@ __all__ = [
     "ConfigErrorDetail",
     "ConfigurationError",
     "ConfigProfile",
+    "DomainSettings",
     "GenerationSettings",
     "GraphRAGConfig",
     "GraphSettings",

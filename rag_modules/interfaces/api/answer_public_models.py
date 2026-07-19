@@ -13,6 +13,7 @@ from ...application.answering.answer_models import (
     QuestionAnswerSummary,
 )
 from ...contracts import EvidenceDocument
+from ...domains import CitationProjection, get_domain_pack
 from ...kernel.json_types import JsonObject, coerce_json_object
 from .answer_mappers import public_answer_error
 
@@ -72,21 +73,81 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str = ""
+    entity_id: str = ""
+    entity_name: str = ""
     recipe_name: str = ""
+    entity_type: str = ""
     score: float = 0.0
     source: str = "unknown"
     evidence_type: str = "text"
     matched_terms: list[str] = Field(default_factory=list)
+    attributes: JsonObject = Field(default_factory=dict)
+
+    @staticmethod
+    def _domain_projection(
+        *,
+        metadata: JsonObject,
+        legacy_recipe: bool = False,
+    ) -> tuple[str, CitationProjection | None]:
+        domain_name = str(metadata.get("domain") or "").strip()
+        if not domain_name and legacy_recipe:
+            domain_name = "recipe"
+        if not domain_name:
+            return "", None
+        try:
+            projection = get_domain_pack(domain_name).citation_projection
+        except ValueError:
+            return domain_name, None
+        return domain_name, projection
+
+    @classmethod
+    def _public_attributes(
+        cls,
+        *,
+        metadata: JsonObject,
+        fallback_attributes: JsonObject | None = None,
+        legacy_recipe: bool = False,
+    ) -> JsonObject:
+        _, projection = cls._domain_projection(
+            metadata=metadata,
+            legacy_recipe=legacy_recipe,
+        )
+        if projection is None:
+            return {}
+        nested_attributes = coerce_json_object(metadata.get("attributes"))
+        merged = {**nested_attributes, **dict(fallback_attributes or {}), **metadata}
+        return projection.project_attributes(merged)
 
     @classmethod
     def from_dto(cls, document: EvidenceDocument) -> "PublicEvidenceDocumentResponseModel":
+        metadata = coerce_json_object(document.metadata)
+        legacy_recipe = bool(
+            getattr(document, "_legacy_recipe_compat", False)
+            or document.entity_type.casefold() == "recipe"
+        )
+        domain_name, projection = cls._domain_projection(
+            metadata=metadata,
+            legacy_recipe=legacy_recipe,
+        )
+        expose_content = bool(getattr(projection, "expose_content", False))
+        expose_identity = bool(getattr(projection, "expose_entity_identity", False))
+        expose_matched_terms = bool(getattr(projection, "expose_matched_terms", False))
         return cls(
-            content=document.content,
-            recipe_name=document.recipe_name,
+            content=document.content if expose_content else "",
+            entity_id=document.entity_id if expose_identity else "",
+            entity_name=document.entity_name if expose_identity else "",
+            recipe_name=(
+                document.entity_name if domain_name == "recipe" and expose_identity else ""
+            ),
+            entity_type=document.entity_type,
             score=document.score,
             source=document.source,
             evidence_type=document.evidence_type,
-            matched_terms=list(document.matched_terms),
+            matched_terms=list(document.matched_terms) if expose_matched_terms else [],
+            attributes=cls._public_attributes(
+                metadata=metadata,
+                legacy_recipe=legacy_recipe,
+            ),
         )
 
     @classmethod
@@ -94,13 +155,35 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
         cls,
         document: EvidenceDocumentResponseModel,
     ) -> "PublicEvidenceDocumentResponseModel":
+        metadata = coerce_json_object(document.metadata)
+        legacy_recipe = bool(
+            document.entity_type.casefold() == "recipe"
+            or metadata.get("recipe_id")
+            or metadata.get("recipe_name")
+        )
+        domain_name, projection = cls._domain_projection(
+            metadata=metadata,
+            legacy_recipe=legacy_recipe,
+        )
+        expose_content = bool(getattr(projection, "expose_content", False))
+        expose_identity = bool(getattr(projection, "expose_entity_identity", False))
+        expose_matched_terms = bool(getattr(projection, "expose_matched_terms", False))
         return cls(
-            content=document.content,
-            recipe_name=document.recipe_name,
+            content=document.content if expose_content else "",
+            entity_id=document.entity_id if expose_identity else "",
+            entity_name=document.entity_name if expose_identity else "",
+            recipe_name=(
+                document.entity_name if domain_name == "recipe" and expose_identity else ""
+            ),
+            entity_type=document.entity_type,
             score=document.score,
             source=document.source,
             evidence_type=document.evidence_type,
-            matched_terms=list(document.matched_terms),
+            matched_terms=list(document.matched_terms) if expose_matched_terms else [],
+            attributes=cls._public_attributes(
+                metadata=metadata,
+                legacy_recipe=legacy_recipe,
+            ),
         )
 
 

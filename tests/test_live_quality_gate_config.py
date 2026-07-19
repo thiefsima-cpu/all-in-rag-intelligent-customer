@@ -286,6 +286,7 @@ def test_policy_models_expose_only_the_documented_fields() -> None:
         "expected_response_mode",
         "allowed_strategies",
         "required_sources",
+        "relevant_entities",
         "relevant_recipes",
         "must_include_facts",
         "must_not_claim",

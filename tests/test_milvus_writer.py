@@ -62,6 +62,7 @@ class _Client:
 class _Writer(_MilvusWriterOperations):
     def __init__(self) -> None:
         self.collection_name = "recipes"
+        self.domain_name = "recipe"
         self.build_collection_name = ""
         self.collection_created = True
         self.operations: list[str] = []
@@ -121,6 +122,19 @@ def test_build_vector_index_writes_sanitized_entities_to_explicit_collection() -
     assert writer.client.flushed == ["recipes__green"]
     assert writer.client.loaded == ["recipes__green"]
     sleep.assert_called_once_with(2)
+
+
+def test_vector_writer_enforces_runtime_domain_over_document_metadata() -> None:
+    writer = _Writer()
+    writer.domain_name = "customer_service"
+
+    entity = writer._vector_entity(
+        _chunk("order", domain="recipe", entity_id="CS-1001"),
+        [0.1],
+        0,
+    )
+
+    assert entity["domain"] == "customer_service"
 
 
 def test_build_vector_index_preserves_batch_entity_and_operation_order() -> None:

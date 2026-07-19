@@ -16,7 +16,8 @@ from rag_modules.kernel.documents import TextDocument
 
 
 class StubDataModule:
-    def __init__(self, *, variant: str = "default") -> None:
+    def __init__(self, *, variant: str = "default", domain_name: str = "recipe") -> None:
+        self.domain_name = domain_name
         description = "麻辣鲜香的经典川菜。" if variant == "default" else "清淡口味的改良版本。"
         self.recipes = [
             SimpleNamespace(
@@ -180,6 +181,19 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             self.assertIsNone(loaded)
             self.assertEqual(changed.documents, [])
             self.assertEqual(changed.chunks, [])
+
+    def test_cache_miss_when_domain_changes_with_same_graph_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = self._build_config(Path(tmp_dir))
+            cache = DocumentIndexCache(config)
+            original = StubDataModule(domain_name="recipe")
+            original.build_recipe_documents()
+            original.chunk_documents(chunk_size=128, chunk_overlap=16)
+            cache.save(original)
+
+            loaded = cache.load(StubDataModule(domain_name="customer_service"))
+
+            self.assertIsNone(loaded)
 
     def test_cache_miss_when_document_payload_is_tampered(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

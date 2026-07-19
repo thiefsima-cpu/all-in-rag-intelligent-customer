@@ -79,6 +79,8 @@ namespaces = true
   "resources/*/policy.json",
   "resources/*/prompts/*.txt",
 ]
+"rag_modules.domains.customer_service" = ["evaluation.json"]
+"rag_modules.domains.recipe" = ["evaluation.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

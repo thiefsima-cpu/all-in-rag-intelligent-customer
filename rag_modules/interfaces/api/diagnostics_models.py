@@ -61,6 +61,7 @@ class StartupDiagnosticsPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: str = ""
+    domain_name: str = ""
     llm_model: str = ""
     embedding_model: str = ""
     rerank_model: str = ""

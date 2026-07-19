@@ -49,7 +49,13 @@ def build_generation_runtime(
     settings = settings or GenerationSettings()
     resolved_base_url = str(base_url or DEFAULT_BASE_URL)
     resolved_evidence_max_chars = max(300, int(evidence_max_chars or 700))
-    evidence_builder = AnswerEvidenceBuilder(max_content_chars=resolved_evidence_max_chars)
+    citation_label = (
+        prompt_policy.generation.citation_label if prompt_policy is not None else "Evidence"
+    )
+    evidence_builder = AnswerEvidenceBuilder(
+        max_content_chars=resolved_evidence_max_chars,
+        citation_label=citation_label,
+    )
     client = (
         client_factory()
         if client_factory

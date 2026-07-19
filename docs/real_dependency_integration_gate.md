@@ -17,8 +17,8 @@ Before running the gate:
 - finish repository bootstrap and the build/bootstrap workflow;
 - confirm that the serving API is ready and that `/v1/health/ready` and
   `/v1/diagnostics` are reachable;
-- confirm that Neo4j and Milvus are reachable and contain the built recipe and
-  vector data;
+- confirm that Neo4j and Milvus are reachable and contain graph and vector data built for the
+  selected `DomainPack`;
 - configure a provider key on the API service, such as `DASHSCOPE_API_KEY`,
   `OPENAI_API_KEY`, or `MOONSHOT_API_KEY`;
 - configure non-zero, provider-accurate
@@ -30,7 +30,9 @@ Before running the gate:
   `INTEGRATION_GATE_API_TOKEN` when the API requires bearer authentication;
 - explicitly set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
   `NEO4J_DATABASE`, `MILVUS_HOST`, `MILVUS_PORT`, and
-  `MILVUS_COLLECTION_NAME` for the gate process.
+  `MILVUS_COLLECTION_NAME` for the gate process;
+- set `GRAPH_RAG_DOMAIN` to the policy domain. The gate rejects a policy/runtime mismatch and
+  verifies that the serving API reports the same domain through `/v1/diagnostics`.
 
 The provider key belongs to the API service. Do not pass a provider key to the
 gate process or place credentials in `eval/integration_gate.json`.
@@ -88,12 +90,11 @@ Reports contain stable check codes, aggregate metrics, case IDs, and sanitized
 host identities. They do not contain questions, prompts, raw responses, raw
 exceptions, credentials, authorization headers, or credential-bearing URLs.
 
-`required_sources` uses the public route-stage vocabulary. A combined request
-therefore proves participation with `traditional` and `graph_rag`; the
-traditional branch may internally fuse vector, BM25, and graph-derived
-candidates. A normal hybrid supplement after a non-empty graph result remains
-visible as a `hybrid_supplement` stage but is not counted as a fallback. Only a
-graph miss or execution/generation recovery contributes to the fallback rate.
+The policy declares a top-level `domain_name`. Every live case also declares
+`expected_entity_ids` and `must_include_facts`. A case passes only when the required retrieval
+sources participate, all expected entities appear in evidence, all required facts appear in the
+generated answer after width/case/whitespace normalization, and real model usage is recorded.
+Reports retain only safe counts and stable check codes, never the answer or evidence text.
 
 `required_sources` uses the public route-stage vocabulary. A combined request
 therefore proves participation with `traditional` and `graph_rag`; the

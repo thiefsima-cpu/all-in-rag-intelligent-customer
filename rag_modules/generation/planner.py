@@ -112,9 +112,14 @@ class GenerationPlanner:
     ) -> str:
         return str(getattr(self.rule_plan_policy, key))
 
-    def _fallback_claim(self, *, recipe_name: str, citation: str) -> str:
+    def _fallback_claim(self, *, entity_name: str, citation: str) -> str:
         template = self._rule_plan_text("fallback_claim_template")
-        return template.format(recipe_name=recipe_name or citation, citation=citation)
+        resolved_name = entity_name or citation
+        return template.format(
+            entity_name=resolved_name,
+            recipe_name=resolved_name,
+            citation=citation,
+        )
 
     def _build_rule_based_plan(
         self,
@@ -149,13 +154,13 @@ class GenerationPlanner:
                 graph_claim
                 or text_claim
                 or self._fallback_claim(
-                    recipe_name=item.recipe_name,
+                    entity_name=item.entity_name,
                     citation=item.citation,
                 )
             )
             key_points.append(
                 {
-                    "title": item.recipe_name or item.citation,
+                    "title": item.entity_name or item.citation,
                     "claim": claim,
                     "citations": [item.citation],
                     "use_graph_evidence": bool(graph_claim),

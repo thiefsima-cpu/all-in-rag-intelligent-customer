@@ -81,6 +81,10 @@ class EntityLinker:
         driver: Optional[Neo4jDriverPort],
         database: str = "neo4j",
         graph_settings: Optional[GraphSettings] = None,
+        preferred_labels: Iterable[str] | None = None,
+        lookup_fields: Iterable[str] | None = None,
+        allowed_labels: Iterable[str] | None = None,
+        domain_name: str = "recipe",
     ):
         self.driver = driver
         self.database = database
@@ -94,7 +98,20 @@ class EntityLinker:
         self.max_same_name_candidates = (
             int(graph_settings.entity_linker_max_same_name_candidates) if graph_settings else 2
         )
-        self.preferred_labels = list(DEFAULT_ENTITY_LINKER_PREFERRED_LABELS)
+        self.preferred_labels = list(preferred_labels or DEFAULT_ENTITY_LINKER_PREFERRED_LABELS)
+        self.lookup_fields = list(
+            dict.fromkeys(
+                str(field_name).strip()
+                for field_name in (lookup_fields or ("nodeId", "name", "title", "category"))
+                if str(field_name).strip()
+            )
+        )
+        self.allowed_labels = list(
+            dict.fromkeys(
+                str(label).strip() for label in (allowed_labels or ()) if str(label).strip()
+            )
+        )
+        self.domain_name = str(domain_name or "recipe")
         self.query_type_label_priorities = dict(
             graph_settings.entity_linker_query_type_label_priorities
             if graph_settings
@@ -129,23 +146,30 @@ class EntityLinker:
     def _lookup(self, text: str, context: Optional[EntityLinkContext] = None) -> List[LinkedEntity]:
         query = """
         MATCH (n)
-        WHERE n.nodeId = $text
-           OR toString(n.name) = $text
-           OR toString(n.name) CONTAINS $text
-           OR $text CONTAINS toString(n.name)
-           OR toString(n.category) CONTAINS $text
+        WHERE ($allowed_labels = [] OR any(label IN labels(n) WHERE label IN $allowed_labels))
+          AND (
+               n.domain = $domain_name
+               OR ($domain_name = 'recipe' AND n.domain IS NULL)
+          )
+          AND (
+               n.nodeId = $text
+               OR any(field IN $lookup_fields WHERE toString(n[field]) = $text)
+               OR any(field IN $lookup_fields WHERE toString(n[field]) CONTAINS $text)
+               OR any(field IN $lookup_fields WHERE $text CONTAINS toString(n[field]))
+          )
         WITH n,
              CASE
                WHEN n.nodeId = $text THEN 1.0
-               WHEN toString(n.name) = $text THEN 0.95
-               WHEN toString(n.name) CONTAINS $text THEN 0.78
-               WHEN $text CONTAINS toString(n.name) THEN 0.70
-               WHEN toString(n.category) CONTAINS $text THEN 0.55
+               WHEN any(field IN $lookup_fields WHERE toString(n[field]) = $text) THEN 0.95
+               WHEN any(field IN $lookup_fields WHERE toString(n[field]) CONTAINS $text)
+                 THEN 0.78
+               WHEN any(field IN $lookup_fields WHERE $text CONTAINS toString(n[field]))
+                 THEN 0.70
                ELSE 0.0
              END AS match_score,
              COUNT { (n)--() } AS degree
         RETURN n.nodeId AS node_id,
-               n.name AS name,
+               coalesce(n.name, n.title, n.nodeId) AS name,
                n.category AS category,
                labels(n) AS labels,
                match_score,
@@ -158,7 +182,14 @@ class EntityLinker:
             if driver is None:
                 return []
             with driver.session(database=self.database) as session:
-                records = session.run(query, text=text, limit=self.limit_per_entity)
+                records = session.run(
+                    query,
+                    text=text,
+                    limit=self.limit_per_entity,
+                    lookup_fields=self.lookup_fields,
+                    allowed_labels=self.allowed_labels,
+                    domain_name=self.domain_name,
+                )
                 candidates = [self._from_record(text, record) for record in records]
         except Exception as exc:
             log_failure(
@@ -247,8 +278,10 @@ class EntityLinker:
             else 0
         )
         label_rank = self._label_priority_rank(candidate.labels, context)
-        recipe_bonus = 1 if "Recipe" in candidate.labels else 0
-        return (exact_rank, label_rank, recipe_bonus, candidate.confidence)
+        preferred_label_bonus = (
+            1 if any(label in self.preferred_labels for label in candidate.labels) else 0
+        )
+        return (exact_rank, label_rank, preferred_label_bonus, candidate.confidence)
 
     def _label_priority_rank(self, labels: List[str], context: Optional[EntityLinkContext]) -> int:
         priority_scores = self._priority_scores(context)

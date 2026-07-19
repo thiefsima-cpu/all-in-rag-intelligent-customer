@@ -28,10 +28,15 @@ def test_default_policy_has_three_unique_dependency_covering_cases() -> None:
     policy = load_integration_policy(DEFAULT_POLICY_PATH)
 
     assert [case.case_id for case in policy.live_cases] == [
-        "vector_recipe_lookup",
+        "vector_customer_lookup",
         "graph_relationship_reasoning",
         "combined_constrained_recommendation",
     ]
+    assert policy.domain_name == "customer_service"
+    assert policy.domain_evaluation_resource == "evaluation.json"
+    assert all(case.evaluation_case_id for case in policy.live_cases)
+    assert all(case.expected_entity_ids for case in policy.live_cases)
+    assert all(case.must_include_facts for case in policy.live_cases)
     assert {source for case in policy.live_cases for source in case.required_sources} >= {
         "vector",
         "graph_rag",
@@ -68,6 +73,8 @@ def test_policy_rejects_duplicate_live_case_ids() -> None:
         (("live_cases", 0, "allowed_strategies"), ["combined", "bad strategy"]),
         (("live_cases", 0, "required_sources"), ["vector", "graph/rag"]),
         (("live_cases", 0, "allowed_strategies"), ["combined", "combined"]),
+        (("live_cases", 0, "expected_entity_ids"), ["CS-1001", "CS-1001"]),
+        (("live_cases", 0, "must_include_facts"), ["已发货", "已发货"]),
     ],
 )
 def test_policy_rejects_noncanonical_live_case_identifiers(
@@ -86,7 +93,7 @@ def test_policy_rejects_noncanonical_live_case_identifiers(
 @pytest.mark.parametrize(
     "path",
     [
-        ("dependency_minimums", "neo4j_recipe_count"),
+        ("dependency_minimums", "neo4j_entity_count"),
         ("dependency_minimums", "milvus_entity_count"),
         ("timeouts", "probe_seconds"),
         ("timeouts", "request_seconds"),
@@ -108,7 +115,7 @@ def test_policy_rejects_non_positive_timeouts_and_limits(path: tuple[str | int, 
 @pytest.mark.parametrize(
     ("path", "invalid_value"),
     [
-        (("dependency_minimums", "neo4j_recipe_count"), "1"),
+        (("dependency_minimums", "neo4j_entity_count"), "1"),
         (("live_cases", 0, "generation_required"), "true"),
         (("thresholds", "maximum_fallback_rate"), float("nan")),
     ],

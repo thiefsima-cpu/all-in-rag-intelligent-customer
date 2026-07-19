@@ -1,5 +1,5 @@
 """
-Semantic schema enrichment for recipes.
+Recipe-domain semantic schema enrichment.
 
 This stage derives stable semantic tags from recipe text and metadata so the
 graph can answer cuisine-style, ingredient-category, and health-constrained

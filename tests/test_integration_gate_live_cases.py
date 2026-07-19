@@ -97,6 +97,7 @@ def build_settings(*, api_token: str | None = "secret-token") -> IntegrationGate
         milvus_host="milvus.local",
         milvus_port="19530",
         milvus_collection_name="cooking_knowledge",
+        domain_name="customer_service",
     )
 
 
@@ -108,12 +109,16 @@ def build_case(
     minimum_evidence_count: int = 1,
     generation_required: bool = True,
     timeout_seconds: float = 90.0,
+    expected_entity_ids: list[str] | None = None,
+    must_include_facts: list[str] | None = None,
 ) -> LiveCasePolicy:
     return LiveCasePolicy(
         case_id=case_id,
         question="Recommend a light tofu dish and explain the constraints.",
         allowed_strategies=allowed_strategies or ["combined"],
         required_sources=required_sources or ["vector", "graph_rag"],
+        expected_entity_ids=expected_entity_ids or ["POL-REFUND-2026-07"],
+        must_include_facts=must_include_facts or ["7 天"],
         minimum_evidence_count=minimum_evidence_count,
         generation_required=generation_required,
         timeout_seconds=timeout_seconds,
@@ -128,7 +133,8 @@ def build_policy(
 ) -> IntegrationGatePolicy:
     return IntegrationGatePolicy(
         schema_version=1,
-        dependency_minimums=DependencyMinimums(neo4j_recipe_count=1, milvus_entity_count=1),
+        domain_name="customer_service",
+        dependency_minimums=DependencyMinimums(neo4j_entity_count=1, milvus_entity_count=1),
         timeouts=GateTimeouts(probe_seconds=10.0, request_seconds=request_timeout_seconds),
         thresholds=thresholds
         or IntegrationThresholds(
@@ -158,14 +164,17 @@ def answer_payload(
     summary_estimated_cost_usd: float = 0.02,
     generation_total_tokens: int = 120,
     generation_estimated_cost_usd: float = 0.03,
+    answer: str = "商品支持 7 天无理由退货。",
+    evidence_entity_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     evidence_sources = evidence_sources or ["vector", "graph_rag"]
     stage_sources = stage_sources or {"vector": 1, "graph_rag": 1, "combined": 1}
+    evidence_entity_ids = evidence_entity_ids or ["POL-REFUND-2026-07"] * len(evidence_sources)
 
     return {
         "response": {
             "summary": {
-                "answer": "Use tofu with a light sauce.",
+                "answer": answer,
                 "status": "success",
                 "strategy": summary_strategy,
                 "latency_ms": summary_latency_ms,
@@ -175,8 +184,12 @@ def answer_payload(
             },
             "grounding": {
                 "evidence_documents": [
-                    {"source": source, "content": f"evidence from {source}"}
-                    for source in evidence_sources
+                    {
+                        "source": source,
+                        "entity_id": entity_id,
+                        "content": f"evidence from {source}",
+                    }
+                    for source, entity_id in zip(evidence_sources, evidence_entity_ids, strict=True)
                 ]
             },
             "diagnostics": {
@@ -223,6 +236,10 @@ def build_observation(
     latency_ms: float = 1000.0,
     total_tokens: int = 120,
     estimated_cost_usd: float = 0.03,
+    expected_entity_count: int = 1,
+    matched_expected_entity_count: int = 1,
+    expected_fact_count: int = 1,
+    matched_expected_fact_count: int = 1,
 ) -> LiveCaseObservation:
     return LiveCaseObservation(
         case_id=case_id,
@@ -234,6 +251,10 @@ def build_observation(
         latency_ms=latency_ms,
         total_tokens=total_tokens,
         estimated_cost_usd=estimated_cost_usd,
+        expected_entity_count=expected_entity_count,
+        matched_expected_entity_count=matched_expected_entity_count,
+        expected_fact_count=expected_fact_count,
+        matched_expected_fact_count=matched_expected_fact_count,
     )
 
 
@@ -274,6 +295,8 @@ def test_normalize_live_case_observation_collects_strategy_sources_and_model_usa
     assert observation.evidence_count == 2
     assert observation.total_tokens == 120
     assert observation.estimated_cost_usd == 0.03
+    assert observation.matched_expected_entity_count == 1
+    assert observation.matched_expected_fact_count == 1
     assert observation.fallback_used is False
     assert observation.retrieval_degraded is False
 
@@ -435,6 +458,87 @@ def test_missing_required_source_is_quality_regression() -> None:
     assert source_check.code == "REQUIRED_SOURCE_MISSING"
     assert source_check.failure_type is GateFailureType.QUALITY_REGRESSION
     assert "REQUIRED_SOURCE_MISSING" in failed_codes(checks)
+
+
+def test_missing_expected_entity_or_answer_fact_is_quality_regression() -> None:
+    case = build_case()
+    observation = build_observation(
+        matched_expected_entity_count=0,
+        matched_expected_fact_count=0,
+    )
+
+    checks = checks_by_name(evaluate_live_case(case, observation))
+
+    assert checks["case.combined_constrained_recommendation.entity_coverage"].code == (
+        "EXPECTED_ENTITY_MISSING"
+    )
+    assert checks["case.combined_constrained_recommendation.answer_facts"].code == (
+        "REQUIRED_ANSWER_FACT_MISSING"
+    )
+    assert checks["case.combined_constrained_recommendation.entity_coverage"].actual == {
+        "expected_count": 1,
+        "matched_count": 0,
+    }
+
+
+def test_fact_matching_normalizes_case_width_and_whitespace() -> None:
+    case = build_case(
+        expected_entity_ids=["SKU-PHONE-A"],
+        must_include_facts=["7 天", "SKU-PHONE-A"],
+    )
+    response_model = AnswerResponseModel.model_validate(
+        answer_payload(
+            answer="商品 sku-phone-a 支持７天无理由退货。",
+            evidence_entity_ids=["SKU-PHONE-A", "OTHER"],
+        )
+    )
+
+    observation = normalize_live_case_observation(case, response_model)
+
+    assert observation.matched_expected_entity_count == 1
+    assert observation.expected_entity_count == 1
+    assert observation.matched_expected_fact_count == 2
+    assert observation.expected_fact_count == 2
+
+
+def test_fact_matching_normalizes_chinese_quantity_words() -> None:
+    case = build_case(must_include_facts=["7 天", "2 年"])
+    response_model = AnswerResponseModel.model_validate(
+        answer_payload(answer="该商品支持七天无理由退货，并提供两年保修。")
+    )
+
+    observation = normalize_live_case_observation(case, response_model)
+
+    assert observation.matched_expected_fact_count == 2
+    assert observation.expected_fact_count == 2
+
+
+def test_fact_matching_accepts_date_followed_by_a_time() -> None:
+    case = build_case(must_include_facts=["2026-07-17"])
+    response_model = AnswerResponseModel.model_validate(
+        answer_payload(answer="订单状态更新时间为 2026-07-17 16:20。")
+    )
+
+    observation = normalize_live_case_observation(case, response_model)
+
+    assert observation.matched_expected_fact_count == 1
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "该商品支持 17 天退货。",
+        "该商品不支持 7 天退货。",
+        "7 天退货对该商品不适用。",
+    ],
+)
+def test_fact_matching_rejects_numeric_substrings_and_negated_claims(answer: str) -> None:
+    case = build_case(must_include_facts=["7 天"])
+    response_model = AnswerResponseModel.model_validate(answer_payload(answer=answer))
+
+    observation = normalize_live_case_observation(case, response_model)
+
+    assert observation.matched_expected_fact_count == 0
 
 
 def test_missing_required_source_failure_redacts_unexpected_source_values() -> None:

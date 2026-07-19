@@ -1,5 +1,11 @@
 # Local development profile.
 
+[domain]
+name = "customer_service"
+
+[storage]
+milvus_collection_name = "customer_service_knowledge"
+
 [api]
 docs_enabled = true
 openapi_enabled = true

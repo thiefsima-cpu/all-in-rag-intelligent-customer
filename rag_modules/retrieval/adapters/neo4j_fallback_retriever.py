@@ -48,12 +48,87 @@ def _string_list(value: object) -> list[str]:
     return [str(item) for item in value if item]
 
 
+def _entity_query(domain_name: str) -> str:
+    if domain_name == "recipe":
+        return """
+        UNWIND $keywords AS keyword
+        CALL db.index.fulltext.queryNodes('recipe_fulltext_index', keyword + '*')
+        YIELD node, score
+        WHERE node:Recipe
+          AND (node.domain = 'recipe' OR node.domain IS NULL)
+        RETURN
+            node.nodeId AS node_id,
+            node.name AS name,
+            node.description AS description,
+            labels(node) AS labels,
+            score
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+    return """
+    UNWIND $keywords AS keyword
+    MATCH (node)
+    WHERE node.domain = $domain
+      AND any(value IN [node.nodeId, node.name, node.title, node.content]
+              WHERE value IS NOT NULL AND toString(value) CONTAINS keyword)
+    WITH node, max(CASE
+        WHEN node.nodeId = keyword THEN 1.0
+        WHEN coalesce(node.name, node.title) = keyword THEN 0.95
+        ELSE 0.7
+    END) AS score
+    RETURN
+        node.nodeId AS node_id,
+        coalesce(node.name, node.title, node.nodeId) AS name,
+        coalesce(node.description, node.content, '') AS description,
+        labels(node) AS labels,
+        score
+    ORDER BY score DESC
+    LIMIT $limit
+    """
+
+
+def _entity_document(record: _EntityRecord, domain_name: str) -> EvidenceDocument:
+    content_parts: list[str] = []
+    entity_label = "菜谱" if domain_name == "recipe" else "实体"
+    if record["name"]:
+        content_parts.append(f"{entity_label}: {record['name']}")
+    if record["description"]:
+        content_parts.append(f"描述: {record['description']}")
+    labels = _string_list(record.get("labels"))
+    entity_type = labels[0] if labels else "Entity"
+    return EvidenceDocument(
+        content="\n".join(content_parts),
+        entity_id=str(record["node_id"]),
+        entity_name=str(record["name"] or ""),
+        entity_type=entity_type,
+        node_id=str(record["node_id"]),
+        score=_coerce_float(record.get("score")) * 0.7,
+        search_type="graph_entity_fallback",
+        search_method="neo4j_fallback",
+        retrieval_level="entity",
+        source="neo4j_fallback",
+        metadata={
+            "domain": domain_name,
+            "name": record["name"],
+            "labels": labels,
+            "source": "neo4j_fallback",
+        },
+    )
+
+
 class Neo4jFallbackRetriever:
     """Run direct Neo4j fallback queries when in-memory graph indexes are sparse."""
 
-    def __init__(self, *, driver: Neo4jDriverPort | None, database: str) -> None:
+    def __init__(
+        self,
+        *,
+        driver: Neo4jDriverPort | None,
+        database: str,
+        domain_name: str = "recipe",
+    ) -> None:
         self.driver = driver
         self.database = database
+        self.domain_name = str(domain_name or "recipe")
 
     def entity_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
         if not keywords or limit <= 0 or self.driver is None:
@@ -62,48 +137,19 @@ class Neo4jFallbackRetriever:
         results: list[EvidenceDocument] = []
         try:
             with self.driver.session(database=self.database) as session:
-                cypher_query = """
-                UNWIND $keywords AS keyword
-                CALL db.index.fulltext.queryNodes('recipe_fulltext_index', keyword + '*')
-                YIELD node, score
-                WHERE node:Recipe
-                RETURN
-                    node.nodeId AS node_id,
-                    node.name AS name,
-                    node.description AS description,
-                    labels(node) AS labels,
-                    score
-                ORDER BY score DESC
-                LIMIT $limit
-                """
                 records = cast(
                     Iterable[_EntityRecord],
-                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
+                    session.run(
+                        _entity_query(self.domain_name),
+                        {
+                            "keywords": keywords,
+                            "limit": limit,
+                            "domain": self.domain_name,
+                        },
+                    ),
                 )
                 for record in records:
-                    content_parts = []
-                    if record["name"]:
-                        content_parts.append(f"菜谱: {record['name']}")
-                    if record["description"]:
-                        content_parts.append(f"描述: {record['description']}")
-                    results.append(
-                        EvidenceDocument(
-                            content="\n".join(content_parts),
-                            node_id=str(record["node_id"]),
-                            recipe_name=str(record["name"] or ""),
-                            node_type="Recipe",
-                            score=_coerce_float(record.get("score")) * 0.7,
-                            search_type="graph_entity_fallback",
-                            search_method="neo4j_fallback",
-                            retrieval_level="entity",
-                            source="neo4j_fallback",
-                            metadata={
-                                "name": record["name"],
-                                "labels": _string_list(record.get("labels")),
-                                "source": "neo4j_fallback",
-                            },
-                        )
-                    )
+                    results.append(_entity_document(record, self.domain_name))
         except Exception as exc:
             log_failure(
                 logger,
@@ -117,6 +163,8 @@ class Neo4jFallbackRetriever:
     def topic_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
         if not keywords or limit <= 0 or self.driver is None:
             return []
+        if self.domain_name != "recipe":
+            return self.entity_search(keywords, limit)
 
         results: list[EvidenceDocument] = []
         try:
@@ -124,9 +172,10 @@ class Neo4jFallbackRetriever:
                 cypher_query = """
                 UNWIND $keywords AS keyword
                 MATCH (r:Recipe)
-                WHERE r.category CONTAINS keyword
+                WHERE (r.domain = 'recipe' OR r.domain IS NULL)
+                  AND (r.category CONTAINS keyword
                    OR r.cuisineType CONTAINS keyword
-                   OR r.tags CONTAINS keyword
+                   OR r.tags CONTAINS keyword)
                 WITH r, keyword
                 OPTIONAL MATCH (r)-[:REQUIRES]->(i:Ingredient)
                 WITH r, keyword, collect(i.name)[0..3] AS ingredients

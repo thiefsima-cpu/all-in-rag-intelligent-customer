@@ -1,0 +1,98 @@
+{
+  "schema_version": "domain-evaluation-v1",
+  "domain": "customer_service",
+  "description": "Positive grounded customer-service cases plus abstention controls.",
+  "cases": [
+    {
+      "case_id": "vector_customer_lookup",
+      "query": "订单 CS-1001 现在是什么状态？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {"CS-1001": 3.0},
+      "must_include_facts": ["已发货", "2026-07-17"],
+      "evidence": [
+        {"entity_id": "CS-1001", "entity_name": "订单 CS-1001", "entity_type": "Order", "document_type": "order", "status": "已发货", "updated_at": "2026-07-17T16:20:00+08:00", "content": "订单 CS-1001 已发货，状态更新时间为 2026-07-17 16:20。"}
+      ]
+    },
+    {
+      "case_id": "refund_policy_grounded",
+      "query": "签收 5 天且商品未拆封，可以无理由退货吗？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {"POL-REFUND-2026-07": 3.0},
+      "must_include_facts": ["7 天", "未拆封", "2026-07-01"],
+      "evidence": [
+        {"entity_id": "POL-REFUND-2026-07", "entity_name": "七天无理由退货政策", "entity_type": "RefundPolicy", "document_type": "refund_policy", "policy_id": "POL-REFUND-2026-07", "version": "2026.07", "effective_from": "2026-07-01", "content": "自 2026-07-01 起，适用商品在签收后 7 天内且保持未拆封状态，可以申请无理由退货。"}
+      ]
+    },
+    {
+      "case_id": "warranty_term_grounded",
+      "query": "商品 SKU-PHONE-A 的保修期多久？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {"POL-WARRANTY-A-2026": 3.0},
+      "must_include_facts": ["2 年", "SKU-PHONE-A"],
+      "evidence": [
+        {"entity_id": "POL-WARRANTY-A-2026", "entity_name": "手机 A 保修政策", "entity_type": "WarrantyPolicy", "document_type": "warranty_policy", "policy_id": "POL-WARRANTY-A-2026", "product_sku": "SKU-PHONE-A", "effective_from": "2026-01-01", "content": "商品 SKU-PHONE-A 自购买日起享有 2 年有限保修。"}
+      ]
+    },
+    {
+      "case_id": "invoice_rule_grounded",
+      "query": "电子发票开出后还能改公司抬头吗？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {"POL-INVOICE-2026-03": 3.0},
+      "must_include_facts": ["先红冲", "重新开具"],
+      "evidence": [
+        {"entity_id": "POL-INVOICE-2026-03", "entity_name": "电子发票更正规则", "entity_type": "InvoicePolicy", "document_type": "invoice_policy", "policy_id": "POL-INVOICE-2026-03", "effective_from": "2026-03-15", "content": "电子发票开具后不能直接修改抬头；核验订单信息后，应先红冲原发票再重新开具。"}
+      ]
+    },
+    {
+      "case_id": "graph_relationship_reasoning",
+      "query": "退款政策 2026.06 和 2026.07 哪个版本当前有效？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {
+        "POL-REFUND-2026-07": 3.0,
+        "POL-REFUND-2026-06": 2.0
+      },
+      "must_include_facts": ["2026.07", "2026.06", "替代"],
+      "evidence": [
+        {"entity_id": "POL-REFUND-2026-07", "entity_name": "退款政策 2026.07", "entity_type": "RefundPolicy", "document_type": "refund_policy", "version": "2026.07", "effective_from": "2026-07-01", "supersedes": "POL-REFUND-2026-06", "content": "退款政策 2026.07 自 2026-07-01 生效，并替代 2026.06 版本。"}
+      ]
+    },
+    {
+      "case_id": "combined_constrained_recommendation",
+      "query": "商品 SKU-PHONE-A 是否支持七天无理由退货，保修期又是多久？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {
+        "POL-REFUND-2026-07": 3.0,
+        "POL-WARRANTY-A-2026": 3.0
+      },
+      "must_include_facts": ["7 天", "2 年"],
+      "evidence": [
+        {
+          "entity_id": "POL-REFUND-2026-07",
+          "entity_name": "七天无理由退货政策",
+          "entity_type": "RefundPolicy",
+          "document_type": "refund_policy",
+          "policy_id": "POL-REFUND-2026-07",
+          "product_sku": "SKU-PHONE-A",
+          "content": "商品 SKU-PHONE-A 签收后 7 天内且未拆封可以申请无理由退货。"
+        },
+        {
+          "entity_id": "POL-WARRANTY-A-2026",
+          "entity_name": "手机 A 保修政策",
+          "entity_type": "WarrantyPolicy",
+          "document_type": "warranty_policy",
+          "policy_id": "POL-WARRANTY-A-2026",
+          "product_sku": "SKU-PHONE-A",
+          "content": "商品 SKU-PHONE-A 自购买日起享有 2 年有限保修。"
+        }
+      ]
+    },
+    {
+      "case_id": "order_identifier_missing_control",
+      "query": "我昨天买的东西怎么还没到？",
+      "expected_response_mode": "clarification",
+      "relevant_entities": {},
+      "must_not_claim": ["订单已经发货"],
+      "evidence": []
+    }
+  ]
+}

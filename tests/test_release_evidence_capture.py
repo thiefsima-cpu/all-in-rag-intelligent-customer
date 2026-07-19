@@ -95,7 +95,7 @@ def _check_detail(
 
 def _integration_case_detail(*, status: str = "passed") -> dict[str, object]:
     return {
-        "case_id": "vector_recipe_lookup",
+        "case_id": "vector_customer_lookup",
         "executed": True,
         "status": status,
         "has_observation": True,
@@ -485,7 +485,7 @@ def test_capture_accepts_numeric_token_metric_at_producer_path(tmp_path: Path) -
     model_usage_check = next(
         check
         for check in report["checks"]
-        if check["name"] == "case.vector_recipe_lookup.model_usage"
+        if check["name"] == "case.vector_customer_lookup.model_usage"
     )
     model_usage_check["actual"] = 20
     _write_integration_report_and_summary(fixture, report)
@@ -507,7 +507,7 @@ def test_capture_rejects_invalid_token_metric_at_producer_path(
     model_usage_check = next(
         check
         for check in report["checks"]
-        if check["name"] == "case.vector_recipe_lookup.model_usage"
+        if check["name"] == "case.vector_customer_lookup.model_usage"
     )
     model_usage_check["actual"] = value
     fixture.integration_report.write_text(
@@ -1106,7 +1106,7 @@ def test_release_evidence_fixture_uses_real_gate_report_details(tmp_path: Path) 
     integration = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
     live_quality = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
 
-    assert len(integration["checks"]) == integration["metrics"]["check_count"] == 16
+    assert len(integration["checks"]) == integration["metrics"]["check_count"] == 18
     assert len(integration["cases"]) == integration["metrics"]["case_count"] == 1
     assert integration["cases"][0]["has_observation"] is True
     assert len(live_quality["checks"]) == 13
@@ -1321,7 +1321,7 @@ def test_capture_rejects_semantically_fabricated_integration_success(
     report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
     checks_by_name = {check["name"]: check for check in report["checks"]}
     case = report["cases"][0]
-    case_prefix = "case.vector_recipe_lookup"
+    case_prefix = "case.vector_customer_lookup"
     if tamper == "evidence_count":
         case["evidence_count"] = 0
         checks_by_name[f"{case_prefix}.evidence_count"]["actual"] = 0
@@ -1338,7 +1338,7 @@ def test_capture_rejects_semantically_fabricated_integration_success(
         report["metrics"]["total_estimated_cost_usd"] = 1.5
         checks_by_name["metrics.estimated_cost_usd"]["actual"] = 1.5
     elif tamper == "probe_actual":
-        checks_by_name["dependency.neo4j.recipe_count"]["actual"] = 0
+        checks_by_name["dependency.neo4j.entity_count"]["actual"] = 0
     elif tamper == "aggregate_actual":
         checks_by_name["metrics.global_vector_coverage"]["actual"] = False
     else:

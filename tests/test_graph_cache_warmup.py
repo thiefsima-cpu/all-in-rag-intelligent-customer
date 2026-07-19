@@ -106,8 +106,22 @@ def test_warm_rebuilds_stale_cache_with_paged_entities_and_relations() -> None:
     assert result.stats.relation_frequencies == {"USES": 2, "": 0}
     assert result.stats.page_size == 500
     assert store.saved == [result.stats]
-    assert driver.session_obj.calls[0][1] == {"after_node_id": "", "limit": 500}
-    assert driver.session_obj.calls[1][1] == {"after_node_id": "i1", "limit": 500}
+    expected_scope = {
+        "domain_name": "recipe",
+        "allowed_node_labels": ["Recipe", "Ingredient", "CookingStep", "Category"],
+    }
+    assert driver.session_obj.calls[0][1] == {
+        "after_node_id": "",
+        "limit": 500,
+        **expected_scope,
+    }
+    assert driver.session_obj.calls[1][1] == {
+        "after_node_id": "i1",
+        "limit": 500,
+        **expected_scope,
+    }
+    assert "n.domain = $domain_name" in driver.session_obj.calls[0][0]
+    assert "n.domain IS NULL" in driver.session_obj.calls[0][0]
 
 
 def test_warmup_coercion_helpers_cover_strings_sequences_and_invalid_values() -> None:
@@ -118,3 +132,32 @@ def test_warmup_coercion_helpers_cover_strings_sequences_and_invalid_values() ->
     assert _int_value(3.5) == 3
     assert _int_value("bad") == 0
     assert _int_value({"bad": True}) == 0
+
+
+def test_customer_service_warmup_rebuilds_and_filters_cache_by_domain() -> None:
+    cached = GraphCacheStats(
+        graph_signature="sig",
+        domain_name="recipe",
+        entities=[GraphCacheEntityStats(node_id="recipe-1")],
+    )
+    store = _Store(cached)
+    driver = _Driver()
+
+    result = GraphCacheWarmupService(store, domain_name="customer_service").warm(
+        driver,
+        database_name="neo4j",
+    )
+
+    assert result.stats.domain_name == "customer_service"
+    entity_query, entity_params = driver.session_obj.calls[0]
+    assert "n.domain = $domain_name" in entity_query
+    assert "neighbor.domain = $domain_name" in entity_query
+    assert entity_params == {
+        "after_node_id": "",
+        "limit": 500,
+        "domain_name": "customer_service",
+    }
+    relation_query, relation_params = driver.session_obj.calls[-1]
+    assert "source.domain = $domain_name" in relation_query
+    assert "target.domain = $domain_name" in relation_query
+    assert relation_params == {"domain_name": "customer_service"}

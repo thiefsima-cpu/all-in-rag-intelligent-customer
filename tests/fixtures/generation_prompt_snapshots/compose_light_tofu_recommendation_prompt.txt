@@ -33,10 +33,10 @@
 
 检索证据：
 [菜谱证据 1]
-{"citation": "菜谱证据 1", "recipe_id": "recipe-2", "recipe_name": "鲫鱼豆腐汤", "confidence": 0.91, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "清淡"], "evidence_units": [{"claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。", "type": "text", "relation_type": "", "entities": ["鲫鱼豆腐汤", "清淡"], "is_graph_evidence": false}]}
+{"citation": "菜谱证据 1", "entity_id": "recipe-2", "entity_name": "鲫鱼豆腐汤", "confidence": 0.91, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "清淡"], "evidence_units": [{"claim": "鲫鱼豆腐汤口味清淡，适合偏温和的家常场景。", "type": "text", "relation_type": "", "entities": ["鲫鱼豆腐汤", "清淡"], "is_graph_evidence": false}]}
 
 [菜谱证据 2]
-{"citation": "菜谱证据 2", "recipe_id": "recipe-3", "recipe_name": "家常豆腐", "confidence": 0.88, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "少油"], "evidence_units": [{"claim": "家常豆腐可以做成少油版本，风味相对克制。", "type": "text", "relation_type": "", "entities": ["家常豆腐", "少油"], "is_graph_evidence": false}]}
+{"citation": "菜谱证据 2", "entity_id": "recipe-3", "entity_name": "家常豆腐", "confidence": 0.88, "retrieval_sources": ["unknown"], "matched_terms": ["豆腐", "少油"], "evidence_units": [{"claim": "家常豆腐可以做成少油版本，风味相对克制。", "type": "text", "relation_type": "", "entities": ["家常豆腐", "少油"], "is_graph_evidence": false}]}
 
 回答要求：
 - 先直接回答用户问题，再展开解释。

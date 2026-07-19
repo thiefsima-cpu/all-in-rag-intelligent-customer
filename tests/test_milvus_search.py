@@ -40,6 +40,7 @@ class _Search(_MilvusSearchOperations):
     def __init__(self, results=None) -> None:
         self.collection_created = True
         self.collection_name = "recipes"
+        self.domain_name = "recipe"
         self.vector_search_max_k = 2
         self.vector_search_ef = 1
         self.embeddings = _Embeddings()
@@ -93,7 +94,9 @@ def test_similarity_search_caps_k_filters_metadata_and_formats_hits() -> None:
     assert result["metadata"]["node_id"] == "r1"
     assert search.client.calls[0]["limit"] == 2
     assert search.client.calls[0]["search_params"]["params"]["ef"] == 2
-    assert search.client.calls[0]["filter"] == 'category == "main" and difficulty == 2'
+    assert search.client.calls[0]["filter"] == (
+        'category == "main" and difficulty == 2 and domain == "recipe"'
+    )
     assert search.client.calls[0]["timeout"] == 3.0
     assert control.checks == 3
 
@@ -126,11 +129,26 @@ def test_filter_helpers_handle_alias_lists_numbers_and_invalid_payloads() -> Non
     assert _format_hits(None) == []
 
 
-def test_similarity_search_omits_filter_and_timeout_without_control() -> None:
+def test_similarity_search_always_filters_domain_and_omits_timeout_without_control() -> None:
     search = _Search([[_hit()]])
 
     [result] = search.similarity_search(RetrievalRequest.from_inputs(query="tofu", candidate_k=1))
 
     assert result["id"] == "c1"
-    assert "filter" not in search.client.calls[0]
+    assert search.client.calls[0]["filter"] == 'domain == "recipe"'
     assert "timeout" not in search.client.calls[0]
+
+
+def test_customer_similarity_search_enforces_domain_filter() -> None:
+    search = _Search([[_hit()]])
+    search.domain_name = "customer_service"
+    request = RetrievalRequest.from_inputs(
+        query="order",
+        metadata={"milvus_filter": {"domain": "recipe", "doc_type": "order"}},
+    )
+
+    search.similarity_search(request)
+
+    assert search.client.calls[0]["filter"] == (
+        'domain == "customer_service" and doc_type == "order"'
+    )

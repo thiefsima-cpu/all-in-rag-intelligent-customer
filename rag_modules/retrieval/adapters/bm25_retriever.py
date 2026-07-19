@@ -101,10 +101,22 @@ class BM25Retriever:
                 continue
             src = self.corpus_docs[idx]
             metadata = dict(src.metadata or {})
-            recipe_name = str(metadata.get("recipe_name") or metadata.get("name") or "")
+            entity_name = str(
+                metadata.get("entity_name")
+                or metadata.get("recipe_name")
+                or metadata.get("name")
+                or ""
+            )
+            entity_id = str(
+                metadata.get("entity_id")
+                or metadata.get("recipe_id")
+                or metadata.get("node_id")
+                or metadata.get("parent_id")
+                or ""
+            )
+            entity_type = str(metadata.get("entity_type") or metadata.get("node_type") or "")
             metadata.update(
                 {
-                    "recipe_name": recipe_name,
                     "search_method": "bm25",
                     "search_type": "bm25",
                     "bm25_score": score,
@@ -112,23 +124,30 @@ class BM25Retriever:
                     "source": "bm25",
                 }
             )
+            if entity_id:
+                metadata["entity_id"] = entity_id
+            if entity_name:
+                metadata["entity_name"] = entity_name
+            if entity_type:
+                metadata["entity_type"] = entity_type
             docs.append(
                 EvidenceDocument(
                     content=src.content,
+                    entity_id=entity_id,
+                    entity_name=entity_name,
+                    entity_type=entity_type,
                     node_id=str(
                         metadata.get("node_id")
                         or metadata.get("parent_id")
                         or metadata.get("recipe_id")
                         or ""
                     ),
-                    recipe_name=recipe_name,
-                    node_type=str(metadata.get("node_type") or metadata.get("entity_type") or ""),
+                    node_type=entity_type,
                     score=score,
                     search_type="bm25",
                     search_method="bm25",
                     retrieval_level=str(metadata.get("retrieval_level") or "chunk"),
                     doc_id=str(metadata.get("doc_id") or ""),
-                    recipe_id=str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
                     source="bm25",
                     metadata=metadata,
                 )

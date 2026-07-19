@@ -82,6 +82,12 @@ def _best_key_score(query_term: str, keys: Sequence[str]) -> float:
     return max((_match_score(query_term, key) for key in keys or []), default=0.0)
 
 
+def _entry_domain(metadata: Mapping[str, object]) -> str:
+    properties = metadata.get("properties")
+    nested_domain = properties.get("domain") if isinstance(properties, Mapping) else ""
+    return str(metadata.get("domain") or nested_domain or "").strip()
+
+
 class GraphKVRetriever:
     """Two-tier retrieval over the in-memory graph key-value index."""
 
@@ -118,9 +124,10 @@ class GraphKVRetriever:
                     ),
                     4,
                 )
+                domain_name = _entry_domain(entity.metadata)
                 metadata = {
                     "node_id": entity.metadata.get("node_id", ""),
-                    "recipe_name": entity.entity_name if entity.entity_type == "Recipe" else "",
+                    "domain": domain_name,
                     "entity_name": entity.entity_name,
                     "entity_type": entity.entity_type,
                     "index_keys": entity.index_keys,
@@ -132,17 +139,20 @@ class GraphKVRetriever:
                     "matched_keyword": keyword,
                     "source": "graph_entity",
                 }
+                if domain_name == "recipe":
+                    metadata["recipe_name"] = entity.entity_name
                 docs.append(
                     EvidenceDocument(
                         content=entity.value_content,
                         node_id=str(entity.metadata.get("node_id", "")),
-                        recipe_name=str(metadata.get("recipe_name") or ""),
                         node_type=entity.entity_type,
                         score=score,
                         search_type="graph_entity",
                         search_method="graph_entity",
                         retrieval_level="entity",
-                        recipe_id=str(entity.metadata.get("node_id", "")),
+                        entity_id=str(entity.metadata.get("node_id", "")),
+                        entity_name=entity.entity_name,
+                        entity_type=entity.entity_type,
                         source="graph_entity",
                         matched_terms=[keyword],
                         metadata=metadata,
@@ -173,11 +183,12 @@ class GraphKVRetriever:
                     continue
 
                 score = round(min(best_key_score * 0.5 + _richness_factor(relation) + 0.1, 1.0), 4)
+                domain_name = _entry_domain(relation.metadata)
                 metadata = {
                     "source_entity": relation.source_entity,
                     "target_entity": relation.target_entity,
                     "relation_type": relation.relation_type,
-                    "recipe_name": relation.metadata.get("source_name", ""),
+                    "domain": domain_name,
                     "relevance_score": score,
                     "score": score,
                     "retrieval_level": "topic",
@@ -188,17 +199,20 @@ class GraphKVRetriever:
                     "target_name": relation.metadata.get("target_name", ""),
                     "source": "graph_topic",
                 }
+                if domain_name == "recipe":
+                    metadata["recipe_name"] = relation.metadata.get("source_name", "")
                 docs.append(
                     EvidenceDocument(
                         content=relation.value_content,
                         node_id=str(relation.source_entity or ""),
-                        recipe_name=str(relation.metadata.get("source_name", "") or ""),
                         node_type="Relation",
                         score=score,
                         search_type="graph_topic",
                         search_method="graph_topic",
                         retrieval_level="topic",
-                        recipe_id=str(relation.source_entity or ""),
+                        entity_id=str(relation.source_entity or ""),
+                        entity_name=str(relation.metadata.get("source_name", "") or ""),
+                        entity_type="Relation",
                         source="graph_topic",
                         matched_terms=[keyword],
                         metadata=metadata,

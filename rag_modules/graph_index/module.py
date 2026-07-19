@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from ..query_policy.models import QueryPolicyBundle
 from .entity_index_builder import EntityIndexBuilder
 from .models import EntityKeyValue, RelationKeyValue
 from .relation_index_builder import RelationIndexBuilder
@@ -22,6 +23,7 @@ class GraphIndexingModule:
         store: GraphIndexStore | None = None,
         entity_builder: EntityIndexBuilder | None = None,
         relation_builder: RelationIndexBuilder | None = None,
+        policy_bundle: QueryPolicyBundle | None = None,
     ) -> None:
         self.config = config
         self.llm_client = llm_client
@@ -30,6 +32,7 @@ class GraphIndexingModule:
         self.relation_builder = relation_builder or RelationIndexBuilder(
             config=config,
             llm_client=llm_client,
+            policy_bundle=policy_bundle,
         )
 
     @property
@@ -74,6 +77,15 @@ class GraphIndexingModule:
             recipes=recipes,
             ingredients=ingredients,
             cooking_steps=cooking_steps,
+            store=self.store,
+        )
+
+    def create_domain_entity_key_values(
+        self,
+        entities: List[Any],
+    ) -> Dict[str, EntityKeyValue]:
+        return self.entity_builder.build_domain_entities(
+            entities=entities,
             store=self.store,
         )
 

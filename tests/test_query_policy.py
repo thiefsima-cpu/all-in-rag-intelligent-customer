@@ -602,6 +602,53 @@ def test_policy_loader_rejects_missing_prompt_variable(tmp_path: Path) -> None:
         load_policy_bundle(tmp_path)
 
 
+def test_policy_loader_rejects_pairwise_regex_without_two_capture_groups(
+    tmp_path: Path,
+) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["lexicon"]["regex_rules"]["pairwise_entity_patterns"] = [
+        "(?:订单|政策)\\s*([A-Za-z0-9_.-]+)"
+    ]
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="exactly two capture groups"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_entity_reference_regex_without_one_capture_group(
+    tmp_path: Path,
+) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["lexicon"]["regex_rules"]["entity_reference_patterns"] = ["(order)\\s*([A-Za-z0-9-]+)"]
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="exactly one capture group"):
+        load_policy_bundle(tmp_path)
+
+
+def test_policy_loader_rejects_unknown_domain_strategy_rule(tmp_path: Path) -> None:
+    from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
+
+    _write_bundle(tmp_path)
+    policy_path = tmp_path / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["routing"]["strategy_rules"] = [
+        {"strategy": "unknown", "relation_types_any": ["CONTRIBUTES_TO"]}
+    ]
+    policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PolicyLoadError, match="Routing strategy rule is invalid"):
+        load_policy_bundle(tmp_path)
+
+
 def test_policy_loader_rejects_legacy_generation_policy(tmp_path: Path) -> None:
     from rag_modules.query_policy.loader import PolicyLoadError, load_policy_bundle
 

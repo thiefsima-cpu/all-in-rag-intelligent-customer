@@ -32,9 +32,13 @@ class DualLevelRetriever:
         self.evidence_service = evidence_service or DualLevelEvidenceService(
             graph_indexing=graph_indexing
         )
+        config = getattr(graph_indexing, "config", None)
+        domain = getattr(config, "domain", None)
+        domain_name = str(getattr(domain, "name", "recipe") or "recipe")
         self.fallback_retriever = fallback_retriever or Neo4jFallbackRetriever(
             driver=driver,
             database=database,
+            domain_name=domain_name,
         )
 
     def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:

@@ -5,9 +5,14 @@ from __future__ import annotations
 from typing import cast
 
 from ...build_pipeline.document_artifacts import DocumentIndexCache
-from ...build_pipeline.graph_preparation import GraphDataPreparationModule
+from ...build_pipeline.graph_preparation import (
+    DomainDocumentBuilder,
+    DomainGraphDataLoader,
+    GraphDataPreparationModule,
+)
 from ...build_pipeline.ports import Neo4jDriverPort as BuildPipelineNeo4jDriverPort
 from ...configuration.models import GraphRAGConfig
+from ...domains import get_domain_pack
 from ...infra.milvus import MilvusIndexConstructionModule
 from ...infra.neo4j import Neo4jConnectionManager
 from ...infra.providers.dashscope import DashScopeEmbeddingClient
@@ -76,12 +81,24 @@ class _DefaultInfrastructureProvider:
         if existing is not None:
             return existing
         storage = config.storage
+        domain_pack = get_domain_pack(config.domain.name)
+        domain_loader = None
+        domain_document_builder = None
+        if domain_pack.name != "recipe":
+            domain_loader = DomainGraphDataLoader(
+                domain_pack.ontology,
+                domain_name=domain_pack.name,
+            )
+            domain_document_builder = DomainDocumentBuilder(domain_pack.document_mapper)
         return GraphDataPreparationModule(
             uri=storage.neo4j_uri,
             user=storage.neo4j_user,
             password=storage.neo4j_password,
             database=storage.neo4j_database,
             driver=cast(BuildPipelineNeo4jDriverPort, neo4j_manager.driver),
+            loader=domain_loader,
+            document_builder=domain_document_builder,
+            domain_name=domain_pack.name,
         )
 
     def provide_index_module(
@@ -110,6 +127,7 @@ class _DefaultInfrastructureProvider:
             host=storage.milvus_host,
             port=storage.milvus_port,
             collection_name=storage.milvus_collection_name,
+            domain_name=config.domain.name,
             dimension=storage.milvus_dimension,
             vector_search_ef=retrieval.vector_search_ef,
             vector_search_max_k=retrieval.vector_search_max_k,

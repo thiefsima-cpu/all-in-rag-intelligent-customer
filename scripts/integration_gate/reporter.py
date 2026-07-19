@@ -31,6 +31,8 @@ _SAFE_EVIDENCE_KEY_SETS = frozenset(
         frozenset({"generation_required", "minimum_tokens"}),
         frozenset({"minimum_observations"}),
         frozenset({"observation_count"}),
+        frozenset({"complete"}),
+        frozenset({"expected_count", "matched_count"}),
     }
 )
 _ARTIFACT_IDENTITIES = {

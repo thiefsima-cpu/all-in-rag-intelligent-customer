@@ -1,5 +1,11 @@
 # Fast regression profile for frequent retrieval checks.
 
+[domain]
+name = "customer_service"
+
+[storage]
+milvus_collection_name = "customer_service_knowledge"
+
 [retrieval]
 top_k = 3
 vector_search_ef = 64

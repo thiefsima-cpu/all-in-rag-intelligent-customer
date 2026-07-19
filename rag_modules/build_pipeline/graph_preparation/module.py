@@ -11,6 +11,7 @@ from ...kernel.documents import TextDocument
 from ..ports import Neo4jDriverPort
 from .chunker import RecipeDocumentChunker
 from .document_builder import RecipeDocumentBuilder
+from .domain_loader import DomainDocumentBuilder, DomainGraphDataLoader
 from .loader import Neo4jGraphDataLoader
 from .models import PreparedIngredientInput, PreparedStepInput
 from .state import GraphPreparationState
@@ -31,17 +32,21 @@ class GraphDataPreparationModule:
         *,
         driver: Neo4jDriverPort | None = None,
         state: GraphPreparationState | None = None,
-        loader: Neo4jGraphDataLoader | None = None,
-        document_builder: RecipeDocumentBuilder | None = None,
+        loader: Neo4jGraphDataLoader | DomainGraphDataLoader | None = None,
+        document_builder: RecipeDocumentBuilder | DomainDocumentBuilder | None = None,
         chunker: RecipeDocumentChunker | None = None,
         statistics_service: GraphPreparationStatisticsService | None = None,
+        domain_name: str = "recipe",
     ) -> None:
         self.database = database
+        self.domain_name = str(domain_name or "recipe")
         self.state = state or GraphPreparationState()
         self.loader = loader or Neo4jGraphDataLoader()
         self.document_builder = document_builder or RecipeDocumentBuilder()
         self.chunker = chunker or RecipeDocumentChunker()
-        self.statistics_service = statistics_service or GraphPreparationStatisticsService()
+        self.statistics_service = statistics_service or GraphPreparationStatisticsService(
+            domain_name=self.domain_name
+        )
         self._owns_driver = False
 
         if driver is not None:
@@ -59,6 +64,14 @@ class GraphDataPreparationModule:
 
     @recipes.setter
     def recipes(self, value: list[GraphNode]) -> None:
+        self.state.recipes = list(value or [])
+
+    @property
+    def entities(self) -> list[GraphNode]:
+        return self.state.recipes
+
+    @entities.setter
+    def entities(self, value: list[GraphNode]) -> None:
         self.state.recipes = list(value or [])
 
     @property
@@ -101,7 +114,7 @@ class GraphDataPreparationModule:
             logger.info("Neo4j connection closed.")
 
     def load_graph_data(self) -> GraphLoadCounts:
-        """Load recipes, ingredients, and cooking steps from Neo4j."""
+        """Load entities declared by the selected domain from Neo4j."""
 
         loaded = self.loader.load(self.driver, database=self.database)
         self.recipes = loaded.recipes
@@ -109,18 +122,23 @@ class GraphDataPreparationModule:
         self.cooking_steps = loaded.cooking_steps
         return loaded.to_counts()
 
-    def build_recipe_documents(self) -> list[TextDocument]:
-        """Build recipe documents with semantic tags in batch mode."""
+    def build_documents(self) -> list[TextDocument]:
+        """Build domain documents with semantic metadata in batch mode."""
 
-        logger.info("Building recipe documents in batch mode...")
+        logger.info("Building %s documents in batch mode...", self.domain_name)
         documents = self.document_builder.build(
             driver=self.driver,
             database=self.database,
             recipes=self.recipes,
         )
         self.documents = documents
-        logger.info("Built %d recipe documents.", len(documents))
+        logger.info("Built %d %s documents.", len(documents), self.domain_name)
         return documents
+
+    def build_recipe_documents(self) -> list[TextDocument]:
+        """Compatibility alias for the retired recipe-specific build port."""
+
+        return self.build_documents()
 
     def _build_recipe_document(
         self,
@@ -129,22 +147,23 @@ class GraphDataPreparationModule:
         ingredients: list[PreparedIngredientInput],
         steps: list[PreparedStepInput],
     ) -> TextDocument:
-        return self.document_builder.build_document(
+        recipe_builder = cast(RecipeDocumentBuilder, self.document_builder)
+        return recipe_builder.build_document(
             recipe=recipe,
             ingredients=ingredients,
             steps=steps,
         )
 
     def chunk_documents(self, chunk_size: int = 500, chunk_overlap: int = 50) -> list[TextDocument]:
-        """Split recipe documents into retrieval chunks."""
+        """Split domain documents into retrieval chunks."""
 
         logger.info(
-            "Chunking recipe documents with chunk_size=%d chunk_overlap=%d",
+            "Chunking domain documents with chunk_size=%d chunk_overlap=%d",
             chunk_size,
             chunk_overlap,
         )
         if not self.documents:
-            raise ValueError("Build recipe documents before chunking.")
+            raise ValueError("Build domain documents before chunking.")
 
         chunks = self.chunker.chunk(
             self.documents,
