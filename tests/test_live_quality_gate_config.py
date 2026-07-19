@@ -164,6 +164,26 @@ def test_default_policy_path_points_to_eval_live_quality_gate() -> None:
     assert DEFAULT_POLICY_PATH == Path(__file__).parents[1] / "eval" / "live_quality_gate.json"
 
 
+def test_default_policy_enforces_interactive_slo_and_customer_grounding() -> None:
+    gate_policy = load_live_quality_policy()
+    customer_grounded = [
+        case
+        for case in gate_policy.cases
+        if case.cuisine == "customer_service"
+        and case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER
+    ]
+
+    assert gate_policy.schema_version == 2
+    assert len(gate_policy.cases) == 52
+    assert len(customer_grounded) == 5
+    assert gate_policy.thresholds.minimum_rerank_observation_count == 1
+    assert gate_policy.thresholds.maximum_p95_ttft_ms == 5000.0
+    assert gate_policy.thresholds.maximum_p95_retrieval_latency_ms == 3000.0
+    assert gate_policy.thresholds.maximum_p95_rerank_latency_ms == 2000.0
+    assert gate_policy.thresholds.maximum_p95_generation_latency_ms == 20000.0
+    assert gate_policy.thresholds.maximum_p95_latency_ms == 25000.0
+
+
 def test_default_live_quality_policy_has_required_seed_coverage() -> None:
     payload = json.loads(DEFAULT_POLICY_PATH.read_text(encoding="utf-8"))
     cases = [LiveQualityCasePolicy.model_validate(case) for case in payload["cases"]]

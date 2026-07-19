@@ -56,7 +56,9 @@ single-maintainer repository. All three branches block deletion and non-fast-for
    mode on the prepared candidate commit. Its `evaluated_commit` must be the
    exact commit exercised by the live gates, and the configured artifact
    manifest must identify the active ready knowledge base used by the serving
-   API.
+   API. Capture requires the canonical schema-v2 live-quality policy and a
+   schema-v2 live report with the 52-case baseline, five customer-service
+   grounded-answer cases, rerank coverage, and all interaction SLO checks.
 8. Evidence review and finalization: review the complete quality evidence ZIP,
    download the finalized compact manifest artifact, and commit that manifest
    only at
@@ -77,7 +79,10 @@ single-maintainer repository. All three branches block deletion and non-fast-for
 
 Any code, profile, policy, prompt, dependency, or corpus change after the
 `evaluated_commit` invalidates the capture for release selection and requires a
-new live evidence run. Do not reuse the manifest or ZIP after such a change.
+new live evidence run. Recapture on every candidate commit; do not reuse the
+manifest or ZIP after such a change. The release-evidence capture receipt and
+the final version-named manifest use evidence schema v2, so a pre-v2 live
+report or evidence bundle cannot establish release eligibility.
 
 ## Coverage Policy
 
