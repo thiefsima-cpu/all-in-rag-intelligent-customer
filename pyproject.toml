@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 authors = [{ name = "Codex" }]
 dependencies = [
-  "openai==1.109.1",
+  "openai==2.46.0",
   "requests==2.34.2",
   "python-dotenv==1.2.2",
   "pydantic==2.13.4",

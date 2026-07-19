@@ -163,7 +163,7 @@ numpy==2.4.6
     #   graph-rag-c9 (pyproject.toml)
     #   pandas
     #   rank-bm25
-openai==1.109.1
+openai==2.46.0
     # via graph-rag-c9 (pyproject.toml)
 opentelemetry-api==1.42.1
     # via
