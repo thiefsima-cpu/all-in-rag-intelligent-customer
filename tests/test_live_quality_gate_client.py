@@ -166,7 +166,7 @@ def case() -> LiveQualityCasePolicy:
 
 def policy() -> LiveQualityGatePolicy:
     return LiveQualityGatePolicy(
-        schema_version=1,
+        schema_version=2,
         top_k=6,
         timeouts=LiveQualityTimeouts(request_seconds=12.5, judge_seconds=45.0),
         judge=LiveQualityJudgePolicy(
@@ -176,6 +176,7 @@ def policy() -> LiveQualityGatePolicy:
         ),
         thresholds=LiveQualityThresholds(
             minimum_case_count=1,
+            minimum_rerank_observation_count=1,
             minimum_pass_rate=0.9,
             minimum_deterministic_pass_rate=0.9,
             minimum_judge_pass_rate=0.9,
@@ -184,7 +185,11 @@ def policy() -> LiveQualityGatePolicy:
             minimum_ndcg_at_k=0.7,
             maximum_fallback_rate=0.0,
             maximum_retrieval_degradation_rate=0.0,
-            maximum_p95_latency_ms=60000.0,
+            maximum_p95_ttft_ms=5000.0,
+            maximum_p95_retrieval_latency_ms=3000.0,
+            maximum_p95_rerank_latency_ms=2000.0,
+            maximum_p95_generation_latency_ms=20000.0,
+            maximum_p95_latency_ms=25000.0,
             maximum_estimated_cost_usd=1.0,
         ),
         required_slice_coverage=RequiredSliceCoverage(),

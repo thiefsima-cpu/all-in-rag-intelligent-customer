@@ -79,7 +79,14 @@ def make_observation(
     sources: frozenset[str] = frozenset({"vector"}),
     fallback_used: bool = False,
     retrieval_degraded: bool = False,
-    latency_ms: float = 120.0,
+    ttft_ms: float = 1000.0,
+    latency_ms: float = 5000.0,
+    retrieval_latency_ms: float = 500.0,
+    rerank_attempted: bool = True,
+    rerank_succeeded: bool = True,
+    rerank_latency_ms: float | None = 250.0,
+    generation_latency_ms: float = 4000.0,
+    generation_first_token_latency_ms: float = 900.0,
     estimated_cost_usd: float = 0.01234567,
 ) -> LiveQualityObservation:
     return LiveQualityObservation(
@@ -102,7 +109,14 @@ def make_observation(
         sources=sources,
         fallback_used=fallback_used,
         retrieval_degraded=retrieval_degraded,
+        ttft_ms=ttft_ms,
         latency_ms=latency_ms,
+        retrieval_latency_ms=retrieval_latency_ms,
+        rerank_attempted=rerank_attempted,
+        rerank_succeeded=rerank_succeeded,
+        rerank_latency_ms=rerank_latency_ms,
+        generation_latency_ms=generation_latency_ms,
+        generation_first_token_latency_ms=generation_first_token_latency_ms,
         prompt_tokens=101,
         completion_tokens=37,
         total_tokens=138,
@@ -437,7 +451,14 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
         make_observation(
             sources=frozenset({"vector", "graph"}),
             ranked_recipe_names=("Mapo Tofu", "Mapo Tofu", "Dan Dan Noodles"),
-            latency_ms=120.0,
+            ttft_ms=1000.0,
+            latency_ms=5000.0,
+            retrieval_latency_ms=500.0,
+            rerank_attempted=True,
+            rerank_succeeded=True,
+            rerank_latency_ms=250.0,
+            generation_latency_ms=4000.0,
+            generation_first_token_latency_ms=900.0,
             estimated_cost_usd=0.01,
         ),
         top_k=2,
@@ -451,7 +472,14 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
             evidence=(),
             ranked_recipe_names=(),
             sources=frozenset(),
-            latency_ms=80.0,
+            ttft_ms=2000.0,
+            latency_ms=10000.0,
+            retrieval_latency_ms=1000.0,
+            rerank_attempted=False,
+            rerank_succeeded=False,
+            rerank_latency_ms=None,
+            generation_latency_ms=8000.0,
+            generation_first_token_latency_ms=1500.0,
             estimated_cost_usd=0.02,
         ),
         top_k=2,
@@ -465,7 +493,14 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
             ranked_recipe_names=("Mapo Tofu",),
             fallback_used=True,
             retrieval_degraded=True,
-            latency_ms=400.0,
+            ttft_ms=6000.0,
+            latency_ms=26000.0,
+            retrieval_latency_ms=3500.0,
+            rerank_attempted=True,
+            rerank_succeeded=True,
+            rerank_latency_ms=2100.0,
+            generation_latency_ms=21000.0,
+            generation_first_token_latency_ms=5000.0,
             estimated_cost_usd=0.03,
         ),
         top_k=2,
@@ -484,7 +519,13 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
     assert metrics["ndcg_at_k"] == 0.9586597063564786
     assert metrics["fallback_rate"] == 1 / 3
     assert metrics["retrieval_degradation_rate"] == 1 / 3
-    assert metrics["p95_latency_ms"] == 400.0
+    assert metrics["p95_ttft_ms"] == 6000.0
+    assert metrics["p95_retrieval_latency_ms"] == 3500.0
+    assert metrics["rerank_observation_count"] == 2
+    assert metrics["p95_rerank_latency_ms"] == 2100.0
+    assert metrics["p95_generation_latency_ms"] == 21000.0
+    assert metrics["p95_generation_first_token_latency_ms"] == 5000.0
+    assert metrics["p95_latency_ms"] == 26000.0
     assert metrics["estimated_cost_usd"] == 0.06
     assert metrics["avg_judge_scores"] == {
         "faithfulness": 0.75,
@@ -498,7 +539,7 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
     assert metrics["by_response_mode"]["grounded_answer"]["ndcg_at_k"] == 0.9586597063564786
     assert metrics["by_response_mode"]["grounded_answer"]["fallback_rate"] == 0.5
     assert metrics["by_response_mode"]["grounded_answer"]["retrieval_degradation_rate"] == 0.5
-    assert metrics["by_response_mode"]["grounded_answer"]["p95_latency_ms"] == 400.0
+    assert metrics["by_response_mode"]["grounded_answer"]["p95_latency_ms"] == 26000.0
     assert metrics["by_response_mode"]["grounded_answer"]["estimated_cost_usd"] == 0.04
     assert metrics["by_strategy"]["graph_rag"]["avg_judge_scores"] == {
         "faithfulness": 0.6,
@@ -509,7 +550,7 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
     assert metrics["by_strategy"]["graph_rag"]["ndcg_at_k"] is None
     assert metrics["by_strategy"]["graph_rag"]["fallback_rate"] == 0.0
     assert metrics["by_strategy"]["graph_rag"]["retrieval_degradation_rate"] == 0.0
-    assert metrics["by_strategy"]["graph_rag"]["p95_latency_ms"] == 80.0
+    assert metrics["by_strategy"]["graph_rag"]["p95_latency_ms"] == 10000.0
     assert metrics["by_strategy"]["graph_rag"]["estimated_cost_usd"] == 0.02
     assert metrics["by_constraint_type"]["weekday"]["pass_rate"] == 1.0
     assert metrics["by_risk_tag"]["prompt_injection"]["deterministic_pass_rate"] == 1.0
@@ -530,6 +571,12 @@ def test_aggregate_live_quality_metrics_returns_stable_empty_totals() -> None:
         "ndcg_at_k": None,
         "fallback_rate": 0.0,
         "retrieval_degradation_rate": 0.0,
+        "p95_ttft_ms": 0.0,
+        "p95_retrieval_latency_ms": 0.0,
+        "rerank_observation_count": 0,
+        "p95_rerank_latency_ms": None,
+        "p95_generation_latency_ms": 0.0,
+        "p95_generation_first_token_latency_ms": 0.0,
         "p95_latency_ms": 0.0,
         "estimated_cost_usd": 0.0,
         "avg_judge_scores": {},
@@ -540,3 +587,118 @@ def test_aggregate_live_quality_metrics_returns_stable_empty_totals() -> None:
         "by_response_mode": {},
         "by_strategy": {},
     }
+
+
+def passing_threshold_metrics() -> dict[str, object]:
+    return {
+        "case_count": 1,
+        "rerank_observation_count": 1,
+        "pass_rate": 1.0,
+        "deterministic_pass_rate": 1.0,
+        "judge_pass_rate": 1.0,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "fallback_rate": 0.0,
+        "retrieval_degradation_rate": 0.0,
+        "p95_ttft_ms": 5000.0,
+        "p95_retrieval_latency_ms": 3000.0,
+        "p95_rerank_latency_ms": 2000.0,
+        "p95_generation_latency_ms": 20000.0,
+        "p95_generation_first_token_latency_ms": 5000.0,
+        "p95_latency_ms": 25000.0,
+        "estimated_cost_usd": 0.0,
+        "by_query_type": {},
+        "by_cuisine": {},
+        "by_constraint_type": {},
+        "by_risk_tag": {},
+        "by_response_mode": {},
+        "by_strategy": {},
+    }
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "boundary"),
+    [
+        ("p95_ttft_ms", 5000.0),
+        ("p95_retrieval_latency_ms", 3000.0),
+        ("p95_rerank_latency_ms", 2000.0),
+        ("p95_generation_latency_ms", 20000.0),
+        ("p95_latency_ms", 25000.0),
+    ],
+)
+def test_interaction_slo_budget_passes_at_exact_boundary(
+    metric_name: str,
+    boundary: float,
+) -> None:
+    from tests.test_live_quality_gate_client import policy
+
+    evaluator = load_evaluator_module()
+    metrics = passing_threshold_metrics()
+    metrics[metric_name] = boundary
+
+    checks = evaluator.evaluate_policy_thresholds(policy(), metrics)
+    check = {item.name: item for item in checks}[f"metrics.{metric_name}"]
+
+    assert check.passed is True
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "boundary"),
+    [
+        ("p95_ttft_ms", 5000.0),
+        ("p95_retrieval_latency_ms", 3000.0),
+        ("p95_rerank_latency_ms", 2000.0),
+        ("p95_generation_latency_ms", 20000.0),
+        ("p95_latency_ms", 25000.0),
+    ],
+)
+def test_interaction_slo_budget_fails_one_ms_over_boundary(
+    metric_name: str,
+    boundary: float,
+) -> None:
+    from tests.test_live_quality_gate_client import policy
+
+    evaluator = load_evaluator_module()
+    metrics = passing_threshold_metrics()
+    metrics[metric_name] = boundary + 1.0
+
+    checks = evaluator.evaluate_policy_thresholds(policy(), metrics)
+    check = {item.name: item for item in checks}[f"metrics.{metric_name}"]
+
+    assert check.passed is False
+    assert check.code == "METRIC_ABOVE_MAXIMUM"
+    assert check.failure_type is GateFailureType.BUDGET_REGRESSION
+
+
+def test_no_successful_rerank_fails_coverage_and_missing_metric_checks() -> None:
+    from tests.test_live_quality_gate_client import policy
+
+    evaluator = load_evaluator_module()
+    case = make_case()
+    result = evaluator.evaluate_deterministic_case(
+        case,
+        make_observation(
+            rerank_attempted=False,
+            rerank_succeeded=False,
+            rerank_latency_ms=None,
+        ),
+        top_k=2,
+    )
+
+    metrics = evaluator.aggregate_live_quality_metrics([result])
+    checks = evaluator.evaluate_policy_thresholds(policy(), metrics)
+    by_name = {check.name: check for check in checks}
+
+    assert metrics["rerank_observation_count"] == 0
+    assert metrics["p95_rerank_latency_ms"] is None
+    assert by_name["metrics.rerank_observation_count"].passed is False
+    assert (
+        by_name["metrics.rerank_observation_count"].failure_type
+        is GateFailureType.COVERAGE_REGRESSION
+    )
+    assert by_name["metrics.p95_rerank_latency_ms"].passed is False
+    assert by_name["metrics.p95_rerank_latency_ms"].code == "METRIC_NOT_NUMERIC"
+    assert (
+        by_name["metrics.p95_rerank_latency_ms"].failure_type is GateFailureType.BUDGET_REGRESSION
+    )

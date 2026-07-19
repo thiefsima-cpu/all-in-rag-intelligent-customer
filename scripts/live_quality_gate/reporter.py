@@ -28,6 +28,12 @@ _PRIMARY_METRIC_NAMES = (
     "ndcg_at_k",
     "fallback_rate",
     "retrieval_degradation_rate",
+    "p95_ttft_ms",
+    "p95_retrieval_latency_ms",
+    "rerank_observation_count",
+    "p95_rerank_latency_ms",
+    "p95_generation_latency_ms",
+    "p95_generation_first_token_latency_ms",
     "p95_latency_ms",
     "estimated_cost_usd",
     "avg_judge_scores",
@@ -57,7 +63,7 @@ def build_live_quality_report(
         if result.case_id in cases_by_id and cases_by_id[result.case_id].manual_review.sample
     ]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(UTC).isoformat(),
         "passed": release_evaluation.passed,
         "target": settings.safe_target_identity(),
@@ -117,6 +123,7 @@ def _case_summary(
         "judge_scores": dict(result.judge_scores or {}),
         "failures": list(result.failures),
         "metrics": dict(result.metrics),
+        "timings": _case_timings(result),
         "manual_review": (
             {
                 "owner": case.manual_review.owner,
@@ -134,6 +141,20 @@ def _case_summary(
             }
             for item in result.observation.evidence[:5]
         ],
+    }
+
+
+def _case_timings(result: DeterministicCaseResult) -> dict[str, Any]:
+    observation = result.observation
+    return {
+        "ttft_ms": observation.ttft_ms,
+        "latency_ms": observation.latency_ms,
+        "retrieval_latency_ms": observation.retrieval_latency_ms,
+        "rerank_attempted": observation.rerank_attempted,
+        "rerank_succeeded": observation.rerank_succeeded,
+        "rerank_latency_ms": observation.rerank_latency_ms,
+        "generation_latency_ms": observation.generation_latency_ms,
+        "generation_first_token_latency_ms": observation.generation_first_token_latency_ms,
     }
 
 

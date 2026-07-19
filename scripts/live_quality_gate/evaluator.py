@@ -135,6 +135,12 @@ def evaluate_policy_thresholds(
             failure_type=GateFailureType.COVERAGE_REGRESSION,
         ),
         numeric_threshold_check(
+            "metrics.rerank_observation_count",
+            metrics.get("rerank_observation_count"),
+            minimum=policy.thresholds.minimum_rerank_observation_count,
+            failure_type=GateFailureType.COVERAGE_REGRESSION,
+        ),
+        numeric_threshold_check(
             "metrics.pass_rate",
             metrics.get("pass_rate"),
             minimum=policy.thresholds.minimum_pass_rate,
@@ -181,6 +187,30 @@ def evaluate_policy_thresholds(
             metrics.get("retrieval_degradation_rate"),
             maximum=policy.thresholds.maximum_retrieval_degradation_rate,
             failure_type=GateFailureType.QUALITY_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.p95_ttft_ms",
+            metrics.get("p95_ttft_ms"),
+            maximum=policy.thresholds.maximum_p95_ttft_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.p95_retrieval_latency_ms",
+            metrics.get("p95_retrieval_latency_ms"),
+            maximum=policy.thresholds.maximum_p95_retrieval_latency_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.p95_rerank_latency_ms",
+            metrics.get("p95_rerank_latency_ms"),
+            maximum=policy.thresholds.maximum_p95_rerank_latency_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
+        ),
+        numeric_threshold_check(
+            "metrics.p95_generation_latency_ms",
+            metrics.get("p95_generation_latency_ms"),
+            maximum=policy.thresholds.maximum_p95_generation_latency_ms,
+            failure_type=GateFailureType.BUDGET_REGRESSION,
         ),
         numeric_threshold_check(
             "metrics.p95_latency_ms",
@@ -338,6 +368,13 @@ def _slice_summary(results: Sequence[DeterministicCaseResult]) -> dict[str, obje
 def _summary(results: Sequence[DeterministicCaseResult]) -> dict[str, object]:
     grouped_results = tuple(results)
     latencies = [result.observation.latency_ms for result in grouped_results]
+    rerank_latencies = [
+        result.observation.rerank_latency_ms
+        for result in grouped_results
+        if result.observation.rerank_attempted
+        and result.observation.rerank_succeeded
+        and result.observation.rerank_latency_ms is not None
+    ]
     return {
         "case_count": len(grouped_results),
         "pass_rate": _rate(
@@ -358,6 +395,43 @@ def _summary(results: Sequence[DeterministicCaseResult]) -> dict[str, object]:
         "retrieval_degradation_rate": _rate(
             sum(1 for result in grouped_results if result.observation.retrieval_degraded),
             len(grouped_results),
+        ),
+        "p95_ttft_ms": (
+            percentile(
+                [result.observation.ttft_ms for result in grouped_results],
+                0.95,
+            )
+            if grouped_results
+            else 0.0
+        ),
+        "p95_retrieval_latency_ms": (
+            percentile(
+                [result.observation.retrieval_latency_ms for result in grouped_results],
+                0.95,
+            )
+            if grouped_results
+            else 0.0
+        ),
+        "rerank_observation_count": len(rerank_latencies),
+        "p95_rerank_latency_ms": (percentile(rerank_latencies, 0.95) if rerank_latencies else None),
+        "p95_generation_latency_ms": (
+            percentile(
+                [result.observation.generation_latency_ms for result in grouped_results],
+                0.95,
+            )
+            if grouped_results
+            else 0.0
+        ),
+        "p95_generation_first_token_latency_ms": (
+            percentile(
+                [
+                    result.observation.generation_first_token_latency_ms
+                    for result in grouped_results
+                ],
+                0.95,
+            )
+            if grouped_results
+            else 0.0
         ),
         "p95_latency_ms": percentile(latencies, 0.95) if latencies else 0.0,
         "estimated_cost_usd": round(

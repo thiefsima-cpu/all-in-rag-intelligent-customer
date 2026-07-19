@@ -44,7 +44,13 @@ def passing_metrics() -> dict[str, object]:
         "ndcg_at_k": 1.0,
         "fallback_rate": 0.0,
         "retrieval_degradation_rate": 0.0,
-        "p95_latency_ms": 1000.0,
+        "p95_ttft_ms": 1000.0,
+        "p95_retrieval_latency_ms": 500.0,
+        "rerank_observation_count": 1,
+        "p95_rerank_latency_ms": 250.0,
+        "p95_generation_latency_ms": 4000.0,
+        "p95_generation_first_token_latency_ms": 900.0,
+        "p95_latency_ms": 5000.0,
         "estimated_cost_usd": 0.02,
         "avg_judge_scores": {"faithfulness": 1.0, "answer_relevance": 0.9},
         "by_risk_tag": {},
@@ -135,7 +141,7 @@ def test_report_writes_safe_json_markdown_and_manual_review_sample(tmp_path: Pat
     sample = json.loads(sample_jsonl.read_text(encoding="utf-8").strip())
 
     assert paths == (report_json, summary_md, sample_jsonl)
-    assert persisted["schema_version"] == 1
+    assert persisted["schema_version"] == 2
     assert persisted["target"] == {
         "api_host": "serving.example.com:443",
         "judge_host": "judge.example.com",
@@ -146,12 +152,32 @@ def test_report_writes_safe_json_markdown_and_manual_review_sample(tmp_path: Pat
         "manual_review_sample_jsonl": "manual_review_sample.jsonl",
     }
     assert persisted["manual_review_sample_count"] == 1
+    assert persisted["cases"][0]["timings"] == {
+        "ttft_ms": 1000.0,
+        "latency_ms": 5000.0,
+        "retrieval_latency_ms": 500.0,
+        "rerank_attempted": True,
+        "rerank_succeeded": True,
+        "rerank_latency_ms": 250.0,
+        "generation_latency_ms": 4000.0,
+        "generation_first_token_latency_ms": 900.0,
+    }
     assert sample["case_id"] == "grounded_mapo_tofu"
     assert sample["owner"] == "business-quality"
     assert "grounded_mapo_tofu" in combined
     assert "serving-token" not in combined
     assert "judge-key" not in combined
     assert "Authorization" not in combined
+    for metric_name in (
+        "p95_ttft_ms",
+        "p95_retrieval_latency_ms",
+        "rerank_observation_count",
+        "p95_rerank_latency_ms",
+        "p95_generation_latency_ms",
+        "p95_generation_first_token_latency_ms",
+        "p95_latency_ms",
+    ):
+        assert metric_name in summary_md.read_text(encoding="utf-8")
     assert summary_md.read_bytes() == render_live_quality_summary(persisted)
     assert b"\r\n" not in summary_md.read_bytes()
 
