@@ -706,6 +706,64 @@ def test_run_live_case_rejects_invalid_sse_protocol(
     assert response.closed is True
 
 
+@pytest.mark.parametrize(
+    ("event_name", "event_data"),
+    [
+        ("chunk", {"content": ""}),
+        ("message", {"message": "late progress"}),
+    ],
+)
+def test_run_live_case_rejects_chunk_or_message_after_result(
+    event_name: str,
+    event_data: dict[str, Any],
+) -> None:
+    payload = answer_payload()
+    response = FakeResponse(
+        sse_lines(
+            ("chunk", {"content": payload["response"]["summary"]["answer"]}),
+            ("result", payload),
+            (event_name, event_data),
+            ("done", {"ok": True}),
+        )
+    )
+    counter = iter([100.0, 101.0, 102.0, 103.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=3000.0,
+        secrets=("serving-token", "late progress"),
+    )
+    assert response.closed is True
+
+
+def test_run_live_case_rejects_ttft_after_result_arrival() -> None:
+    response = success_response()
+    counter = iter([100.0, 106.0, 105.0, 107.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=7000.0,
+        secrets=("serving-token",),
+    )
+    assert response.closed is True
+
+
 def test_run_live_case_rejects_non_sse_content_type() -> None:
     response = FakeResponse([], content_type="application/json; charset=utf-8")
     counter = iter([10.0, 10.25])
@@ -768,6 +826,74 @@ def test_run_live_case_returns_structured_failure_for_invalid_client_timing() ->
         result,
         expected_duration_ms=0.0,
         secrets=("serving-token",),
+    )
+    assert response.closed is True
+
+
+@pytest.mark.parametrize(
+    "clock",
+    [
+        pytest.param(
+            lambda: (_ for _ in ()).throw(RuntimeError("raising-clock-secret")),
+            id="raising",
+        ),
+        pytest.param(lambda: next(iter(())), id="exhausted"),
+    ],
+)
+def test_run_live_case_returns_structured_failure_when_initial_clock_raises(clock) -> None:
+    session = FakeSession(success_response())
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        clock=clock,
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "raising-clock-secret"),
+    )
+    assert session.posts == []
+
+
+def test_run_live_case_returns_structured_failure_for_non_numeric_clock_sample() -> None:
+    session = FakeSession(success_response())
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        clock=lambda: "non-numeric-clock-secret",
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "non-numeric-clock-secret"),
+    )
+    assert session.posts == []
+
+
+def test_run_live_case_failure_duration_clock_cannot_mask_structured_failure() -> None:
+    response = FakeResponse([], error=requests.Timeout("transport-secret"))
+    counter = iter([100.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "transport-secret"),
     )
     assert response.closed is True
 

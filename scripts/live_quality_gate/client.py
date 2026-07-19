@@ -225,11 +225,12 @@ def run_live_case(
     request_id_factory: RequestIdFactory | None = None,
     clock: Clock = perf_counter,
 ) -> LiveQualityCaseRunResult:
-    started = clock()
     session = http_session if http_session is not None else requests.Session()
     owns_session = http_session is None
+    started: float | None = None
 
     try:
+        started = _sample_clock(clock)
         payload, ttft_ms, latency_ms = _post_debug_answer_stream(
             settings=settings,
             policy=policy,
@@ -246,9 +247,7 @@ def run_live_case(
             latency_ms=latency_ms,
         )
     except (requests.RequestException, OSError, ValueError, ValidationError):
-        duration_ms = (clock() - started) * 1000
-        if not math.isfinite(duration_ms) or duration_ms < 0:
-            duration_ms = 0.0
+        duration_ms = _failure_duration_ms(clock, started)
         return LiveQualityCaseRunResult(
             case_id=case.case_id,
             observation=None,
@@ -307,6 +306,8 @@ def _post_debug_answer_stream(
         for event in _iter_sse_events(response.iter_lines(decode_unicode=True)):
             if done:
                 raise ValueError("live quality SSE event received after done")
+            if result_payload is not None and event.name != "done":
+                raise ValueError("live quality SSE event received after result")
             if event.name == "message":
                 if set(event.data) != {"message"} or not isinstance(event.data["message"], str):
                     raise ValueError("invalid live quality SSE message event")
@@ -340,6 +341,8 @@ def _post_debug_answer_stream(
             raise ValueError("live quality SSE stream is missing result")
         if not done:
             raise ValueError("live quality SSE stream is missing done")
+        if ttft_ms > response_latency_ms:
+            raise ValueError("live quality TTFT exceeds response latency")
 
         result_response = result_payload.get("response")
         summary = result_response.get("summary") if isinstance(result_response, dict) else None
@@ -394,10 +397,35 @@ def _iter_sse_events(lines: Iterable[str | bytes]) -> Iterator[_SseEvent]:
 
 
 def _elapsed_ms(clock: Clock, started: float) -> float:
-    elapsed = (clock() - started) * 1000
+    elapsed = (_sample_clock(clock) - started) * 1000
     if not math.isfinite(elapsed) or elapsed <= 0:
         raise ValueError("invalid live quality client timing")
     return elapsed
+
+
+def _sample_clock(clock: Clock) -> float:
+    try:
+        raw_sample = clock()
+        if isinstance(raw_sample, bool) or not isinstance(raw_sample, int | float):
+            raise ValueError("invalid live quality clock sample")
+        sample = float(raw_sample)
+    except Exception as exc:
+        raise ValueError("invalid live quality clock sample") from exc
+    if not math.isfinite(sample):
+        raise ValueError("invalid live quality clock sample")
+    return sample
+
+
+def _failure_duration_ms(clock: Clock, started: float | None) -> float:
+    if started is None:
+        return 0.0
+    try:
+        duration_ms = (_sample_clock(clock) - started) * 1000
+    except ValueError:
+        return 0.0
+    if not math.isfinite(duration_ms) or duration_ms < 0:
+        return 0.0
+    return duration_ms
 
 
 def _build_debug_answer_url(api_url: str) -> str:
