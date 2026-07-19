@@ -97,6 +97,41 @@ def _verify_manifest(manifest: Mapping[str, object], root: Path) -> None:
             )
 
 
+def _merge_policy_payload(base: object, overlay: object) -> object:
+    """Merge a domain overlay while allowing explicit replacement of mappings."""
+
+    if isinstance(overlay, Mapping) and set(overlay) == {"$replace"}:
+        return overlay["$replace"]
+    if isinstance(base, Mapping) and isinstance(overlay, Mapping):
+        merged = {str(key): value for key, value in base.items()}
+        for key, value in overlay.items():
+            key_text = str(key)
+            merged[key_text] = _merge_policy_payload(merged.get(key_text), value)
+        return merged
+    return overlay
+
+
+def _read_policy_payload(manifest: Mapping[str, object], root: Path) -> dict[str, object]:
+    policy_payload = _read_json(root / str(manifest["policy_path"]), root)
+    base_name = str(manifest.get("extends") or "").strip()
+    if not base_name:
+        return policy_payload
+    if base_name == root.name:
+        raise PolicyLoadError(
+            "Policy bundle cannot extend itself",
+            bundle_path=str(root),
+            field_path="extends",
+        )
+    base_root = root.parent / base_name
+    base_manifest = _read_json(base_root / "manifest.json", base_root)
+    _verify_manifest(base_manifest, base_root)
+    base_payload = _read_policy_payload(base_manifest, base_root)
+    merged = _merge_policy_payload(base_payload, policy_payload)
+    if not isinstance(merged, dict):
+        raise PolicyLoadError("Merged policy must be an object", bundle_path=str(root))
+    return cast(dict[str, object], merged)
+
+
 def _prompt_variables(template: str) -> set[str]:
     variables: set[str] = set()
     for _, field_name, _, _ in Formatter().parse(template):
@@ -168,7 +203,7 @@ def load_policy_bundle(bundle_path: str | Path | None = None) -> QueryPolicyBund
     manifest = _read_json(root / "manifest.json", root)
     _verify_manifest(manifest, root)
 
-    policy_payload = _read_json(root / str(manifest["policy_path"]), root)
+    policy_payload = _read_policy_payload(manifest, root)
     prompt_texts = _read_prompts(manifest, root)
     graph = parse_graph(policy_payload, root)
 

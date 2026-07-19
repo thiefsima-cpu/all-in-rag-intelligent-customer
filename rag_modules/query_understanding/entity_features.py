@@ -49,6 +49,12 @@ def fallback_entity_phrases(
     for left, right in pairwise_entity_matches(normalized, registry=active_registry):
         phrases.extend([left, right])
 
+    for pattern in active_registry.policy.lexicon.regex_group("entity_reference_patterns"):
+        for match in re.finditer(pattern, normalized):
+            entity_reference = clean_entity_phrase(match.group(1), registry=active_registry)
+            if looks_like_entity(entity_reference, registry=active_registry):
+                phrases.append(entity_reference)
+
     for marker in active_registry.entity_phrase_markers:
         if marker not in normalized:
             continue

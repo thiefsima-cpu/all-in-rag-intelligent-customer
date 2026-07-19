@@ -43,7 +43,7 @@ class AnswerWorkflowCopy(Protocol):
     strategy_icon_default: str
     document_summary_template: str
     document_summary_total_template: str
-    unknown_recipe_name: str
+    unknown_entity_name: str
     unknown_search_type: str
 
 

@@ -107,6 +107,15 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertEqual(plan.to_dict()["strategy"], "combined")
         self.assertEqual(plan.to_dict()["planner_mode"], "fast_rule")
 
+    def test_query_plan_preserves_domain_relation_types_without_an_explicit_schema(self) -> None:
+        plan = QueryPlan.from_dict(
+            "Which policy version is superseded?",
+            {"relation_types": ["SUPERSEDES"]},
+            semantic_settings=self.semantic_settings,
+        )
+
+        self.assertEqual(plan.relation_types, ["SUPERSEDES"])
+
     def test_scoring_uses_policy_structural_relationship_factor(self) -> None:
         from rag_modules.query_policy import get_query_policy
         from rag_modules.query_understanding.scoring import build_query_semantic_score_breakdown

@@ -49,7 +49,7 @@ def evaluate_deterministic_case(
     if case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
         retrieval = retrieval_metrics(
             observation.ranked_recipe_names,
-            case.relevant_recipes,
+            case.relevant_items,
             k=top_k,
         )
         metrics = {
@@ -59,7 +59,7 @@ def evaluate_deterministic_case(
         }
         if _missing_positive_relevant_recipes(
             observation.ranked_recipe_names,
-            case.relevant_recipes,
+            case.relevant_items,
             top_k=top_k,
         ):
             failures.append("missing_relevant_recipes")

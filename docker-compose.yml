@@ -49,7 +49,7 @@ services:
       - "minio"
 
   neo4j:
-    container_name: recipe-neo4j
+    container_name: customer-service-neo4j
     image: neo4j:5.26-community
     environment:
       NEO4J_AUTH: neo4j/password

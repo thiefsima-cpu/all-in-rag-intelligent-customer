@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 
 from ...contracts.graph_preparation import GraphNode
-from ...domain.shared.semantic_schema import infer_recipe_semantics
+from ...domains.recipe.semantic_schema import infer_recipe_semantics
 from ...kernel.documents import TextDocument
 from ...kernel.json_types import JsonObject, coerce_json_object
 from ...safe_logging import log_failure

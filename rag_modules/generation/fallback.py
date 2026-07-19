@@ -22,7 +22,7 @@ def build_evidence_only_fallback_answer(
         lines.append(
             templates["item_line"].format(
                 index=index,
-                title=item.recipe_name or item.citation,
+                title=item.entity_name or item.citation,
                 citation=item.citation,
             )
         )

@@ -177,10 +177,15 @@ class HybridIndexService:
 
         logger.info("Building hybrid graph index...")
         try:
-            recipes = self.data_module.recipes
-            ingredients = self.data_module.ingredients
-            cooking_steps = self.data_module.cooking_steps
-            self.graph_indexing.create_entity_key_values(recipes, ingredients, cooking_steps)
+            domain_name = str(getattr(self.config.domain, "name", "recipe") or "recipe")
+            if domain_name == "recipe":
+                recipes = self.data_module.recipes
+                ingredients = self.data_module.ingredients
+                cooking_steps = self.data_module.cooking_steps
+                self.graph_indexing.create_entity_key_values(recipes, ingredients, cooking_steps)
+            else:
+                entities = getattr(self.data_module, "entities", None) or []
+                self.graph_indexing.create_domain_entity_key_values(entities)
             relationships = self._extract_relationships_from_graph(driver)
             self.graph_indexing.create_relation_key_values(relationships)
             self.graph_indexing.deduplicate_entities_and_relations()
@@ -205,11 +210,25 @@ class HybridIndexService:
 
         try:
             with driver.session(database=self.database) as session:
-                query = """
-                MATCH (source)-[r]->(target)
-                WHERE source.nodeId >= '200000000' OR target.nodeId >= '200000000'
-                RETURN source.nodeId as source_id, type(r) as relation_type, target.nodeId as target_id
-                """
+                domain_name = str(getattr(self.config.domain, "name", "recipe") or "recipe")
+                if domain_name == "recipe":
+                    query = """
+                    MATCH (source)-[r]->(target)
+                    WHERE coalesce(source.domain, 'recipe') = 'recipe'
+                      AND coalesce(target.domain, 'recipe') = 'recipe'
+                      AND (source.nodeId >= '200000000' OR target.nodeId >= '200000000')
+                    RETURN source.nodeId as source_id,
+                           type(r) as relation_type,
+                           target.nodeId as target_id
+                    """
+                else:
+                    query = f"""
+                    MATCH (source)-[r]->(target)
+                    WHERE source.domain = '{domain_name}' AND target.domain = '{domain_name}'
+                    RETURN source.nodeId as source_id,
+                           type(r) as relation_type,
+                           target.nodeId as target_id
+                    """
                 for record in session.run(query):
                     relationships.append(
                         (

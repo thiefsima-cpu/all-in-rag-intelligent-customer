@@ -65,6 +65,11 @@ graph-rag-verify-env
 [docs/architecture.md](docs/architecture.md)。如果只想快速跟完一次 `/v1/answers` 请求，先看其中的
 “请求生命周期最短阅读路线”。
 
+业务领域能力通过版本化 `DomainPack` 提供。Docker、`dev`、`eval_fast` 和 `eval_quality` profile
+默认运行真正的 `customer_service` 领域包；菜谱实现保留在 `rag_modules/domains/recipe/`，仅作为
+兼容领域。领域本体、文档映射与抽取、查询策略与提示词、公开 citation 投影和领域评测集的边界及
+切换方法见 [docs/domain_packs.md](docs/domain_packs.md)。
+
 ## 版本治理
 
 GraphRAG C9 同时跟踪三个版本轴：
@@ -169,8 +174,9 @@ API 容器由 `Dockerfile.api` 构建，并加入同一个 compose 文件中声�
 `MOONSHOT_API_KEY` 也会作为备用模型提供方 key 转发。服务 API 会在启动时验证这个轻量模型提供方要求，
 因此缺少 key 时会快速失败并给出清晰错误，而不是等到第一次 `/v1/answers` 请求才暴露问题。
 
-默认 `AUTO_BOOTSTRAP=true` 时，同一个 Compose 命令还会运行一次性 bootstrap 服务。全新状态下，它会导入 CSV
-图谱并构建知识库产物；后续启动时，如果 recipe 数据已经存在，它会跳过图谱导入，并让构建工作流复用有效产物。
+默认 `AUTO_BOOTSTRAP=true` 时，同一个 Compose 命令还会运行一次性 bootstrap 服务。全新状态下，它会按
+当前 `DomainPack` 导入图谱并构建知识库产物；默认客服 profile 会导入可回答订单、退款、保修、发票和政策版本
+问题的最小客服知识图谱。后续启动时，如果当前领域数据已经存在，它会跳过图谱导入，并让构建工作流复用有效产物。
 bootstrap 成功后服务 API 才会启动，并自动初始化检索运行时。
 
 查看启动进度：
@@ -250,8 +256,9 @@ SSE 错误事件使用相同 payload。
 公开答案路由 `/v1/answers` 和 `/v1/answers/stream` 暴露字段级公共契约：
 
 - `summary`：最终答案、状态、策略、延迟、证据数量、fallback、token 和成本汇总字段。
-- `grounding.evidence_documents`：只包含公共 citation 字段，即 `content`、`recipe_name`、`score`、`source`、
-  `evidence_type` 和 `matched_terms`。
+- `grounding.evidence_documents`：只包含领域无关的公共 citation 字段，即 `content`、`entity_id`、
+  `entity_name`、`entity_type`、`score`、`source`、`evidence_type`、`matched_terms` 和领域包白名单控制的
+  `attributes`。
 - `diagnostics`：稳定的健康度和降级字段，例如 `overall_bucket`、`retrieval_degraded`、`degraded_sources`
   和安全的 degraded-candidate code。
 

@@ -39,8 +39,28 @@ def _explicit_units(metadata: Dict[str, Any], source: str, score: float) -> List
                     claim=claim,
                     source=str(item.get("source") or source),
                     score=float(item.get("score") or score),
-                    recipe_id=str(item.get("recipe_id") or metadata.get("recipe_id") or ""),
-                    recipe_name=str(item.get("recipe_name") or metadata.get("recipe_name") or ""),
+                    entity_id=str(
+                        item.get("entity_id")
+                        or item.get("recipe_id")
+                        or metadata.get("entity_id")
+                        or metadata.get("recipe_id")
+                        or ""
+                    ),
+                    entity_name=str(
+                        item.get("entity_name")
+                        or item.get("recipe_name")
+                        or metadata.get("entity_name")
+                        or metadata.get("recipe_name")
+                        or ""
+                    ),
+                    domain=str(
+                        metadata.get("domain")
+                        or (
+                            "recipe"
+                            if metadata.get("recipe_id") or metadata.get("recipe_name")
+                            else ""
+                        )
+                    ),
                     relation_type=str(item.get("relation_type") or ""),
                     entities=[str(value) for value in item.get("entities") or [] if value],
                     is_graph_evidence=bool(item.get("is_graph_evidence")),
@@ -78,16 +98,23 @@ def _relationship_claim(
     return relation_type, relation_type, [item for item in (start, end) if item]
 
 
-def _graph_recipe_values(metadata: Dict[str, Any]) -> tuple[str, str, List[str]]:
+def _graph_entity_values(metadata: Dict[str, Any]) -> tuple[str, str, List[str]]:
     recipe_ids = metadata.get("recipe_node_ids") or []
     recipe_names = metadata.get("recipe_names") or []
-    recipe_id = (
+    entity_id = (
         str(recipe_ids[0])
         if recipe_ids
-        else str(metadata.get("recipe_id") or metadata.get("node_id") or "")
+        else str(
+            metadata.get("entity_id") or metadata.get("recipe_id") or metadata.get("node_id") or ""
+        )
     )
-    recipe_name = str(recipe_names[0]) if recipe_names else str(metadata.get("recipe_name") or "")
-    return recipe_id, recipe_name, recipe_names
+    entity_name = (
+        str(recipe_names[0])
+        if recipe_names
+        else str(metadata.get("entity_name") or metadata.get("recipe_name") or "")
+    )
+    entity_names = [str(item) for item in metadata.get("entity_names") or recipe_names]
+    return entity_id, entity_name, entity_names
 
 
 def _graph_summary_unit(
@@ -96,9 +123,9 @@ def _graph_summary_unit(
     graph_evidence: Dict[str, Any],
     source: str,
     score: float,
-    recipe_id: str,
-    recipe_name: str,
-    recipe_names: List[str],
+    entity_id: str,
+    entity_name: str,
+    entity_names: List[str],
 ) -> EvidenceUnit | None:
     description = str(graph_evidence.get("description") or "").strip()
     if not description:
@@ -109,9 +136,42 @@ def _graph_summary_unit(
         claim=description,
         source=source,
         score=score,
-        recipe_id=recipe_id,
-        recipe_name=recipe_name,
-        entities=list(dict.fromkeys(recipe_names + list(metadata.get("matched_terms") or []))),
+        entity_id=entity_id,
+        entity_name=entity_name,
+        domain=str(
+            metadata.get("domain")
+            or ("recipe" if metadata.get("recipe_id") or metadata.get("recipe_name") else "")
+        ),
+        entities=list(dict.fromkeys(entity_names + list(metadata.get("matched_terms") or []))),
+        is_graph_evidence=True,
+        metadata={"search_type": metadata.get("search_type")},
+    )
+
+
+def _graph_relationship_unit(
+    *,
+    metadata: Dict[str, Any],
+    source: str,
+    score: float,
+    entity_id: str,
+    entity_name: str,
+    relationship_claim: tuple[str, str, List[str]],
+) -> EvidenceUnit:
+    claim, relation_type, entities = relationship_claim
+    return EvidenceUnit(
+        unit_id=f"unit::{stable_hash(claim)}",
+        evidence_type="graph_relation",
+        claim=claim,
+        source=source,
+        score=score,
+        entity_id=entity_id,
+        entity_name=entity_name,
+        domain=str(
+            metadata.get("domain")
+            or ("recipe" if metadata.get("recipe_id") or metadata.get("recipe_name") else "")
+        ),
+        relation_type=relation_type,
+        entities=list(dict.fromkeys(entities)),
         is_graph_evidence=True,
         metadata={"search_type": metadata.get("search_type")},
     )
@@ -127,16 +187,16 @@ def _graph_relationship_units(
     nodes = graph_evidence.get("nodes") or graph_evidence.get("connected_nodes") or []
     relationships = graph_evidence.get("relationships") or []
     labels_by_id = _node_label_names(nodes)
-    recipe_id, recipe_name, recipe_names = _graph_recipe_values(metadata)
+    entity_id, entity_name, entity_names = _graph_entity_values(metadata)
     units: List[EvidenceUnit] = []
     summary = _graph_summary_unit(
         metadata=metadata,
         graph_evidence=graph_evidence,
         source=source,
         score=score,
-        recipe_id=recipe_id,
-        recipe_name=recipe_name,
-        recipe_names=recipe_names,
+        entity_id=entity_id,
+        entity_name=entity_name,
+        entity_names=entity_names,
     )
     if summary is not None:
         units.append(summary)
@@ -145,20 +205,14 @@ def _graph_relationship_units(
         relationship_claim = _relationship_claim(relationship, labels_by_id)
         if not relationship_claim or not relationship_claim[0]:
             continue
-        claim, relation_type, entities = relationship_claim
         units.append(
-            EvidenceUnit(
-                unit_id=f"unit::{stable_hash(claim)}",
-                evidence_type="graph_relation",
-                claim=claim,
+            _graph_relationship_unit(
+                metadata=metadata,
                 source=source,
                 score=score,
-                recipe_id=recipe_id,
-                recipe_name=recipe_name,
-                relation_type=relation_type,
-                entities=list(dict.fromkeys(entities)),
-                is_graph_evidence=True,
-                metadata={"search_type": metadata.get("search_type")},
+                entity_id=entity_id,
+                entity_name=entity_name,
+                relationship_claim=relationship_claim,
             )
         )
     return units
@@ -174,16 +228,22 @@ def _fallback_unit(
     claim = content.strip()[:260]
     if not claim:
         return None
-    recipe_name = str(metadata.get("recipe_name") or "")
+    entity_name = str(metadata.get("entity_name") or metadata.get("recipe_name") or "")
     return EvidenceUnit(
         unit_id=f"unit::{stable_hash(claim)}",
         evidence_type=infer_evidence_type(metadata),
         claim=claim,
         source=source,
         score=score,
-        recipe_id=str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
-        recipe_name=recipe_name,
-        entities=[recipe_name] if recipe_name else [],
+        entity_id=str(
+            metadata.get("entity_id") or metadata.get("recipe_id") or metadata.get("node_id") or ""
+        ),
+        entity_name=entity_name,
+        domain=str(
+            metadata.get("domain")
+            or ("recipe" if metadata.get("recipe_id") or metadata.get("recipe_name") else "")
+        ),
+        entities=[entity_name] if entity_name else [],
         is_graph_evidence=False,
         metadata={"search_type": metadata.get("search_type")},
     )

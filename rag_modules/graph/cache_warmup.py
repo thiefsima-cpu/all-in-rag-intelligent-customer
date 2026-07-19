@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from .cache_stats import GraphCacheEntityStats, GraphCacheStats, GraphCacheStatsStore
-from .ports import Neo4jDriverPort, Neo4jRecordPort
+from .ports import Neo4jDriverPort, Neo4jRecordPort, Neo4jSessionPort
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,21 @@ class GraphWarmupResult:
 class GraphCacheWarmupService:
     """Load persisted graph stats or collect them with paged warmup scans."""
 
-    def __init__(self, store: GraphCacheStatsStore) -> None:
+    def __init__(
+        self,
+        store: GraphCacheStatsStore,
+        *,
+        domain_name: str = "recipe",
+        allowed_node_labels: tuple[str, ...] = (
+            "Recipe",
+            "Ingredient",
+            "CookingStep",
+            "Category",
+        ),
+    ) -> None:
         self.store = store
+        self.domain_name = str(domain_name or "recipe")
+        self.allowed_node_labels = tuple(allowed_node_labels)
 
     def warm(self, driver: Neo4jDriverPort, *, database_name: str) -> GraphWarmupResult:
         stats = self._load_or_build_graph_stats(driver, database_name=database_name)
@@ -58,6 +71,7 @@ class GraphCacheWarmupService:
         if (
             cached
             and cached.entities
+            and cached.domain_name == self.domain_name
             and (not expected_signature or cached.graph_signature == expected_signature)
         ):
             return cached
@@ -76,61 +90,13 @@ class GraphCacheWarmupService:
         expected_signature: str = "",
         page_size: int = 500,
     ) -> GraphCacheStats:
-        entities: List[GraphCacheEntityStats] = []
-        relation_frequencies: dict[str, int] = {}
-        page_cursor = ""
         with driver.session(database=database_name) as session:
-            while True:
-                entity_query = """
-                MATCH (n)
-                WHERE n.nodeId IS NOT NULL
-                  AND ($after_node_id = '' OR n.nodeId > $after_node_id)
-                WITH n
-                ORDER BY n.nodeId
-                LIMIT $limit
-                WITH collect(n) AS nodes
-                UNWIND nodes AS n
-                WITH n, COUNT { (n)--() } AS degree
-                RETURN labels(n) AS node_labels,
-                       n.nodeId AS node_id,
-                       n.name AS name,
-                       n.category AS category,
-                       degree
-                ORDER BY node_id
-                """
-                page_records: list[Neo4jRecordPort] = list(
-                    session.run(
-                        entity_query,
-                        {"after_node_id": page_cursor, "limit": max(1, int(page_size))},
-                    )
-                )
-                if not page_records:
-                    break
-                for record in page_records:
-                    entities.append(
-                        GraphCacheEntityStats(
-                            node_id=str(record["node_id"] or ""),
-                            labels=_string_tuple(record["node_labels"]),
-                            name=str(record["name"] or ""),
-                            category=str(record["category"] or ""),
-                            degree=_int_value(record["degree"]),
-                        )
-                    )
-                page_cursor = str(page_records[-1]["node_id"] or "")
-
-            relation_query = """
-            MATCH ()-[r]->()
-            RETURN type(r) AS rel_type, count(r) AS frequency
-            ORDER BY frequency DESC
-            """
-            for record in session.run(relation_query):
-                relation_frequencies[str(record["rel_type"] or "")] = _int_value(
-                    record["frequency"]
-                )
-
+            entities = self._collect_entities(session, page_size=page_size)
+            relation_frequencies = self._collect_relation_frequencies(session)
         entities.sort(key=lambda item: (-int(item.degree or 0), item.node_id))
         return GraphCacheStats(
             graph_signature=expected_signature,
+            domain_name=self.domain_name,
             entity_count=len(entities),
             relation_type_count=len(relation_frequencies),
             entities=entities,
@@ -138,6 +104,97 @@ class GraphCacheWarmupService:
             page_size=max(1, int(page_size)),
             source="paged_warmup",
         )
+
+    def _collect_entities(
+        self,
+        session: Neo4jSessionPort,
+        *,
+        page_size: int,
+    ) -> List[GraphCacheEntityStats]:
+        entities: List[GraphCacheEntityStats] = []
+        domain_filter = (
+            "AND (n.domain = $domain_name OR "
+            "(n.domain IS NULL AND (n.createdFrom = 'semantic_schema' OR "
+            "ANY(label IN labels(n) WHERE label IN $allowed_node_labels))))"
+            if self.domain_name == "recipe"
+            else "AND n.domain = $domain_name"
+        )
+        degree_expression = (
+            "COUNT { (n)--(neighbor) WHERE neighbor.domain = $domain_name OR "
+            "(neighbor.domain IS NULL AND (neighbor.createdFrom = 'semantic_schema' OR "
+            "ANY(label IN labels(neighbor) WHERE label IN $allowed_node_labels))) }"
+            if self.domain_name == "recipe"
+            else "COUNT { (n)--(neighbor) WHERE neighbor.domain = $domain_name }"
+        )
+        page_cursor = ""
+        while True:
+            entity_query = f"""
+            MATCH (n)
+            WHERE n.nodeId IS NOT NULL
+              {domain_filter}
+              AND ($after_node_id = '' OR n.nodeId > $after_node_id)
+            WITH n
+            ORDER BY n.nodeId
+            LIMIT $limit
+            WITH collect(n) AS nodes
+            UNWIND nodes AS n
+            WITH n, {degree_expression} AS degree
+            RETURN labels(n) AS node_labels,
+                   n.nodeId AS node_id,
+                   n.name AS name,
+                   n.category AS category,
+                   degree
+            ORDER BY node_id
+            """
+            entity_params: dict[str, object] = {
+                "after_node_id": page_cursor,
+                "limit": max(1, int(page_size)),
+                "domain_name": self.domain_name,
+            }
+            if self.domain_name == "recipe":
+                entity_params["allowed_node_labels"] = list(self.allowed_node_labels)
+            page_records: list[Neo4jRecordPort] = list(session.run(entity_query, entity_params))
+            if not page_records:
+                return entities
+            for record in page_records:
+                entities.append(
+                    GraphCacheEntityStats(
+                        node_id=str(record["node_id"] or ""),
+                        labels=_string_tuple(record["node_labels"]),
+                        name=str(record["name"] or ""),
+                        category=str(record["category"] or ""),
+                        degree=_int_value(record["degree"]),
+                    )
+                )
+            page_cursor = str(page_records[-1]["node_id"] or "")
+
+    def _collect_relation_frequencies(
+        self,
+        session: Neo4jSessionPort,
+    ) -> dict[str, int]:
+        relation_filter = (
+            "WHERE (source.domain = $domain_name OR "
+            "(source.domain IS NULL AND (source.createdFrom = 'semantic_schema' OR "
+            "ANY(label IN labels(source) WHERE label IN $allowed_node_labels)))) "
+            "AND (target.domain = $domain_name OR "
+            "(target.domain IS NULL AND (target.createdFrom = 'semantic_schema' OR "
+            "ANY(label IN labels(target) WHERE label IN $allowed_node_labels))))"
+            if self.domain_name == "recipe"
+            else "WHERE source.domain = $domain_name AND target.domain = $domain_name"
+        )
+        relation_query = f"""
+        MATCH (source)-[r]->(target)
+        {relation_filter}
+        RETURN type(r) AS rel_type, count(r) AS frequency
+        ORDER BY frequency DESC
+        """
+        relation_params: dict[str, object] = {"domain_name": self.domain_name}
+        if self.domain_name == "recipe":
+            relation_params["allowed_node_labels"] = list(self.allowed_node_labels)
+        return {
+            str(record["rel_type"] or ""): _int_value(record["frequency"])
+            for record in session.run(relation_query, relation_params)
+        }
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:

@@ -409,3 +409,47 @@ def test_graph_query_executor_runs_all_query_families() -> None:
     assert executor.shortest_paths(plan) == []
     assert executor.subgraphs(plan) == []
     assert len(driver.session_obj.run_calls) == 4
+
+
+def test_customer_service_graph_queries_filter_every_traversed_node_by_domain() -> None:
+    driver = _RecordingNeo4jDriver()
+    executor = GraphQueryExecutor(
+        driver,
+        database="neo4j",
+        domain_name="customer_service",
+        primary_node_labels=("Order", "RefundPolicy"),
+        semantic_relation_types=("GOVERNED_BY", "SUPERSEDES"),
+        semantic_node_labels=(),
+    )
+    plan = _FakeRetrievalPlan()
+    plan.target_terms = ["2026.07"]
+
+    executor.multi_hop_paths(plan)
+    executor.entity_relation_paths(plan)
+    executor.shortest_paths(plan)
+    executor.subgraphs(plan)
+
+    queries = [str(call["query"]) for call in driver.session_obj.run_calls]
+    assert all("$domain_name" in query for query in queries)
+    assert all(
+        "ALL(n IN nodes(path) WHERE n.domain = $domain_name)" in query for query in queries[:3]
+    )
+    assert "source.domain = $domain_name" in queries[3]
+    assert "neighbor.domain = $domain_name" in queries[3]
+
+
+def test_recipe_graph_queries_reject_explicit_other_domain_nodes() -> None:
+    driver = _RecordingNeo4jDriver()
+    executor = GraphQueryExecutor(driver, database="neo4j", domain_name="recipe")
+    plan = _FakeRetrievalPlan()
+
+    executor.multi_hop_paths(plan)
+    executor.subgraphs(plan)
+
+    path_query = str(driver.session_obj.run_calls[0]["query"])
+    subgraph_query = str(driver.session_obj.run_calls[1]["query"])
+    assert "n.domain = $domain_name" in path_query
+    assert "n.domain IS NULL" in path_query
+    assert "label IN $allowed_node_labels" in path_query
+    assert "source.domain = $domain_name" in subgraph_query
+    assert "neighbor.domain = $domain_name" in subgraph_query

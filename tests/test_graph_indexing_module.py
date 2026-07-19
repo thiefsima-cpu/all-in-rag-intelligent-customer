@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from rag_modules.graph_index import GraphIndexingModule
 from rag_modules.query_policy import get_query_policy
+from rag_modules.query_policy.selector import resolve_query_policy_bundle
 
 
 class GraphIndexingModuleTests(unittest.TestCase):
@@ -166,6 +167,67 @@ class GraphIndexingModuleTests(unittest.TestCase):
         self.assertIn("cold", module.entity_kv_store["i-full"].value_content)
         self.assertTrue(module.entity_kv_store["i-sparse"].entity_name)
         self.assertIn("stir fry", module.entity_kv_store["s-full"].value_content)
+
+    def test_domain_entity_index_uses_labels_and_customer_properties(self) -> None:
+        module = GraphIndexingModule(
+            SimpleNamespace(enable_llm_relation_keys=False), llm_client=None
+        )
+        order = SimpleNamespace(
+            node_id="CS-1001",
+            name="订单 CS-1001",
+            labels=["Order"],
+            properties={
+                "domain": "customer_service",
+                "status": "已发货",
+                "updated_at": "2026-07-17",
+            },
+        )
+
+        module.create_domain_entity_key_values([order])
+
+        indexed = module.entity_kv_store["CS-1001"]
+        self.assertEqual(indexed.entity_type, "Order")
+        self.assertEqual(indexed.metadata["domain"], "customer_service")
+        self.assertIn("已发货", indexed.index_keys)
+        self.assertIn("updated_at: 2026-07-17", indexed.value_content)
+
+    def test_customer_relation_index_uses_selected_policy_bundle(self) -> None:
+        config = SimpleNamespace(
+            enable_llm_relation_keys=False,
+            query_understanding=SimpleNamespace(
+                policy=SimpleNamespace(
+                    bundle="customer-service-v1",
+                    bundle_path="",
+                )
+            ),
+        )
+        module = GraphIndexingModule(config, llm_client=None)
+        module.create_domain_entity_key_values(
+            [
+                SimpleNamespace(
+                    node_id="POL-REFUND-2026-07",
+                    name="2026.07",
+                    labels=["RefundPolicy"],
+                    properties={"domain": "customer_service"},
+                ),
+                SimpleNamespace(
+                    node_id="POL-REFUND-2026-06",
+                    name="2026.06",
+                    labels=["RefundPolicy"],
+                    properties={"domain": "customer_service"},
+                ),
+            ]
+        )
+
+        module.create_relation_key_values(
+            [("POL-REFUND-2026-07", "SUPERSEDES", "POL-REFUND-2026-06")]
+        )
+
+        policy = resolve_query_policy_bundle(config)
+        keyword = policy.relations.relation_index_keywords["SUPERSEDES"][0]
+        relations = module.get_relations_by_key(keyword)
+        self.assertTrue(any(item.relation_type == "SUPERSEDES" for item in relations))
+        self.assertEqual(relations[0].metadata["domain"], "customer_service")
 
 
 if __name__ == "__main__":

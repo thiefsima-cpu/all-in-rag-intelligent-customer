@@ -30,6 +30,14 @@ def evaluate_live_case(
         _strategy_check(f"{case_prefix}.strategy", case, observation),
         _sources_check(f"{case_prefix}.sources", case, observation),
         _evidence_count_check(f"{case_prefix}.evidence_count", case, observation),
+        _expected_entity_coverage_check(
+            f"{case_prefix}.entity_coverage",
+            observation,
+        ),
+        _required_answer_facts_check(
+            f"{case_prefix}.answer_facts",
+            observation,
+        ),
         _fallback_check(f"{case_prefix}.fallback", observation),
         _retrieval_degradation_check(f"{case_prefix}.retrieval_degradation", observation),
         _model_usage_check(f"{case_prefix}.model_usage", case, observation),
@@ -189,6 +197,60 @@ def _evidence_count_check(
         failure_type=GateFailureType.QUALITY_REGRESSION,
         code="INSUFFICIENT_EVIDENCE",
         expected=expected,
+        actual=actual,
+    )
+
+
+def _expected_entity_coverage_check(
+    name: str,
+    observation: LiveCaseObservation,
+) -> GateCheckResult:
+    actual = {
+        "expected_count": observation.expected_entity_count,
+        "matched_count": observation.matched_expected_entity_count,
+    }
+    if (
+        observation.expected_entity_count > 0
+        and observation.matched_expected_entity_count == observation.expected_entity_count
+    ):
+        return GateCheckResult.pass_check(
+            name,
+            code="EXPECTED_ENTITY_COVERAGE_OK",
+            expected={"complete": True},
+            actual=actual,
+        )
+    return GateCheckResult.fail_check(
+        name,
+        failure_type=GateFailureType.QUALITY_REGRESSION,
+        code="EXPECTED_ENTITY_MISSING",
+        expected={"complete": True},
+        actual=actual,
+    )
+
+
+def _required_answer_facts_check(
+    name: str,
+    observation: LiveCaseObservation,
+) -> GateCheckResult:
+    actual = {
+        "expected_count": observation.expected_fact_count,
+        "matched_count": observation.matched_expected_fact_count,
+    }
+    if (
+        observation.expected_fact_count > 0
+        and observation.matched_expected_fact_count == observation.expected_fact_count
+    ):
+        return GateCheckResult.pass_check(
+            name,
+            code="REQUIRED_ANSWER_FACTS_OK",
+            expected={"complete": True},
+            actual=actual,
+        )
+    return GateCheckResult.fail_check(
+        name,
+        failure_type=GateFailureType.QUALITY_REGRESSION,
+        code="REQUIRED_ANSWER_FACT_MISSING",
+        expected={"complete": True},
         actual=actual,
     )
 

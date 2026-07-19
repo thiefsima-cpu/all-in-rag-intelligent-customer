@@ -23,6 +23,7 @@ class MilvusOperationHost:
     collection_created: bool
     collection_name: str
     dimension: int
+    domain_name: str
     embedding_base_url: str
     embedding_batch_size: int
     embedding_client: EmbeddingClientPort

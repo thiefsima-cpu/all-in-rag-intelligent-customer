@@ -27,7 +27,11 @@ class DocumentArtifactBuildService:
         if cached is not None:
             return cached
 
-        data_module.build_recipe_documents()
+        build_documents = getattr(data_module, "build_documents", None)
+        if callable(build_documents):
+            build_documents()
+        else:
+            data_module.build_recipe_documents()
         chunks = data_module.chunk_documents(
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,

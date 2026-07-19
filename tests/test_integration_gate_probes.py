@@ -28,25 +28,26 @@ def build_settings(*, api_token: str | None = "secret-token") -> IntegrationGate
         milvus_host="milvus.local",
         milvus_port="19530",
         milvus_collection_name="cooking_knowledge",
+        domain_name="customer_service",
     )
 
 
 class FakeNeo4jRecord:
-    def __init__(self, recipe_count: int) -> None:
-        self._recipe_count = recipe_count
+    def __init__(self, entity_count: int) -> None:
+        self._entity_count = entity_count
 
     def __getitem__(self, key: str) -> int:
-        if key != "recipe_count":
+        if key != "entity_count":
             raise KeyError(key)
-        return self._recipe_count
+        return self._entity_count
 
 
 class FakeNeo4jResult:
-    def __init__(self, recipe_count: int) -> None:
-        self._recipe_count = recipe_count
+    def __init__(self, entity_count: int) -> None:
+        self._entity_count = entity_count
 
     def single(self) -> FakeNeo4jRecord:
-        return FakeNeo4jRecord(self._recipe_count)
+        return FakeNeo4jRecord(self._entity_count)
 
 
 class FakeNeo4jSession:
@@ -59,16 +60,17 @@ class FakeNeo4jSession:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def run(self, query: str) -> FakeNeo4jResult:
+    def run(self, query: str, parameters: object | None = None) -> FakeNeo4jResult:
+        del parameters
         self._driver.queries.append(query)
         if self._driver.run_error is not None:
             raise self._driver.run_error
-        return FakeNeo4jResult(self._driver.recipe_count)
+        return FakeNeo4jResult(self._driver.entity_count)
 
 
 class FakeNeo4jDriver:
-    def __init__(self, *, recipe_count: int = 1, run_error: Exception | None = None) -> None:
-        self.recipe_count = recipe_count
+    def __init__(self, *, entity_count: int = 1, run_error: Exception | None = None) -> None:
+        self.entity_count = entity_count
         self.run_error = run_error
         self.closed = False
         self.queries: list[str] = []
@@ -198,6 +200,7 @@ def ready_http_session() -> FakeHttpSession:
             "/v1/health/ready": health_ready_payload(),
             "/v1/diagnostics": {
                 "diagnostics": {
+                    "domain_name": "customer_service",
                     "artifacts_ready": True,
                     "retrieval_engines_initialized": True,
                     "system_ready": True,
@@ -205,6 +208,20 @@ def ready_http_session() -> FakeHttpSession:
             },
         }
     )
+
+
+def test_serving_diagnostics_must_report_the_expected_domain() -> None:
+    payload = {
+        "diagnostics": {
+            "domain_name": "customer_service",
+            "artifacts_ready": True,
+            "retrieval_engines_initialized": True,
+            "system_ready": True,
+        }
+    }
+
+    assert probes._diagnostics_ready(payload, expected_domain="customer_service") is True
+    assert probes._diagnostics_ready(payload, expected_domain="recipe") is False
 
 
 def run_with_fakes(
@@ -215,7 +232,7 @@ def run_with_fakes(
     neo4j_factory: Callable[..., FakeNeo4jDriver] | None = None,
     milvus_factory: Callable[..., FakeMilvusClient] | None = None,
 ):
-    neo4j = neo4j or FakeNeo4jDriver(recipe_count=12)
+    neo4j = neo4j or FakeNeo4jDriver(entity_count=12)
     milvus = milvus or FakeMilvusClient(collections=["cooking_knowledge"], row_count=20)
     http = http or ready_http_session()
     return run_dependency_probes(
@@ -228,13 +245,14 @@ def run_with_fakes(
 
 
 def test_dependency_probes_return_counts_and_readiness_without_secrets() -> None:
-    neo4j = FakeNeo4jDriver(recipe_count=12)
+    neo4j = FakeNeo4jDriver(entity_count=12)
     milvus = FakeMilvusClient(collections=["cooking_knowledge"], row_count=20)
     http = FakeHttpSession(
         get_responses={
             "/v1/health/ready": health_ready_payload(),
             "/v1/diagnostics": {
                 "diagnostics": {
+                    "domain_name": "customer_service",
                     "artifacts_ready": True,
                     "retrieval_engines_initialized": True,
                     "system_ready": True,
@@ -253,7 +271,7 @@ def test_dependency_probes_return_counts_and_readiness_without_secrets() -> None
 
     assert all(result.passed for result in results)
     assert {result.name: result.actual for result in results} == {
-        "dependency.neo4j.recipe_count": 12,
+        "dependency.neo4j.entity_count": 12,
         "dependency.milvus.entity_count": 20,
         "dependency.serving.ready": True,
     }
@@ -262,7 +280,7 @@ def test_dependency_probes_return_counts_and_readiness_without_secrets() -> None
 
 def test_neo4j_probe_uses_repository_driver_factory_contract_and_query_database() -> None:
     captured: dict[str, object] = {}
-    neo4j = FakeNeo4jDriver(recipe_count=12)
+    neo4j = FakeNeo4jDriver(entity_count=12)
 
     def driver_factory(*args: object, **kwargs: object) -> FakeNeo4jDriver:
         captured["args"] = args
@@ -277,7 +295,9 @@ def test_neo4j_probe_uses_repository_driver_factory_contract_and_query_database(
         "kwargs": {},
     }
     assert neo4j.session_databases == ["neo4j"]
-    assert neo4j.queries == ["MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_count"]
+    assert len(neo4j.queries) == 1
+    assert "entity.domain = $domain_name" in neo4j.queries[0]
+    assert "AS entity_count" in neo4j.queries[0]
 
 
 def test_milvus_probe_accepts_configured_collection_alias() -> None:
@@ -354,6 +374,7 @@ def test_milvus_probe_accepts_configured_collection_alias() -> None:
                         ),
                         "/v1/diagnostics": {
                             "diagnostics": {
+                                "domain_name": "customer_service",
                                 "artifacts_ready": True,
                                 "retrieval_engines_initialized": True,
                                 "system_ready": True,
@@ -456,6 +477,7 @@ def test_run_dependency_probes_closes_owned_http_session(monkeypatch: pytest.Mon
                     "/v1/health/ready": health_ready_payload(),
                     "/v1/diagnostics": {
                         "diagnostics": {
+                            "domain_name": "customer_service",
                             "artifacts_ready": True,
                             "retrieval_engines_initialized": True,
                             "system_ready": True,

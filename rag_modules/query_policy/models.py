@@ -91,11 +91,20 @@ class ScoringPolicy:
 
 
 @dataclass(frozen=True)
+class StrategyRoutingRule:
+    strategy: str
+    relation_types_all: tuple[str, ...] = ()
+    relation_types_any: tuple[str, ...] = ()
+    maximum_structural_hit_count: int | None = None
+
+
+@dataclass(frozen=True)
 class RoutingPolicy:
     graph_first_query_types: tuple[str, ...]
     multi_hop_graph_first_relation_hits: int
     meaningful_constraint_fields: tuple[str, ...]
     validation_labels: dict[str, str]
+    strategy_rules: tuple[StrategyRoutingRule, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -170,6 +179,12 @@ class AnswerWorkflowCopyPolicy:
     unknown_recipe_name: str
     unknown_search_type: str
 
+    @property
+    def unknown_entity_name(self) -> str:
+        """Domain-neutral name backed by the deprecated storage field."""
+
+        return self.unknown_recipe_name
+
 
 @dataclass(frozen=True)
 class GenerationAnswerTypePolicy:
@@ -213,6 +228,7 @@ class GenerationPolicy:
     decision: GenerationDecisionPolicy
     fallback_answer: dict[str, str]
     answer_workflow_copy: AnswerWorkflowCopyPolicy
+    citation_label: str = "Evidence"
 
 
 @dataclass(frozen=True)

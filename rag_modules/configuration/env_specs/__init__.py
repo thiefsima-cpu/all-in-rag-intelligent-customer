@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .api import API_ENV_FIELD_SPECS
 from .base import EnvFieldSpec
+from .base import spec as _spec
 from .generation import GENERATION_ENV_FIELD_SPECS
 from .graph import GRAPH_ENV_FIELD_SPECS
 from .models import MODELS_ENV_FIELD_SPECS
@@ -12,8 +13,13 @@ from .query_understanding import QUERY_UNDERSTANDING_ENV_FIELD_SPECS
 from .retrieval import RETRIEVAL_ENV_FIELD_SPECS
 from .storage import STORAGE_ENV_FIELD_SPECS
 
+DOMAIN_ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
+    _spec(("GRAPH_RAG_DOMAIN", "RAG_DOMAIN"), ("domain", "name"), "str"),
+)
+
 ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
     *API_ENV_FIELD_SPECS,
+    *DOMAIN_ENV_FIELD_SPECS,
     *GENERATION_ENV_FIELD_SPECS,
     *GRAPH_ENV_FIELD_SPECS,
     *MODELS_ENV_FIELD_SPECS,
@@ -26,6 +32,7 @@ ENV_FIELD_SPECS: tuple[EnvFieldSpec, ...] = (
 
 __all__ = [
     "API_ENV_FIELD_SPECS",
+    "DOMAIN_ENV_FIELD_SPECS",
     "ENV_FIELD_SPECS",
     "GENERATION_ENV_FIELD_SPECS",
     "GRAPH_ENV_FIELD_SPECS",

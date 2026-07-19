@@ -1,0 +1,22 @@
+{
+  "schema_version": "domain-evaluation-v1",
+  "domain": "recipe",
+  "description": "Compatibility evaluation cases for the optional recipe domain pack.",
+  "cases": [
+    {
+      "case_id": "recipe_ingredient_grounded",
+      "query": "麻婆豆腐的主要食材是什么？",
+      "expected_response_mode": "grounded_answer",
+      "relevant_entities": {"recipe-mapo-tofu": 3.0},
+      "must_include_facts": ["豆腐", "豆瓣酱"],
+      "evidence": [
+        {
+          "entity_id": "recipe-mapo-tofu",
+          "entity_name": "麻婆豆腐",
+          "entity_type": "Recipe",
+          "content": "麻婆豆腐的主要食材包括豆腐、豆瓣酱和花椒。"
+        }
+      ]
+    }
+  ]
+}

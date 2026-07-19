@@ -59,6 +59,9 @@ class DefaultHybridRuntimeAdapterFactory:
         driver: Neo4jDriverPort | None,
         database: str,
     ) -> DualLevelRetriever:
+        config = getattr(graph_indexing, "config", None)
+        domain = getattr(config, "domain", None)
+        domain_name = str(getattr(domain, "name", "recipe") or "recipe")
         return DualLevelRetriever(
             graph_indexing=graph_indexing,
             graph_kv_retriever=graph_kv_retriever,
@@ -69,6 +72,7 @@ class DefaultHybridRuntimeAdapterFactory:
             fallback_retriever=Neo4jFallbackRetriever(
                 driver=driver,
                 database=database,
+                domain_name=domain_name,
             ),
             driver=driver,
             database=database,

@@ -33,10 +33,12 @@ class StartupDiagnostics:
     system_ready: bool
     retrieval_engines_initialized: bool
     manifest: ArtifactManifestDiagnostics
+    domain_name: str = ""
 
     def to_dict(self) -> JsonObject:
         return {
             "mode": self.mode,
+            "domain_name": self.domain_name,
             "llm_model": self.llm_model,
             "embedding_model": self.embedding_model,
             "rerank_model": self.rerank_model,

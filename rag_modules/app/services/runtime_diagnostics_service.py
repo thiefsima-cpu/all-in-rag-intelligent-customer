@@ -91,6 +91,7 @@ class RuntimeDiagnosticsService:
         )
         return StartupDiagnostics(
             mode=mode,
+            domain_name=self.config.domain.name,
             llm_model=models.llm_model,
             embedding_model=models.embedding_model,
             rerank_model=models.rerank_model,

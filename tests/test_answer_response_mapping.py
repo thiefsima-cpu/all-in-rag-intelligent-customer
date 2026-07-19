@@ -91,11 +91,15 @@ def test_public_answer_payload_maps_typed_response_without_traces() -> None:
     assert dumped["grounding"]["evidence_documents"] == [
         {
             "content": "Mapo tofu balances tofu and chili bean paste.",
+            "entity_id": "recipe-1",
+            "entity_name": "mapo tofu",
             "recipe_name": "mapo tofu",
+            "entity_type": "recipe",
             "score": 0.95,
             "source": "graph",
             "evidence_type": "graph_relation",
             "matched_terms": ["tofu"],
+            "attributes": {},
         }
     ]
     assert "analysis" not in dumped["diagnostics"]

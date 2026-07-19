@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List
 
 from ..kernel.routing import SearchStrategy
-from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES, SEMANTIC_SCHEMA_VERSION
+from ..kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .query_constraints import QueryConstraints
 from .query_semantics import QuerySemanticProfile
 from .query_settings import QuerySemanticRuntimeSettings
@@ -20,8 +20,6 @@ from .query_types import (
     search_strategy,
 )
 from .query_utils import as_list, clamp_float, clamp_int
-
-_SCHEMA_RELATION_TYPES = SEMANTIC_RELATION_TYPES
 
 
 def _resolve_semantic_profile(data: Dict[str, Any]) -> QuerySemanticProfile:
@@ -123,7 +121,11 @@ class QueryPlan:
         semantic_settings: QuerySemanticRuntimeSettings,
         schema_relation_types: Iterable[str] | None = None,
     ) -> "QueryPlan":
-        allowed_relation_types = tuple(schema_relation_types or _SCHEMA_RELATION_TYPES)
+        allowed_relation_types = (
+            frozenset(str(item) for item in schema_relation_types)
+            if schema_relation_types is not None
+            else None
+        )
         resolved_profile = _resolve_semantic_profile(data)
         validation_errors: List[str] = []
         constraints = QueryConstraints.from_dict(
@@ -160,7 +162,7 @@ class QueryPlan:
         relation_types = [
             relation
             for relation in _profile_values(data, "relation_types", resolved_profile.relation_types)
-            if relation in allowed_relation_types
+            if allowed_relation_types is None or relation in allowed_relation_types
         ]
         return cls(
             query=query,

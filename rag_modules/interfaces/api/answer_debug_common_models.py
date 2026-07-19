@@ -42,6 +42,9 @@ class EvidenceDocumentResponseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str = ""
+    entity_id: str = ""
+    entity_name: str = ""
+    entity_type: str = ""
     node_id: str = ""
     recipe_name: str = ""
     node_type: str = ""
@@ -55,6 +58,7 @@ class EvidenceDocumentResponseModel(BaseModel):
     evidence_type: str = "text"
     matched_terms: list[str] = Field(default_factory=list)
     graph_evidence: JsonObject = Field(default_factory=dict)
+    domain_graph_evidence: JsonObject = Field(default_factory=dict)
     recipe_graph_evidence: JsonObject = Field(default_factory=dict)
     constraint_evidence: JsonObject = Field(default_factory=dict)
     evidence_units: list[JsonObject] = Field(default_factory=list)
@@ -65,6 +69,9 @@ class EvidenceDocumentResponseModel(BaseModel):
     def from_dto(cls, document: EvidenceDocument) -> "EvidenceDocumentResponseModel":
         return cls(
             content=document.content,
+            entity_id=document.entity_id,
+            entity_name=document.entity_name,
+            entity_type=document.entity_type,
             node_id=document.node_id,
             recipe_name=document.recipe_name,
             node_type=document.node_type,
@@ -78,6 +85,7 @@ class EvidenceDocumentResponseModel(BaseModel):
             evidence_type=document.evidence_type,
             matched_terms=list(document.matched_terms),
             graph_evidence=coerce_json_object(document.graph_evidence),
+            domain_graph_evidence=coerce_json_object(document.domain_graph_evidence),
             recipe_graph_evidence=coerce_json_object(document.recipe_graph_evidence),
             constraint_evidence=coerce_json_object(document.constraint_evidence),
             evidence_units=[coerce_json_object(item) for item in document.evidence_units],

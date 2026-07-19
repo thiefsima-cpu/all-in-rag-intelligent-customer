@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from time import perf_counter
 from typing import Any, Protocol
+from unicodedata import normalize
 from uuid import uuid4
 
 import requests
@@ -35,6 +37,40 @@ _REQUIRED_ROUTE_DIAGNOSTIC_FIELDS = frozenset(
 )
 _REQUIRED_GENERATION_TRACE_FIELDS = frozenset(
     {"total_tokens", "estimated_cost_usd", "fallback_used"}
+)
+_CHINESE_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_CHINESE_QUANTITY_PATTERN = re.compile(
+    r"([零〇一二两三四五六七八九十]+)(天|年|个月|月|日|小时|分钟|周)"
+)
+_NEGATED_FACT_PREFIXES = (
+    "不支持",
+    "不提供",
+    "不能",
+    "无法",
+    "未",
+    "没有",
+    "并非",
+    "不是",
+)
+_NEGATED_FACT_SUFFIXES = (
+    "不适用",
+    "不支持",
+    "不存在",
+    "无效",
+    "不可",
 )
 
 
@@ -75,6 +111,19 @@ def normalize_live_case_observation(
     )
     generation_cost = generation_trace.estimated_cost_usd
     estimated_cost_usd = generation_cost if generation_cost > 0 else summary.estimated_cost_usd
+    observed_entity_ids = {
+        _normalized_match_text(document.entity_id or document.recipe_id)
+        for document in evidence_documents
+        if document.entity_id or document.recipe_id
+    }
+    expected_entity_ids = {
+        _normalized_match_text(entity_id) for entity_id in case.expected_entity_ids
+    }
+    normalized_answer = _normalized_match_text(summary.answer)
+    matched_fact_count = sum(
+        _required_fact_is_asserted(normalized_answer, _normalized_match_text(fact))
+        for fact in case.must_include_facts
+    )
 
     return LiveCaseObservation(
         case_id=case.case_id,
@@ -86,7 +135,58 @@ def normalize_live_case_observation(
         latency_ms=summary.latency_ms,
         total_tokens=generation_trace.total_tokens,
         estimated_cost_usd=estimated_cost_usd,
+        expected_entity_count=len(expected_entity_ids),
+        matched_expected_entity_count=len(expected_entity_ids & observed_entity_ids),
+        expected_fact_count=len(case.must_include_facts),
+        matched_expected_fact_count=matched_fact_count,
     )
+
+
+def _normalized_match_text(value: object) -> str:
+    normalized = "".join(normalize("NFKC", str(value or "")).casefold().split())
+    return _CHINESE_QUANTITY_PATTERN.sub(_replace_chinese_quantity, normalized)
+
+
+def _required_fact_is_asserted(answer: str, fact: str) -> bool:
+    if not answer or not fact:
+        return False
+    for match in re.finditer(re.escape(fact), answer):
+        start, end = match.span()
+        if fact[0].isdigit() and start > 0 and answer[start - 1].isdigit():
+            continue
+        if fact.isdigit() and end < len(answer) and answer[end].isdigit():
+            continue
+        prefix = answer[max(0, start - 8) : start]
+        suffix = answer[end : min(len(answer), end + 12)]
+        if any(marker in prefix for marker in _NEGATED_FACT_PREFIXES):
+            continue
+        if any(marker in suffix for marker in _NEGATED_FACT_SUFFIXES):
+            continue
+        return True
+    return False
+
+
+def _replace_chinese_quantity(match: re.Match[str]) -> str:
+    number = _parse_chinese_number(match.group(1))
+    if number is None:
+        return match.group(0)
+    return f"{number}{match.group(2)}"
+
+
+def _parse_chinese_number(value: str) -> int | None:
+    if "十" not in value:
+        digits = [_CHINESE_DIGITS.get(character) for character in value]
+        if any(digit is None for digit in digits):
+            return None
+        return int("".join(str(digit) for digit in digits))
+    if value.count("十") != 1:
+        return None
+    tens_text, ones_text = value.split("十")
+    tens = 1 if not tens_text else _CHINESE_DIGITS.get(tens_text)
+    ones = 0 if not ones_text else _CHINESE_DIGITS.get(ones_text)
+    if tens is None or ones is None:
+        return None
+    return tens * 10 + ones
 
 
 def run_live_case(

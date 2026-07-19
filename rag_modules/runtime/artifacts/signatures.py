@@ -10,13 +10,15 @@ from .json import canonical_json_bytes, json_safe
 
 
 def compute_graph_signature(data_module: object) -> str:
+    domain_name = str(getattr(data_module, "domain_name", "recipe") or "recipe")
     collections = (
         ("recipes", getattr(data_module, "recipes", []) or []),
         ("ingredients", getattr(data_module, "ingredients", []) or []),
         ("cooking_steps", getattr(data_module, "cooking_steps", []) or []),
     )
     payload: Dict[str, Any] = {
-        "schema": "graph-content-v2",
+        "schema": "graph-content-v3",
+        "domain": domain_name,
         "semantic_schema_version": SEMANTIC_SCHEMA_VERSION,
     }
     for collection_name, collection in collections:

@@ -1,0 +1,108 @@
+{
+  "lexicon": {
+    "term_sets": {
+      "$replace": {
+        "time_markers": ["今天", "当前", "最新", "生效", "到期", "工作日", "到账"],
+        "path_markers": ["流程", "链路", "经过哪些状态", "依据什么政策"],
+        "subgraph_markers": ["相关政策", "关联订单", "完整规则", "适用范围"],
+        "clustering_markers": ["类似问题", "同类订单", "同类商品"],
+        "recommendation_markers": ["怎么办", "如何处理", "下一步", "处理方式"],
+        "explicit_recommendation_markers": ["怎么办", "如何处理", "下一步"],
+        "ambiguous_recommendation_markers": ["帮我处理", "解决一下"],
+        "filtering_markers": ["只根据", "仅限", "不包含", "排除", "必须", "不能"],
+        "structural_reasoning_markers": ["为什么", "依据", "关系", "适用", "冲突", "版本", "生效"],
+        "relation_markers": ["订单", "退款", "退货", "保修", "发票", "政策", "商品", "状态", "物流", "适用", "生效", "冲突"],
+        "fast_rule_markers": ["订单", "退款", "保修", "发票", "政策", "状态", "为什么", "依据"],
+        "constraint_markers": ["订单号", "商品型号", "签收", "购买日期", "政策版本", "生效日期"],
+        "entity_hints": ["订单", "商品", "政策", "退款规则", "保修条款", "发票规则", "工单"],
+        "entity_phrase_markers": ["订单号", "政策编号", "商品型号", "工单号"],
+        "entity_target_markers": ["适用于", "依据", "关联", "对应"],
+        "graph_generic_terms": ["关系", "政策", "规则", "状态", "版本"],
+        "query_stopwords": ["请", "一下", "帮我", "能否", "可以"],
+        "graph_source_prefixes": ["订单", "商品", "政策", "工单"],
+        "graph_source_suffixes": ["号", "编号", "规则", "条款"],
+        "flavor_terms": [],
+        "texture_effect_terms": [],
+        "technique_terms": [],
+        "diet_terms": [],
+        "health_terms": [],
+        "cuisine_style_terms": [],
+        "ingredient_category_terms": ["退款", "保修", "发票", "物流", "账号", "支付", "隐私"],
+        "difficulty_terms": []
+      }
+    },
+    "regex_rules": {
+      "$replace": {
+        "pairwise_entity_patterns": ["(?:订单|政策|商品)\\s*([A-Za-z0-9_.-]{3,64})[^，。；;]{0,80}?(?:订单|政策|商品)\\s*([A-Za-z0-9_.-]{3,64})"],
+        "entity_reference_patterns": [
+          "(?:\u8ba2\u5355|\u5de5\u5355)\\s*([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)",
+          "(?:\u5546\u54c1|\u578b\u53f7)\\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)",
+          "(?:\u9000\u6b3e\u653f\u7b56|\u653f\u7b56)(?:\\s*\u7248\u672c)?\\s*(\\d{4}\\.\\d{2})"
+        ],
+        "time_minutes_patterns": [],
+        "time_hours_patterns": [],
+        "time_half_hour_patterns": [],
+        "excluded_term_patterns": ["(?:不包含|排除|不要)\\s*([^，。；;]{1,24})"]
+      }
+    }
+  },
+  "relations": {
+    "graph_relation_types": ["GOVERNED_BY", "APPLIES_TO", "HAS_REFUND_RULE", "HAS_WARRANTY_TERM", "HAS_INVOICE_RULE", "SUPERSEDES", "CONFLICTS_WITH", "HAS_STATUS"],
+    "semantic_relation_hints": {"$replace": {"订单": "GOVERNED_BY", "政策": "GOVERNED_BY", "适用": "APPLIES_TO", "退款": "HAS_REFUND_RULE", "退货": "HAS_REFUND_RULE", "保修": "HAS_WARRANTY_TERM", "发票": "HAS_INVOICE_RULE", "最新": "SUPERSEDES", "版本": "SUPERSEDES", "冲突": "CONFLICTS_WITH", "状态": "HAS_STATUS", "物流": "HAS_STATUS"}},
+    "relation_index_keywords": {"$replace": {"GOVERNED_BY": ["依据政策", "受什么规则约束", "订单政策"], "APPLIES_TO": ["适用商品", "适用范围"], "HAS_REFUND_RULE": ["退款", "退货", "无理由退货"], "HAS_WARRANTY_TERM": ["保修", "质保", "保修期"], "HAS_INVOICE_RULE": ["发票", "抬头", "重开"], "SUPERSEDES": ["最新版本", "替代", "生效版本"], "CONFLICTS_WITH": ["冲突", "口径不一致"], "HAS_STATUS": ["订单状态", "物流状态", "退款状态"]}},
+    "relation_query_markers": {"$replace": {"GOVERNED_BY": ["依据", "什么政策", "按规则"], "APPLIES_TO": ["适用", "支持哪些商品"], "HAS_REFUND_RULE": ["退款", "退货", "无理由"], "HAS_WARRANTY_TERM": ["保修", "质保"], "HAS_INVOICE_RULE": ["发票", "抬头"], "SUPERSEDES": ["最新", "当前生效", "版本"], "CONFLICTS_WITH": ["冲突", "不一致"], "HAS_STATUS": ["状态", "到哪了", "到账"]}},
+    "entity_linker": {
+      "preferred_labels": ["Order", "Product", "RefundPolicy", "WarrantyPolicy", "InvoicePolicy", "ServicePolicy", "SupportArticle"],
+      "query_type_priorities": {"$replace": {"entity_relation": ["Order", "Product", "ServicePolicy"], "path_finding": ["Order", "ServicePolicy"], "subgraph": ["ServicePolicy", "SupportArticle"]}},
+      "relation_priorities": {"$replace": {"GOVERNED_BY": ["Order", "ServicePolicy"], "HAS_REFUND_RULE": ["RefundPolicy", "ServicePolicy"], "HAS_WARRANTY_TERM": ["WarrantyPolicy", "Product"], "HAS_INVOICE_RULE": ["InvoicePolicy", "ServicePolicy"], "HAS_STATUS": ["Order", "SupportArticle"]}}
+    },
+    "preferred_relation_excluded_types": [],
+    "relation_index_suffix_templates": {"$replace": {"HAS_REFUND_RULE": "{source_entity}_退款规则", "HAS_WARRANTY_TERM": "{source_entity}_保修条款", "HAS_STATUS": "{source_entity}_状态"}}
+  },
+  "routing": {
+    "meaningful_constraint_fields": ["include_terms", "exclude_terms", "category_terms", "preference_terms"],
+    "strategy_rules": [
+      {
+        "strategy": "graph_rag",
+        "relation_types_any": ["SUPERSEDES", "CONFLICTS_WITH"]
+      },
+      {
+        "strategy": "combined",
+        "relation_types_all": ["HAS_REFUND_RULE", "HAS_WARRANTY_TERM"]
+      },
+      {
+        "strategy": "hybrid_traditional",
+        "relation_types_all": ["HAS_STATUS"],
+        "maximum_structural_hit_count": 0
+      }
+    ]
+  },
+  "graph": {
+    "sub_questions": [
+      {"id": "direct_relations", "when": {"entities_present": true}, "template": "Find authoritative customer-service facts directly connected to: {entities}"},
+      {"id": "policy_version", "when": {"relation_types_any": ["GOVERNED_BY", "SUPERSEDES", "CONFLICTS_WITH"]}, "template": "Resolve the applicable policy, effective version, and any conflicting source."},
+      {"id": "order_status", "when": {"relation_types_any": ["HAS_STATUS"]}, "template": "Retrieve only the status evidence linked to the identified order."},
+      {"id": "fallback", "when": {"fallback": true}, "template": "Retrieve orders, products, policies, support articles, and their graph relations relevant to the question."}
+    ],
+    "reasoning": {
+      "causal_relation_types": ["GOVERNED_BY", "SUPERSEDES", "CONFLICTS_WITH"],
+      "compositional_relation_types": ["APPLIES_TO", "HAS_REFUND_RULE", "HAS_WARRANTY_TERM", "HAS_INVOICE_RULE", "HAS_STATUS"],
+      "semantic_relation_key_specs": {"$replace": {}}
+    }
+  },
+  "generation": {
+    "citation_label": "客服证据",
+    "answer_types": {"$replace": {"direct_answer": {"markers": []}, "procedure": {"markers": ["怎么办", "如何处理", "下一步"]}, "explanation": {"markers": ["为什么", "依据", "规则", "政策"]}, "comparison": {"markers": ["区别", "冲突", "哪个有效", "最新版本"]}}},
+    "relation_explanation_markers": ["为什么", "依据", "适用", "冲突", "版本", "生效"],
+    "rule_plan": {
+      "default_outline": ["先给出证据支持的客服结论", "再说明适用政策或订单事实", "最后交代缺失信息与可执行的下一步"],
+      "fallback_outline": ["先回答能由证据确认的部分", "再列出证据依据", "最后说明不可确认或不可代办的边界"],
+      "graph_caution": "涉及订单与政策关系的结论必须绑定到已识别实体和当前有效证据。",
+      "missing_relation_evidence": "当前证据不足以确认订单、商品与政策之间的适用关系。",
+      "sparse_evidence": "当前客服证据覆盖有限，不能外推其他订单、商品或政策版本。",
+      "missing_information_caution": "明确区分已检索事实、仍需用户补充的信息以及系统未授权执行的操作。",
+      "fallback_claim_template": "{entity_name} 是当前问题的相关客服证据。"
+    },
+    "answer_workflow_copy": {"no_evidence_answer": "抱歉，当前没有足够的客服知识或订单证据来确认该问题。", "unknown_entity_name": "未知客服实体", "document_summary_template": "找到 {document_count} 条相关客服证据：{document_summaries}"}
+  }
+}

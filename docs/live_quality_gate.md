@@ -14,7 +14,7 @@ release gate.
 ## Prerequisites
 
 - The serving API is running and `/v1/debug/answers` is available.
-- Neo4j and Milvus contain the prepared recipe graph and vector data.
+- Neo4j and Milvus contain graph and vector data built for the selected `DomainPack`.
 - The serving API has its normal model-provider credentials.
 - The judge model has separate credentials from the serving API.
 - The business-owned golden policy has been reviewed for the target release.
@@ -148,12 +148,12 @@ Source requirements use route-stage identifiers. Combined cases require
 dedicated traditional/vector cases. A `hybrid_supplement` stage after valid
 graph evidence is normal augmentation and does not increase the fallback rate.
 
-The default 47-case policy enforces coverage for prompt injection, knowledge
+The default policy enforces coverage for prompt injection, knowledge
 pollution, no-evidence inducement, cross-language, typo, long-query,
 constraint-heavy, real customer-service long-tail, temporal, conflicting
 knowledge, ultra-long-context, and repeated regression-anchor scenarios. The
-customer-service slice covers order, billing, account, and policy questions in
-addition to the historical recipe cases. The aggregate p95 latency ratchet is
+customer-service slice includes grounded order, refund, warranty, invoice, and policy-version
+answers in addition to safe abstention controls and historical compatibility cases. The aggregate p95 latency ratchet is
 25 seconds; streamed first-token latency is exposed separately by runtime and
 local pressure metrics. The gate also keeps LLM judge scores and deterministic checks separate so
 operators can see whether a failure is retrieval, generation, judge

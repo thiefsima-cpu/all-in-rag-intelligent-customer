@@ -6,6 +6,7 @@ import logging
 from typing import Protocol
 
 from ..configuration.models import GraphRAGConfig
+from ..domains import get_domain_pack
 from ..safe_logging import log_failure
 from .contracts import SemanticGraphSchemaSyncPort, SemanticGraphSchemaSyncResult
 from .ports import GraphDataModulePort
@@ -63,6 +64,12 @@ class _KnowledgeBaseSchemaSyncMixin(_KnowledgeBaseSchemaSyncHost):
         self, document_result, schema_sync_result: SemanticGraphSchemaSyncResult
     ) -> dict:
         return {
+            "domain_pack": {
+                "name": self.config.domain.name,
+                "version": get_domain_pack(self.config.domain.name).version,
+                "query_policy_bundle": self.config.query_understanding.policy.bundle,
+                "vector_collection_name": self.config.storage.milvus_collection_name,
+            },
             "config_profile": {
                 "name": getattr(self.config, "profile_name", ""),
                 "path": getattr(self.config, "profile_path", ""),

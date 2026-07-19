@@ -14,7 +14,12 @@ from scripts.gates import GateCheckResult, GateFailureType
 
 from .models import IntegrationGatePolicy, IntegrationGateSettings
 
-_RECIPE_COUNT_QUERY = "MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_count"
+_ENTITY_COUNT_QUERY = """
+MATCH (entity)
+WHERE entity.domain = $domain_name
+   OR ($domain_name = 'recipe' AND entity:Recipe)
+RETURN count(entity) AS entity_count
+"""
 
 
 class Neo4jDriverFactory(Protocol):
@@ -39,7 +44,7 @@ def run_dependency_probes(
         return (
             probe_neo4j(
                 settings=settings,
-                minimum_count=policy.dependency_minimums.neo4j_recipe_count,
+                minimum_count=policy.dependency_minimums.neo4j_entity_count,
                 driver_factory=neo4j_driver_factory,
             ),
             probe_milvus(
@@ -79,12 +84,12 @@ def probe_neo4j(
             session_context = driver.session()
 
         with session_context as session:
-            result = session.run(_RECIPE_COUNT_QUERY)
+            result = session.run(_ENTITY_COUNT_QUERY, {"domain_name": settings.domain_name})
             record = result.single()
-        recipe_count = _safe_int(_record_value(record, "recipe_count"))
+        entity_count = _safe_int(_record_value(record, "entity_count"))
     except Exception:
         return _dependency_failure(
-            "dependency.neo4j.recipe_count",
+            "dependency.neo4j.entity_count",
             code="NEO4J_UNAVAILABLE",
             expected={"minimum": minimum_count},
             actual=None,
@@ -93,20 +98,20 @@ def probe_neo4j(
     finally:
         _close_quietly(driver)
 
-    if recipe_count is None or recipe_count < minimum_count:
+    if entity_count is None or entity_count < minimum_count:
         return _dependency_failure(
-            "dependency.neo4j.recipe_count",
+            "dependency.neo4j.entity_count",
             code="NEO4J_UNAVAILABLE",
             expected={"minimum": minimum_count},
-            actual=recipe_count,
+            actual=entity_count,
             start_time=start_time,
         )
 
     return GateCheckResult.pass_check(
-        "dependency.neo4j.recipe_count",
+        "dependency.neo4j.entity_count",
         code="NEO4J_READY",
         expected={"minimum": minimum_count},
-        actual=recipe_count,
+        actual=entity_count,
         duration_ms=_elapsed_ms(start_time),
     )
 
@@ -225,7 +230,10 @@ def probe_serving(
             start_time=start_time,
         )
 
-    if not _readiness_ready(ready_payload) or not _diagnostics_ready(diagnostics_payload):
+    if not _readiness_ready(ready_payload) or not _diagnostics_ready(
+        diagnostics_payload,
+        expected_domain=settings.domain_name,
+    ):
         return _dependency_failure(
             "dependency.serving.ready",
             code="SERVING_API_NOT_READY",
@@ -293,13 +301,18 @@ def _get_json(
     return payload
 
 
-def _diagnostics_ready(payload: Mapping[str, Any]) -> bool:
+def _diagnostics_ready(
+    payload: Mapping[str, Any],
+    *,
+    expected_domain: str,
+) -> bool:
     diagnostics = payload.get("diagnostics")
     if not isinstance(diagnostics, Mapping):
         return False
 
     return (
-        diagnostics.get("artifacts_ready") is True
+        diagnostics.get("domain_name") == expected_domain
+        and diagnostics.get("artifacts_ready") is True
         and diagnostics.get("retrieval_engines_initialized") is True
         and diagnostics.get("system_ready") is True
     )

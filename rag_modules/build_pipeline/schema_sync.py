@@ -20,6 +20,12 @@ class SemanticGraphSchemaSyncService:
         self,
         documents: Sequence[TextDocument],
     ) -> SemanticGraphSchemaSyncResult:
+        domain = getattr(self.config, "domain", None)
+        domain_name = str(getattr(domain, "name", "recipe") or "recipe")
+        if domain_name != "recipe":
+            # Non-recipe graphs already conform to the selected DomainPack ontology.
+            # The legacy writer below derives recipe-only Flavor/Technique nodes.
+            return SemanticGraphSchemaSyncResult(enabled=False)
         writer = SemanticGraphSchemaWriter(self.config, neo4j_manager=self.neo4j_manager)
         stats = writer.persist_from_documents(list(documents or []))
         return SemanticGraphSchemaSyncResult(

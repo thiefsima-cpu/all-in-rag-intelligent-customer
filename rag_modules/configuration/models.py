@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .model_sections import (
     ApiSettings,
     ConfigSection,
+    DomainSettings,
     GenerationSettings,
     GraphSettings,
     ModelSettings,
@@ -28,6 +29,7 @@ from .model_sections import (
 )
 
 SECTION_TYPES: Dict[str, type[ConfigSection]] = {
+    "domain": DomainSettings,
     "storage": StorageSettings,
     "models": ModelSettings,
     "retrieval": RetrievalSettings,
@@ -75,6 +77,7 @@ class GraphRAGConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
+    domain: DomainSettings = Field(default_factory=DomainSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     models: ModelSettings
     retrieval: RetrievalSettings
@@ -195,6 +198,7 @@ class GraphRAGConfig(BaseModel):
 __all__ = [
     "ApiSettings",
     "ConfigSection",
+    "DomainSettings",
     "GenerationSettings",
     "GraphRAGConfig",
     "GraphSettings",

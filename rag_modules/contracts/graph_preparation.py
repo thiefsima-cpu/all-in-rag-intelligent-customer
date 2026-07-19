@@ -54,8 +54,29 @@ class GraphPreparationStats:
     avg_content_length: float = 0.0
     avg_chunk_size: float = 0.0
     include_distributions: bool = False
+    domain_name: str = "recipe"
+    total_entities: int = 0
+    entity_types: dict[str, int] = field(default_factory=dict)
+    document_types: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> JsonObject:
+        if self.domain_name != "recipe":
+            domain_payload: JsonObject = {
+                "domain_name": self.domain_name,
+                "total_entities": self.total_entities,
+                "total_documents": self.total_documents,
+                "total_chunks": self.total_chunks,
+            }
+            if self.include_distributions:
+                domain_payload.update(
+                    {
+                        "entity_types": dict(self.entity_types),
+                        "document_types": dict(self.document_types),
+                        "avg_content_length": self.avg_content_length,
+                        "avg_chunk_size": self.avg_chunk_size,
+                    }
+                )
+            return domain_payload
         payload: JsonObject = {
             "total_recipes": self.total_recipes,
             "total_ingredients": self.total_ingredients,

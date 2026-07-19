@@ -1,7 +1,9 @@
 {
   "schema_version": 1,
+  "domain_name": "customer_service",
+  "domain_evaluation_resource": "evaluation.json",
   "dependency_minimums": {
-    "neo4j_recipe_count": 1,
+    "neo4j_entity_count": 1,
     "milvus_entity_count": 1
   },
   "timeouts": {
@@ -16,28 +18,37 @@
   },
   "live_cases": [
     {
-      "case_id": "vector_recipe_lookup",
-      "question": "宫保鸡丁怎么做？",
+      "case_id": "vector_customer_lookup",
+      "evaluation_case_id": "vector_customer_lookup",
+      "question": "订单 CS-1001 现在是什么状态，状态是什么时候更新的？",
       "allowed_strategies": ["hybrid_traditional", "combined"],
       "required_sources": ["vector"],
+      "expected_entity_ids": ["CS-1001"],
+      "must_include_facts": ["已发货", "2026-07-17"],
       "minimum_evidence_count": 1,
       "generation_required": true,
       "timeout_seconds": 60
     },
     {
       "case_id": "graph_relationship_reasoning",
-      "question": "为什么宫保鸡丁里的花生和辣椒会影响整体风味，它们之间是什么关系？",
+      "evaluation_case_id": "graph_relationship_reasoning",
+      "question": "退款政策 2026.07 替代了哪个旧版本，两者是什么关系？",
       "allowed_strategies": ["graph_rag", "combined"],
       "required_sources": ["graph_rag"],
+      "expected_entity_ids": ["POL-REFUND-2026-07", "POL-REFUND-2026-06"],
+      "must_include_facts": ["2026.07", "2026.06", "替代"],
       "minimum_evidence_count": 1,
       "generation_required": true,
       "timeout_seconds": 90
     },
     {
       "case_id": "combined_constrained_recommendation",
-      "question": "推荐带豆腐、口味清淡的家常菜，并解释食材、风味和减脂条件之间的关系。",
+      "evaluation_case_id": "combined_constrained_recommendation",
+      "question": "商品 SKU-PHONE-A 是否支持七天无理由退货，保修期又是多久？",
       "allowed_strategies": ["combined"],
       "required_sources": ["traditional", "graph_rag"],
+      "expected_entity_ids": ["POL-REFUND-2026-07", "POL-WARRANTY-A-2026"],
+      "must_include_facts": ["7 天", "2 年"],
       "minimum_evidence_count": 1,
       "generation_required": true,
       "timeout_seconds": 90

@@ -28,6 +28,7 @@ NODE_PREFIXES = {
     "configuration": ("rag_modules.configuration",),
     "contracts": ("rag_modules.contracts",),
     "domain": ("rag_modules.domain",),
+    "domains": ("rag_modules.domains",),
     "evidence_processing": ("rag_modules.evidence_processing",),
     "generation": ("rag_modules.generation",),
     "graph": ("rag_modules.graph",),
@@ -51,6 +52,7 @@ ALLOWED_IMPORTS = {
             "build_pipeline",
             "configuration",
             "contracts",
+            "domains",
             "generation",
             "graph",
             "infra",
@@ -66,11 +68,21 @@ ALLOWED_IMPORTS = {
     ),
     "application": frozenset({"contracts", "kernel", "safe_logging"}),
     "build_pipeline": frozenset(
-        {"configuration", "contracts", "domain", "infra", "kernel", "runtime", "safe_logging"}
+        {
+            "configuration",
+            "contracts",
+            "domain",
+            "domains",
+            "infra",
+            "kernel",
+            "runtime",
+            "safe_logging",
+        }
     ),
-    "configuration": frozenset({"contracts", "kernel", "query_policy"}),
+    "configuration": frozenset({"contracts", "domains", "kernel", "query_policy"}),
     "contracts": frozenset({"kernel"}),
-    "domain": frozenset({"kernel"}),
+    "domain": frozenset({"domains", "kernel"}),
+    "domains": frozenset({"kernel"}),
     "evidence_processing": frozenset({"contracts"}),
     "generation": frozenset(
         {
@@ -87,6 +99,7 @@ ALLOWED_IMPORTS = {
         {
             "configuration",
             "contracts",
+            "domains",
             "evidence_processing",
             "graph_index",
             "kernel",
@@ -105,6 +118,7 @@ ALLOWED_IMPORTS = {
             "application",
             "configuration",
             "contracts",
+            "domains",
             "kernel",
             "query_policy",
             "runtime",
@@ -116,7 +130,7 @@ ALLOWED_IMPORTS = {
     "observability": frozenset(
         {"configuration", "contracts", "kernel", "safe_logging", "trace_privacy"}
     ),
-    "query_policy": frozenset(),
+    "query_policy": frozenset({"domains"}),
     "query_understanding": frozenset({"contracts", "kernel", "query_policy", "safe_logging"}),
     "retrieval": frozenset(
         {

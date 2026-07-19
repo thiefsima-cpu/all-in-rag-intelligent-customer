@@ -1,5 +1,11 @@
 # Higher-recall evaluation profile for quality-oriented runs.
 
+[domain]
+name = "customer_service"
+
+[storage]
+milvus_collection_name = "customer_service_knowledge"
+
 [retrieval]
 top_k = 6
 vector_search_ef = 192

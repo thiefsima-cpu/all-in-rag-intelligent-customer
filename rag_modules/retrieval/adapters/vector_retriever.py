@@ -42,6 +42,7 @@ class VectorRetriever:
         self.milvus_module = milvus_module
         self.driver = driver
         self.database = database
+        self.domain_name = str(getattr(milvus_module, "domain_name", "recipe") or "recipe")
 
     def search(self, request: RetrievalRequest) -> list[EvidenceDocument]:
         control = request.control
@@ -80,11 +81,20 @@ class VectorRetriever:
             if neighbors:
                 content += f"\n鐩稿叧淇℃伅: {', '.join(neighbors[:3])}"
 
-            recipe_name = str(metadata.get("recipe_name") or metadata.get("name") or "")
+            entity_name = str(
+                metadata.get("entity_name")
+                or metadata.get("recipe_name")
+                or metadata.get("name")
+                or ""
+            )
+            entity_id = str(metadata.get("entity_id") or metadata.get("recipe_id") or node_id)
+            entity_type = str(metadata.get("entity_type") or metadata.get("node_type") or "")
             vector_score = _coerce_float(result.get("score", 0.0))
             metadata.update(
                 {
-                    "recipe_name": recipe_name,
+                    "entity_id": entity_id,
+                    "entity_name": entity_name,
+                    "entity_type": entity_type,
                     "score": vector_score,
                     "search_type": "vector_enhanced",
                     "search_method": "vector",
@@ -94,15 +104,16 @@ class VectorRetriever:
             enhanced.append(
                 EvidenceDocument(
                     content=content,
+                    entity_id=entity_id,
+                    entity_name=entity_name,
+                    entity_type=entity_type,
                     node_id=node_id,
-                    recipe_name=recipe_name,
-                    node_type=str(metadata.get("node_type") or metadata.get("entity_type") or ""),
+                    node_type=entity_type,
                     score=vector_score,
                     search_type="vector_enhanced",
                     search_method="vector",
                     retrieval_level=str(metadata.get("retrieval_level") or "chunk"),
                     doc_id=str(metadata.get("doc_id") or ""),
-                    recipe_id=str(metadata.get("recipe_id") or node_id),
                     source="vector",
                     metadata=metadata,
                 )
@@ -125,13 +136,22 @@ class VectorRetriever:
             with self.driver.session(database=self.database) as session:
                 query = """
                 UNWIND $node_ids AS nid
-                MATCH (n {nodeId: nid})-[r]-(neighbor)
+                MATCH (n {nodeId: nid})
+                WHERE n.domain = $domain_name
+                   OR ($domain_name = 'recipe' AND n.domain IS NULL)
+                MATCH (n)-[r]-(neighbor)
+                WHERE neighbor.domain = $domain_name
+                   OR ($domain_name = 'recipe' AND neighbor.domain IS NULL)
                 WITH nid, collect(DISTINCT neighbor.name)[0..$max_n] AS names
                 RETURN nid, names
                 """
                 result = session.run(
                     query,
-                    {"node_ids": list(set(node_ids)), "max_n": max_neighbors},
+                    {
+                        "node_ids": list(set(node_ids)),
+                        "max_n": max_neighbors,
+                        "domain_name": self.domain_name,
+                    },
                     timeout=control.remaining_seconds() if control is not None else None,
                 )
                 records = cast(Iterable[Mapping[str, object]], result)

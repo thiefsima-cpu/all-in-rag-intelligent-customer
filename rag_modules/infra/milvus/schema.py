@@ -26,6 +26,12 @@ class _MilvusSchemaOperations(MilvusOperationHost):
             FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=150, is_primary=True),
             FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=self.dimension),
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=15000),
+            FieldSchema(name="entity_id", dtype=DataType.VARCHAR, max_length=150),
+            FieldSchema(name="entity_name", dtype=DataType.VARCHAR, max_length=300),
+            FieldSchema(name="entity_type", dtype=DataType.VARCHAR, max_length=100),
+            FieldSchema(name="domain", dtype=DataType.VARCHAR, max_length=100),
+            FieldSchema(name="attributes", dtype=DataType.JSON),
+            # Compatibility columns used by the recipe domain's existing filters.
             FieldSchema(name="node_id", dtype=DataType.VARCHAR, max_length=100),
             FieldSchema(name="recipe_name", dtype=DataType.VARCHAR, max_length=300),
             FieldSchema(name="node_type", dtype=DataType.VARCHAR, max_length=100),
@@ -38,7 +44,9 @@ class _MilvusSchemaOperations(MilvusOperationHost):
         ]
 
         # 创建集合模式
-        schema = CollectionSchema(fields=fields, description="中式烹饪知识图谱向量集合")
+        schema = CollectionSchema(
+            fields=fields, description="DomainPack knowledge vector collection"
+        )
 
         return schema
 

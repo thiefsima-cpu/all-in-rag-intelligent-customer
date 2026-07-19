@@ -77,6 +77,7 @@ class GraphCacheStats:
     schema_version: str = GRAPH_CACHE_STATS_SCHEMA_VERSION
     updated_at: str = field(default_factory=_utc_now_iso)
     graph_signature: str = ""
+    domain_name: str = "recipe"
     entity_count: int = 0
     relation_type_count: int = 0
     entities: list[GraphCacheEntityStats] = field(default_factory=list)
@@ -89,6 +90,7 @@ class GraphCacheStats:
             "schema_version": self.schema_version,
             "updated_at": self.updated_at,
             "graph_signature": self.graph_signature,
+            "domain_name": self.domain_name,
             "entity_count": self.entity_count,
             "relation_type_count": self.relation_type_count,
             "entities": [entity.to_dict() for entity in self.entities],
@@ -104,6 +106,7 @@ class GraphCacheStats:
             schema_version=str(data.get("schema_version") or GRAPH_CACHE_STATS_SCHEMA_VERSION),
             updated_at=str(data.get("updated_at") or _utc_now_iso()),
             graph_signature=str(data.get("graph_signature") or ""),
+            domain_name=str(data.get("domain_name") or "recipe"),
             entity_count=coerce_json_int(data.get("entity_count"), 0),
             relation_type_count=coerce_json_int(data.get("relation_type_count"), 0),
             entities=_entity_stats(data.get("entities")),

@@ -250,10 +250,14 @@ class AnswerPipelineService:
         doc_info = []
         for doc in documents:
             metadata = doc.metadata or {}
-            recipe_name = (
-                doc.recipe_name
-                or metadata.get("recipe_name")
-                or self.answer_workflow_copy.unknown_recipe_name
+            entity_name = (
+                doc.entity_name
+                or metadata.get("entity_name")
+                or getattr(
+                    self.answer_workflow_copy,
+                    "unknown_entity_name",
+                    getattr(self.answer_workflow_copy, "unknown_recipe_name", "unknown"),
+                )
             )
             search_type = (
                 doc.search_type
@@ -265,7 +269,7 @@ class AnswerPipelineService:
                 score_text = f"{float(score):.3f}"
             except (TypeError, ValueError):
                 score_text = str(score)
-            doc_info.append(f"{recipe_name}({search_type}, {score_text})")
+            doc_info.append(f"{entity_name}({search_type}, {score_text})")
         summary = self.answer_workflow_copy.document_summary_template.format(
             document_count=len(documents),
             document_summaries=", ".join(doc_info[:3]),

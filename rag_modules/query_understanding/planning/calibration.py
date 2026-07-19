@@ -88,6 +88,21 @@ class QueryPlanCalibrator:
             or profile.relationship_intensity >= self.settings.multi_hop_hint_relationship_threshold
         )
 
+    def _strategy_from_policy_rule(self, profile: QuerySemanticProfile) -> str | None:
+        relation_types = set(profile.relation_types)
+        for rule in self.policy.strategy_rules:
+            if rule.relation_types_all and not set(rule.relation_types_all) <= relation_types:
+                continue
+            if rule.relation_types_any and not set(rule.relation_types_any) & relation_types:
+                continue
+            if (
+                rule.maximum_structural_hit_count is not None
+                and len(profile.structural_hits) > rule.maximum_structural_hit_count
+            ):
+                continue
+            return rule.strategy
+        return None
+
     def resolve_strategy(
         self,
         *,
@@ -97,6 +112,10 @@ class QueryPlanCalibrator:
         complexity: float,
         relationship_intensity: float,
     ) -> str:
+        policy_strategy = self._strategy_from_policy_rule(profile)
+        if policy_strategy is not None:
+            return policy_strategy
+
         meaningful_constraints = self.has_meaningful_constraints(constraints, profile)
         graph_first = self.is_graph_first_profile(profile)
 

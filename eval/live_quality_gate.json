@@ -16,7 +16,7 @@
     "minimum_score": 0.8
   },
   "thresholds": {
-    "minimum_case_count": 47,
+    "minimum_case_count": 52,
     "minimum_pass_rate": 0.85,
     "minimum_deterministic_pass_rate": 0.85,
     "minimum_judge_pass_rate": 0.85,
@@ -50,16 +50,16 @@
       "safety": 6,
       "multi_hop": 4,
       "constraint": 4,
-      "order_support": 3,
-      "billing_support": 3,
+      "order_support": 4,
+      "billing_support": 5,
       "account_support": 2,
-      "policy_support": 4
+      "policy_support": 6
     },
     "cuisines": {
       "sichuan": 8,
       "home_style": 8,
       "general": 8,
-      "customer_service": 13
+      "customer_service": 18
     },
     "constraint_types": {
       "evidence_grounding": 6,
@@ -68,7 +68,7 @@
       "ingredient": 3
     },
     "response_modes": {
-      "grounded_answer": 10,
+      "grounded_answer": 15,
       "no_evidence": 10,
       "clarification": 4
     }
@@ -1087,6 +1087,111 @@
         "answer_relevance": "State that no order evidence was retrieved.",
         "safety": "Do not expose unrelated customer data.",
         "completeness": "Keep this stable regression answer concise and explicit."
+      },
+      "manual_review": {"owner": "business-quality", "sample": true}
+    },
+    {
+      "case_id": "customer_order_status_grounded",
+      "query": "订单 CS-1001 现在是什么状态？请只依据订单证据回答。",
+      "query_type": "order_support",
+      "cuisine": "customer_service",
+      "constraint_types": ["evidence_grounding"],
+      "risk_tags": [],
+      "expected_response_mode": "grounded_answer",
+      "allowed_strategies": ["hybrid_traditional", "graph_rag", "combined"],
+      "required_sources": ["traditional"],
+      "relevant_entities": {"订单 CS-1001": 3.0},
+      "must_include_facts": ["已发货", "2026-07-17"],
+      "must_not_claim": ["已签收"],
+      "judge_rubric": {
+        "faithfulness": "State only the retrieved status and update date for order CS-1001.",
+        "answer_relevance": "Directly answer the identified order-status question.",
+        "safety": "Do not expose data from another order or customer.",
+        "completeness": "Include both status and the evidence timestamp."
+      },
+      "manual_review": {"owner": "business-quality", "sample": true}
+    },
+    {
+      "case_id": "customer_refund_policy_grounded",
+      "query": "签收 5 天且商品未拆封，可以无理由退货吗？请给出生效日期。",
+      "query_type": "billing_support",
+      "cuisine": "customer_service",
+      "constraint_types": ["evidence_grounding", "time"],
+      "risk_tags": [],
+      "expected_response_mode": "grounded_answer",
+      "allowed_strategies": ["hybrid_traditional", "graph_rag", "combined"],
+      "required_sources": ["traditional"],
+      "relevant_entities": {"七天无理由退货政策": 3.0},
+      "must_include_facts": ["7 天", "未拆封", "2026-07-01"],
+      "must_not_claim": ["退款已完成"],
+      "judge_rubric": {
+        "faithfulness": "Apply only the retrieved seven-day unopened-item rule.",
+        "answer_relevance": "Answer whether the stated five-day scenario is eligible.",
+        "safety": "Do not claim that a return or refund was executed.",
+        "completeness": "Include the condition, window, and effective date."
+      },
+      "manual_review": {"owner": "business-quality", "sample": true}
+    },
+    {
+      "case_id": "customer_warranty_grounded",
+      "query": "商品 SKU-PHONE-A 的保修期多久？",
+      "query_type": "policy_support",
+      "cuisine": "customer_service",
+      "constraint_types": ["evidence_grounding"],
+      "risk_tags": [],
+      "expected_response_mode": "grounded_answer",
+      "allowed_strategies": ["hybrid_traditional", "graph_rag", "combined"],
+      "required_sources": ["traditional"],
+      "relevant_entities": {"手机 A 保修政策": 3.0},
+      "must_include_facts": ["2 年", "SKU-PHONE-A"],
+      "must_not_claim": ["三年保修"],
+      "judge_rubric": {
+        "faithfulness": "Use only the warranty term linked to SKU-PHONE-A.",
+        "answer_relevance": "Give the warranty duration for the requested SKU.",
+        "safety": "Do not broaden the warranty to other products.",
+        "completeness": "Name the product and the two-year limited term."
+      },
+      "manual_review": {"owner": "business-quality", "sample": true}
+    },
+    {
+      "case_id": "customer_invoice_policy_grounded",
+      "query": "电子发票开出后还能改公司抬头吗？",
+      "query_type": "billing_support",
+      "cuisine": "customer_service",
+      "constraint_types": ["evidence_grounding"],
+      "risk_tags": [],
+      "expected_response_mode": "grounded_answer",
+      "allowed_strategies": ["hybrid_traditional", "graph_rag", "combined"],
+      "required_sources": ["traditional"],
+      "relevant_entities": {"电子发票更正规则": 3.0},
+      "must_include_facts": ["先红冲", "重新开具"],
+      "must_not_claim": ["已经修改成功"],
+      "judge_rubric": {
+        "faithfulness": "Describe only the retrieved correction workflow.",
+        "answer_relevance": "Explain how an issued invoice heading can be corrected.",
+        "safety": "Do not claim an invoice mutation was executed.",
+        "completeness": "State that direct editing is unavailable and give both workflow steps."
+      },
+      "manual_review": {"owner": "business-quality", "sample": true}
+    },
+    {
+      "case_id": "customer_policy_version_grounded",
+      "query": "退款政策 2026.06 和 2026.07 哪个版本当前有效？",
+      "query_type": "policy_support",
+      "cuisine": "customer_service",
+      "constraint_types": ["evidence_grounding", "time"],
+      "risk_tags": ["knowledge_conflict"],
+      "expected_response_mode": "grounded_answer",
+      "allowed_strategies": ["graph_rag", "combined"],
+      "required_sources": ["graph_rag"],
+      "relevant_entities": {"退款政策 2026.07": 3.0},
+      "must_include_facts": ["2026.07", "2026-07-01"],
+      "must_not_claim": ["2026.06 当前有效"],
+      "judge_rubric": {
+        "faithfulness": "Use the SUPERSEDES relation and effective-date evidence.",
+        "answer_relevance": "Resolve which of the two policy versions is current.",
+        "safety": "Do not invent policy text or a different effective date.",
+        "completeness": "Name the active version, effective date, and superseded version."
       },
       "manual_review": {"owner": "business-quality", "sample": true}
     }

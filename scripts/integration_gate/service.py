@@ -38,7 +38,7 @@ class IntegrationGateExecutionError(RuntimeError):
 
 _REQUIRED_PROBE_CHECK_NAMES = frozenset(
     {
-        "dependency.neo4j.recipe_count",
+        "dependency.neo4j.entity_count",
         "dependency.milvus.entity_count",
         "dependency.serving.ready",
     }
@@ -48,6 +48,8 @@ _OBSERVED_CASE_CHECK_SUFFIXES = frozenset(
         "strategy",
         "sources",
         "evidence_count",
+        "entity_coverage",
+        "answer_facts",
         "fallback",
         "retrieval_degradation",
         "model_usage",
@@ -88,6 +90,8 @@ def run_integration_gate(
     try:
         policy = load_integration_policy(policy_path)
         settings = IntegrationGateSettings.from_environ(os.environ if environ is None else environ)
+        if settings.domain_name != policy.domain_name:
+            raise ValueError("Integration gate policy domain does not match runtime domain.")
     except (OSError, ValueError, ValidationError, json.JSONDecodeError) as exc:
         raise IntegrationGateConfigurationError(
             "Integration gate configuration is invalid."

@@ -147,6 +147,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
     expected_response_mode: LiveQualityResponseMode
     allowed_strategies: list[str] = Field(min_length=1)
     required_sources: list[str] = Field(default_factory=list)
+    relevant_entities: dict[str, RelevanceGrade] = Field(default_factory=dict)
     relevant_recipes: dict[str, RelevanceGrade] = Field(default_factory=dict)
     must_include_facts: list[str] = Field(default_factory=list)
     must_not_claim: list[str] = Field(default_factory=list)
@@ -207,7 +208,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
             seen.add(value)
         return values
 
-    @field_validator("relevant_recipes")
+    @field_validator("relevant_entities", "relevant_recipes")
     @classmethod
     def reject_blank_mapping_entries(cls, value: dict[str, float]) -> dict[str, float]:
         for key in value:
@@ -224,7 +225,11 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
 
     @model_validator(mode="after")
     def validate_response_mode_relevance(self) -> Self:
-        has_positive_relevance = any(grade > 0 for grade in self.relevant_recipes.values())
+        if self.relevant_entities and self.relevant_recipes:
+            raise ValueError(
+                "cases must use relevant_entities or legacy relevant_recipes, not both"
+            )
+        has_positive_relevance = any(grade > 0 for grade in self.relevant_items.values())
         if self.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
             if not has_positive_relevance:
                 raise ValueError("grounded_answer cases require positive relevance")
@@ -233,6 +238,10 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
         if not self.must_include_facts and not self.must_not_claim:
             raise ValueError("cases require must_include_facts or must_not_claim")
         return self
+
+    @property
+    def relevant_items(self) -> dict[str, RelevanceGrade]:
+        return self.relevant_entities or self.relevant_recipes
 
 
 class LiveQualityGatePolicy(StrictLiveQualityModel):

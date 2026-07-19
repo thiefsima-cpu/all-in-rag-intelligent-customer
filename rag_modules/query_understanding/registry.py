@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Sequence, Tuple
 
-from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
 
@@ -69,9 +68,7 @@ class QueryUnderstandingRegistry:
             policy=policy,
             graph_routing_strategies=policy.relations.graph_routing_strategies,
             graph_query_types=policy.relations.graph_query_types,
-            graph_relation_types=tuple(
-                dict.fromkeys([*policy.relations.graph_relation_types, *SEMANTIC_RELATION_TYPES])
-            ),
+            graph_relation_types=policy.relations.graph_relation_types,
             flavor_terms=policy.lexicon.term_group("flavor_terms"),
             texture_effect_terms=policy.lexicon.term_group("texture_effect_terms"),
             technique_terms=policy.lexicon.term_group("technique_terms"),

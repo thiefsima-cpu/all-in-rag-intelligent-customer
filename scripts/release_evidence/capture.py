@@ -190,7 +190,7 @@ _QUALITY_METRIC_CHECK_NAMES = (
 )
 _CASE_RETRIEVAL_METRIC_NAMES = ("recall_at_k", "mrr", "ndcg_at_k")
 _INTEGRATION_PROBE_CHECK_CODES = {
-    "dependency.neo4j.recipe_count": "NEO4J_READY",
+    "dependency.neo4j.entity_count": "NEO4J_READY",
     "dependency.milvus.entity_count": "MILVUS_READY",
     "dependency.serving.ready": "SERVING_API_READY",
 }
@@ -198,6 +198,8 @@ _INTEGRATION_CASE_CHECK_CODES = {
     "strategy": "STRATEGY_OK",
     "sources": "REQUIRED_SOURCES_OK",
     "evidence_count": "EVIDENCE_COUNT_OK",
+    "entity_coverage": "EXPECTED_ENTITY_COVERAGE_OK",
+    "answer_facts": "REQUIRED_ANSWER_FACTS_OK",
     "fallback": "FALLBACK_OK",
     "retrieval_degradation": "RETRIEVAL_DEGRADATION_OK",
     "model_usage": "MODEL_USAGE_OK",
@@ -1159,9 +1161,9 @@ def _validate_integration_check_payloads(
     expected_checks: list[GateCheckResult] = []
     probe_minimums = (
         (
-            "dependency.neo4j.recipe_count",
+            "dependency.neo4j.entity_count",
             "NEO4J_READY",
-            policy.dependency_minimums.neo4j_recipe_count,
+            policy.dependency_minimums.neo4j_entity_count,
         ),
         (
             "dependency.milvus.entity_count",
@@ -1228,6 +1230,24 @@ def _validate_integration_check_payloads(
                     code="EVIDENCE_COUNT_OK",
                     expected={"minimum": case_policy.minimum_evidence_count},
                     actual=evidence_count,
+                ),
+                GateCheckResult.pass_check(
+                    f"{prefix}.entity_coverage",
+                    code="EXPECTED_ENTITY_COVERAGE_OK",
+                    expected={"complete": True},
+                    actual={
+                        "expected_count": len(case_policy.expected_entity_ids),
+                        "matched_count": len(case_policy.expected_entity_ids),
+                    },
+                ),
+                GateCheckResult.pass_check(
+                    f"{prefix}.answer_facts",
+                    code="REQUIRED_ANSWER_FACTS_OK",
+                    expected={"complete": True},
+                    actual={
+                        "expected_count": len(case_policy.must_include_facts),
+                        "matched_count": len(case_policy.must_include_facts),
+                    },
                 ),
                 GateCheckResult.pass_check(
                     f"{prefix}.fallback",
