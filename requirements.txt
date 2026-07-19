@@ -186,7 +186,7 @@ uvicorn==0.49.0
     # via graph-rag-c9 (pyproject.toml)
 websockets==16.0
     # via langsmith
-xxhash==3.7.0
+xxhash==3.8.1
     # via langsmith
 zstandard==0.25.0
     # via langsmith
