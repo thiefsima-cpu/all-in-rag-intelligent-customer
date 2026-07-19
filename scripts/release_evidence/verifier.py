@@ -22,6 +22,7 @@ from scripts.live_quality_gate.reporter import render_live_quality_summary
 from scripts.validate_release_tag import parse_release_tag
 
 from .models import (
+    MANIFEST_SCHEMA_VERSION,
     GitHubArtifactMetadata,
     KnowledgeBaseIdentity,
     ReleaseEvidenceManifest,
@@ -795,6 +796,12 @@ def _verify_semantics(
         raise ReleaseEvidenceVerificationError("integration report schema is invalid")
     if set(live_report) != _LIVE_REPORT_KEYS:
         raise ReleaseEvidenceVerificationError("live quality report schema is invalid")
+    if (
+        manifest.schema_version != MANIFEST_SCHEMA_VERSION
+        or live_report.get("schema_version") != 2
+        or manifest.quality.report_schema_version != 2
+    ):
+        raise ReleaseEvidenceVerificationError("live quality report schema is invalid")
     _verify_report_timestamps(integration_report, live_report, manifest)
     integration_policy_payload = _parse_json_object(
         entries["policies/integration_gate.json"],
@@ -920,6 +927,8 @@ def verify_release_evidence(inputs: VerifyInputs) -> ReleaseEvidenceManifest:
         manifest = ReleaseEvidenceManifest.model_validate(
             _parse_json_object(manifest_bytes, "release manifest")
         )
+        if manifest.schema_version != MANIFEST_SCHEMA_VERSION:
+            raise ReleaseEvidenceVerificationError("release manifest schema is invalid")
         _verify_git(inputs, manifest, manifest_bytes)
         _verify_release_identity(inputs, manifest)
         _verify_transport(manifest, inputs.artifact_metadata_path)

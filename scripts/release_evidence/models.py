@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from rag_modules.kernel.artifacts import ARTIFACT_MANIFEST_SCHEMA_VERSION
 
-CAPTURE_SCHEMA_VERSION = "graph-rag-release-evidence-capture-v1"
-MANIFEST_SCHEMA_VERSION = "graph-rag-release-evidence-v1"
+CAPTURE_SCHEMA_VERSION = "graph-rag-release-evidence-capture-v2"
+MANIFEST_SCHEMA_VERSION = "graph-rag-release-evidence-v2"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -107,6 +107,11 @@ class QualityMetrics(StrictEvidenceModel):
     ndcg_at_k: Rate
     fallback_rate: Rate
     retrieval_degradation_rate: Rate
+    rerank_observation_count: PositiveInt
+    p95_ttft_ms: NonNegativeFloat
+    p95_retrieval_latency_ms: NonNegativeFloat
+    p95_rerank_latency_ms: NonNegativeFloat
+    p95_generation_latency_ms: NonNegativeFloat
     p95_latency_ms: NonNegativeFloat
     estimated_cost_usd: NonNegativeFloat
 

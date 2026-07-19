@@ -112,6 +112,7 @@ def _live_case_detail(
     *,
     judge_passed: bool = True,
     manual_review_sample: bool = True,
+    successful_rerank: bool = False,
 ) -> dict[str, object]:
     return {
         "case_id": case_id,
@@ -132,6 +133,16 @@ def _live_case_detail(
         },
         "failures": [],
         "metrics": {"recall_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0},
+        "timings": {
+            "ttft_ms": 1000.0,
+            "latency_ms": 5000.0,
+            "retrieval_latency_ms": 500.0,
+            "rerank_attempted": successful_rerank,
+            "rerank_succeeded": successful_rerank,
+            "rerank_latency_ms": 250.0 if successful_rerank else None,
+            "generation_latency_ms": 4000.0,
+            "generation_first_token_latency_ms": 500.0,
+        },
         "manual_review": {
             "owner": "business-quality",
             "sample": manual_review_sample,
@@ -187,6 +198,12 @@ def test_capture_builds_safe_receipt_and_deterministic_bundle(tmp_path: Path) ->
     assert receipt.provenance.evaluated_commit == fixture.evaluated_commit
     assert receipt.quality.metrics.case_count == 1
     assert receipt.quality.metrics.recall_at_k == 1.0
+    assert receipt.quality.metrics.rerank_observation_count == 1
+    assert receipt.quality.metrics.p95_ttft_ms == 1000.0
+    assert receipt.quality.metrics.p95_retrieval_latency_ms == 500.0
+    assert receipt.quality.metrics.p95_rerank_latency_ms == 250.0
+    assert receipt.quality.metrics.p95_generation_latency_ms == 4000.0
+    assert receipt.quality.metrics.p95_latency_ms == 5000.0
     assert receipt.runtime.profile.path == "profiles/eval_quality.toml"
     assert receipt.runtime.models.judge == "qwen3.7-plus"
     assert receipt.knowledge_base.index_signature == "index-signature"
@@ -602,13 +619,18 @@ def test_capture_rejects_manual_review_jsonl_reordered_from_policy_order(tmp_pat
 
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
     report["metrics"]["case_count"] = 2
+    report["metrics"]["rerank_observation_count"] = 2
+    summary = {
+        metric_name: report["metrics"][metric_name]
+        for metric_name in capture_module._LIVE_SUMMARY_KEYS
+    }
     for group_name, label in (
         ("by_query_type", "single_recipe"),
         ("by_cuisine", "sichuan"),
         ("by_response_mode", "grounded_answer"),
         ("by_strategy", "hybrid_traditional"),
     ):
-        report["metrics"][group_name][label]["case_count"] = 2
+        report["metrics"][group_name][label] = dict(summary)
     second_case = json.loads(json.dumps(report["cases"][0]))
     second_case["case_id"] = second_policy_case["case_id"]
     report["cases"].append(second_case)
@@ -1109,7 +1131,7 @@ def test_release_evidence_fixture_uses_real_gate_report_details(tmp_path: Path) 
     assert len(integration["checks"]) == integration["metrics"]["check_count"] == 18
     assert len(integration["cases"]) == integration["metrics"]["case_count"] == 1
     assert integration["cases"][0]["has_observation"] is True
-    assert len(live_quality["checks"]) == 13
+    assert len(live_quality["checks"]) == 18
     assert len(live_quality["cases"]) == live_quality["metrics"]["case_count"] == 1
     assert live_quality["cases"][0]["metrics"] == {
         "recall_at_k": 1.0,
@@ -1442,7 +1464,67 @@ def test_capture_rejects_fabricated_passing_live_threshold_check(tmp_path: Path)
     fallback_check["actual"] = 0.5
     write_json(fixture.live_quality_report, report)
 
-    with pytest.raises(ReleaseEvidenceCaptureError, match="live quality check details"):
+    with pytest.raises(
+        ReleaseEvidenceCaptureError, match="live quality (case details|check details)"
+    ):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "case_timing_removed",
+        "case_timing_extra_key",
+        "aggregate_ttft_changed",
+        "aggregate_retrieval_p95_changed",
+        "aggregate_rerank_p95_changed",
+        "aggregate_generation_p95_changed",
+        "rerank_count_changed",
+        "rerank_attempted_changed_to_false",
+        "diagnostic_first_token_p95_changed",
+        "policy_threshold_expected_payload_changed",
+    ],
+)
+def test_capture_rejects_semantically_fabricated_v2_live_timing(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    metrics = report["metrics"]
+    checks_by_name = {check["name"]: check for check in report["checks"]}
+    timings = report["cases"][0]["timings"]
+    if tamper == "case_timing_removed":
+        timings.pop("ttft_ms")
+    elif tamper == "case_timing_extra_key":
+        timings["unexpected_latency_ms"] = 1.0
+    elif tamper == "aggregate_ttft_changed":
+        metrics["p95_ttft_ms"] = 1001.0
+        checks_by_name["metrics.p95_ttft_ms"]["actual"] = 1001.0
+    elif tamper == "aggregate_retrieval_p95_changed":
+        metrics["p95_retrieval_latency_ms"] = 501.0
+        checks_by_name["metrics.p95_retrieval_latency_ms"]["actual"] = 501.0
+    elif tamper == "aggregate_rerank_p95_changed":
+        metrics["p95_rerank_latency_ms"] = 251.0
+        checks_by_name["metrics.p95_rerank_latency_ms"]["actual"] = 251.0
+    elif tamper == "aggregate_generation_p95_changed":
+        metrics["p95_generation_latency_ms"] = 4001.0
+        checks_by_name["metrics.p95_generation_latency_ms"]["actual"] = 4001.0
+    elif tamper == "rerank_count_changed":
+        metrics["rerank_observation_count"] = 2
+        checks_by_name["metrics.rerank_observation_count"]["actual"] = 2
+    elif tamper == "rerank_attempted_changed_to_false":
+        timings["rerank_attempted"] = False
+    elif tamper == "diagnostic_first_token_p95_changed":
+        metrics["p95_generation_first_token_latency_ms"] = 501.0
+    else:
+        checks_by_name["metrics.p95_ttft_ms"]["expected"] = {
+            "minimum": None,
+            "maximum": 1999.0,
+        }
+    _write_live_report_and_summary(fixture, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError):
         capture_release_evidence(capture_inputs(fixture))
 
 
@@ -1584,16 +1666,21 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
             case_id,
             judge_passed=index != 0,
             manual_review_sample=index == 0,
+            successful_rerank=index == 0,
         )
         for index, case_id in enumerate(case_ids)
     ]
+    summary = {
+        metric_name: report["metrics"][metric_name]
+        for metric_name in capture_module._LIVE_SUMMARY_KEYS
+    }
     for group_name, label in (
         ("by_query_type", "single_recipe"),
         ("by_cuisine", "sichuan"),
         ("by_response_mode", "grounded_answer"),
         ("by_strategy", "hybrid_traditional"),
     ):
-        report["metrics"][group_name][label].update({"case_count": 20, "pass_rate": 0.95})
+        report["metrics"][group_name][label] = dict(summary)
     gate_policy = LiveQualityGatePolicy.model_validate(policy)
     complete_checks: list[GateCheckResult] = []
     for case in report["cases"]:

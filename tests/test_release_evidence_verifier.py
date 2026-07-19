@@ -246,6 +246,42 @@ def test_verify_accepts_evidence_only_release_commit(tmp_path: Path) -> None:
     assert manifest.provenance.evaluated_commit == fixture.evaluated_commit
 
 
+def test_verify_rejects_self_consistent_v1_live_quality_report(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    report = json.loads(entries["live_quality_gate/report.json"])
+    report["schema_version"] = 1
+    entries["live_quality_gate/report.json"] = _json_bytes(report)
+    entries["live_quality_gate/summary.md"] = verifier_module.render_live_quality_summary(report)
+    manifest = _manifest_payload(manifest_path)
+    manifest["quality"]["report_schema_version"] = 1
+    release_commit, _ = _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+        manifest=manifest,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="live quality report schema"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+def test_verify_rejects_v1_evidence_manifest(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    manifest = _manifest_payload(manifest_path)
+    manifest["schema_version"] = "graph-rag-release-evidence-v1"
+    release_commit = _commit_manifest(
+        fixture.repository_root,
+        manifest_path,
+        manifest,
+        "test: downgrade evidence manifest schema",
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="input is invalid"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
 @pytest.mark.parametrize(
     ("integration_generated_at", "live_generated_at", "message"),
     [

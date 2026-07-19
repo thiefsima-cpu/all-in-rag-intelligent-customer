@@ -26,9 +26,13 @@ from rag_modules.kernel.artifacts import (
 from scripts.gates import GateCheckResult, GateFailureType
 from scripts.integration_gate.models import IntegrationGatePolicy
 from scripts.integration_gate.reporter import render_integration_summary
-from scripts.live_quality_gate.evaluator import evaluate_policy_thresholds
+from scripts.live_quality_gate.evaluator import (
+    aggregate_live_quality_metrics,
+    evaluate_policy_thresholds,
+)
 from scripts.live_quality_gate.models import LiveQualityGatePolicy
 from scripts.live_quality_gate.reporter import render_live_quality_summary
+from scripts.live_quality_gate.runtime_models import DeterministicCaseResult, LiveQualityObservation
 from scripts.validate_release_tag import parse_release_tag
 
 from .models import (
@@ -185,6 +189,11 @@ _QUALITY_METRIC_CHECK_NAMES = (
     "ndcg_at_k",
     "fallback_rate",
     "retrieval_degradation_rate",
+    "rerank_observation_count",
+    "p95_ttft_ms",
+    "p95_retrieval_latency_ms",
+    "p95_rerank_latency_ms",
+    "p95_generation_latency_ms",
     "p95_latency_ms",
     "estimated_cost_usd",
 )
@@ -289,6 +298,12 @@ _LIVE_SUMMARY_KEYS = frozenset(
         "ndcg_at_k",
         "fallback_rate",
         "retrieval_degradation_rate",
+        "p95_ttft_ms",
+        "p95_retrieval_latency_ms",
+        "rerank_observation_count",
+        "p95_rerank_latency_ms",
+        "p95_generation_latency_ms",
+        "p95_generation_first_token_latency_ms",
         "p95_latency_ms",
         "estimated_cost_usd",
         "avg_judge_scores",
@@ -310,12 +325,48 @@ _LIVE_CASE_KEYS = frozenset(
         "judge_scores",
         "failures",
         "metrics",
+        "timings",
         "manual_review",
         "answer_preview",
         "evidence",
     }
 )
 _LIVE_CASE_METRIC_KEYS = frozenset(_CASE_RETRIEVAL_METRIC_NAMES)
+_LIVE_CASE_TIMING_KEYS = frozenset(
+    {
+        "ttft_ms",
+        "latency_ms",
+        "retrieval_latency_ms",
+        "rerank_attempted",
+        "rerank_succeeded",
+        "rerank_latency_ms",
+        "generation_latency_ms",
+        "generation_first_token_latency_ms",
+    }
+)
+_LIVE_RATE_METRIC_NAMES = frozenset(
+    {
+        "pass_rate",
+        "deterministic_pass_rate",
+        "judge_pass_rate",
+        "recall_at_k",
+        "mrr",
+        "ndcg_at_k",
+        "fallback_rate",
+        "retrieval_degradation_rate",
+    }
+)
+_LIVE_TIMING_METRIC_NAMES = frozenset(
+    {
+        "p95_ttft_ms",
+        "p95_retrieval_latency_ms",
+        "p95_rerank_latency_ms",
+        "p95_generation_latency_ms",
+        "p95_generation_first_token_latency_ms",
+        "p95_latency_ms",
+    }
+)
+_LIVE_RECOMPUTED_SUMMARY_KEYS = _LIVE_SUMMARY_KEYS - {"estimated_cost_usd"}
 _LIVE_MANUAL_REVIEW_KEYS = frozenset({"owner", "sample"})
 _LIVE_EVIDENCE_KEYS = frozenset({"recipe_name", "source", "snippet"})
 _LIVE_ARTIFACT_KEYS = frozenset({"report_json", "summary_md", "manual_review_sample_jsonl"})
@@ -774,33 +825,36 @@ def _validate_live_summary_schema(
     case_count = summary.get("case_count")
     if isinstance(case_count, bool) or not isinstance(case_count, int) or case_count < 0:
         raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
-    for metric_name in _LIVE_SUMMARY_KEYS - {"case_count", "avg_judge_scores"}:
+    rerank_observation_count = summary.get("rerank_observation_count")
+    if (
+        isinstance(rerank_observation_count, bool)
+        or not isinstance(rerank_observation_count, int)
+        or rerank_observation_count < 0
+    ):
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    for metric_name in _LIVE_SUMMARY_KEYS - {
+        "case_count",
+        "rerank_observation_count",
+        "avg_judge_scores",
+    }:
         metric_value = summary.get(metric_name)
         if metric_value is None and metric_name in {
             "judge_pass_rate",
             "recall_at_k",
             "mrr",
             "ndcg_at_k",
+            "p95_rerank_latency_ms",
         }:
+            if metric_name == "p95_rerank_latency_ms" and rerank_observation_count != 0:
+                raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
             continue
         projected = _require_float(metric_value, f"{name} {metric_name}")
-        if (
-            metric_name
-            in {
-                "pass_rate",
-                "deterministic_pass_rate",
-                "judge_pass_rate",
-                "recall_at_k",
-                "mrr",
-                "ndcg_at_k",
-                "fallback_rate",
-                "retrieval_degradation_rate",
-            }
-            and not 0.0 <= projected <= 1.0
-        ):
+        if metric_name in _LIVE_RATE_METRIC_NAMES and not 0.0 <= projected <= 1.0:
             raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
-        if metric_name in {"p95_latency_ms", "estimated_cost_usd"} and projected < 0:
+        if metric_name in _LIVE_TIMING_METRIC_NAMES | {"estimated_cost_usd"} and projected < 0:
             raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    if rerank_observation_count == 0 and summary.get("p95_rerank_latency_ms") is not None:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
     scores = _require_mapping(summary.get("avg_judge_scores"), f"{name} avg judge scores")
     expected_scores = set(policy.judge.score_names) if policy.judge.required else set()
     if set(scores) != expected_scores:
@@ -809,6 +863,30 @@ def _validate_live_summary_schema(
         score = _require_float(score_value, f"{name} avg judge score {score_name}")
         if not 0.0 <= score <= 1.0:
             raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+
+
+def _validate_live_case_timing_schema(value: object, name: str) -> None:
+    timings = _require_mapping(value, name)
+    _require_exact_keys(timings, _LIVE_CASE_TIMING_KEYS, name)
+    for timing_name in (
+        "ttft_ms",
+        "latency_ms",
+        "retrieval_latency_ms",
+        "generation_latency_ms",
+        "generation_first_token_latency_ms",
+    ):
+        if _require_float(timings.get(timing_name), f"{name} {timing_name}") < 0:
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    rerank_attempted = _require_bool(timings.get("rerank_attempted"), f"{name} rerank attempted")
+    rerank_succeeded = _require_bool(timings.get("rerank_succeeded"), f"{name} rerank succeeded")
+    rerank_latency = timings.get("rerank_latency_ms")
+    if rerank_succeeded and not rerank_attempted:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    if rerank_attempted and rerank_succeeded:
+        if _require_float(rerank_latency, f"{name} rerank latency") < 0:
+            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    elif rerank_latency is not None:
+        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
 
 
 def _validate_live_report_schema(
@@ -820,7 +898,7 @@ def _validate_live_report_schema(
     _require_exact_keys(report, _LIVE_REPORT_KEYS, "live quality report")
     top_k = report.get("top_k")
     if (
-        report.get("schema_version") != 1
+        report.get("schema_version") != 2
         or not isinstance(report.get("passed"), bool)
         or isinstance(top_k, bool)
         or not isinstance(top_k, int)
@@ -869,6 +947,7 @@ def _validate_live_report_schema(
         _require_exact_keys(case, _LIVE_CASE_KEYS, "live quality case details")
         case_metrics = _require_mapping(case.get("metrics"), "live quality case metrics")
         _require_exact_keys(case_metrics, _LIVE_CASE_METRIC_KEYS, "live quality case metrics")
+        _validate_live_case_timing_schema(case.get("timings"), "live quality case timings")
         manual_review = _require_mapping(
             case.get("manual_review"),
             "live quality case manual review",
@@ -1414,6 +1493,50 @@ def _validate_live_slice_summaries(
                 )
 
 
+def _validate_recomputed_live_metrics(
+    report_metrics: Mapping[str, Any],
+    recomputed_metrics: Mapping[str, Any],
+) -> None:
+    if any(
+        not _evidence_value_matches(
+            report_metrics.get(metric_name),
+            recomputed_metrics.get(metric_name),
+        )
+        for metric_name in _LIVE_RECOMPUTED_SUMMARY_KEYS
+    ):
+        raise ReleaseEvidenceCaptureError("live quality case details do not match aggregate")
+    for slice_name in _LIVE_SLICE_FIELDS:
+        reported_slices = _require_mapping(
+            report_metrics.get(slice_name),
+            f"live quality metric {slice_name}",
+        )
+        expected_slices = _require_mapping(
+            recomputed_metrics.get(slice_name),
+            f"recomputed live quality metric {slice_name}",
+        )
+        if set(reported_slices) != set(expected_slices):
+            raise ReleaseEvidenceCaptureError("live quality case details do not match aggregate")
+        for label, expected_summary in expected_slices.items():
+            reported_summary = _require_mapping(
+                reported_slices.get(label),
+                f"live quality metric {slice_name}.{label}",
+            )
+            expected_summary_mapping = _require_mapping(
+                expected_summary,
+                f"recomputed live quality metric {slice_name}.{label}",
+            )
+            if any(
+                not _evidence_value_matches(
+                    reported_summary.get(metric_name),
+                    expected_summary_mapping.get(metric_name),
+                )
+                for metric_name in _LIVE_RECOMPUTED_SUMMARY_KEYS
+            ):
+                raise ReleaseEvidenceCaptureError(
+                    "live quality case details do not match aggregate"
+                )
+
+
 def _report_member(report_path: Path, relative_name: object) -> Path:
     if not isinstance(relative_name, str) or not relative_name:
         raise ReleaseEvidenceCaptureError("report artifact name is invalid")
@@ -1670,6 +1793,7 @@ def _validate_live_quality_details(
     expected_case_checks: list[GateCheckResult] = []
     normalized_cases: list[dict[str, Any]] = []
     retrieval_metrics: dict[str, list[float]] = {name: [] for name in _CASE_RETRIEVAL_METRIC_NAMES}
+    reconstructed_results: list[DeterministicCaseResult] = []
     for case in cases:
         case_id = case.get("case_id")
         passed = case.get("passed")
@@ -1750,6 +1874,7 @@ def _validate_live_quality_details(
             normalized_scores = {}
 
         grounded_case = not case_policy.expected_response_mode.is_abstention
+        normalized_case_metrics: dict[str, float | None] = {}
         for metric_name in _CASE_RETRIEVAL_METRIC_NAMES:
             if metric_name not in case_metrics:
                 raise ReleaseEvidenceCaptureError("live quality case details are invalid")
@@ -1757,6 +1882,7 @@ def _validate_live_quality_details(
             if not grounded_case:
                 if value is not None:
                     raise ReleaseEvidenceCaptureError("live quality case details are invalid")
+                normalized_case_metrics[metric_name] = None
                 continue
             if isinstance(value, bool) or not isinstance(value, int | float):
                 raise ReleaseEvidenceCaptureError("live quality case details are invalid")
@@ -1767,6 +1893,51 @@ def _validate_live_quality_details(
             if not 0.0 <= projected_value <= 1.0:
                 raise ReleaseEvidenceCaptureError("live quality case details are invalid")
             retrieval_metrics[metric_name].append(projected_value)
+            normalized_case_metrics[metric_name] = projected_value
+        timings = _require_mapping(case.get("timings"), "live quality case timings")
+        rerank_latency_value = timings.get("rerank_latency_ms")
+        rerank_latency = (
+            None
+            if rerank_latency_value is None
+            else _require_float(rerank_latency_value, "live quality case rerank latency")
+        )
+        observation = LiveQualityObservation(
+            case_id=case_id,
+            answer=case.get("answer_preview"),
+            strategy=strategy,
+            evidence=(),
+            ranked_recipe_names=(),
+            sources=frozenset(),
+            fallback_used="fallback_used" in failures,
+            retrieval_degraded="retrieval_degraded" in failures,
+            ttft_ms=_require_float(timings.get("ttft_ms"), "live quality case ttft"),
+            latency_ms=_require_float(timings.get("latency_ms"), "live quality case latency"),
+            retrieval_latency_ms=_require_float(
+                timings.get("retrieval_latency_ms"),
+                "live quality case retrieval latency",
+            ),
+            rerank_attempted=_require_bool(
+                timings.get("rerank_attempted"),
+                "live quality case rerank attempted",
+            ),
+            rerank_succeeded=_require_bool(
+                timings.get("rerank_succeeded"),
+                "live quality case rerank succeeded",
+            ),
+            rerank_latency_ms=rerank_latency,
+            generation_latency_ms=_require_float(
+                timings.get("generation_latency_ms"),
+                "live quality case generation latency",
+            ),
+            generation_first_token_latency_ms=_require_float(
+                timings.get("generation_first_token_latency_ms"),
+                "live quality case generation first token latency",
+            ),
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            estimated_cost_usd=0.0,
+        )
         expected_deterministic = not failures
         expected_passed = expected_deterministic and (
             judge_passed if judge_passed is not None else True
@@ -1828,6 +1999,25 @@ def _validate_live_quality_details(
                 "passed": passed,
             }
         )
+        reconstructed_results.append(
+            DeterministicCaseResult(
+                case_id=case_id,
+                query_type=query_type,
+                cuisine=cuisine,
+                constraint_types=tuple(constraint_types),
+                risk_tags=tuple(risk_tags),
+                response_mode=response_mode,
+                strategy=strategy,
+                passed=passed,
+                response_mode_passed="response_mode_mismatch" not in failures,
+                failures=tuple(failures),
+                metrics=normalized_case_metrics,
+                checks=(),
+                observation=observation,
+                judge_passed=judge_passed,
+                judge_scores=normalized_scores if policy.judge.required else None,
+            )
+        )
 
     case_count = len(cases)
     expected_judge_rate = sum(judge_results) / len(judge_results) if judge_results else 0.0
@@ -1854,6 +2044,10 @@ def _validate_live_quality_details(
 
     slice_summaries = _live_slice_summaries(normalized_cases)
     _validate_live_slice_summaries(report_metrics, slice_summaries)
+    _validate_recomputed_live_metrics(
+        report_metrics,
+        aggregate_live_quality_metrics(reconstructed_results),
+    )
     evaluation_metrics = dict(report_metrics)
     evaluation_metrics.update(projected_metrics)
     evaluation_metrics.update(slice_summaries)
@@ -1888,6 +2082,14 @@ def _project_quality(
         raise ReleaseEvidenceCaptureError("live quality case count is below policy minimum")
     if case_count != len(policy.cases):
         raise ReleaseEvidenceCaptureError("live quality policy and report case counts differ")
+    rerank_observation_count = _require_int(
+        metrics.get("rerank_observation_count"),
+        "live quality rerank observation count",
+    )
+    if rerank_observation_count < policy.thresholds.minimum_rerank_observation_count:
+        raise ReleaseEvidenceCaptureError(
+            "live quality rerank observation count is below policy minimum"
+        )
 
     def metric(name: str) -> float:
         return _require_float(metrics.get(name), f"live quality metric {name}")
@@ -1902,6 +2104,11 @@ def _project_quality(
         ndcg_at_k=metric("ndcg_at_k"),
         fallback_rate=metric("fallback_rate"),
         retrieval_degradation_rate=metric("retrieval_degradation_rate"),
+        rerank_observation_count=rerank_observation_count,
+        p95_ttft_ms=metric("p95_ttft_ms"),
+        p95_retrieval_latency_ms=metric("p95_retrieval_latency_ms"),
+        p95_rerank_latency_ms=metric("p95_rerank_latency_ms"),
+        p95_generation_latency_ms=metric("p95_generation_latency_ms"),
         p95_latency_ms=metric("p95_latency_ms"),
         estimated_cost_usd=metric("estimated_cost_usd"),
     )

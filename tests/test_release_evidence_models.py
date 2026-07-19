@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from rag_modules.kernel.artifacts import ARTIFACT_MANIFEST_SCHEMA_VERSION
 from scripts.release_evidence.models import (
+    CAPTURE_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION,
     BundleIdentity,
     FileIdentity,
     KnowledgeBaseIdentity,
@@ -14,6 +16,11 @@ from scripts.release_evidence.models import (
     TargetIdentity,
     TransportIdentity,
 )
+
+
+def test_release_evidence_models_require_v2_schema_versions() -> None:
+    assert CAPTURE_SCHEMA_VERSION == "graph-rag-release-evidence-capture-v2"
+    assert MANIFEST_SCHEMA_VERSION == "graph-rag-release-evidence-v2"
 
 
 def test_bundle_identity_requires_lowercase_sha256() -> None:
@@ -49,7 +56,12 @@ def test_quality_metrics_reject_non_finite_values() -> None:
             ndcg_at_k=1.0,
             fallback_rate=0.0,
             retrieval_degradation_rate=0.0,
-            p95_latency_ms=1.0,
+            rerank_observation_count=1,
+            p95_ttft_ms=1000.0,
+            p95_retrieval_latency_ms=500.0,
+            p95_rerank_latency_ms=250.0,
+            p95_generation_latency_ms=4000.0,
+            p95_latency_ms=5000.0,
             estimated_cost_usd=0.0,
         )
 
