@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -7,6 +8,7 @@ import pytest
 import requests
 
 from scripts.gates import GateFailureType
+from scripts.live_quality_gate import client as client_module
 from scripts.live_quality_gate.client import (
     normalize_live_quality_observation,
     run_live_case,
@@ -34,18 +36,30 @@ from scripts.live_quality_gate.runtime_models import (
 class FakeResponse:
     def __init__(
         self,
-        payload: Any = None,
+        lines: list[str],
+        *,
+        content_type: str = "text/event-stream; charset=utf-8",
+        status_code: int = 200,
         error: Exception | None = None,
     ) -> None:
-        self.payload = {} if payload is None else payload
+        self.lines = lines
+        self.headers = {"content-type": content_type}
+        self.status_code = status_code
         self.error = error
+        self.closed = False
+        self.iter_lines_calls: list[dict[str, Any]] = []
 
     def raise_for_status(self) -> None:
         if self.error is not None:
             raise self.error
 
-    def json(self) -> Any:
-        return self.payload
+    def iter_lines(self, *, chunk_size: int = 512, decode_unicode: bool) -> list[str]:
+        self.iter_lines_calls.append({"chunk_size": chunk_size, "decode_unicode": decode_unicode})
+        assert decode_unicode is True
+        return self.lines
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeSession:
@@ -61,12 +75,61 @@ class FakeSession:
         json: dict[str, Any],
         headers: dict[str, str],
         timeout: float,
+        stream: bool,
+        allow_redirects: bool = True,
     ) -> FakeResponse:
-        self.posts.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        assert stream is True
+        self.posts.append(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+                "stream": stream,
+                "allow_redirects": allow_redirects,
+            }
+        )
         return self.response
 
     def close(self) -> None:
         self.closed = True
+
+
+def sse_lines(*events: tuple[str, dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for name, data in events:
+        lines.extend(
+            [
+                f"event: {name}",
+                f"data: {json.dumps(data, ensure_ascii=False)}",
+                "",
+            ]
+        )
+    return lines
+
+
+def success_response(payload: dict[str, Any] | None = None) -> FakeResponse:
+    result_payload = answer_payload() if payload is None else payload
+    answer = result_payload["response"]["summary"]["answer"]
+    return FakeResponse(
+        sse_lines(
+            ("message", {"message": "Running query routing..."}),
+            ("chunk", {"content": answer}),
+            ("result", result_payload),
+            ("done", {"ok": True}),
+        )
+    )
+
+
+def result_response(payload: dict[str, Any]) -> FakeResponse:
+    answer = payload.get("response", {}).get("summary", {}).get("answer", "invalid")
+    return FakeResponse(
+        sse_lines(
+            ("chunk", {"content": answer}),
+            ("result", payload),
+            ("done", {"ok": True}),
+        )
+    )
 
 
 def settings(
@@ -109,7 +172,7 @@ def case() -> LiveQualityCasePolicy:
 
 def policy() -> LiveQualityGatePolicy:
     return LiveQualityGatePolicy(
-        schema_version=1,
+        schema_version=2,
         top_k=6,
         timeouts=LiveQualityTimeouts(request_seconds=12.5, judge_seconds=45.0),
         judge=LiveQualityJudgePolicy(
@@ -119,6 +182,7 @@ def policy() -> LiveQualityGatePolicy:
         ),
         thresholds=LiveQualityThresholds(
             minimum_case_count=1,
+            minimum_rerank_observation_count=1,
             minimum_pass_rate=0.9,
             minimum_deterministic_pass_rate=0.9,
             minimum_judge_pass_rate=0.9,
@@ -127,7 +191,11 @@ def policy() -> LiveQualityGatePolicy:
             minimum_ndcg_at_k=0.7,
             maximum_fallback_rate=0.0,
             maximum_retrieval_degradation_rate=0.0,
-            maximum_p95_latency_ms=60000.0,
+            maximum_p95_ttft_ms=5000.0,
+            maximum_p95_retrieval_latency_ms=3000.0,
+            maximum_p95_rerank_latency_ms=2000.0,
+            maximum_p95_generation_latency_ms=20000.0,
+            maximum_p95_latency_ms=25000.0,
             maximum_estimated_cost_usd=1.0,
         ),
         required_slice_coverage=RequiredSliceCoverage(),
@@ -175,10 +243,17 @@ def answer_payload() -> dict[str, Any]:
             "traces": {
                 "route_trace": {
                     "strategy": "combined",
+                    "total_latency_ms": 850.0,
                     "stages": {
-                        "hybrid": {"sources": {"vector": 2}},
-                        "post_process": {"sources": {"rerank": 1}},
-                        "empty": {"sources": {"zero_count": 0}},
+                        "hybrid": {"latency_ms": 500.0, "sources": {"vector": 2}},
+                        "post_process": {
+                            "latency_ms": 300.0,
+                            "sources": {"rerank": 1},
+                            "rerank_attempted": True,
+                            "rerank_succeeded": True,
+                            "rerank_latency_ms": 250.0,
+                        },
+                        "empty": {"latency_ms": 50.0, "sources": {"zero_count": 0}},
                     },
                     "fallbacks": ["planner_timeout"],
                     "diagnostics": {
@@ -189,6 +264,8 @@ def answer_payload() -> dict[str, Any]:
                 },
                 "generation_trace": {
                     "fallback_used": False,
+                    "total_latency_ms": 4000.0,
+                    "first_token_latency_ms": 1200.0,
                     "prompt_tokens": 202,
                     "completion_tokens": 74,
                     "total_tokens": 276,
@@ -197,6 +274,15 @@ def answer_payload() -> dict[str, Any]:
             },
         }
     }
+
+
+def normalize(payload: dict[str, Any]) -> LiveQualityObservation:
+    return normalize_live_quality_observation(
+        case(),
+        payload,
+        ttft_ms=1250.0,
+        latency_ms=6000.0,
+    )
 
 
 def delete_nested_key(payload: dict[str, Any], *path: str) -> dict[str, Any]:
@@ -229,7 +315,7 @@ def assert_sanitized_request_failed_result(
 
 
 def test_normalize_live_quality_observation_extracts_answer_metrics_and_diagnostics() -> None:
-    observation = normalize_live_quality_observation(case(), answer_payload())
+    observation = normalize(answer_payload())
 
     assert observation == LiveQualityObservation(
         case_id="grounded_mapo_tofu",
@@ -259,7 +345,14 @@ def test_normalize_live_quality_observation_extracts_answer_metrics_and_diagnost
         sources=frozenset({"vector", "graph", "rerank"}),
         fallback_used=True,
         retrieval_degraded=True,
-        latency_ms=321.5,
+        ttft_ms=1250.0,
+        latency_ms=6000.0,
+        retrieval_latency_ms=850.0,
+        rerank_attempted=True,
+        rerank_succeeded=True,
+        rerank_latency_ms=250.0,
+        generation_latency_ms=4000.0,
+        generation_first_token_latency_ms=1200.0,
         prompt_tokens=101,
         completion_tokens=37,
         total_tokens=276,
@@ -268,7 +361,7 @@ def test_normalize_live_quality_observation_extracts_answer_metrics_and_diagnost
 
 
 def test_normalize_live_quality_observation_preserves_duplicate_ranked_recipes() -> None:
-    observation = normalize_live_quality_observation(case(), answer_payload())
+    observation = normalize(answer_payload())
 
     assert observation.ranked_recipe_names == ("Mapo Tofu", "Dan Dan Noodles", "Mapo Tofu")
 
@@ -276,11 +369,18 @@ def test_normalize_live_quality_observation_preserves_duplicate_ranked_recipes()
 def test_normalize_live_quality_observation_ignores_zero_count_stage_sources() -> None:
     payload = answer_payload()
     payload["response"]["traces"]["route_trace"]["stages"] = {
+        "post_process": {
+            "latency_ms": 1.0,
+            "sources": {},
+            "rerank_attempted": False,
+            "rerank_succeeded": False,
+            "rerank_latency_ms": None,
+        },
         "empty": {"sources": {"zero_count": 0, "negative_count": -1}},
         "filled": {"sources": {"vector": 2}},
     }
 
-    observation = normalize_live_quality_observation(case(), payload)
+    observation = normalize(payload)
 
     assert observation.sources == frozenset({"vector", "graph"})
 
@@ -288,10 +388,17 @@ def test_normalize_live_quality_observation_ignores_zero_count_stage_sources() -
 def test_normalize_live_quality_observation_ignores_empty_stage_source_keys() -> None:
     payload = answer_payload()
     payload["response"]["traces"]["route_trace"]["stages"] = {
+        "post_process": {
+            "latency_ms": 1.0,
+            "sources": {},
+            "rerank_attempted": False,
+            "rerank_succeeded": False,
+            "rerank_latency_ms": None,
+        },
         "filled": {"sources": {"": 1, "vector": 2}},
     }
 
-    observation = normalize_live_quality_observation(case(), payload)
+    observation = normalize(payload)
 
     assert observation.sources == frozenset({"vector", "graph"})
     assert "" not in observation.sources
@@ -302,13 +409,13 @@ def test_normalize_live_quality_observation_falls_back_to_route_strategy() -> No
     payload["response"]["summary"]["strategy"] = ""
     payload["response"]["traces"]["route_trace"]["strategy"] = "graph_rag"
 
-    observation = normalize_live_quality_observation(case(), payload)
+    observation = normalize(payload)
 
     assert observation.strategy == "graph_rag"
 
 
 def test_normalize_live_quality_observation_prefers_generation_total_tokens_and_cost() -> None:
-    observation = normalize_live_quality_observation(case(), answer_payload())
+    observation = normalize(answer_payload())
 
     assert observation.prompt_tokens == 101
     assert observation.completion_tokens == 37
@@ -321,10 +428,206 @@ def test_normalize_live_quality_observation_falls_back_to_summary_total_tokens_a
     payload["response"]["traces"]["generation_trace"]["total_tokens"] = 0
     payload["response"]["traces"]["generation_trace"]["estimated_cost_usd"] = 0.0
 
-    observation = normalize_live_quality_observation(case(), payload)
+    observation = normalize(payload)
 
     assert observation.total_tokens == 138
     assert observation.estimated_cost_usd == 0.0042
+
+
+@pytest.mark.parametrize(
+    ("mutate_payload", "message"),
+    [
+        (
+            lambda payload: payload["response"]["traces"]["route_trace"].update(
+                {"total_latency_ms": 0.0}
+            ),
+            "retrieval latency is missing",
+        ),
+        (
+            lambda payload: payload["response"]["traces"]["generation_trace"].update(
+                {"total_latency_ms": 0.0}
+            ),
+            "generation latency is missing",
+        ),
+        (
+            lambda payload: payload["response"]["traces"]["generation_trace"].update(
+                {"first_token_latency_ms": 0.0}
+            ),
+            "generation first-token latency is missing",
+        ),
+        (
+            lambda payload: payload["response"]["traces"]["route_trace"]["stages"][
+                "post_process"
+            ].update({"rerank_latency_ms": None}),
+            "rerank latency is missing",
+        ),
+        (
+            lambda payload: payload["response"]["traces"]["route_trace"]["stages"][
+                "post_process"
+            ].update({"rerank_attempted": False}),
+            "rerank timing is inconsistent",
+        ),
+    ],
+)
+def test_normalize_live_quality_observation_rejects_invalid_trace_timings(
+    mutate_payload,
+    message: str,
+) -> None:
+    payload = answer_payload()
+    mutate_payload(payload)
+
+    with pytest.raises(ValueError, match=message):
+        normalize(payload)
+
+
+@pytest.mark.parametrize(
+    ("ttft_ms", "latency_ms"),
+    [
+        (0.0, 6000.0),
+        (float("nan"), 6000.0),
+        (float("inf"), 6000.0),
+        (1250.0, 0.0),
+        (1250.0, float("nan")),
+        (1250.0, float("inf")),
+    ],
+)
+def test_normalize_live_quality_observation_rejects_nonpositive_or_nonfinite_client_timings(
+    ttft_ms: float,
+    latency_ms: float,
+) -> None:
+    with pytest.raises(ValueError, match="client timing"):
+        normalize_live_quality_observation(
+            case(),
+            answer_payload(),
+            ttft_ms=ttft_ms,
+            latency_ms=latency_ms,
+        )
+
+
+@pytest.mark.parametrize(
+    ("rerank_attempted", "rerank_succeeded", "rerank_latency_ms"),
+    [
+        (False, True, None),
+        (False, True, 1.0),
+        (False, False, 1.0),
+        (True, True, None),
+        (True, False, None),
+    ],
+)
+def test_normalize_live_quality_observation_rejects_contradictory_rerank_states(
+    rerank_attempted: bool,
+    rerank_succeeded: bool,
+    rerank_latency_ms: float | None,
+) -> None:
+    payload = answer_payload()
+    payload["response"]["traces"]["route_trace"]["stages"]["post_process"].update(
+        {
+            "rerank_attempted": rerank_attempted,
+            "rerank_succeeded": rerank_succeeded,
+            "rerank_latency_ms": rerank_latency_ms,
+        }
+    )
+
+    with pytest.raises(ValueError, match="rerank"):
+        normalize(payload)
+
+
+@pytest.mark.parametrize(
+    ("rerank_attempted", "rerank_succeeded", "rerank_latency_ms"),
+    [
+        (1, False, None),
+        ("false", False, None),
+        (None, False, None),
+        (False, 0, None),
+        (False, "false", None),
+        (False, None, None),
+        (True, True, True),
+        (True, True, "250.0"),
+        (True, True, float("nan")),
+        (True, False, float("inf")),
+        (True, True, 0.0),
+        (True, False, -1.0),
+    ],
+)
+def test_normalize_live_quality_observation_rejects_noncanonical_raw_rerank_wire_types(
+    rerank_attempted: object,
+    rerank_succeeded: object,
+    rerank_latency_ms: object,
+) -> None:
+    payload = answer_payload()
+    payload["response"]["traces"]["route_trace"]["stages"]["post_process"].update(
+        {
+            "rerank_attempted": rerank_attempted,
+            "rerank_succeeded": rerank_succeeded,
+            "rerank_latency_ms": rerank_latency_ms,
+        }
+    )
+
+    with pytest.raises(ValueError, match="raw rerank wire contract"):
+        normalize(payload)
+
+
+def test_normalize_live_quality_observation_rejects_a_huge_raw_rerank_latency() -> None:
+    payload = answer_payload()
+    payload["response"]["traces"]["route_trace"]["stages"]["post_process"].update(
+        {"rerank_latency_ms": 10**400}
+    )
+
+    with pytest.raises(ValueError, match="raw rerank wire contract"):
+        normalize(payload)
+
+
+def test_run_live_case_sanitizes_a_huge_raw_rerank_latency() -> None:
+    payload = answer_payload()
+    payload["response"]["traces"]["route_trace"]["stages"]["post_process"].update(
+        {"rerank_latency_ms": 10**400}
+    )
+    response = success_response(payload)
+    counter = iter([100.0, 100.1, 100.2, 100.3])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=300.0,
+        secrets=(),
+    )
+    assert response.closed is True
+
+
+def test_normalize_live_quality_observation_accepts_a_measured_failed_rerank_as_degraded() -> None:
+    payload = answer_payload()
+    payload["response"]["diagnostics"]["diagnostics"]["retrieval_degraded"] = False
+    payload["response"]["traces"]["route_trace"]["diagnostics"]["retrieval_degraded"] = False
+    payload["response"]["traces"]["route_trace"]["stages"]["post_process"].update(
+        {
+            "rerank_attempted": True,
+            "rerank_succeeded": False,
+            "rerank_latency_ms": 250.0,
+        }
+    )
+
+    observation = normalize(payload)
+
+    assert observation.rerank_attempted is True
+    assert observation.rerank_succeeded is False
+    assert observation.rerank_latency_ms == 250.0
+    assert observation.retrieval_degraded is True
+
+
+def test_normalize_live_quality_observation_requires_post_process_stage() -> None:
+    payload = answer_payload()
+    del payload["response"]["traces"]["route_trace"]["stages"]["post_process"]
+
+    with pytest.raises(ValueError, match="post-process"):
+        normalize(payload)
 
 
 @pytest.mark.parametrize(
@@ -355,7 +658,7 @@ def test_normalize_live_quality_observation_detects_each_fallback_signal(
 
     mutate_payload(payload)
 
-    assert normalize_live_quality_observation(case(), payload).fallback_used is True
+    assert normalize(payload).fallback_used is True
 
 
 @pytest.mark.parametrize(
@@ -378,11 +681,13 @@ def test_normalize_live_quality_observation_detects_each_degradation_signal(
 
     mutate_payload(payload)
 
-    assert normalize_live_quality_observation(case(), payload).retrieval_degraded is True
+    assert normalize(payload).retrieval_degraded is True
 
 
 def test_run_live_case_posts_debug_answer_request_and_returns_observation() -> None:
-    session = FakeSession(FakeResponse(answer_payload()))
+    clock_values = iter([100.0, 101.25, 106.0])
+    response = success_response()
+    session = FakeSession(response)
 
     result = run_live_case(
         settings=settings(),
@@ -390,18 +695,26 @@ def test_run_live_case_posts_debug_answer_request_and_returns_observation() -> N
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(clock_values),
     )
 
     assert isinstance(result, LiveQualityCaseRunResult)
     assert result.case_id == "grounded_mapo_tofu"
-    assert result.observation == normalize_live_quality_observation(case(), answer_payload())
     assert result.checks == ()
+    assert result.observation == normalize(answer_payload())
+    assert result.observation.ttft_ms == 1250.0
+    assert result.observation.latency_ms == 6000.0
+    assert result.observation.retrieval_latency_ms == 850.0
+    assert result.observation.rerank_attempted is True
+    assert result.observation.rerank_succeeded is True
+    assert result.observation.rerank_latency_ms == 250.0
+    assert result.observation.generation_latency_ms == 4000.0
+    assert result.observation.generation_first_token_latency_ms == 1200.0
     assert session.posts == [
         {
-            "url": "https://serving.example.com/api/v1/debug/answers",
+            "url": "https://serving.example.com/api/v1/debug/answers/stream",
             "json": {
                 "question": "How do I make mapo tofu?",
-                "stream": False,
                 "explain_routing": True,
             },
             "headers": {
@@ -409,13 +722,209 @@ def test_run_live_case_posts_debug_answer_request_and_returns_observation() -> N
                 "Authorization": "Bearer serving-token",
             },
             "timeout": 12.5,
+            "stream": True,
+            "allow_redirects": False,
         }
     ]
+    assert response.closed is True
     assert session.closed is False
 
 
+def test_run_live_case_accepts_no_evidence_debug_sse_with_an_explicit_empty_evidence_list() -> None:
+    payload = answer_payload()
+    payload["response"]["summary"]["answer"] = "Insufficient evidence to confirm that."
+    payload["response"]["grounding"]["evidence_documents"] = []
+    abstention_case = case().model_copy(
+        update={
+            "expected_response_mode": LiveQualityResponseMode.NO_EVIDENCE,
+            "relevant_recipes": {},
+        }
+    )
+    response = success_response(payload)
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=abstention_case,
+        http_session=FakeSession(response),
+        clock=iter([100.0, 100.2, 100.5]).__next__,
+    )
+
+    assert result.checks == ()
+    assert result.observation is not None
+    assert result.observation.answer == "Insufficient evidence to confirm that."
+    assert result.observation.evidence == ()
+    assert result.observation.ttft_ms == pytest.approx(200.0)
+
+
+def test_run_live_case_uses_small_stream_chunks_for_immediate_first_chunk_observation() -> None:
+    response = success_response()
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=iter([100.0, 100.1, 100.2]).__next__,
+    )
+
+    assert result.checks == ()
+    assert response.iter_lines_calls == [{"chunk_size": 1, "decode_unicode": True}]
+
+
+def test_run_live_case_rejects_redirect_status_without_streaming_or_following_it() -> None:
+    response = FakeResponse([], status_code=302)
+    session = FakeSession(response)
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        clock=iter([100.0, 100.1]).__next__,
+    )
+
+    assert result.observation is None
+    assert len(result.checks) == 1
+    assert session.posts[0]["allow_redirects"] is False
+    assert response.iter_lines_calls == []
+
+
+@pytest.mark.parametrize("content_type", ["text/event-stream+json", "text/event-streamish"])
+def test_run_live_case_rejects_lookalike_sse_media_types(content_type: str) -> None:
+    response = success_response()
+    response.headers["content-type"] = content_type
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=iter([100.0, 100.1, 100.2]).__next__,
+    )
+
+    assert result.observation is None
+    assert len(result.checks) == 1
+
+
+def test_run_live_case_rejects_integer_done_status() -> None:
+    payload = answer_payload()
+    response = FakeResponse(
+        sse_lines(
+            ("chunk", {"content": payload["response"]["summary"]["answer"]}),
+            ("result", payload),
+            ("done", {"ok": 1}),
+        )
+    )
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=iter([100.0, 100.1, 100.2, 100.3]).__next__,
+    )
+
+    assert result.observation is None
+    assert len(result.checks) == 1
+
+
+def test_run_live_case_rejects_a_slow_but_active_sse_stream_after_the_total_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = answer_payload()
+    payload["response"]["summary"]["answer"] = "answer"
+    response = FakeResponse(
+        sse_lines(
+            ("message", {"message": "still working"}),
+            ("message", {"message": "still working"}),
+            ("chunk", {"content": "answer"}),
+            ("result", payload),
+            ("done", {"ok": True}),
+        )
+    )
+    deadline_clock = iter([100.0, 100.1, 100.2, 100.3, 113.0])
+    monkeypatch.setattr(client_module, "perf_counter", deadline_clock.__next__)
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=iter([200.0, 201.0, 202.0]).__next__,
+    )
+
+    assert result.observation is None
+    assert len(result.checks) == 1
+
+
+def test_post_debug_answer_stream_checks_total_deadline_for_each_active_comment_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse([": keep-alive", ": keep-alive"])
+    deadline_clock = iter([100.0, 100.1, 100.2, 113.0])
+    monkeypatch.setattr(client_module, "perf_counter", deadline_clock.__next__)
+
+    with pytest.raises(ValueError, match="total deadline"):
+        client_module._post_debug_answer_stream(
+            settings=settings(),
+            policy=policy(),
+            case=case(),
+            session=FakeSession(response),
+            request_id_factory=lambda: "fixed-id",
+            clock=lambda: 200.0,
+            started=200.0,
+        )
+
+    assert response.iter_lines_calls == [{"chunk_size": 1, "decode_unicode": True}]
+    assert response.closed is True
+
+
+def test_post_debug_answer_stream_checks_total_deadline_for_each_partial_frame_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse(["event: chunk", 'data: {"content": "still-writing"}'])
+    deadline_clock = iter([100.0, 100.1, 100.2, 113.0])
+    monkeypatch.setattr(client_module, "perf_counter", deadline_clock.__next__)
+
+    with pytest.raises(ValueError, match="total deadline"):
+        client_module._post_debug_answer_stream(
+            settings=settings(),
+            policy=policy(),
+            case=case(),
+            session=FakeSession(response),
+            request_id_factory=lambda: "fixed-id",
+            clock=lambda: 200.0,
+            started=200.0,
+        )
+
+    assert response.iter_lines_calls == [{"chunk_size": 1, "decode_unicode": True}]
+    assert response.closed is True
+
+
+def test_run_live_case_sanitizes_an_active_comment_stream_deadline_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse([": keep-alive", ": keep-alive"])
+    deadline_clock = iter([100.0, 100.1, 100.2, 113.0])
+    monkeypatch.setattr(client_module, "perf_counter", deadline_clock.__next__)
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: 200.0,
+    )
+
+    assert result.observation is None
+    assert [check.code for check in result.checks] == ["LIVE_QUALITY_REQUEST_FAILED"]
+    assert response.closed is True
+
+
 def test_run_live_case_discards_query_and_fragment_when_building_debug_answer_url() -> None:
-    session = FakeSession(FakeResponse(answer_payload()))
+    session = FakeSession(success_response())
+    clock_values = iter([100.0, 101.0, 102.0])
 
     run_live_case(
         settings=settings(api_url="https://serving.example.com/api?debug=true#frag/"),
@@ -423,13 +932,15 @@ def test_run_live_case_discards_query_and_fragment_when_building_debug_answer_ur
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(clock_values),
     )
 
-    assert session.posts[0]["url"] == "https://serving.example.com/api/v1/debug/answers"
+    assert session.posts[0]["url"] == "https://serving.example.com/api/v1/debug/answers/stream"
 
 
 def test_run_live_case_omits_authorization_header_when_token_is_absent() -> None:
-    session = FakeSession(FakeResponse(answer_payload()))
+    session = FakeSession(success_response())
+    clock_values = iter([100.0, 101.0, 102.0])
 
     run_live_case(
         settings=settings(api_token=None),
@@ -437,13 +948,15 @@ def test_run_live_case_omits_authorization_header_when_token_is_absent() -> None
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(clock_values),
     )
 
     assert session.posts[0]["headers"] == {"X-Request-ID": "live-quality-gate-fixed-id"}
 
 
 def test_run_live_case_omits_authorization_header_when_token_is_empty_string() -> None:
-    session = FakeSession(FakeResponse(answer_payload()))
+    session = FakeSession(success_response())
+    clock_values = iter([100.0, 101.0, 102.0])
 
     run_live_case(
         settings=settings(api_token=""),
@@ -451,15 +964,76 @@ def test_run_live_case_omits_authorization_header_when_token_is_empty_string() -
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(clock_values),
     )
 
     assert session.posts[0]["headers"] == {"X-Request-ID": "live-quality-gate-fixed-id"}
 
 
-def test_run_live_case_returns_sanitized_failed_check_on_request_failure(monkeypatch) -> None:
-    session = FakeSession(FakeResponse(error=requests.Timeout("serving-token leaked detail")))
-    counter = iter([100.0, 100.25])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
+@pytest.mark.parametrize(
+    ("case_name", "events", "expected_duration_ms"),
+    [
+        (
+            "no_non_empty_chunk",
+            [
+                ("chunk", {"content": ""}),
+                ("result", answer_payload()),
+                ("done", {"ok": True}),
+            ],
+            2000.0,
+        ),
+        (
+            "duplicate_result",
+            [
+                ("chunk", {"content": "x"}),
+                ("result", answer_payload()),
+                ("result", answer_payload()),
+                ("done", {"ok": True}),
+            ],
+            3000.0,
+        ),
+        (
+            "missing_result",
+            [("chunk", {"content": "x"}), ("done", {"ok": True})],
+            2000.0,
+        ),
+        (
+            "missing_done",
+            [("chunk", {"content": "x"}), ("result", answer_payload())],
+            3000.0,
+        ),
+        (
+            "error_event",
+            [
+                (
+                    "error",
+                    {
+                        "error": {
+                            "code": "ANSWER_FAILED",
+                            "message": "safe server-secret",
+                        }
+                    },
+                ),
+                ("done", {"ok": True}),
+            ],
+            1000.0,
+        ),
+        (
+            "event_after_done",
+            [("done", {"ok": True}), ("chunk", {"content": "x"})],
+            1000.0,
+        ),
+    ],
+)
+def test_run_live_case_rejects_invalid_sse_protocol(
+    case_name: str,
+    events: list[tuple[str, dict[str, Any]]],
+    expected_duration_ms: float,
+) -> None:
+    del case_name
+    response = FakeResponse(sse_lines(*events))
+    session = FakeSession(response)
+    counter = iter(float(value) for value in range(100, 110))
 
     result = run_live_case(
         settings=settings(),
@@ -467,6 +1041,260 @@ def test_run_live_case_returns_sanitized_failed_check_on_request_failure(monkeyp
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=expected_duration_ms,
+        secrets=("serving-token", "safe server-secret", "ANSWER_FAILED"),
+    )
+    assert response.closed is True
+
+
+@pytest.mark.parametrize(
+    ("event_name", "event_data"),
+    [
+        ("chunk", {"content": ""}),
+        ("message", {"message": "late progress"}),
+    ],
+)
+def test_run_live_case_rejects_chunk_or_message_after_result(
+    event_name: str,
+    event_data: dict[str, Any],
+) -> None:
+    payload = answer_payload()
+    response = FakeResponse(
+        sse_lines(
+            ("chunk", {"content": payload["response"]["summary"]["answer"]}),
+            ("result", payload),
+            (event_name, event_data),
+            ("done", {"ok": True}),
+        )
+    )
+    counter = iter([100.0, 101.0, 102.0, 103.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=3000.0,
+        secrets=("serving-token", "late progress"),
+    )
+    assert response.closed is True
+
+
+def test_run_live_case_rejects_ttft_after_result_arrival() -> None:
+    response = success_response()
+    counter = iter([100.0, 106.0, 105.0, 107.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=7000.0,
+        secrets=("serving-token",),
+    )
+    assert response.closed is True
+
+
+def test_run_live_case_rejects_non_sse_content_type() -> None:
+    response = FakeResponse([], content_type="application/json; charset=utf-8")
+    counter = iter([10.0, 10.25])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=250.0,
+        secrets=("serving-token",),
+    )
+    assert response.closed is True
+
+
+def test_run_live_case_rejects_chunk_result_answer_mismatch() -> None:
+    response = FakeResponse(
+        sse_lines(
+            ("chunk", {"content": "different answer"}),
+            ("result", answer_payload()),
+            ("done", {"ok": True}),
+        )
+    )
+    counter = iter([10.0, 10.1, 10.2, 10.3])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=300.0,
+        secrets=("serving-token", "different answer"),
+    )
+    assert response.closed is True
+
+
+def test_run_live_case_returns_structured_failure_for_invalid_client_timing() -> None:
+    response = success_response()
+    counter = iter([10.0, 10.0, 10.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token",),
+    )
+    assert response.closed is True
+
+
+@pytest.mark.parametrize(
+    "clock",
+    [
+        pytest.param(
+            lambda: (_ for _ in ()).throw(RuntimeError("raising-clock-secret")),
+            id="raising",
+        ),
+        pytest.param(lambda: next(iter(())), id="exhausted"),
+    ],
+)
+def test_run_live_case_returns_structured_failure_when_initial_clock_raises(clock) -> None:
+    session = FakeSession(success_response())
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        clock=clock,
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "raising-clock-secret"),
+    )
+    assert session.posts == []
+
+
+def test_run_live_case_returns_structured_failure_for_non_numeric_clock_sample() -> None:
+    session = FakeSession(success_response())
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        clock=lambda: "non-numeric-clock-secret",
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "non-numeric-clock-secret"),
+    )
+    assert session.posts == []
+
+
+def test_run_live_case_failure_duration_clock_cannot_mask_structured_failure() -> None:
+    response = FakeResponse([], error=requests.Timeout("transport-secret"))
+    counter = iter([100.0])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=FakeSession(response),
+        clock=lambda: next(counter),
+    )
+
+    assert_sanitized_request_failed_result(
+        result,
+        expected_duration_ms=0.0,
+        secrets=("serving-token", "transport-secret"),
+    )
+    assert response.closed is True
+
+
+def test_iter_sse_events_accepts_lf_crlf_comments_and_multiple_data_lines() -> None:
+    events = tuple(
+        client_module._iter_sse_events(
+            [
+                ": keep-alive",
+                "event: message",
+                'data: {"message": "routing"}',
+                "",
+                ": another comment\r",
+                "event: chunk\r",
+                'data: {"content":\r',
+                'data: "tofu"}\r',
+                "\r",
+            ]
+        )
+    )
+
+    assert [(event.name, event.data) for event in events] == [
+        ("message", {"message": "routing"}),
+        ("chunk", {"content": "tofu"}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("lines", "message"),
+    [
+        (["event: chunk", 'data: {"content": "x"}'], "unterminated"),
+        (["event", ""], "invalid"),
+        (["event: chunk", "data: not-json", ""], "Expecting value"),
+    ],
+)
+def test_iter_sse_events_rejects_invalid_framing(
+    lines: list[str],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        tuple(client_module._iter_sse_events(lines))
+
+
+def test_run_live_case_returns_sanitized_failed_check_on_request_failure() -> None:
+    response = FakeResponse([], error=requests.Timeout("serving-token leaked detail"))
+    session = FakeSession(response)
+    counter = iter([100.0, 100.25])
+
+    result = run_live_case(
+        settings=settings(),
+        policy=policy(),
+        case=case(),
+        http_session=session,
+        request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
     )
 
     assert result.case_id == "grounded_mapo_tofu"
@@ -480,27 +1308,22 @@ def test_run_live_case_returns_sanitized_failed_check_on_request_failure(monkeyp
     check_payload = check.to_dict()
     assert "serving-token" not in repr(check_payload)
     assert "leaked detail" not in repr(check_payload)
+    assert response.closed is True
 
 
-def test_run_live_case_returns_sanitized_failed_check_on_validation_failure(
-    monkeypatch,
-) -> None:
-    session = FakeSession(
-        FakeResponse(
-            {
-                "response": {
-                    "summary": {"answer": "missing pieces"},
-                    "payload": {
-                        "token": "serving-token",
-                        "detail": "secret-text invalid/missing payload",
-                    },
-                    "exception": {"message": "Validation exploded with serving-token secret-text"},
-                }
-            }
-        )
-    )
-    counter = iter([10.0, 10.123])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
+def test_run_live_case_returns_sanitized_failed_check_on_validation_failure() -> None:
+    payload = {
+        "response": {
+            "summary": {"answer": "missing pieces"},
+            "payload": {
+                "token": "serving-token",
+                "detail": "secret-text invalid/missing payload",
+            },
+            "exception": {"message": "Validation exploded with serving-token secret-text"},
+        }
+    }
+    session = FakeSession(result_response(payload))
+    counter = iter([10.0, 10.1, 10.2, 10.3])
 
     result = run_live_case(
         settings=settings(),
@@ -508,6 +1331,7 @@ def test_run_live_case_returns_sanitized_failed_check_on_validation_failure(
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
     )
 
     assert result.observation is None
@@ -515,7 +1339,7 @@ def test_run_live_case_returns_sanitized_failed_check_on_validation_failure(
     check = result.checks[0]
     assert check.code == "LIVE_QUALITY_REQUEST_FAILED"
     assert check.failure_type is GateFailureType.DEPENDENCY_UNAVAILABLE
-    assert check.duration_ms == pytest.approx(123.0)
+    assert check.duration_ms == pytest.approx(300.0)
 
     check_payload = check.to_dict()
     sanitized_repr = repr(check_payload)
@@ -535,24 +1359,31 @@ def test_run_live_case_returns_sanitized_failed_check_on_validation_failure(
     [
         (("response", "summary", "latency_ms"), "latency-secret"),
         (("response", "summary", "prompt_tokens"), "prompt-secret"),
+        (("response", "traces", "route_trace", "total_latency_ms"), "route-timing-secret"),
         (
             ("response", "traces", "route_trace", "diagnostics", "retrieval_degraded"),
             "degraded-secret",
         ),
         (("response", "traces", "generation_trace", "total_tokens"), "generation-secret"),
+        (
+            ("response", "traces", "generation_trace", "total_latency_ms"),
+            "generation-timing-secret",
+        ),
+        (
+            ("response", "traces", "generation_trace", "first_token_latency_ms"),
+            "generation-ttft-secret",
+        ),
         (("response", "traces", "route_trace", "strategy"), "strategy-secret"),
     ],
 )
 def test_run_live_case_treats_sparse_debug_payload_as_contract_invalid(
-    monkeypatch,
     missing_path: tuple[str, ...],
     secret: str,
 ) -> None:
     payload = delete_nested_key(answer_payload(), *missing_path)
     payload["response"]["summary"]["answer"] = f"{secret} should never leak"
-    session = FakeSession(FakeResponse(payload))
-    counter = iter([50.0, 50.25])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
+    session = FakeSession(result_response(payload))
+    counter = iter([50.0, 50.1, 50.2, 50.25])
 
     result = run_live_case(
         settings=settings(),
@@ -560,6 +1391,7 @@ def test_run_live_case_treats_sparse_debug_payload_as_contract_invalid(
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
     )
 
     assert_sanitized_request_failed_result(
@@ -583,10 +1415,42 @@ def test_run_live_case_treats_sparse_debug_payload_as_contract_invalid(
             ("response", "traces", "route_trace", "stages", "hybrid", "sources"),
             "stage-sources-secret",
         ),
+        (
+            (
+                "response",
+                "traces",
+                "route_trace",
+                "stages",
+                "post_process",
+                "rerank_attempted",
+            ),
+            "rerank-attempt-secret",
+        ),
+        (
+            (
+                "response",
+                "traces",
+                "route_trace",
+                "stages",
+                "post_process",
+                "rerank_succeeded",
+            ),
+            "rerank-success-secret",
+        ),
+        (
+            (
+                "response",
+                "traces",
+                "route_trace",
+                "stages",
+                "post_process",
+                "rerank_latency_ms",
+            ),
+            "rerank-timing-secret",
+        ),
     ],
 )
 def test_run_live_case_treats_sparse_nested_contract_fields_as_invalid(
-    monkeypatch,
     missing_path: tuple[str | int, ...],
     secret: str,
 ) -> None:
@@ -596,9 +1460,8 @@ def test_run_live_case_treats_sparse_nested_contract_fields_as_invalid(
         cursor = cursor[key]
     del cursor[missing_path[-1]]
     payload["response"]["summary"]["answer"] = f"{secret} should never leak"
-    session = FakeSession(FakeResponse(payload))
-    counter = iter([80.0, 80.25])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
+    session = FakeSession(result_response(payload))
+    counter = iter([80.0, 80.1, 80.2, 80.25])
 
     result = run_live_case(
         settings=settings(),
@@ -606,6 +1469,7 @@ def test_run_live_case_treats_sparse_nested_contract_fields_as_invalid(
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
     )
 
     assert_sanitized_request_failed_result(
@@ -615,13 +1479,12 @@ def test_run_live_case_treats_sparse_nested_contract_fields_as_invalid(
     )
 
 
-def test_run_live_case_treats_empty_route_stages_as_contract_invalid(monkeypatch) -> None:
+def test_run_live_case_treats_empty_route_stages_as_contract_invalid() -> None:
     payload = answer_payload()
     payload["response"]["traces"]["route_trace"]["stages"] = {}
     payload["response"]["summary"]["answer"] = "stage-empty-secret should never leak"
-    session = FakeSession(FakeResponse(payload))
-    counter = iter([90.0, 90.25])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
+    session = FakeSession(result_response(payload))
+    counter = iter([90.0, 90.1, 90.2, 90.25])
 
     result = run_live_case(
         settings=settings(),
@@ -629,6 +1492,7 @@ def test_run_live_case_treats_empty_route_stages_as_contract_invalid(monkeypatch
         case=case(),
         http_session=session,
         request_id_factory=lambda: "fixed-id",
+        clock=lambda: next(counter),
     )
 
     assert_sanitized_request_failed_result(
@@ -638,39 +1502,14 @@ def test_run_live_case_treats_empty_route_stages_as_contract_invalid(monkeypatch
     )
 
 
-@pytest.mark.parametrize("json_payload", [["serving-token", "secret-text"], "serving-token"])
-def test_run_live_case_returns_sanitized_failed_check_on_non_dict_json_response(
-    monkeypatch,
-    json_payload: Any,
-) -> None:
-    session = FakeSession(FakeResponse(json_payload))
-    counter = iter([70.0, 70.333])
-    monkeypatch.setattr("scripts.live_quality_gate.client.perf_counter", lambda: next(counter))
-
-    result = run_live_case(
-        settings=settings(),
-        policy=policy(),
-        case=case(),
-        http_session=session,
-        request_id_factory=lambda: "fixed-id",
-    )
-
-    assert result.observation is None
-    assert len(result.checks) == 1
-    check = result.checks[0]
-    assert check.code == "LIVE_QUALITY_REQUEST_FAILED"
-    assert check.failure_type is GateFailureType.DEPENDENCY_UNAVAILABLE
-    assert check.duration_ms == pytest.approx(333.0)
-
-    sanitized_repr = repr(check.to_dict())
-    check_repr = repr(check)
-    for secret in ("serving-token", "secret-text"):
-        assert secret not in sanitized_repr
-        assert secret not in check_repr
+def test_iter_sse_events_rejects_non_object_json_data() -> None:
+    with pytest.raises(ValueError, match="must be an object"):
+        tuple(client_module._iter_sse_events(["event: chunk", 'data: ["serving-token"]', ""]))
 
 
 def test_run_live_case_closes_only_owned_session(monkeypatch) -> None:
-    supplied_session = FakeSession(FakeResponse(answer_payload()))
+    supplied_session = FakeSession(success_response())
+    supplied_clock = iter([1.0, 2.0, 3.0])
 
     run_live_case(
         settings=settings(),
@@ -678,16 +1517,19 @@ def test_run_live_case_closes_only_owned_session(monkeypatch) -> None:
         case=case(),
         http_session=supplied_session,
         request_id_factory=lambda: "supplied-session",
+        clock=lambda: next(supplied_clock),
     )
 
-    owned_session = FakeSession(FakeResponse(answer_payload()))
+    owned_session = FakeSession(success_response())
     monkeypatch.setattr("scripts.live_quality_gate.client.requests.Session", lambda: owned_session)
+    owned_clock = iter([1.0, 2.0, 3.0])
 
     run_live_case(
         settings=settings(),
         policy=policy(),
         case=case(),
         request_id_factory=lambda: "owned-session",
+        clock=lambda: next(owned_clock),
     )
 
     assert supplied_session.closed is False

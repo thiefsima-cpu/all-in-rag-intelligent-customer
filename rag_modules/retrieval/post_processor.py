@@ -9,6 +9,7 @@ strategy selection and retrieval orchestration.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -32,6 +33,14 @@ class RetrievalPostProcessContext:
     control: RequestControl | None = None
 
 
+@dataclass(frozen=True)
+class RetrievalPostProcessResult:
+    documents: tuple[EvidenceDocument, ...]
+    rerank_attempted: bool
+    rerank_succeeded: bool
+    rerank_latency_ms: float | None
+
+
 class RetrievalPostProcessor:
     """Apply ranking and evidence normalization to retrieved documents."""
 
@@ -53,10 +62,29 @@ class RetrievalPostProcessor:
         top_k: int,
         context: RetrievalPostProcessContext,
     ) -> List[EvidenceDocument]:
+        return list(
+            self.post_process_with_trace(
+                evidence_documents,
+                top_k=top_k,
+                context=context,
+            ).documents
+        )
+
+    def post_process_with_trace(
+        self,
+        evidence_documents: List[EvidenceDocument],
+        top_k: int,
+        context: RetrievalPostProcessContext,
+    ) -> RetrievalPostProcessResult:
         graph_candidates = [
             doc for doc in evidence_documents if doc.graph_evidence or doc.recipe_graph_evidence
         ]
-        reranked_documents = self._rerank_documents(
+        (
+            reranked_documents,
+            rerank_attempted,
+            rerank_succeeded,
+            rerank_latency_ms,
+        ) = self._rerank_documents(
             query=context.query,
             documents=list(evidence_documents or []),
             top_k=top_k,
@@ -97,7 +125,12 @@ class RetrievalPostProcessor:
                     route_strategy=context.strategy,
                 )
             )
-        return normalized_docs
+        return RetrievalPostProcessResult(
+            documents=tuple(normalized_docs),
+            rerank_attempted=rerank_attempted,
+            rerank_succeeded=rerank_succeeded,
+            rerank_latency_ms=rerank_latency_ms,
+        )
 
     def _rerank_documents(
         self,
@@ -105,12 +138,13 @@ class RetrievalPostProcessor:
         documents: List[EvidenceDocument],
         top_k: int,
         control: RequestControl | None = None,
-    ) -> List[EvidenceDocument]:
+    ) -> tuple[List[EvidenceDocument], bool, bool, float | None]:
         if not documents or not self.rerank_client:
-            return documents[:top_k]
+            return documents[:top_k], False, False, None
         if control is not None:
             control.raise_if_cancelled()
 
+        rerank_started = time.perf_counter()
         try:
             ordered_indices = self.rerank_client.rerank(
                 query=query,
@@ -122,6 +156,7 @@ class RetrievalPostProcessor:
             if control is not None:
                 control.raise_if_cancelled()
         except Exception as exc:
+            rerank_latency_ms = round((time.perf_counter() - rerank_started) * 1000, 2)
             log_failure(
                 logger,
                 logging.WARNING,
@@ -129,8 +164,9 @@ class RetrievalPostProcessor:
                 code="RETRIEVAL_FAILED",
                 error=exc,
             )
-            return documents
+            return documents, True, False, rerank_latency_ms
 
+        rerank_latency_ms = round((time.perf_counter() - rerank_started) * 1000, 2)
         reranked: List[EvidenceDocument] = []
         seen = set()
         for rank, index in enumerate(ordered_indices, start=1):
@@ -142,7 +178,7 @@ class RetrievalPostProcessor:
             metadata["rerank_model"] = self.settings.rerank_model
             reranked.append(documents[index].copy_with(metadata=metadata))
         reranked.extend(doc for index, doc in enumerate(documents) if index not in seen)
-        return reranked
+        return reranked, True, True, rerank_latency_ms
 
     @classmethod
     def _preserve_graph_evidence(

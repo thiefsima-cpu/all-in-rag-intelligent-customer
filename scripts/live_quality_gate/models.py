@@ -50,6 +50,7 @@ class LiveQualityTimeouts(StrictLiveQualityModel):
 
 class LiveQualityThresholds(StrictLiveQualityModel):
     minimum_case_count: int = Field(ge=1)
+    minimum_rerank_observation_count: int = Field(ge=1)
     minimum_pass_rate: float = Field(ge=0, le=1)
     minimum_deterministic_pass_rate: float = Field(ge=0, le=1)
     minimum_judge_pass_rate: float = Field(ge=0, le=1)
@@ -58,6 +59,10 @@ class LiveQualityThresholds(StrictLiveQualityModel):
     minimum_ndcg_at_k: float = Field(ge=0, le=1)
     maximum_fallback_rate: float = Field(ge=0, le=1)
     maximum_retrieval_degradation_rate: float = Field(ge=0, le=1)
+    maximum_p95_ttft_ms: float = Field(gt=0)
+    maximum_p95_retrieval_latency_ms: float = Field(gt=0)
+    maximum_p95_rerank_latency_ms: float = Field(gt=0)
+    maximum_p95_generation_latency_ms: float = Field(gt=0)
     maximum_p95_latency_ms: float = Field(gt=0)
     maximum_estimated_cost_usd: float = Field(ge=0)
 
@@ -245,7 +250,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
 
 
 class LiveQualityGatePolicy(StrictLiveQualityModel):
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     top_k: int = Field(ge=1)
     timeouts: LiveQualityTimeouts
     judge: LiveQualityJudgePolicy

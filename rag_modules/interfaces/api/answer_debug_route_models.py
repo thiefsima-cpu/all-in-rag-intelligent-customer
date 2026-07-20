@@ -24,14 +24,33 @@ class RouteStageSnapshotResponseModel(BaseModel):
     latency_ms: float = 0.0
     doc_count: int = 0
     sources: dict[str, int] = Field(default_factory=dict)
+    rerank_attempted: bool = False
+    rerank_succeeded: bool = False
+    rerank_latency_ms: float | None = None
 
     @classmethod
     def from_dto(cls, stage: RouteStageSnapshot) -> "RouteStageSnapshotResponseModel":
+        details = dict(stage.details or {})
+        raw_rerank_latency = details.get("rerank_latency_ms")
+        public_details = public_degradation_payload(details)
+        for field_name in (
+            "rerank_attempted",
+            "rerank_succeeded",
+            "rerank_latency_ms",
+        ):
+            public_details.pop(field_name, None)
         return cls(
             latency_ms=stage.latency_ms,
             doc_count=stage.doc_count,
             sources=dict(stage.sources),
-            **public_degradation_payload(stage.details),
+            rerank_attempted=bool(details.get("rerank_attempted", False)),
+            rerank_succeeded=bool(details.get("rerank_succeeded", False)),
+            rerank_latency_ms=(
+                float(raw_rerank_latency)
+                if isinstance(raw_rerank_latency, (bool, int, float, str))
+                else None
+            ),
+            **public_details,
         )
 
 

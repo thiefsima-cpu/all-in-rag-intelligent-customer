@@ -80,8 +80,10 @@ def test_service_runs_cases_judge_thresholds_and_writes_reports(tmp_path: Path) 
     )
 
     assert report["passed"] is True
+    assert report["schema_version"] == 2
     assert report["metrics"]["case_count"] == 1
     assert report["metrics"]["judge_pass_rate"] == 1.0
+    assert report["cases"][0]["timings"]["ttft_ms"] == 1000.0
     assert (tmp_path / "report.json").exists()
     assert (tmp_path / "summary.md").exists()
     assert (tmp_path / "manual_review_sample.jsonl").exists()

@@ -4,6 +4,7 @@ import inspect
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
@@ -47,6 +48,14 @@ class _FakeRerankClient:
             }
         )
         return list(self.order)
+
+
+class _FailingRerankClient:
+    def rerank(
+        self, query: str, documents, top_n: int, *, control=None, timeout_seconds=None
+    ) -> list[int]:
+        del query, documents, top_n, control, timeout_seconds
+        raise RuntimeError("rerank unavailable")
 
 
 class _FakeMilvusSearchClient:
@@ -162,6 +171,91 @@ class ModelClientPortTests(unittest.TestCase):
 
         self.assertEqual([doc.recipe_name for doc in result], ["second", "first"])
         self.assertEqual(rerank_client.calls[0]["query"], "which one")
+
+    def test_retrieval_post_processor_records_successful_rerank_timing(self) -> None:
+        rerank_client = _FakeRerankClient(order=[1, 0])
+        processor = RetrievalPostProcessor(
+            settings=self.postprocess_settings,
+            rerank_client=rerank_client,
+        )
+        docs = [
+            EvidenceDocument(content="first", recipe_name="first"),
+            EvidenceDocument(content="second", recipe_name="second"),
+        ]
+
+        with patch(
+            "rag_modules.retrieval.post_processor.time.perf_counter",
+            side_effect=[10.0, 10.125],
+        ):
+            outcome = processor.post_process_with_trace(
+                docs,
+                top_k=2,
+                context=RetrievalPostProcessContext(
+                    query="which one",
+                    strategy="hybrid_traditional",
+                    query_complexity=0.1,
+                    relationship_intensity=0.1,
+                    route_confidence=0.9,
+                ),
+            )
+
+        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["second", "first"])
+        self.assertTrue(outcome.rerank_attempted)
+        self.assertTrue(outcome.rerank_succeeded)
+        self.assertEqual(outcome.rerank_latency_ms, 125.0)
+
+    def test_retrieval_post_processor_records_failed_rerank_without_dropping_documents(
+        self,
+    ) -> None:
+        processor = RetrievalPostProcessor(
+            settings=self.postprocess_settings,
+            rerank_client=_FailingRerankClient(),
+        )
+        docs = [EvidenceDocument(content="first", recipe_name="first")]
+
+        with patch(
+            "rag_modules.retrieval.post_processor.time.perf_counter",
+            side_effect=[20.0, 20.05],
+        ):
+            outcome = processor.post_process_with_trace(
+                docs,
+                top_k=1,
+                context=RetrievalPostProcessContext(
+                    query="which one",
+                    strategy="hybrid_traditional",
+                    query_complexity=0.1,
+                    relationship_intensity=0.1,
+                    route_confidence=0.9,
+                ),
+            )
+
+        self.assertEqual(
+            [document.content for document in outcome.documents],
+            [document.content for document in docs],
+        )
+        self.assertTrue(outcome.rerank_attempted)
+        self.assertFalse(outcome.rerank_succeeded)
+        self.assertEqual(outcome.rerank_latency_ms, 50.0)
+
+    def test_retrieval_post_processor_skips_rerank_without_client_or_documents(self) -> None:
+        processor = RetrievalPostProcessor(settings=self.postprocess_settings)
+
+        outcome = processor.post_process_with_trace(
+            [],
+            top_k=1,
+            context=RetrievalPostProcessContext(
+                query="which one",
+                strategy="hybrid_traditional",
+                query_complexity=0.1,
+                relationship_intensity=0.1,
+                route_confidence=0.9,
+            ),
+        )
+
+        self.assertEqual(outcome.documents, ())
+        self.assertFalse(outcome.rerank_attempted)
+        self.assertFalse(outcome.rerank_succeeded)
+        self.assertIsNone(outcome.rerank_latency_ms)
 
     def test_retrieval_post_processor_passes_control_timeout_to_reranker(self) -> None:
         control = RequestControl.for_timeout(4.0, scope="post_process")

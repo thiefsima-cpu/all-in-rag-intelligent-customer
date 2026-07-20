@@ -70,12 +70,35 @@ def test_answer_payload_maps_typed_response_without_to_dict() -> None:
     assert payload.traces.trace_event.policy.policy_hash == "sha256:policy"
     assert payload.traces.generation_trace.total_tokens == 12
     assert payload.traces.trace_event.diagnostics.overall_bucket == "healthy"
+    post_process = payload.traces.route_trace.stages["post_process"]
+    assert {
+        "rerank_attempted",
+        "rerank_succeeded",
+        "rerank_latency_ms",
+    } <= type(post_process).model_fields.keys()
+    assert post_process.rerank_attempted is True
+    assert post_process.rerank_succeeded is True
+    assert post_process.rerank_latency_ms == 2.75
+    assert post_process.model_dump()["rerank_latency_ms"] == 2.75
 
 
 def test_typed_mapper_matches_compatibility_payload() -> None:
     response = _complete_result().to_response()
+    expected = response.to_dict()
+    route_traces = (
+        expected["grounding"]["retrieval_outcome"]["route_trace"],
+        expected["grounding"]["answer_context"]["retrieval"]["route_trace"],
+        expected["grounding"]["route_resolution"]["retrieval"]["route_trace"],
+        expected["traces"]["route_trace"],
+        expected["traces"]["trace_event"]["retrieval"]["route_trace"],
+    )
+    for route_trace in route_traces:
+        for stage in route_trace["stages"].values():
+            stage.setdefault("rerank_attempted", False)
+            stage.setdefault("rerank_succeeded", False)
+            stage.setdefault("rerank_latency_ms", None)
 
-    assert AnswerPayloadModel.from_dto(response).model_dump() == response.to_dict()
+    assert AnswerPayloadModel.from_dto(response).model_dump() == expected
 
 
 def test_public_answer_payload_maps_typed_response_without_traces() -> None:
@@ -299,6 +322,16 @@ def _complete_result() -> QuestionAnswerResult:
                 doc_count=1,
                 sources={"graph": 1},
                 details={"graph_doc_count": 1, "traditional_doc_count": 0},
+            ),
+            "post_process": RouteStageSnapshot(
+                latency_ms=3.1,
+                doc_count=1,
+                sources={"vector": 1},
+                details={
+                    "rerank_attempted": True,
+                    "rerank_succeeded": True,
+                    "rerank_latency_ms": 2.75,
+                },
             ),
         },
         total_latency_ms=5.6,

@@ -3,6 +3,18 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import tests.api_app_helpers as h
+from rag_modules.application.answering.answer_models import (
+    AnswerPipelineState,
+    QuestionAnswerResult,
+)
+from rag_modules.application.answering.answer_pipeline import AnswerPipelineService
+from rag_modules.configuration.testing import semantic_runtime_settings
+from rag_modules.contracts.runtime import (
+    RetrievalOutcome,
+    RouteResolution,
+    RouteSnapshot,
+    RouteStageSnapshot,
+)
 from rag_modules.telemetry import get_runtime_telemetry
 
 json = h.json
@@ -98,6 +110,23 @@ class ApiSseTests(unittest.TestCase):
     def test_v1_debug_answer_stream_result_includes_traces(self) -> None:
         system = _FakeApiSystem()
         system.system_ready = True
+        original_answer_question_response = system.answer_question_response
+
+        def answer_question_response(*args, **kwargs):
+            response = original_answer_question_response(*args, **kwargs)
+            response.route_trace.stages["post_process"] = RouteStageSnapshot(
+                latency_ms=3.1,
+                doc_count=1,
+                sources={"vector": 1},
+                details={
+                    "rerank_attempted": True,
+                    "rerank_succeeded": True,
+                    "rerank_latency_ms": 2.75,
+                },
+            )
+            return response
+
+        system.answer_question_response = answer_question_response
         app = create_serving_api_app(system=system)
 
         with _client(app) as client:
@@ -114,6 +143,109 @@ class ApiSseTests(unittest.TestCase):
             result_payload["traces"]["generation_trace"]["token_usage_source"],
             "test",
         )
+        post_process = result_payload["traces"]["route_trace"]["stages"]["post_process"]
+        self.assertTrue(post_process["rerank_attempted"])
+        self.assertTrue(post_process["rerank_succeeded"])
+        self.assertEqual(post_process["rerank_latency_ms"], 2.75)
+
+    def test_debug_sse_no_evidence_pipeline_emits_a_fallback_chunk_result_and_done(self) -> None:
+        config = build_test_config({"api": {"access_token": _API_TOKEN}})
+        answer_copy = SimpleNamespace(
+            no_evidence_answer="CUSTOM_NO_EVIDENCE",
+            user_question_template="Question: {question}",
+            query_routing_started="Routing",
+            strategy_icon_hybrid_traditional="[HYBRID]",
+            strategy_icon_graph_rag="[GRAPH]",
+            strategy_icon_combined="[COMBINED]",
+            strategy_icon_default="[ROUTE]",
+            strategy_summary_template="{strategy_icon} {strategy}",
+        )
+
+        class _NoEvidenceRouter:
+            def route_with_trace(self, question, top_k, *, control=None):
+                del top_k, control
+                retrieval = RetrievalOutcome(
+                    query=question,
+                    strategy="hybrid_traditional",
+                    evidence_documents=[],
+                )
+                return (
+                    RouteResolution(retrieval=retrieval),
+                    RouteSnapshot(query=question, strategy="hybrid_traditional"),
+                )
+
+        class _PipelineBackedNoEvidenceSystem(_FakeApiSystem):
+            def __init__(self) -> None:
+                super().__init__(config)
+                self.system_ready = True
+                self.serving_initialized = True
+                self.pipeline = AnswerPipelineService(
+                    query_router=_NoEvidenceRouter(),
+                    generation_service=object(),
+                    semantic_settings=semantic_runtime_settings(config),
+                    top_k=config.retrieval.top_k,
+                    answer_workflow_copy=answer_copy,
+                )
+
+            def answer_question_response(
+                self,
+                question,
+                *,
+                stream=False,
+                explain_routing=False,
+                message_callback=None,
+                chunk_callback=None,
+                control=None,
+            ):
+                state = self.pipeline.execute(
+                    AnswerPipelineState(
+                        question=question,
+                        stream=stream,
+                        explain_routing=explain_routing,
+                        message_callback=message_callback,
+                        chunk_callback=chunk_callback,
+                        request_control=control,
+                    )
+                )
+                return QuestionAnswerResult(
+                    answer=state.answer,
+                    analysis=state.analysis,
+                    retrieval_outcome=state.retrieval_outcome,
+                    answer_context=state.answer_context,
+                    route_resolution=state.route_resolution,
+                    latency_ms=1.0,
+                    route_trace=state.route_trace,
+                    graph_trace=state.graph_trace,
+                    generation_trace=state.generation_trace,
+                    trace_event=state.trace_event,
+                ).to_response()
+
+        app = create_serving_api_app(system=_PipelineBackedNoEvidenceSystem())
+
+        with _client(app) as client:
+            with client.stream(
+                "POST",
+                "/v1/debug/answers/stream",
+                json={"question": "Unknown dish?"},
+            ) as response:
+                body = "".join(response.iter_text())
+
+        events = _parse_sse_events(body)
+        self.assertEqual(response.status_code, 200, body)
+        self.assertEqual(events["chunk"], [{"content": "CUSTOM_NO_EVIDENCE"}])
+        self.assertNotIn("error", events)
+        self.assertEqual(events["result"][0]["response"]["summary"]["status"], "degraded")
+        self.assertEqual(
+            events["result"][0]["response"]["summary"]["failure_code"],
+            "no_evidence",
+        )
+        self.assertEqual(
+            events["result"][0]["response"]["grounding"]["evidence_documents"],
+            [],
+        )
+        self.assertEqual(events["done"], [{"ok": True}])
+        self.assertLess(body.index("event: chunk"), body.index("event: result"))
+        self.assertLess(body.index("event: result"), body.index("event: done"))
 
     def test_answer_stream_uses_sse_surface(self) -> None:
         system = _FakeApiSystem()

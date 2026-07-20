@@ -8,10 +8,16 @@ from pathlib import Path
 
 import pytest
 
+from scripts.integration_gate.models import IntegrationGatePolicy
 from scripts.release_evidence import verifier as verifier_module
-from scripts.release_evidence.capture import CaptureInputs, capture_release_evidence
+from scripts.release_evidence.capture import (
+    CaptureInputs,
+    ReleaseEvidenceCaptureError,
+    capture_release_evidence,
+    validate_v2_integration_evidence,
+)
 from scripts.release_evidence.finalize import finalize_release_evidence
-from scripts.release_evidence.models import TransportIdentity
+from scripts.release_evidence.models import IntegrationMetrics, TransportIdentity
 from scripts.release_evidence.verifier import (
     ReleaseEvidenceVerificationError,
     VerifyInputs,
@@ -244,6 +250,117 @@ def test_verify_accepts_evidence_only_release_commit(tmp_path: Path) -> None:
     manifest = _verify(fixture, capture, manifest_path, release_commit, metadata_path)
 
     assert manifest.provenance.evaluated_commit == fixture.evaluated_commit
+
+
+def test_verify_rejects_self_consistent_v1_live_quality_report(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    report = json.loads(entries["live_quality_gate/report.json"])
+    report["schema_version"] = 1
+    entries["live_quality_gate/report.json"] = _json_bytes(report)
+    entries["live_quality_gate/summary.md"] = verifier_module.render_live_quality_summary(report)
+    manifest = _manifest_payload(manifest_path)
+    manifest["quality"]["report_schema_version"] = 1
+    release_commit, _ = _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+        manifest=manifest,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="live quality report schema"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "case_schema",
+        "recomputed_timing",
+        "threshold_check",
+        "sensitive_value",
+    ],
+)
+def test_verify_rejects_rehashed_v2_content_that_capture_would_reject(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    report = json.loads(entries["live_quality_gate/report.json"])
+    if tamper == "case_schema":
+        report["cases"][0]["unexpected_field"] = "invalid"
+    elif tamper == "recomputed_timing":
+        report["cases"][0]["timings"]["ttft_ms"] = 1001.0
+    elif tamper == "threshold_check":
+        next(check for check in report["checks"] if check["name"] == "metrics.p95_ttft_ms")[
+            "expected"
+        ] = {"minimum": None, "maximum": 1999.0}
+    else:
+        report["cases"][0]["answer_preview"] = "Bearer verifier-sensitive-token"
+    report_bytes = _json_bytes(report)
+    entries["live_quality_gate/report.json"] = report_bytes
+    entries["live_quality_gate/summary.md"] = verifier_module.render_live_quality_summary(
+        json.loads(report_bytes)
+    )
+    release_commit, _ = _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="v2 evidence"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+def test_verify_rejects_rehashed_v2_integration_evidence_count_that_capture_rejects(
+    tmp_path: Path,
+) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    entries = _bundle_entries(capture.bundle_path)
+    report = json.loads(entries["integration_gate/report.json"])
+    report["cases"][0]["evidence_count"] += 1
+    policy = IntegrationGatePolicy.model_validate(
+        json.loads(entries["policies/integration_gate.json"])
+    )
+    metrics = IntegrationMetrics.model_validate(
+        _manifest_payload(manifest_path)["integration"]["metrics"]
+    )
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="integration check details"):
+        validate_v2_integration_evidence(report, policy, metrics)
+
+    report_bytes = _json_bytes(report)
+    entries["integration_gate/report.json"] = report_bytes
+    entries["integration_gate/summary.md"] = verifier_module.render_integration_summary(
+        json.loads(report_bytes)
+    )
+    release_commit, _ = _synchronize_bundle(
+        fixture=fixture,
+        capture=capture,
+        manifest_path=manifest_path,
+        entries=entries,
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="v2 evidence"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
+
+
+def test_verify_rejects_v1_evidence_manifest(tmp_path: Path) -> None:
+    fixture, capture, manifest_path, _, metadata_path = finalized_release(tmp_path)
+    manifest = _manifest_payload(manifest_path)
+    manifest["schema_version"] = "graph-rag-release-evidence-v1"
+    release_commit = _commit_manifest(
+        fixture.repository_root,
+        manifest_path,
+        manifest,
+        "test: downgrade evidence manifest schema",
+    )
+
+    with pytest.raises(ReleaseEvidenceVerificationError, match="input is invalid"):
+        _verify(fixture, capture, manifest_path, release_commit, metadata_path)
 
 
 @pytest.mark.parametrize(

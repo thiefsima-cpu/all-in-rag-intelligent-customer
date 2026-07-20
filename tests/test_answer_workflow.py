@@ -348,6 +348,32 @@ class AnswerWorkflowTests(unittest.TestCase):
         self.assertIn("CUSTOM_ROUTING", messages)
         self.assertNotIn("Running query routing...", messages)
 
+    def test_no_evidence_streams_shortcut_answer_once_with_positive_trace_timings(self) -> None:
+        question = "Which recipe connects tofu and fermented bean paste?"
+        router = _FakeQueryRouter(
+            semantic_settings=semantic_runtime_settings(self.config),
+            resolution=_build_resolution(question, documents=[]),
+            route_trace=RouteSnapshot(query=question, strategy="hybrid_traditional"),
+        )
+        service = _compose_answer_workflow(
+            self.config,
+            router,
+            _FakeGenerationService(),
+            _FakeQueryTracer(),
+            answer_workflow_copy=_answer_copy(no_evidence_answer="CUSTOM_NO_EVIDENCE"),
+        )
+        chunks: list[str] = []
+
+        result = service.answer_question(
+            question,
+            stream=True,
+            chunk_callback=chunks.append,
+        )
+
+        self.assertEqual(chunks, ["CUSTOM_NO_EVIDENCE"])
+        self.assertGreater(result.generation_trace.total_latency_ms, 0.0)
+        self.assertGreater(result.generation_trace.first_token_latency_ms, 0.0)
+
     def test_successful_answer_captures_route_graph_and_generation_traces(self) -> None:
         question = "Trace the ingredient substitution path for mapo tofu."
         documents = [

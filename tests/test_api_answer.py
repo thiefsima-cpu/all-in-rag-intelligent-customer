@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tests.api_app_helpers as h
+from rag_modules.contracts.runtime import RouteStageSnapshot
 
 json = h.json
 threading = h.threading
@@ -109,6 +110,23 @@ class ApiAnswerTests(unittest.TestCase):
     def test_v1_debug_answer_includes_traces(self) -> None:
         system = _FakeApiSystem()
         system.system_ready = True
+        original_answer_question_response = system.answer_question_response
+
+        def answer_question_response(*args, **kwargs):
+            response = original_answer_question_response(*args, **kwargs)
+            response.route_trace.stages["post_process"] = RouteStageSnapshot(
+                latency_ms=3.1,
+                doc_count=1,
+                sources={"vector": 1},
+                details={
+                    "rerank_attempted": True,
+                    "rerank_succeeded": True,
+                    "rerank_latency_ms": 2.75,
+                },
+            )
+            return response
+
+        system.answer_question_response = answer_question_response
         app = create_serving_api_app(system=system)
 
         with _client(app) as client:
@@ -120,6 +138,10 @@ class ApiAnswerTests(unittest.TestCase):
             payload["traces"]["generation_trace"]["token_usage_source"],
             "test",
         )
+        post_process = payload["traces"]["route_trace"]["stages"]["post_process"]
+        self.assertTrue(post_process["rerank_attempted"])
+        self.assertTrue(post_process["rerank_succeeded"])
+        self.assertEqual(post_process["rerank_latency_ms"], 2.75)
 
     def test_openapi_distinguishes_public_and_debug_answer_schemas(self) -> None:
         config = build_test_config(

@@ -168,7 +168,14 @@ def _live_quality_report(policy_payload: dict[str, object]) -> dict[str, object]
         sources=frozenset({"vector"}),
         fallback_used=False,
         retrieval_degraded=False,
-        latency_ms=1000.0,
+        ttft_ms=1000.0,
+        latency_ms=5000.0,
+        retrieval_latency_ms=500.0,
+        rerank_attempted=True,
+        rerank_succeeded=True,
+        rerank_latency_ms=250.0,
+        generation_latency_ms=4000.0,
+        generation_first_token_latency_ms=500.0,
         prompt_tokens=6,
         completion_tokens=4,
         total_tokens=10,
@@ -252,7 +259,7 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
     live_quality_policy = write_json(
         eval_dir / "live_quality_gate.json",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "top_k": 6,
             "timeouts": {"request_seconds": 90.0, "judge_seconds": 45.0},
             "judge": {
@@ -267,6 +274,7 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
             },
             "thresholds": {
                 "minimum_case_count": 1,
+                "minimum_rerank_observation_count": 1,
                 "minimum_pass_rate": 0.85,
                 "minimum_deterministic_pass_rate": 0.85,
                 "minimum_judge_pass_rate": 0.85,
@@ -275,6 +283,10 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
                 "minimum_ndcg_at_k": 0.7,
                 "maximum_fallback_rate": 0.0,
                 "maximum_retrieval_degradation_rate": 0.0,
+                "maximum_p95_ttft_ms": 2000.0,
+                "maximum_p95_retrieval_latency_ms": 1000.0,
+                "maximum_p95_rerank_latency_ms": 500.0,
+                "maximum_p95_generation_latency_ms": 5000.0,
                 "maximum_p95_latency_ms": 60000.0,
                 "maximum_estimated_cost_usd": 2.0,
             },

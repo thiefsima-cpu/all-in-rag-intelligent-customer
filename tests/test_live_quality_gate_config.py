@@ -36,7 +36,7 @@ from scripts.live_quality_gate.models import (
 
 def policy_payload() -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "top_k": 6,
         "timeouts": {"request_seconds": 90.0, "judge_seconds": 45.0},
         "judge": {
@@ -46,6 +46,7 @@ def policy_payload() -> dict[str, Any]:
         },
         "thresholds": {
             "minimum_case_count": 2,
+            "minimum_rerank_observation_count": 1,
             "minimum_pass_rate": 0.9,
             "minimum_deterministic_pass_rate": 0.9,
             "minimum_judge_pass_rate": 0.9,
@@ -54,7 +55,11 @@ def policy_payload() -> dict[str, Any]:
             "minimum_ndcg_at_k": 0.7,
             "maximum_fallback_rate": 0.0,
             "maximum_retrieval_degradation_rate": 0.0,
-            "maximum_p95_latency_ms": 60000.0,
+            "maximum_p95_ttft_ms": 5000.0,
+            "maximum_p95_retrieval_latency_ms": 3000.0,
+            "maximum_p95_rerank_latency_ms": 2000.0,
+            "maximum_p95_generation_latency_ms": 20000.0,
+            "maximum_p95_latency_ms": 25000.0,
             "maximum_estimated_cost_usd": 1.0,
         },
         "required_slice_coverage": {
@@ -159,16 +164,37 @@ def test_default_policy_path_points_to_eval_live_quality_gate() -> None:
     assert DEFAULT_POLICY_PATH == Path(__file__).parents[1] / "eval" / "live_quality_gate.json"
 
 
-def test_default_live_quality_policy_has_required_seed_coverage() -> None:
-    policy = load_live_quality_policy(DEFAULT_POLICY_PATH)
+def test_default_policy_enforces_interactive_slo_and_customer_grounding() -> None:
+    gate_policy = load_live_quality_policy()
+    customer_grounded = [
+        case
+        for case in gate_policy.cases
+        if case.cuisine == "customer_service"
+        and case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER
+    ]
 
-    assert len(policy.cases) >= 30
+    assert gate_policy.schema_version == 2
+    assert len(gate_policy.cases) == 52
+    assert len(customer_grounded) == 5
+    assert gate_policy.thresholds.minimum_rerank_observation_count == 1
+    assert gate_policy.thresholds.maximum_p95_ttft_ms == 5000.0
+    assert gate_policy.thresholds.maximum_p95_retrieval_latency_ms == 3000.0
+    assert gate_policy.thresholds.maximum_p95_rerank_latency_ms == 2000.0
+    assert gate_policy.thresholds.maximum_p95_generation_latency_ms == 20000.0
+    assert gate_policy.thresholds.maximum_p95_latency_ms == 25000.0
+
+
+def test_default_live_quality_policy_has_required_seed_coverage() -> None:
+    payload = json.loads(DEFAULT_POLICY_PATH.read_text(encoding="utf-8"))
+    cases = [LiveQualityCasePolicy.model_validate(case) for case in payload["cases"]]
+
+    assert len(cases) >= 30
 
     risk_counts: dict[str, int] = {}
     response_counts: dict[str, int] = {}
     grounded = 0
     abstention = 0
-    for case in policy.cases:
+    for case in cases:
         if case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
             grounded += 1
         else:
@@ -191,7 +217,7 @@ def test_default_live_quality_policy_has_required_seed_coverage() -> None:
     assert response_counts["grounded_answer"] >= 10
     assert response_counts["no_evidence"] >= 3
 
-    combined_cases = [case for case in policy.cases if case.allowed_strategies == ["combined"]]
+    combined_cases = [case for case in cases if case.allowed_strategies == ["combined"]]
     assert combined_cases
     assert all(case.required_sources == ["traditional"] for case in combined_cases)
 
@@ -256,6 +282,7 @@ def test_policy_models_are_strict_and_forbid_extra_fields() -> None:
 def test_policy_models_expose_only_the_documented_fields() -> None:
     assert set(LiveQualityThresholds.model_fields) == {
         "minimum_case_count",
+        "minimum_rerank_observation_count",
         "minimum_pass_rate",
         "minimum_deterministic_pass_rate",
         "minimum_judge_pass_rate",
@@ -264,6 +291,10 @@ def test_policy_models_expose_only_the_documented_fields() -> None:
         "minimum_ndcg_at_k",
         "maximum_fallback_rate",
         "maximum_retrieval_degradation_rate",
+        "maximum_p95_ttft_ms",
+        "maximum_p95_retrieval_latency_ms",
+        "maximum_p95_rerank_latency_ms",
+        "maximum_p95_generation_latency_ms",
         "maximum_p95_latency_ms",
         "maximum_estimated_cost_usd",
     }
@@ -299,7 +330,7 @@ def test_policy_loads_strict_schema(tmp_path: Path) -> None:
     policy = load_live_quality_policy(write_policy(tmp_path))
 
     assert isinstance(policy, LiveQualityGatePolicy)
-    assert policy.schema_version == 1
+    assert policy.schema_version == 2
     assert policy.top_k == 6
     assert policy.cases[0].expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER
     assert policy.cases[1].expected_response_mode is LiveQualityResponseMode.NO_EVIDENCE
@@ -429,9 +460,14 @@ def test_abstention_case_allows_zero_relevance_judgments(tmp_path: Path) -> None
         (("timeouts", "request_seconds"), 0.0),
         (("timeouts", "judge_seconds"), 0.0),
         (("thresholds", "minimum_case_count"), 0),
+        (("thresholds", "minimum_rerank_observation_count"), 0),
         (("thresholds", "minimum_pass_rate"), -0.01),
         (("thresholds", "minimum_judge_pass_rate"), 1.01),
         (("thresholds", "maximum_fallback_rate"), 1.01),
+        (("thresholds", "maximum_p95_ttft_ms"), 0.0),
+        (("thresholds", "maximum_p95_retrieval_latency_ms"), 0.0),
+        (("thresholds", "maximum_p95_rerank_latency_ms"), 0.0),
+        (("thresholds", "maximum_p95_generation_latency_ms"), 0.0),
         (("thresholds", "maximum_p95_latency_ms"), 0.0),
         (("thresholds", "maximum_estimated_cost_usd"), -0.01),
         (("required_slice_coverage", "risk_tags", "prompt_injection"), 0),
@@ -461,6 +497,35 @@ def test_policy_rejects_invalid_numeric_bounds(
 ) -> None:
     payload = policy_payload()
     set_payload_path(payload, path, invalid_value)
+
+    with pytest.raises(ValidationError):
+        load_live_quality_policy(write_policy(tmp_path, payload))
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "minimum_rerank_observation_count",
+        "maximum_p95_ttft_ms",
+        "maximum_p95_retrieval_latency_ms",
+        "maximum_p95_rerank_latency_ms",
+        "maximum_p95_generation_latency_ms",
+    ],
+)
+def test_policy_requires_interaction_slo_thresholds(
+    tmp_path: Path,
+    field_name: str,
+) -> None:
+    payload = policy_payload()
+    del payload["thresholds"][field_name]
+
+    with pytest.raises(ValidationError):
+        load_live_quality_policy(write_policy(tmp_path, payload))
+
+
+def test_policy_rejects_schema_version_1(tmp_path: Path) -> None:
+    payload = policy_payload()
+    payload["schema_version"] = 1
 
     with pytest.raises(ValidationError):
         load_live_quality_policy(write_policy(tmp_path, payload))

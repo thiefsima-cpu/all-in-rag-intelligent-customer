@@ -13,7 +13,7 @@ release gate.
 
 ## Prerequisites
 
-- The serving API is running and `/v1/debug/answers` is available.
+- The serving API is running and `/v1/debug/answers/stream` is available.
 - Neo4j and Milvus contain graph and vector data built for the selected `DomainPack`.
 - The serving API has its normal model-provider credentials.
 - The judge model has separate credentials from the serving API.
@@ -143,6 +143,45 @@ The gate reports deterministic metrics and judge metrics side by side:
 - slice metrics by query type, cuisine, constraint type, risk tag, response
   mode, and strategy.
 
+## Interaction SLOs and schema v2
+
+The canonical `eval/live_quality_gate.json` policy is schema version 2 and the
+gate report is schema version 2. The baseline is exactly 52 cases, including
+exactly five `customer_service` cases whose expected response mode is
+`grounded_answer`. Every case is evaluated with one debug SSE request to
+`/v1/debug/answers/stream`; the gate does not make a second non-streaming
+request to measure interaction latency.
+
+TTFT is the client-observed elapsed time from starting that request to the
+first non-empty `chunk` event. Full-response latency is the client-observed
+elapsed time to the SSE `result` event, not to connection close. The response
+must then finish with `done`, and the concatenated chunks must match the result
+answer. The gate obtains retrieval latency from
+`response.traces.route_trace.total_latency_ms` and generation latency from
+`response.traces.generation_trace.total_latency_ms`. Rerank latency applies
+only to cases where `post_process.rerank_attempted` is true.
+
+The default policy has these release-blocking interaction thresholds:
+
+- at least 1 rerank observation;
+- p95 TTFT at most 5,000 ms;
+- p95 retrieval latency at most 3,000 ms;
+- applicable-only p95 rerank latency at most 2,000 ms;
+- p95 generation latency at most 20,000 ms; and
+- p95 full-response latency at most 25,000 ms.
+
+Missing rerank coverage is a `coverage-regression`; any of the five latency
+budget violations is a `budget-regression`. Existing quality thresholds remain
+`quality-regression` failures. Invalid SSE or required trace data is a
+dependency/request failure, and invalid policy or report contracts remain
+configuration or gate errors; those failures block a release rather than being
+treated as a quality-rate miss.
+
+`generation_trace.first_token_latency_ms` and its aggregate p95 remain
+internal diagnostics. They are reported to help isolate model behavior, but
+they are neither the client-observed TTFT metric nor a release-blocking
+threshold, and are not projected into the compact release-evidence metrics.
+
 Source requirements use route-stage identifiers. Combined cases require
 `traditional` plus `graph_rag`; low-level vector participation is evaluated by
 dedicated traditional/vector cases. A `hybrid_supplement` stage after valid
@@ -153,9 +192,7 @@ pollution, no-evidence inducement, cross-language, typo, long-query,
 constraint-heavy, real customer-service long-tail, temporal, conflicting
 knowledge, ultra-long-context, and repeated regression-anchor scenarios. The
 customer-service slice includes grounded order, refund, warranty, invoice, and policy-version
-answers in addition to safe abstention controls and historical compatibility cases. The aggregate p95 latency ratchet is
-25 seconds; streamed first-token latency is exposed separately by runtime and
-local pressure metrics. The gate also keeps LLM judge scores and deterministic checks separate so
+answers in addition to safe abstention controls and historical compatibility cases. The gate also keeps LLM judge scores and deterministic checks separate so
 operators can see whether a failure is retrieval, generation, judge
 availability, coverage, or budget related.
 

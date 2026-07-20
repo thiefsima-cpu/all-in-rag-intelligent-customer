@@ -10,6 +10,7 @@ from rag_modules.contracts.runtime import QueryAnalysis
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
+from rag_modules.retrieval.post_processor import RetrievalPostProcessResult
 from rag_modules.routing import (
     RouteExecutionRequest,
     RouteSearchOrchestrator,
@@ -45,12 +46,26 @@ class _FakeGraphRetrieval:
 
 
 class _FakePostProcessor:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        rerank_attempted: bool = False,
+        rerank_succeeded: bool = False,
+        rerank_latency_ms: float | None = None,
+    ) -> None:
         self.contexts = []
+        self.rerank_attempted = rerank_attempted
+        self.rerank_succeeded = rerank_succeeded
+        self.rerank_latency_ms = rerank_latency_ms
 
-    def post_process(self, evidence_documents, top_k, context):
+    def post_process_with_trace(self, evidence_documents, top_k, context):
         self.contexts.append(context)
-        return list(evidence_documents)[:top_k]
+        return RetrievalPostProcessResult(
+            documents=tuple(list(evidence_documents)[:top_k]),
+            rerank_attempted=self.rerank_attempted,
+            rerank_succeeded=self.rerank_succeeded,
+            rerank_latency_ms=self.rerank_latency_ms,
+        )
 
 
 class _StubStrategy:
@@ -290,6 +305,49 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
         )
 
         self.assertIs(post_processor.contexts[0].control, control)
+
+    def test_post_process_records_failed_rerank_as_retrieval_degradation(self) -> None:
+        post_processor = _FakePostProcessor(
+            rerank_attempted=True,
+            rerank_succeeded=False,
+            rerank_latency_ms=75.0,
+        )
+        orchestrator = RouteSearchOrchestrator(
+            traditional_retrieval=_FakeTraditionalRetrieval(),
+            graph_rag_retrieval=_FakeGraphRetrieval(),
+            retrieval_profile=SimpleNamespace(candidates=SimpleNamespace()),
+            post_processor=post_processor,
+        )
+        request = RouteExecutionRequest(
+            query="recommend tofu dishes",
+            top_k=2,
+            analysis=QueryAnalysis(recommended_strategy=SearchStrategy.HYBRID_TRADITIONAL),
+            retrieval_request=RouteSearchOrchestrator.build_retrieval_request(
+                query="recommend tofu dishes",
+                top_k=2,
+                strategy="hybrid_traditional",
+            ),
+            constraints=QueryConstraints(),
+        )
+        trace = RouteTraceRecorder(
+            query=request.query,
+            requested_top_k=request.top_k,
+            semantic_settings=self.semantic_settings,
+        )
+
+        orchestrator.post_process(
+            request,
+            [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")],
+            trace=trace,
+        )
+
+        stage = trace.snapshot.stages["post_process"]
+        self.assertEqual(stage.details["rerank_latency_ms"], 75.0)
+        self.assertTrue(stage.details["rerank_attempted"])
+        self.assertFalse(stage.details["rerank_succeeded"])
+        self.assertTrue(stage.details["retrieval_degraded"])
+        self.assertEqual(stage.details["degraded_sources"], ["rerank"])
+        self.assertTrue(trace.snapshot.diagnostics.retrieval_degraded)
 
 
 if __name__ == "__main__":

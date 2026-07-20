@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import math
+from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -25,8 +28,19 @@ class RequestIdFactory(Protocol):
     def __call__(self) -> object: ...
 
 
+class Clock(Protocol):
+    def __call__(self) -> float: ...
+
+
+@dataclass(frozen=True)
+class _SseEvent:
+    name: str
+    data: dict[str, Any]
+
+
 _REQUEST_FAILED_CODE = "LIVE_QUALITY_REQUEST_FAILED"
-_DEBUG_ANSWER_PATH = "/v1/debug/answers"
+_DEBUG_ANSWER_PATH = "/v1/debug/answers/stream"
+_SSE_ITER_CHUNK_SIZE = 1
 _REQUIRED_PAYLOAD_FIELDS = frozenset({"summary", "grounding", "diagnostics", "traces"})
 _REQUIRED_SUMMARY_FIELDS = frozenset(
     {
@@ -44,20 +58,37 @@ _REQUIRED_EVIDENCE_DOCUMENT_FIELDS = frozenset({"recipe_name", "source", "conten
 _REQUIRED_DIAGNOSTICS_FIELDS = frozenset({"diagnostics"})
 _REQUIRED_QUERY_DIAGNOSTIC_FIELDS = frozenset({"retrieval_degraded"})
 _REQUIRED_TRACE_FIELDS = frozenset({"route_trace", "generation_trace"})
-_REQUIRED_ROUTE_TRACE_FIELDS = frozenset({"strategy", "stages", "fallbacks", "diagnostics"})
+_REQUIRED_ROUTE_TRACE_FIELDS = frozenset(
+    {"strategy", "stages", "fallbacks", "diagnostics", "total_latency_ms"}
+)
 _REQUIRED_ROUTE_STAGE_FIELDS = frozenset({"sources"})
+_REQUIRED_POST_PROCESS_FIELDS = frozenset(
+    {"rerank_attempted", "rerank_succeeded", "rerank_latency_ms"}
+)
 _REQUIRED_ROUTE_DIAGNOSTIC_FIELDS = frozenset(
     {"used_fallback", "fallback_count", "retrieval_degraded"}
 )
 _REQUIRED_GENERATION_TRACE_FIELDS = frozenset(
-    {"fallback_used", "total_tokens", "estimated_cost_usd"}
+    {
+        "fallback_used",
+        "total_latency_ms",
+        "first_token_latency_ms",
+        "total_tokens",
+        "estimated_cost_usd",
+    }
 )
 
 
 def normalize_live_quality_observation(
     case: LiveQualityCasePolicy,
     payload: dict[str, Any],
+    *,
+    ttft_ms: float,
+    latency_ms: float,
 ) -> LiveQualityObservation:
+    ttft_ms = _require_positive_client_timing(ttft_ms)
+    latency_ms = _require_positive_client_timing(latency_ms)
+    _require_raw_rerank_wire_contract(payload)
     response = AnswerResponseModel.model_validate(payload)
     _require_explicit_live_quality_contract(response)
 
@@ -67,6 +98,30 @@ def normalize_live_quality_observation(
     route_trace = answer.traces.route_trace
     route_diagnostics = route_trace.diagnostics
     generation_trace = answer.traces.generation_trace
+    post_process = route_trace.stages.get("post_process")
+    if post_process is None:
+        raise ValueError("live quality post-process stage is missing")
+    if not math.isfinite(route_trace.total_latency_ms) or route_trace.total_latency_ms <= 0:
+        raise ValueError("live quality retrieval latency is missing")
+    if (
+        not math.isfinite(generation_trace.total_latency_ms)
+        or generation_trace.total_latency_ms <= 0
+    ):
+        raise ValueError("live quality generation latency is missing")
+    if (
+        not math.isfinite(generation_trace.first_token_latency_ms)
+        or generation_trace.first_token_latency_ms <= 0
+    ):
+        raise ValueError("live quality generation first-token latency is missing")
+    if post_process.rerank_attempted:
+        if (
+            post_process.rerank_latency_ms is None
+            or not math.isfinite(post_process.rerank_latency_ms)
+            or post_process.rerank_latency_ms <= 0
+        ):
+            raise ValueError("live quality rerank latency is missing")
+    elif post_process.rerank_succeeded or post_process.rerank_latency_ms is not None:
+        raise ValueError("live quality rerank timing is inconsistent")
 
     evidence = tuple(
         LiveQualityEvidence(
@@ -91,7 +146,9 @@ def normalize_live_quality_observation(
         or generation_trace.fallback_used
     )
     retrieval_degraded = (
-        public_diagnostics.retrieval_degraded or route_diagnostics.retrieval_degraded
+        public_diagnostics.retrieval_degraded
+        or route_diagnostics.retrieval_degraded
+        or (post_process.rerank_attempted and not post_process.rerank_succeeded)
     )
 
     return LiveQualityObservation(
@@ -103,7 +160,14 @@ def normalize_live_quality_observation(
         sources=frozenset(sources),
         fallback_used=fallback_used,
         retrieval_degraded=retrieval_degraded,
-        latency_ms=summary.latency_ms,
+        ttft_ms=ttft_ms,
+        latency_ms=latency_ms,
+        retrieval_latency_ms=route_trace.total_latency_ms,
+        rerank_attempted=post_process.rerank_attempted,
+        rerank_succeeded=post_process.rerank_succeeded,
+        rerank_latency_ms=post_process.rerank_latency_ms,
+        generation_latency_ms=generation_trace.total_latency_ms,
+        generation_first_token_latency_ms=generation_trace.first_token_latency_ms,
         prompt_tokens=summary.prompt_tokens,
         completion_tokens=summary.completion_tokens,
         total_tokens=generation_trace.total_tokens or summary.total_tokens,
@@ -116,14 +180,17 @@ def _require_explicit_live_quality_contract(response: AnswerResponseModel) -> No
     traces = payload.traces
     route_trace = traces.route_trace
     generation_trace = traces.generation_trace
+    post_process = route_trace.stages.get("post_process")
+    if post_process is None:
+        raise ValueError("live quality post-process stage is missing")
 
     if not (
         _fields_were_explicitly_set(payload, _REQUIRED_PAYLOAD_FIELDS)
         and _fields_were_explicitly_set(payload.summary, _REQUIRED_SUMMARY_FIELDS)
         and _fields_were_explicitly_set(payload.grounding, _REQUIRED_GROUNDING_FIELDS)
-        and _items_were_explicitly_set(
-            payload.grounding.evidence_documents,
-            _REQUIRED_EVIDENCE_DOCUMENT_FIELDS,
+        and all(
+            _fields_were_explicitly_set(document, _REQUIRED_EVIDENCE_DOCUMENT_FIELDS)
+            for document in payload.grounding.evidence_documents
         )
         and _fields_were_explicitly_set(payload.diagnostics, _REQUIRED_DIAGNOSTICS_FIELDS)
         and _fields_were_explicitly_set(
@@ -133,10 +200,57 @@ def _require_explicit_live_quality_contract(response: AnswerResponseModel) -> No
         and _fields_were_explicitly_set(traces, _REQUIRED_TRACE_FIELDS)
         and _fields_were_explicitly_set(route_trace, _REQUIRED_ROUTE_TRACE_FIELDS)
         and _items_were_explicitly_set(route_trace.stages.values(), _REQUIRED_ROUTE_STAGE_FIELDS)
+        and _fields_were_explicitly_set(post_process, _REQUIRED_POST_PROCESS_FIELDS)
         and _fields_were_explicitly_set(route_trace.diagnostics, _REQUIRED_ROUTE_DIAGNOSTIC_FIELDS)
         and _fields_were_explicitly_set(generation_trace, _REQUIRED_GENERATION_TRACE_FIELDS)
     ):
         raise ValueError("live quality debug answer response is missing required contract fields")
+
+
+def _require_raw_rerank_wire_contract(payload: dict[str, Any]) -> None:
+    raw_response = payload.get("response")
+    if not isinstance(raw_response, dict):
+        return
+    raw_traces = raw_response.get("traces")
+    if not isinstance(raw_traces, dict):
+        return
+    raw_route_trace = raw_traces.get("route_trace")
+    if not isinstance(raw_route_trace, dict):
+        return
+    raw_stages = raw_route_trace.get("stages")
+    if not isinstance(raw_stages, dict):
+        return
+    raw_post_process = raw_stages.get("post_process")
+    if not isinstance(raw_post_process, dict) or not (
+        _REQUIRED_POST_PROCESS_FIELDS <= raw_post_process.keys()
+    ):
+        return
+
+    rerank_attempted = raw_post_process["rerank_attempted"]
+    rerank_succeeded = raw_post_process["rerank_succeeded"]
+    rerank_latency_ms = raw_post_process["rerank_latency_ms"]
+    if not isinstance(rerank_attempted, bool) or not isinstance(rerank_succeeded, bool):
+        raise ValueError("live quality raw rerank wire contract is invalid")
+    if not rerank_attempted:
+        if rerank_succeeded or rerank_latency_ms is not None:
+            raise ValueError(
+                "live quality raw rerank wire contract is invalid: rerank timing is inconsistent"
+            )
+        return
+    if isinstance(rerank_latency_ms, bool) or not isinstance(rerank_latency_ms, int | float):
+        raise ValueError(
+            "live quality raw rerank wire contract is invalid: rerank latency is missing"
+        )
+    try:
+        normalized_rerank_latency_ms = float(rerank_latency_ms)
+    except OverflowError as exc:
+        raise ValueError(
+            "live quality raw rerank wire contract is invalid: rerank latency is missing"
+        ) from exc
+    if not math.isfinite(normalized_rerank_latency_ms) or normalized_rerank_latency_ms <= 0:
+        raise ValueError(
+            "live quality raw rerank wire contract is invalid: rerank latency is missing"
+        )
 
 
 def _fields_were_explicitly_set(model: object, required_fields: frozenset[str]) -> bool:
@@ -161,22 +275,31 @@ def run_live_case(
     case: LiveQualityCasePolicy,
     http_session: requests.Session | None = None,
     request_id_factory: RequestIdFactory | None = None,
+    clock: Clock = perf_counter,
 ) -> LiveQualityCaseRunResult:
-    started = perf_counter()
     session = http_session if http_session is not None else requests.Session()
     owns_session = http_session is None
+    started: float | None = None
 
     try:
-        payload = _post_debug_answer(
+        started = _sample_clock(clock)
+        payload, ttft_ms, latency_ms = _post_debug_answer_stream(
             settings=settings,
             policy=policy,
             case=case,
             session=session,
             request_id_factory=request_id_factory,
+            clock=clock,
+            started=started,
         )
-        observation = normalize_live_quality_observation(case, payload)
+        observation = normalize_live_quality_observation(
+            case,
+            payload,
+            ttft_ms=ttft_ms,
+            latency_ms=latency_ms,
+        )
     except (requests.RequestException, OSError, ValueError, ValidationError):
-        duration_ms = (perf_counter() - started) * 1000
+        duration_ms = _failure_duration_ms(clock, started)
         return LiveQualityCaseRunResult(
             case_id=case.case_id,
             observation=None,
@@ -185,7 +308,7 @@ def run_live_case(
                     "live_quality_debug_answer_request",
                     failure_type=GateFailureType.DEPENDENCY_UNAVAILABLE,
                     code=_REQUEST_FAILED_CODE,
-                    expected={"endpoint": "/v1/debug/answers"},
+                    expected={"endpoint": _DEBUG_ANSWER_PATH},
                     actual={"case_id": case.case_id, "result": "request_failed"},
                     duration_ms=duration_ms,
                 ),
@@ -198,34 +321,208 @@ def run_live_case(
     return LiveQualityCaseRunResult(case_id=case.case_id, observation=observation, checks=())
 
 
-def _post_debug_answer(
+def _post_debug_answer_stream(
     *,
     settings: LiveQualityGateSettings,
     policy: LiveQualityGatePolicy,
     case: LiveQualityCasePolicy,
     session: requests.Session,
     request_id_factory: RequestIdFactory | None,
-) -> dict[str, Any]:
+    clock: Clock,
+    started: float,
+) -> tuple[dict[str, Any], float, float]:
     request_id = request_id_factory() if request_id_factory is not None else uuid4()
     headers = {"X-Request-ID": f"live-quality-gate-{request_id}"}
     if settings.api_token:
         headers["Authorization"] = f"Bearer {settings.api_token}"
+    deadline = perf_counter() + policy.timeouts.request_seconds
 
     response = session.post(
         _build_debug_answer_url(settings.api_url),
-        json={
-            "question": case.query,
-            "stream": False,
-            "explain_routing": True,
-        },
+        json={"question": case.query, "explain_routing": True},
         headers=headers,
         timeout=policy.timeouts.request_seconds,
+        stream=True,
+        allow_redirects=False,
     )
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise ValueError("live quality debug answer response must be a JSON object")
-    return payload
+    try:
+        response.raise_for_status()
+        _raise_if_stream_deadline_exceeded(deadline)
+        if not _is_successful_http_status(response.status_code):
+            raise ValueError("live quality response is not a successful status")
+        content_type = response.headers.get("content-type", "")
+        if not _is_sse_media_type(content_type):
+            raise ValueError("live quality response is not an SSE stream")
+
+        chunks: list[str] = []
+        ttft_ms: float | None = None
+        result_payload: dict[str, Any] | None = None
+        response_latency_ms: float | None = None
+        done = False
+
+        for event in _iter_sse_events(
+            response.iter_lines(chunk_size=_SSE_ITER_CHUNK_SIZE, decode_unicode=True),
+            deadline=deadline,
+        ):
+            _raise_if_stream_deadline_exceeded(deadline)
+            if done:
+                raise ValueError("live quality SSE event received after done")
+            if result_payload is not None and event.name != "done":
+                raise ValueError("live quality SSE event received after result")
+            if event.name == "message":
+                if set(event.data) != {"message"} or not isinstance(event.data["message"], str):
+                    raise ValueError("invalid live quality SSE message event")
+            elif event.name == "chunk":
+                if set(event.data) != {"content"} or not isinstance(event.data["content"], str):
+                    raise ValueError("invalid live quality SSE chunk event")
+                content = event.data["content"]
+                if content:
+                    if ttft_ms is None:
+                        ttft_ms = _elapsed_ms(clock, started)
+                    chunks.append(content)
+            elif event.name == "result":
+                if result_payload is not None:
+                    raise ValueError("duplicate live quality SSE result event")
+                if set(event.data) != {"response"}:
+                    raise ValueError("invalid live quality SSE result event")
+                result_payload = event.data
+                response_latency_ms = _elapsed_ms(clock, started)
+            elif event.name == "error":
+                raise ValueError("live quality SSE error event")
+            elif event.name == "done":
+                if set(event.data) != {"ok"} or event.data.get("ok") is not True:
+                    raise ValueError("invalid live quality SSE done event")
+                done = True
+            else:
+                raise ValueError("unsupported live quality SSE event")
+
+        if ttft_ms is None:
+            raise ValueError("live quality SSE stream has no non-empty chunk")
+        if result_payload is None or response_latency_ms is None:
+            raise ValueError("live quality SSE stream is missing result")
+        if not done:
+            raise ValueError("live quality SSE stream is missing done")
+        if ttft_ms > response_latency_ms:
+            raise ValueError("live quality TTFT exceeds response latency")
+
+        result_response = result_payload.get("response")
+        summary = result_response.get("summary") if isinstance(result_response, dict) else None
+        answer = summary.get("answer") if isinstance(summary, dict) else None
+        if not isinstance(answer, str):
+            raise ValueError("live quality SSE result answer is missing")
+        if "".join(chunks) != answer:
+            raise ValueError("live quality SSE chunks do not match result answer")
+        return result_payload, ttft_ms, response_latency_ms
+    finally:
+        response.close()
+
+
+def _iter_sse_events(
+    lines: Iterable[str | bytes],
+    *,
+    deadline: float | None = None,
+) -> Iterator[_SseEvent]:
+    event_name = ""
+    data_lines: list[str] = []
+    frame_started = False
+    for raw_line in lines:
+        if deadline is not None:
+            _raise_if_stream_deadline_exceeded(deadline)
+        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+        line = line.removesuffix("\r")
+        if line == "":
+            if not frame_started:
+                continue
+            if not event_name or not data_lines:
+                raise ValueError("incomplete live quality SSE event")
+            payload = json.loads("\n".join(data_lines))
+            if not isinstance(payload, dict):
+                raise ValueError("live quality SSE data must be an object")
+            yield _SseEvent(name=event_name, data=payload)
+            event_name = ""
+            data_lines = []
+            frame_started = False
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if not separator:
+            raise ValueError("invalid live quality SSE field")
+        value = value[1:] if value.startswith(" ") else value
+        if field == "event":
+            if event_name:
+                raise ValueError("duplicate live quality SSE event field")
+            event_name = value
+            frame_started = True
+        elif field == "data":
+            data_lines.append(value)
+            frame_started = True
+        else:
+            raise ValueError("unsupported live quality SSE field")
+    if frame_started:
+        raise ValueError("unterminated live quality SSE event")
+
+
+def _is_successful_http_status(status_code: object) -> bool:
+    return (
+        isinstance(status_code, int)
+        and not isinstance(status_code, bool)
+        and 200 <= status_code < 300
+    )
+
+
+def _is_sse_media_type(content_type: object) -> bool:
+    if not isinstance(content_type, str):
+        return False
+    media_type, _, _ = content_type.partition(";")
+    return media_type.strip().casefold() == "text/event-stream"
+
+
+def _raise_if_stream_deadline_exceeded(deadline: float) -> None:
+    now = perf_counter()
+    if not math.isfinite(now) or now >= deadline:
+        raise ValueError("live quality SSE stream exceeded the total deadline")
+
+
+def _require_positive_client_timing(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("invalid live quality client timing")
+    timing = float(value)
+    if not math.isfinite(timing) or timing <= 0:
+        raise ValueError("invalid live quality client timing")
+    return timing
+
+
+def _elapsed_ms(clock: Clock, started: float) -> float:
+    elapsed = (_sample_clock(clock) - started) * 1000
+    if not math.isfinite(elapsed) or elapsed <= 0:
+        raise ValueError("invalid live quality client timing")
+    return elapsed
+
+
+def _sample_clock(clock: Clock) -> float:
+    try:
+        raw_sample = clock()
+        if isinstance(raw_sample, bool) or not isinstance(raw_sample, int | float):
+            raise ValueError("invalid live quality clock sample")
+        sample = float(raw_sample)
+    except Exception as exc:
+        raise ValueError("invalid live quality clock sample") from exc
+    if not math.isfinite(sample):
+        raise ValueError("invalid live quality clock sample")
+    return sample
+
+
+def _failure_duration_ms(clock: Clock, started: float | None) -> float:
+    if started is None:
+        return 0.0
+    try:
+        duration_ms = (_sample_clock(clock) - started) * 1000
+    except ValueError:
+        return 0.0
+    if not math.isfinite(duration_ms) or duration_ms < 0:
+        return 0.0
+    return duration_ms
 
 
 def _build_debug_answer_url(api_url: str) -> str:
