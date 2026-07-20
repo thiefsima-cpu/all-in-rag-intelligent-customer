@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
+from time import perf_counter
 
 from ...contracts import EvidenceDocument, QuerySemanticRuntimeSettings, RequestControl
 from ...contracts.runtime import (
@@ -125,15 +126,21 @@ class AnswerPipelineService:
             self._emit(state.message_callback, self._format_strategy_summary(state.analysis))
 
     def _complete_without_evidence(self, state: AnswerPipelineState) -> AnswerPipelineState:
+        shortcut_started = perf_counter()
+        state.answer = self.answer_workflow_copy.no_evidence_answer
+        if state.stream:
+            self._emit(state.chunk_callback, state.answer)
+        first_token_latency_ms = self._positive_elapsed_ms(shortcut_started)
         state.generation_trace = GenerationSnapshot(
-            status="failed",
+            status="degraded",
             mode=GenerationMode.EMPTY,
             decision_reason="no_evidence",
             failure_code="no_evidence",
             total_evidence_items=0,
             selected_evidence_items=0,
+            total_latency_ms=self._positive_elapsed_ms(shortcut_started),
+            first_token_latency_ms=first_token_latency_ms,
         )
-        state.answer = self.answer_workflow_copy.no_evidence_answer
         return state
 
     def _generate_with_telemetry(self, state: AnswerPipelineState) -> None:
@@ -284,6 +291,10 @@ class AnswerPipelineService:
     def _emit(callback: MessageCallback, message: str) -> None:
         if callback:
             callback(message)
+
+    @staticmethod
+    def _positive_elapsed_ms(started: float) -> float:
+        return max((perf_counter() - started) * 1000, 0.001)
 
 
 __all__ = ["AnswerPipelineService"]

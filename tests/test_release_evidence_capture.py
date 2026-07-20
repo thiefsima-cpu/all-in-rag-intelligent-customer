@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.gates import GateCheckResult, GateFailureType
+from scripts.integration_gate.models import IntegrationGatePolicy
 from scripts.integration_gate.reporter import render_integration_summary
 from scripts.live_quality_gate.evaluator import evaluate_policy_thresholds
 from scripts.live_quality_gate.models import LiveQualityGatePolicy
@@ -1525,6 +1526,176 @@ def test_capture_rejects_semantically_fabricated_v2_live_timing(
     _write_live_report_and_summary(fixture, report)
 
     with pytest.raises(ReleaseEvidenceCaptureError):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_validate_v2_integration_evidence_rejects_a_tampered_case_evidence_count(
+    tmp_path: Path,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    policy = IntegrationGatePolicy.model_validate(
+        json.loads(fixture.integration_policy.read_text(encoding="utf-8"))
+    )
+    report = json.loads(fixture.integration_report.read_text(encoding="utf-8"))
+    metrics = capture_module._project_integration(report, policy).metrics
+    report["cases"][0]["evidence_count"] += 1
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="integration check details"):
+        capture_module.validate_v2_integration_evidence(report, policy, metrics)
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        (True, 1),
+        (False, 0),
+        ({"passed": True}, {"passed": 1}),
+        ([False], [0]),
+    ],
+)
+def test_evidence_value_matches_keeps_boolean_and_numeric_values_type_safe(
+    left: object,
+    right: object,
+) -> None:
+    assert capture_module._evidence_value_matches(left, right) is False
+
+
+@pytest.mark.parametrize(
+    "timing_name",
+    [
+        "ttft_ms",
+        "latency_ms",
+        "retrieval_latency_ms",
+        "generation_latency_ms",
+        "generation_first_token_latency_ms",
+    ],
+)
+@pytest.mark.parametrize("invalid_value", [0.0, float("nan"), float("inf")])
+def test_capture_timing_schema_rejects_nonpositive_or_nonfinite_observed_timings(
+    timing_name: str,
+    invalid_value: float,
+) -> None:
+    timings: dict[str, object] = {
+        "ttft_ms": 1000.0,
+        "latency_ms": 5000.0,
+        "retrieval_latency_ms": 500.0,
+        "rerank_attempted": False,
+        "rerank_succeeded": False,
+        "rerank_latency_ms": None,
+        "generation_latency_ms": 4000.0,
+        "generation_first_token_latency_ms": 500.0,
+    }
+    timings[timing_name] = invalid_value
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="timing"):
+        capture_module._validate_live_case_timing_schema(timings, "live quality case timings")
+
+
+def test_capture_timing_schema_allows_a_measured_failed_rerank() -> None:
+    timings = {
+        "ttft_ms": 1000.0,
+        "latency_ms": 5000.0,
+        "retrieval_latency_ms": 500.0,
+        "rerank_attempted": True,
+        "rerank_succeeded": False,
+        "rerank_latency_ms": 250.0,
+        "generation_latency_ms": 4000.0,
+        "generation_first_token_latency_ms": 500.0,
+    }
+
+    capture_module._validate_live_case_timing_schema(timings, "live quality case timings")
+
+
+@pytest.mark.parametrize(
+    ("rerank_attempted", "rerank_succeeded", "rerank_latency_ms"),
+    [
+        (False, True, None),
+        (False, True, 1.0),
+        (False, False, 1.0),
+        (True, True, None),
+        (True, False, None),
+    ],
+)
+def test_capture_timing_schema_rejects_contradictory_rerank_states(
+    rerank_attempted: bool,
+    rerank_succeeded: bool,
+    rerank_latency_ms: float | None,
+) -> None:
+    timings = {
+        "ttft_ms": 1000.0,
+        "latency_ms": 5000.0,
+        "retrieval_latency_ms": 500.0,
+        "rerank_attempted": rerank_attempted,
+        "rerank_succeeded": rerank_succeeded,
+        "rerank_latency_ms": rerank_latency_ms,
+        "generation_latency_ms": 4000.0,
+        "generation_first_token_latency_ms": 500.0,
+    }
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="rerank"):
+        capture_module._validate_live_case_timing_schema(timings, "live quality case timings")
+
+
+@pytest.mark.parametrize("invalid_latency_ms", [0.0, float("nan"), float("inf")])
+@pytest.mark.parametrize("rerank_succeeded", [False, True])
+def test_capture_timing_schema_rejects_invalid_attempted_rerank_latency(
+    rerank_succeeded: bool,
+    invalid_latency_ms: float,
+) -> None:
+    timings = {
+        "ttft_ms": 1000.0,
+        "latency_ms": 5000.0,
+        "retrieval_latency_ms": 500.0,
+        "rerank_attempted": True,
+        "rerank_succeeded": rerank_succeeded,
+        "rerank_latency_ms": invalid_latency_ms,
+        "generation_latency_ms": 4000.0,
+        "generation_first_token_latency_ms": 500.0,
+    }
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="rerank"):
+        capture_module._validate_live_case_timing_schema(timings, "live quality case timings")
+
+
+def test_capture_rejects_self_consistent_zero_live_ttft_evidence(tmp_path: Path) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["cases"][0]["timings"]["ttft_ms"] = 0.0
+    report["metrics"]["p95_ttft_ms"] = 0.0
+    for slice_name in (
+        "by_query_type",
+        "by_cuisine",
+        "by_constraint_type",
+        "by_risk_tag",
+        "by_response_mode",
+        "by_strategy",
+    ):
+        for summary in report["metrics"][slice_name].values():
+            summary["p95_ttft_ms"] = 0.0
+    next(check for check in report["checks"] if check["name"] == "metrics.p95_ttft_ms")[
+        "actual"
+    ] = 0.0
+    _write_live_report_and_summary(fixture, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="timing"):
+        capture_release_evidence(capture_inputs(fixture))
+
+
+def test_capture_requires_a_failed_rerank_to_be_reported_as_retrieval_degradation(
+    tmp_path: Path,
+) -> None:
+    fixture = make_release_evidence_fixture(tmp_path)
+    report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
+    report["cases"][0]["timings"].update(
+        {
+            "rerank_attempted": True,
+            "rerank_succeeded": False,
+            "rerank_latency_ms": 250.0,
+        }
+    )
+    _write_live_report_and_summary(fixture, report)
+
+    with pytest.raises(ReleaseEvidenceCaptureError, match="rerank.*retrieval degradation"):
         capture_release_evidence(capture_inputs(fixture))
 
 

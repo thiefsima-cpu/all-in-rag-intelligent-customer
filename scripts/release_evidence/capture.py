@@ -693,6 +693,13 @@ def _require_float(value: object, name: str) -> float:
     return result
 
 
+def _require_positive_float(value: object, name: str) -> float:
+    result = _require_float(value, name)
+    if result <= 0:
+        raise ReleaseEvidenceCaptureError(f"{name} must be positive")
+    return result
+
+
 def _detail_list(report: Mapping[str, Any], key: str, name: str) -> list[dict[str, Any]]:
     value = report.get(key)
     if not isinstance(value, list):
@@ -875,18 +882,15 @@ def _validate_live_case_timing_schema(value: object, name: str) -> None:
         "generation_latency_ms",
         "generation_first_token_latency_ms",
     ):
-        if _require_float(timings.get(timing_name), f"{name} {timing_name}") < 0:
-            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+        _require_positive_float(timings.get(timing_name), f"{name} {timing_name}")
     rerank_attempted = _require_bool(timings.get("rerank_attempted"), f"{name} rerank attempted")
     rerank_succeeded = _require_bool(timings.get("rerank_succeeded"), f"{name} rerank succeeded")
     rerank_latency = timings.get("rerank_latency_ms")
-    if rerank_succeeded and not rerank_attempted:
-        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
-    if rerank_attempted and rerank_succeeded:
-        if _require_float(rerank_latency, f"{name} rerank latency") < 0:
-            raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
-    elif rerank_latency is not None:
-        raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
+    if not rerank_attempted:
+        if rerank_succeeded or rerank_latency is not None:
+            raise ReleaseEvidenceCaptureError(f"{name} rerank state is invalid")
+        return
+    _require_positive_float(rerank_latency, f"{name} rerank latency")
 
 
 def _validate_live_report_schema(
@@ -1170,6 +1174,8 @@ def _float_matches(left: float, right: float) -> bool:
 
 
 def _evidence_value_matches(left: object, right: object) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left is right
     if (
         not isinstance(left, bool)
         and not isinstance(right, bool)
@@ -1895,6 +1901,18 @@ def _validate_live_quality_details(
             retrieval_metrics[metric_name].append(projected_value)
             normalized_case_metrics[metric_name] = projected_value
         timings = _require_mapping(case.get("timings"), "live quality case timings")
+        rerank_attempted = _require_bool(
+            timings.get("rerank_attempted"),
+            "live quality case rerank attempted",
+        )
+        rerank_succeeded = _require_bool(
+            timings.get("rerank_succeeded"),
+            "live quality case rerank succeeded",
+        )
+        if rerank_attempted and not rerank_succeeded and "retrieval_degraded" not in failures:
+            raise ReleaseEvidenceCaptureError(
+                "failed rerank must be reported as retrieval degradation"
+            )
         rerank_latency_value = timings.get("rerank_latency_ms")
         rerank_latency = (
             None
@@ -1916,14 +1934,8 @@ def _validate_live_quality_details(
                 timings.get("retrieval_latency_ms"),
                 "live quality case retrieval latency",
             ),
-            rerank_attempted=_require_bool(
-                timings.get("rerank_attempted"),
-                "live quality case rerank attempted",
-            ),
-            rerank_succeeded=_require_bool(
-                timings.get("rerank_succeeded"),
-                "live quality case rerank succeeded",
-            ),
+            rerank_attempted=rerank_attempted,
+            rerank_succeeded=rerank_succeeded,
             rerank_latency_ms=rerank_latency,
             generation_latency_ms=_require_float(
                 timings.get("generation_latency_ms"),
@@ -2447,6 +2459,40 @@ def _scan_source(name: str, data: bytes) -> None:
         return
     if _sensitive_text_present(text):
         raise ReleaseEvidenceCaptureError(f"sensitive release evidence value in {name}")
+
+
+def scan_release_evidence_json(value: object, path: str) -> None:
+    """Scan a parsed release-evidence JSON value without reading or mutating state."""
+
+    _scan_json(value, path)
+
+
+def scan_release_evidence_source(name: str, data: bytes) -> None:
+    """Scan one in-memory release-evidence source without reading or mutating state."""
+
+    _scan_source(name, data)
+
+
+def validate_v2_integration_evidence(
+    report: Mapping[str, Any],
+    policy: IntegrationGatePolicy,
+    metrics: IntegrationMetrics,
+) -> None:
+    """Apply the pure integration validation shared by capture and reverification."""
+
+    _validate_integration_details(report, policy, metrics)
+
+
+def validate_v2_live_quality_evidence(
+    report: Mapping[str, Any],
+    policy: LiveQualityGatePolicy,
+    metrics: QualityMetrics,
+    manual_review_rows: list[dict[str, Any]],
+) -> None:
+    """Apply the pure v2 live-quality validation shared by capture and reverification."""
+
+    _validate_live_quality_details(report, policy, metrics)
+    _validate_manual_review_binding(report, policy, manual_review_rows)
 
 
 def _file_identity(name: str, path: str, data: bytes) -> FileIdentity:

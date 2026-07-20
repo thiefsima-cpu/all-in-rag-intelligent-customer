@@ -21,6 +21,13 @@ from scripts.live_quality_gate.models import LiveQualityGatePolicy
 from scripts.live_quality_gate.reporter import render_live_quality_summary
 from scripts.validate_release_tag import parse_release_tag
 
+from .capture import (
+    ReleaseEvidenceCaptureError,
+    scan_release_evidence_json,
+    scan_release_evidence_source,
+    validate_v2_integration_evidence,
+    validate_v2_live_quality_evidence,
+)
 from .models import (
     MANIFEST_SCHEMA_VERSION,
     GitHubArtifactMetadata,
@@ -693,7 +700,7 @@ def _verify_quality_details(
     report: Mapping[str, Any],
     policy: LiveQualityGatePolicy,
     manifest: ReleaseEvidenceManifest,
-    sample_bytes: bytes,
+    jsonl_rows: list[dict[str, Any]],
 ) -> None:
     case_count = manifest.quality.metrics.case_count
     if case_count != len(policy.cases) or case_count != manifest.dataset.case_count:
@@ -706,7 +713,6 @@ def _verify_quality_details(
         )
     sample_count = report.get("manual_review_sample_count")
     report_rows = _require_list(report.get("manual_review_sample"), "manual review sample")
-    jsonl_rows = _parse_manual_review_jsonl(sample_bytes)
     if (
         isinstance(sample_count, bool)
         or not isinstance(sample_count, int)
@@ -722,6 +728,47 @@ def _verify_quality_details(
     sampled_cases = [case for case in policy.cases if case.manual_review.sample]
     if [row.get("case_id") for row in jsonl_rows] != [case.case_id for case in sampled_cases]:
         raise ReleaseEvidenceVerificationError("manual review sample does not match policy")
+
+
+def _verify_v2_evidence_contract(
+    entries: Mapping[str, bytes],
+    integration_report: Mapping[str, Any],
+    live_report: Mapping[str, Any],
+    integration_policy: IntegrationGatePolicy,
+    live_policy: LiveQualityGatePolicy,
+    manifest: ReleaseEvidenceManifest,
+    manual_review_rows: list[dict[str, Any]],
+) -> None:
+    try:
+        scan_release_evidence_json(integration_report, "integration_gate/report.json:$")
+        scan_release_evidence_json(live_report, "live_quality_gate/report.json:$")
+        for line_number, row in enumerate(manual_review_rows, start=1):
+            scan_release_evidence_json(
+                row,
+                f"live_quality_gate/manual_review_sample.jsonl:{line_number}",
+            )
+        validate_v2_integration_evidence(
+            integration_report,
+            integration_policy,
+            manifest.integration.metrics,
+        )
+        validate_v2_live_quality_evidence(
+            live_report,
+            live_policy,
+            manifest.quality.metrics,
+            manual_review_rows,
+        )
+        for source_name in (
+            "integration_gate/summary.md",
+            "live_quality_gate/summary.md",
+            "runtime/diagnostics.json",
+            "runtime/artifact_manifest.json",
+            "policies/integration_gate.json",
+            "policies/live_quality_gate.json",
+        ):
+            scan_release_evidence_source(source_name, entries[source_name])
+    except ReleaseEvidenceCaptureError as exc:
+        raise ReleaseEvidenceVerificationError("v2 evidence contract is invalid") from exc
 
 
 def _merge_nested(target: dict[str, Any], updates: Mapping[str, Any]) -> None:
@@ -813,6 +860,9 @@ def _verify_semantics(
     )
     integration_policy = IntegrationGatePolicy.model_validate(integration_policy_payload)
     live_policy = LiveQualityGatePolicy.model_validate(live_policy_payload)
+    manual_review_rows = _parse_manual_review_jsonl(
+        entries["live_quality_gate/manual_review_sample.jsonl"]
+    )
 
     if manifest.integration.passed is not True:
         raise ReleaseEvidenceVerificationError("manifest integration passed must be true")
@@ -863,7 +913,16 @@ def _verify_semantics(
         live_report,
         live_policy,
         manifest,
-        entries["live_quality_gate/manual_review_sample.jsonl"],
+        manual_review_rows,
+    )
+    _verify_v2_evidence_contract(
+        entries,
+        integration_report,
+        live_report,
+        integration_policy,
+        live_policy,
+        manifest,
+        manual_review_rows,
     )
     evaluated_commit = manifest.provenance.evaluated_commit
     if entries["policies/integration_gate.json"] != _committed_blob(
