@@ -11,7 +11,6 @@ from types import SimpleNamespace
 
 from rag_modules.app.assembly import assemble_build_job_application
 from rag_modules.app.runtime_operations import resolve_runtime_operation_coordinator
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api.services import (
     BuildJobConflictError,
     BuildJobNotFoundError,
@@ -19,6 +18,7 @@ from rag_modules.interfaces.api.services import (
 )
 from rag_modules.kernel.artifacts import ArtifactManifest
 from rag_modules.runtime.artifacts import ArtifactManifestStore
+from tests.configuration_test_helpers import build_test_config
 
 
 class _BuildSystem:

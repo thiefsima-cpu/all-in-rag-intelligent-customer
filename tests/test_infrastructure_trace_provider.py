@@ -5,7 +5,6 @@ import unittest
 
 from rag_modules.app.providers import DefaultRuntimeProvider, create_default_runtime_provider
 from rag_modules.build_pipeline.document_artifacts import DocumentIndexCache
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.observability.tracing_sinks import (
     AsyncQueryTraceSink,
@@ -13,6 +12,7 @@ from rag_modules.observability.tracing_sinks import (
     NullQueryTraceSink,
 )
 from rag_modules.runtime.artifacts import ArtifactManifestStore
+from tests.configuration_test_helpers import build_test_config
 
 
 class _CapturingSink:

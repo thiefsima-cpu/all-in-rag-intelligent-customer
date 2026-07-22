@@ -2,13 +2,13 @@ from unittest.mock import patch
 
 import pytest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
-from rag_modules.contracts import QuerySemanticProfile
+from rag_modules.contracts import QuerySemanticProfile, QuerySemanticRuntimeSettings
 from rag_modules.retrieval.keyword_service import QueryKeywordExtractor
+from tests.configuration_test_helpers import build_test_config
 
 
 def _extractor() -> QueryKeywordExtractor:
-    return QueryKeywordExtractor(semantic_runtime_settings(build_test_config()))
+    return QueryKeywordExtractor(QuerySemanticRuntimeSettings.from_config(build_test_config()))
 
 
 def test_extract_combines_entities_constraints_relations_and_deduplicates() -> None:

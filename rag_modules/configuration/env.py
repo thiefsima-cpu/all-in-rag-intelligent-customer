@@ -54,14 +54,6 @@ class EnvConfigSource:
         found = self.get_first_with_name(*names)
         return found[1] if found is not None else None
 
-    def get_int_alias(self, *names: str, default: int) -> int:
-        value = self.get_first(*names)
-        return int(value) if value is not None else default
-
-    def get_float_alias(self, *names: str, default: float) -> float:
-        value = self.get_first(*names)
-        return float(value) if value is not None else default
-
     def get_json_dict(self, name: str, default: Dict[str, List[str]]) -> Dict[str, List[str]]:
         value = self.environ.get(name)
         if value in (None, ""):

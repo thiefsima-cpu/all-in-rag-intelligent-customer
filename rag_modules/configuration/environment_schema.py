@@ -35,7 +35,7 @@ def _specs(
 
 
 _API_ENV_FIELD_SPECS = _specs(
-    (("API_ACCESS_TOKEN", "GRAPH_RAG_API_TOKEN"), ("api", "access_token"), "str"),
+    ("API_ACCESS_TOKEN", ("api", "access_token"), "str"),
     ("API_AUTH_ENABLED", ("api", "auth_enabled"), "bool"),
     ("API_DOCS_ENABLED", ("api", "docs_enabled"), "bool"),
     ("API_OPENAPI_ENABLED", ("api", "openapi_enabled"), "bool"),

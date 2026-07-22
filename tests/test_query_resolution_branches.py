@@ -5,8 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
-from rag_modules.contracts import GraphQueryType, QuerySemanticProfile
+from rag_modules.contracts import GraphQueryType, QuerySemanticProfile, QuerySemanticRuntimeSettings
 from rag_modules.contracts.graph import GraphQuery
 from rag_modules.graph.query_resolution import (
     GraphQueryFactory,
@@ -15,6 +14,7 @@ from rag_modules.graph.query_resolution import (
     _sub_question_rule_matches,
 )
 from rag_modules.query_policy.models import GraphSubQuestionCondition, GraphSubQuestionPolicy
+from tests.configuration_test_helpers import build_test_config
 
 
 class _Constraints:
@@ -23,7 +23,9 @@ class _Constraints:
 
 
 def _factory() -> GraphQueryFactory:
-    return GraphQueryFactory(semantic_settings=semantic_runtime_settings(build_test_config()))
+    return GraphQueryFactory(
+        semantic_settings=QuerySemanticRuntimeSettings.from_config(build_test_config())
+    )
 
 
 def _query(query_type: GraphQueryType) -> GraphQuery:

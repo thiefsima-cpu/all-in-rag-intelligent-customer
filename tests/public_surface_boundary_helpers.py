@@ -87,6 +87,13 @@ RETIRED_LATE_MIGRATION_COMPAT_EXPORTS = {
     "rag_modules.retrieval.vector_retriever": RAG_MODULES_DIR / "retrieval" / "vector_retriever.py",
 }
 RETIRED_INTERNAL_COMPAT_SHELLS = {
+    "rag_modules.configuration.env_specs": RAG_MODULES_DIR / "configuration" / "env_specs.py",
+    "rag_modules.configuration.model_sections": RAG_MODULES_DIR
+    / "configuration"
+    / "model_sections",
+    "rag_modules.configuration.sections": RAG_MODULES_DIR / "configuration" / "sections",
+    "rag_modules.configuration.errors": RAG_MODULES_DIR / "configuration" / "errors.py",
+    "rag_modules.configuration.testing": RAG_MODULES_DIR / "configuration" / "testing.py",
     "rag_modules.app.composition.build_runtime_assembler": RAG_MODULES_DIR
     / "app"
     / "composition"

@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RetrievalRequest
 from rag_modules.contracts.runtime import GraphRetrievalSnapshot
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
@@ -11,6 +10,7 @@ from rag_modules.graph.rag_retrieval import GraphRAGRetrieval
 from rag_modules.graph.retrieval_components import GraphRetrievalComponents
 from rag_modules.retrieval import HybridRetrievalService
 from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeHybridExecutor:

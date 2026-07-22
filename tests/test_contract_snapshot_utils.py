@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
+from rag_modules.contracts import QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import GenerationSnapshot, GraphRetrievalSnapshot, RouteSnapshot
 from rag_modules.contracts.runtime.snapshot_utils import (
     clone_generation_snapshot,
     clone_graph_snapshot,
     clone_route_snapshot,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 class RuntimeSnapshotUtilsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.semantic_settings = semantic_runtime_settings(build_test_config())
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(build_test_config())
 
     def test_clone_route_snapshot_returns_detached_copy(self) -> None:
         original = RouteSnapshot(query="q", strategy="combined")

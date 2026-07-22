@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
+from tests.configuration_test_helpers import build_test_config
 
 
 class _StubVectorRetriever:

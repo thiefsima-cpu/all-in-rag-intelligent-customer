@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.contracts.runtime.errors import retrieval_error_detail
@@ -16,6 +15,7 @@ from rag_modules.retrieval.candidate_generator import (
 )
 from rag_modules.retrieval.candidate_sources import CandidateSourceSpec, VectorCandidateSource
 from rag_modules.retrieval.hybrid_search_service import HybridSearchService
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeFusionRanker:

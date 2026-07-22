@@ -18,9 +18,9 @@ from rag_modules.app.composition.serving_runtime_lifecycle_service import (
     ServingRuntimeLifecycleService,
 )
 from rag_modules.app.composition.serving_runtime_preparer import ServingRuntimePreparer
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest, DocumentArtifactResult
 from rag_modules.kernel.documents import TextDocument
+from tests.configuration_test_helpers import build_test_config
 
 
 class _StubPreparer:

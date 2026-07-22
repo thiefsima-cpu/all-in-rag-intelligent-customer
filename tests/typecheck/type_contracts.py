@@ -21,7 +21,6 @@ from rag_modules.app.runtime_views import (
     SystemRetrievalView,
     SystemServicesView,
 )
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     GraphLoadCounts,
@@ -29,6 +28,7 @@ from rag_modules.contracts import (
     GraphQueryType,
     QueryPlan,
     QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
     RequestControl,
     RetrievalRequest,
 )
@@ -70,6 +70,7 @@ from rag_modules.query_policy.models import GenerationDecisionPolicy, GraphSubQu
 from rag_modules.query_understanding.planning import QueryPlanCalibrator
 from rag_modules.retrieval.ports import RerankClientPort
 from rag_modules.routing.ports import GraphRAGRetrievalPort, HybridRetrievalPort
+from tests.configuration_test_helpers import build_test_config
 
 runtime_provider = create_default_runtime_provider()
 infrastructure_provider: InfrastructureProvider = runtime_provider.infrastructure
@@ -297,7 +298,7 @@ def accept_runtime_mapping_payloads(
     RetrievalOutcome,
     QueryTraceEvent,
 ]:
-    semantic_settings = semantic_runtime_settings(build_test_config())
+    semantic_settings = QuerySemanticRuntimeSettings.from_config(build_test_config())
     return (
         GenerationSnapshot.from_dict(payload),
         RouteSnapshot.from_dict(payload, semantic_settings=semantic_settings),
@@ -336,7 +337,7 @@ def accept_json_runtime_ports(
 
 
 def accept_query_plan_calibration_contracts() -> GraphQueryType:
-    calibrator = QueryPlanCalibrator(semantic_runtime_settings(build_test_config()))
+    calibrator = QueryPlanCalibrator(QuerySemanticRuntimeSettings.from_config(build_test_config()))
     profile = QuerySemanticProfile(query_type="path_finding")
 
     resolved_query_type: GraphQueryType = calibrator.resolve_graph_query_type(

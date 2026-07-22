@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from typing import Iterable
 
 from rag_modules.app.providers import create_default_runtime_provider
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.loader import load_config
 from rag_modules.contracts.runtime.generation import GenerationSnapshot
 from rag_modules.contracts.runtime.workflows import AnswerContext
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
@@ -107,13 +108,14 @@ class OfflineGenerationModule:
 def build_tracer() -> tuple[QueryTracer, CaptureSink]:
     sink = CaptureSink()
     tracer = QueryTracer(
-        build_test_config(
-            {
+        load_config(
+            source=EnvConfigSource(environ={}),
+            overrides={
                 "observability": {
                     "enable_query_tracing": True,
                     "query_trace_path": "unused.jsonl",
                 }
-            }
+            },
         ),
         sink=sink,
     )

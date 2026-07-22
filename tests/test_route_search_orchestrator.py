@@ -3,8 +3,12 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
-from rag_modules.contracts import EvidenceDocument, QueryPlan, RequestControl
+from rag_modules.contracts import (
+    EvidenceDocument,
+    QueryPlan,
+    QuerySemanticRuntimeSettings,
+    RequestControl,
+)
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.contracts.runtime import QueryAnalysis
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
@@ -20,6 +24,7 @@ from rag_modules.routing.execution_strategies import (
     RouteExecutionOutcome,
     RouteExecutionStageResult,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeTraditionalRetrieval:
@@ -101,7 +106,7 @@ class _ClosableStrategy(_StubStrategy):
 
 class RouteSearchOrchestratorTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.semantic_settings = semantic_runtime_settings(build_test_config())
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(build_test_config())
 
     def test_execute_delegates_to_strategy_registry_and_records_trace(self) -> None:
         strategy = _StubStrategy()

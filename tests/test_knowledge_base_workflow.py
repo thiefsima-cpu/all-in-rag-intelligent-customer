@@ -4,9 +4,9 @@ import unittest
 
 from rag_modules.build_pipeline.contracts import SemanticGraphSchemaSyncResult
 from rag_modules.build_pipeline.knowledge_base_workflow import KnowledgeBaseBuildWorkflow
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest, DocumentArtifactResult
 from rag_modules.kernel.documents import TextDocument
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeManifestStore:

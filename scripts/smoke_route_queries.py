@@ -13,11 +13,9 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
-)
+from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.loader import load_config
+from rag_modules.contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
 from rag_modules.query_understanding import QueryPlanner
 
 DEFAULT_CORPUS_PATH = (
@@ -95,11 +93,11 @@ def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RouteSmokeCase]:
 
 
 def build_planner() -> QueryPlanner:
-    config = build_test_config()
+    config = load_config(source=EnvConfigSource(environ={}))
     return QueryPlanner(
         _DummyLLM(),
-        settings=planner_runtime_settings(config),
-        semantic_settings=semantic_runtime_settings(config),
+        settings=QueryPlannerRuntimeSettings.from_config(config),
+        semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
     )
 
 

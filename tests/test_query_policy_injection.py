@@ -6,16 +6,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rag_modules.app.composition.serving_runtime_factory import ServingRuntimeFactory
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
-)
 from rag_modules.contracts import RetrievalRequest
+from rag_modules.contracts.query_settings import (
+    QueryPlannerRuntimeSettings,
+    QuerySemanticRuntimeSettings,
+)
 from rag_modules.graph.query_resolution import GraphQueryFactory
 from rag_modules.graph.retrieval_runtime import GraphRetrievalRuntime
 from rag_modules.query_policy.loader import load_policy_bundle
 from rag_modules.query_understanding.planning.service import QueryPlanner
+from tests.configuration_test_helpers import build_test_config
 
 QUERY_UNDERSTANDING_PACKAGE = Path("rag_modules/query_understanding")
 CONFIGURATION_PACKAGE = Path("rag_modules/configuration")
@@ -302,8 +302,8 @@ def test_query_planner_uses_injected_policy_bundle_for_prompt(tmp_path: Path) ->
     )
     planner = QueryPlanner(
         llm_client,
-        settings=planner_runtime_settings(config),
-        semantic_settings=semantic_runtime_settings(config),
+        settings=QueryPlannerRuntimeSettings.from_config(config),
+        semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
         policy_bundle=bundle,
     )
 
@@ -321,7 +321,7 @@ def test_graph_retrieval_runtime_uses_injected_policy_snapshot(tmp_path: Path) -
     bundle = load_policy_bundle(tmp_path)
     config = build_test_config({"query_understanding": {"policy": {"bundle_path": str(tmp_path)}}})
     query_factory = GraphQueryFactory(
-        semantic_settings=semantic_runtime_settings(config),
+        semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
         policy_bundle=bundle,
     )
     runtime = GraphRetrievalRuntime(query_factory, policy_bundle=bundle)

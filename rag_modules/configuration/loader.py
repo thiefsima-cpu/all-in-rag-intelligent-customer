@@ -59,17 +59,9 @@ def load_config(
 
     base_domain_payload = _default_domain_payload()
     resolved_profile = load_profile(
-        profile=profile or env_source.get_first("GRAPH_RAG_PROFILE", "CONFIG_PROFILE"),
-        profile_path=profile_path
-        or env_source.get_first(
-            "GRAPH_RAG_PROFILE_PATH",
-            "CONFIG_PROFILE_PATH",
-        ),
-        profiles_dir=profiles_dir
-        or env_source.get_first(
-            "GRAPH_RAG_PROFILES_DIR",
-            "CONFIG_PROFILES_DIR",
-        ),
+        profile=profile or env_source.get_first("GRAPH_RAG_PROFILE"),
+        profile_path=profile_path or env_source.get_first("GRAPH_RAG_PROFILE_PATH"),
+        profiles_dir=profiles_dir or env_source.get_first("GRAPH_RAG_PROFILES_DIR"),
     )
     selector = resolve_query_policy_selector(
         base_domain_payload,

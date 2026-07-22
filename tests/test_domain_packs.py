@@ -19,8 +19,7 @@ from rag_modules.build_pipeline.graph_preparation.statistics import (
 from rag_modules.build_pipeline.schema_sync import SemanticGraphSchemaSyncService
 from rag_modules.configuration import load_config
 from rag_modules.configuration.env import EnvConfigSource
-from rag_modules.configuration.testing import semantic_runtime_settings
-from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from rag_modules.contracts.graph_preparation import GraphNode
 from rag_modules.contracts.retrieval_documents import evidence_document_from_page_like
 from rag_modules.domains import domain_pack_names, get_domain_pack, load_domain_evaluation
@@ -94,7 +93,7 @@ def test_customer_service_policy_routes_live_gate_queries_and_extracts_identifie
         profile="dev",
         source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": "customer_service"}),
     )
-    settings = semantic_runtime_settings(config)
+    settings = QuerySemanticRuntimeSettings.from_config(config)
     bundle = load_policy_bundle(Path("rag_modules/query_policy/resources/customer-service-v1"))
     planner = RuleBasedPlanner(
         settings,

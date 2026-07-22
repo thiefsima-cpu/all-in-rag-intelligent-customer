@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.graph.path_ranker import GraphDocumentRanker
+from tests.configuration_test_helpers import build_test_config
 
 
 def _ranker() -> GraphDocumentRanker:

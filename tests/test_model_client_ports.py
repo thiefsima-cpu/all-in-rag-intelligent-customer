@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
 from rag_modules.retrieval.post_processor import (
@@ -14,6 +13,7 @@ from rag_modules.retrieval.post_processor import (
     RetrievalPostProcessor,
 )
 from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeEmbeddingClient:

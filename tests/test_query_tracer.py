@@ -7,7 +7,6 @@ import time
 import unittest
 from pathlib import Path
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import (
     GenerationSnapshot,
@@ -20,6 +19,7 @@ from rag_modules.contracts.runtime import (
 from rag_modules.contracts.runtime.errors import answer_error_detail, routing_error_detail
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
+from tests.configuration_test_helpers import build_test_config
 
 
 class _CapturingSink:

@@ -10,7 +10,7 @@ from rag_modules.app.assembly import (
     create_application_system,
 )
 from rag_modules.app.system import AdvancedGraphRAGSystem
-from rag_modules.configuration.testing import build_test_config
+from tests.configuration_test_helpers import build_test_config
 
 
 def _container_stub(config=None) -> ApplicationContainer:

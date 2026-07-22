@@ -23,7 +23,6 @@ from rag_modules.application.answering.answer_models import (
     QuestionAnswerResponse,
     QuestionAnswerResult,
 )
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import (
     AnswerContext,
@@ -53,6 +52,7 @@ from rag_modules.interfaces.api.services import (
 from rag_modules.interfaces.api.versioning import API_VERSION
 from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_MISSING, ARTIFACT_HEALTH_READY
 from rag_modules.runtime.build_jobs import InProcessBuildJobRunner
+from tests.configuration_test_helpers import build_test_config
 
 _API_TOKEN = "test-api-access-token"
 

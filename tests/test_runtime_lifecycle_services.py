@@ -15,8 +15,8 @@ from rag_modules.app.composition import (
 from rag_modules.app.runtime_state import BuildRuntime, ServingRuntime
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeBuildBootstrapper:

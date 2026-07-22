@@ -8,7 +8,7 @@ from rag_modules.build_pipeline import (
     DocumentArtifactBuildService,
     SemanticGraphSchemaSyncService,
 )
-from rag_modules.configuration.testing import build_test_config
+from tests.configuration_test_helpers import build_test_config
 
 
 class BuildPipelineProviderTests(unittest.TestCase):

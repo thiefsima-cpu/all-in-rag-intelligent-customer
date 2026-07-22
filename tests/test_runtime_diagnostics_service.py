@@ -10,8 +10,8 @@ from rag_modules.app.diagnostics import (
     SystemStatsDiagnostics,
 )
 from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnosticsService
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ARTIFACT_HEALTH_READY, ArtifactManifest
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeRuntimeStatsAccess:

@@ -23,11 +23,8 @@ from rag_modules.configuration.models import (
     RetrievalSettings,
     StorageSettings,
 )
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
-)
+from rag_modules.contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from tests.configuration_test_helpers import build_test_config
 
 
 def test_configuration_declarations_have_canonical_owners() -> None:
@@ -206,8 +203,8 @@ class ConfigurationDefaultTests(unittest.TestCase):
             }
         )
 
-        planner = planner_runtime_settings(config)
-        semantics = semantic_runtime_settings(config)
+        planner = QueryPlannerRuntimeSettings.from_config(config)
+        semantics = QuerySemanticRuntimeSettings.from_config(config)
 
         self.assertEqual(planner.model_name, config.models.llm_model)
         self.assertEqual(planner.timeout_seconds, config.models.llm_timeout_seconds)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from .errors import ConfigErrorDetail, ConfigurationError
 from .loader import load_config
 from .models import (
     ApiSettings,
@@ -26,6 +25,7 @@ from .models import (
     StorageSettings,
 )
 from .profiles import ConfigProfile, default_profiles_dir, load_profile
+from .validation import ConfigErrorDetail, ConfigurationError
 
 
 @lru_cache(maxsize=1)

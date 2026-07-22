@@ -210,5 +210,23 @@ class ConfigurationProfilesTests(unittest.TestCase):
         )
 
 
+def test_legacy_profile_environment_names_are_ignored() -> None:
+    config = load_config(
+        source=EnvConfigSource(
+            environ={
+                "CONFIG_PROFILE": "quality",
+                "CONFIG_PROFILE_PATH": "missing.toml",
+                "CONFIG_PROFILES_DIR": "missing-profiles",
+            }
+        )
+    )
+    assert config.profile_name == "base"
+
+
+def test_undocumented_api_token_alias_is_ignored() -> None:
+    config = load_config(source=EnvConfigSource(environ={"GRAPH_RAG_API_TOKEN": "legacy-token"}))
+    assert config.api.access_token == ""
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,6 @@ import unittest
 
 import pytest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     RequestBudgetExceeded,
@@ -13,12 +12,14 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
+from rag_modules.contracts.query_settings import QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )
 from rag_modules.contracts.runtime.retrieval import RetrievalOutcome
 from rag_modules.contracts.runtime.workflows import AnswerContext
+from tests.configuration_test_helpers import build_test_config
 
 
 def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None:
@@ -138,7 +139,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
                     ],
                 },
             },
-            semantic_settings=semantic_runtime_settings(build_test_config()),
+            semantic_settings=QuerySemanticRuntimeSettings.from_config(build_test_config()),
         )
 
         self.assertEqual(len(context.evidence_documents), 1)

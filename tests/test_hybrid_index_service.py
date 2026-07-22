@@ -3,10 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts, HybridIndexService
 from rag_modules.retrieval.parent_doc_enricher import ParentDocumentEnricher
+from tests.configuration_test_helpers import build_test_config
 
 
 class _BM25:
