@@ -7,8 +7,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping
 
-from .env_specs import ENV_FIELD_SPECS as _ENV_FIELD_SPEC_GROUPS
-from .env_specs.base import EnvFieldSpec, EnvValueKind
+from .environment_schema import ENV_FIELD_SPECS as _ENV_FIELD_SPEC_GROUPS
+from .environment_schema import EnvFieldSpec, EnvValueKind
 from .validation import raise_parser_error
 
 _TRUE_TOKENS = {"1", "true", "yes", "y", "on"}

@@ -3,30 +3,350 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Mapping, Self, cast
+from typing import Any, Dict, List, Literal, Mapping, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-
-from .model_sections import (
-    ApiSettings,
-    ConfigSection,
-    DomainSettings,
-    GenerationSettings,
-    GraphSettings,
-    ModelSettings,
-    ObservabilitySettings,
-    QueryPlannerSettings,
-    QueryPolicySelectorSettings,
-    QuerySemanticAdaptiveTraversalSettings,
-    QuerySemanticExtractionSettings,
-    QuerySemanticRoutingSettings,
-    QuerySemanticScoringSettings,
-    QuerySemanticSettings,
-    QuerySemanticTraversalSettings,
-    QueryUnderstandingSettings,
-    RetrievalSettings,
-    StorageSettings,
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
 )
+
+from ..domains import get_domain_pack
+from ..kernel.retrieval import (
+    CandidateSourceDegradationStrategy,
+    candidate_source_degradation_strategy,
+)
+
+
+class ConfigSection(BaseModel):
+    """Serializable section base."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump(mode="python")
+
+
+class ApiSettings(ConfigSection):
+    auth_enabled: bool = True
+    access_token: str = Field(default="", repr=False)
+    docs_enabled: bool = False
+    openapi_enabled: bool = False
+    docs_public: bool = False
+    openapi_public: bool = False
+    max_request_body_bytes: int = Field(default=16 * 1024, ge=1024)
+    max_concurrent_answers: int = Field(default=4, ge=1)
+    answer_acquire_timeout_seconds: float = Field(default=0.25, ge=0.0)
+    stream_executor_max_workers: int = Field(default=4, ge=1)
+    stream_executor_max_outstanding: int = Field(default=8, ge=1)
+    stream_event_queue_max_size: int = Field(default=64, ge=1)
+    build_job_runner_backend: Literal["in_process", "external_worker"] = "in_process"
+    build_job_runner_max_workers: int = Field(default=1, ge=1)
+    build_job_worker_poll_interval_seconds: float = Field(default=1.0, ge=0.1)
+    build_job_lease_seconds: float = Field(default=30.0, ge=1.0)
+    build_job_heartbeat_seconds: float = Field(default=10.0, ge=0.1)
+    build_job_retention_limit: int = Field(default=100, ge=1)
+    build_job_list_default_limit: int = Field(default=50, ge=1)
+    build_job_list_max_limit: int = Field(default=100, ge=1)
+    serving_hot_refresh_enabled: bool = True
+    serving_hot_refresh_interval_seconds: float = Field(default=2.0, ge=0.1)
+
+    @model_validator(mode="after")
+    def _validate_build_job_limits(self) -> Self:
+        if self.build_job_list_default_limit > self.build_job_list_max_limit:
+            raise ValueError(
+                "api.build_job_list_default_limit must be less than or equal to "
+                "api.build_job_list_max_limit."
+            )
+        if self.build_job_heartbeat_seconds >= self.build_job_lease_seconds:
+            raise ValueError(
+                "api.build_job_heartbeat_seconds must be less than api.build_job_lease_seconds."
+            )
+        if self.stream_executor_max_outstanding < self.stream_executor_max_workers:
+            raise ValueError(
+                "api.stream_executor_max_outstanding must be greater than or equal to "
+                "api.stream_executor_max_workers."
+            )
+        return self
+
+
+_GENERATION_PLANNER_MODE_VALUES = ("rule", "hybrid", "llm")
+_DEFAULT_GENERATION_PLANNER_MODE = "rule"
+
+
+class GenerationSettings(ConfigSection):
+    temperature: float = 0.1
+    max_tokens: int = 2048
+    generation_timeout_seconds: int = 25
+    generation_stream_timeout_seconds: int = 25
+    generation_latency_budget_seconds: int = 24
+    generation_plan_max_tokens: int = 600
+    generation_compose_max_tokens: int = 1100
+    generation_direct_max_tokens: int = 700
+    generation_plan_temperature: float = 0.0
+    generation_planner_mode: str = "rule"
+    generation_max_retries: int = 1
+    generation_request_retries: int = 1
+    generation_stream_retries: int = 1
+    generation_evidence_max_chars: int = 700
+    generation_enable_two_stage: bool = True
+    generation_two_stage_complexity_threshold: float = 0.68
+    generation_two_stage_relationship_threshold: float = 0.58
+    generation_direct_max_evidence_items: int = 2
+    generation_two_stage_max_evidence_items: int = 3
+    generation_plan_max_evidence_items: int = 2
+    generation_max_graph_paths_per_item: int = 1
+    generation_max_evidence_units_per_item: int = 4
+    generation_include_document_evidence: bool = False
+    generation_compose_include_content: bool = False
+    generation_fallback_on_timeout: bool = False
+
+    @model_validator(mode="after")
+    def normalize_generation_planner_mode(self) -> Self:
+        normalized = self.generation_planner_mode.strip().lower() or (
+            _DEFAULT_GENERATION_PLANNER_MODE
+        )
+        if normalized not in _GENERATION_PLANNER_MODE_VALUES:
+            supported = ", ".join(_GENERATION_PLANNER_MODE_VALUES)
+            raise ValueError(f"generation_planner_mode must be one of: {supported}") from None
+        object.__setattr__(self, "generation_planner_mode", normalized)
+        return self
+
+
+class GraphSettings(ConfigSection):
+    enable_semantic_graph_schema: bool = True
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+    max_graph_depth: int = 2
+    graph_rank_base_weight: float = 1.0
+    graph_rank_semantic_relation_weight: float = 0.08
+    graph_rank_evidence_unit_weight: float = 0.03
+    graph_rank_relationship_weight: float = 0.01
+    graph_rank_recipe_presence_weight: float = 0.1
+    graph_rank_query_overlap_weight: float = 0.02
+    entity_linker_limit_per_entity: int = 4
+    entity_linker_min_confidence: float = 0.45
+    entity_linker_max_same_name_candidates: int = 2
+    entity_linker_query_type_label_priorities: Dict[str, List[str]] = Field(default_factory=dict)
+    entity_linker_relation_label_priorities: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class ModelSettings(ConfigSection):
+    api_key: str = Field(default="", repr=False)
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embedding_base_url: str = (
+        "https://dashscope.aliyuncs.com/api/v1/services/embeddings/"
+        "multimodal-embedding/multimodal-embedding"
+    )
+    rerank_base_url: str = (
+        "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    )
+    embedding_model: str = "qwen3-vl-embedding"
+    llm_model: str
+    llm_enable_thinking: bool | None = None
+    rerank_model: str = "qwen3-vl-rerank"
+    embedding_dimension: int = Field(default=1024, ge=1)
+    embedding_batch_size: int = 10
+    enable_rerank: bool = True
+    llm_timeout_seconds: int
+    embedding_timeout_seconds: int = 60
+    rerank_timeout_seconds: int = 20
+    http_pool_connections: int = Field(default=10, ge=1)
+    http_pool_maxsize: int = Field(default=20, ge=1)
+    circuit_breaker_failure_threshold: int = Field(default=5, ge=1)
+    circuit_breaker_recovery_seconds: float = 30.0
+    llm_input_cost_per_million_tokens: float = Field(default=0.0, ge=0.0)
+    llm_output_cost_per_million_tokens: float = Field(default=0.0, ge=0.0)
+
+
+class ObservabilitySettings(ConfigSection):
+    enable_query_tracing: bool = True
+    query_trace_path: str = "storage/traces/query_trace.jsonl"
+    query_trace_async_enabled: bool = True
+    query_trace_max_queue_size: int = 256
+    query_trace_fingerprint_salt: str = Field(default="", repr=False)
+    enable_opentelemetry: bool = False
+    otel_service_name: str = "graphrag"
+    otel_exporter_otlp_endpoint: str = ""
+    otel_trace_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    enable_prometheus: bool = True
+    prometheus_public: bool = False
+
+
+class QueryPolicySelectorSettings(ConfigSection):
+    bundle: str = "c9-default-v1"
+    bundle_path: str = ""
+
+
+class QueryPlannerSettings(ConfigSection):
+    cache_size: int
+    fast_rule_planning: bool
+    llm_temperature: float
+    llm_max_tokens: int
+
+
+class QuerySemanticScoringSettings(ConfigSection):
+    relation_intensity_reference_ratio: float
+    complexity_relation_hit_weight: float
+    complexity_constraint_hit_weight: float
+    complexity_structural_hit_weight: float
+    complexity_length_weight: float
+    complexity_length_norm_chars: int
+    reasoning_complexity_threshold: float
+    reasoning_relationship_threshold: float
+    relation_hit_intensity_boost_base: float
+    relation_hit_intensity_boost_step: float
+    relation_hit_complexity_boost_base: float
+    relation_hit_complexity_boost_step: float
+
+
+class QuerySemanticExtractionSettings(ConfigSection):
+    source_entity_limit: int
+    entity_keyword_limit: int
+    semantic_profile_entity_keyword_limit: int
+    topic_keyword_limit: int
+    semantic_profile_topic_keyword_start: int
+    semantic_profile_topic_keyword_limit: int
+    target_entity_limit: int
+
+
+class QuerySemanticRoutingSettings(ConfigSection):
+    high_relationship_routing_threshold: float
+    multi_hop_hint_entity_count: int
+    multi_hop_hint_relationship_threshold: float
+    combined_strategy_relationship_threshold: float
+    combined_strategy_complexity_threshold: float
+    source_entity_seed_relationship_threshold: float
+    source_entity_backfill_relationship_threshold: float
+    rule_fallback_confidence: float
+
+
+class QuerySemanticTraversalSettings(ConfigSection):
+    entity_relation_max_depth: int
+    path_finding_max_depth: int
+    path_finding_high_intensity_max_depth: int
+    path_finding_high_intensity_threshold: float
+    subgraph_max_depth: int
+    subgraph_high_intensity_max_depth: int
+    subgraph_high_intensity_threshold: float
+    clustering_max_depth: int
+    default_max_depth: int
+    default_high_intensity_max_depth: int
+    default_high_intensity_threshold: float
+    entity_relation_max_nodes: int
+    path_finding_max_nodes: int
+    subgraph_max_nodes: int
+    clustering_max_nodes: int
+    default_max_nodes: int
+    graph_query_max_depth_cap: int
+    graph_query_fallback_name_chars: int
+
+
+class QuerySemanticAdaptiveTraversalSettings(ConfigSection):
+    multi_hop_subgraph_threshold: float
+    subgraph_multi_hop_threshold: float
+    entity_relation_multi_hop_threshold: float
+    subgraph_max_depth: int
+    subgraph_max_nodes: int
+    multi_hop_max_depth: int
+    multi_hop_max_nodes: int
+    entity_relation_max_depth: int
+    entity_relation_max_nodes: int
+
+
+class QuerySemanticSettings(ConfigSection):
+    scoring: QuerySemanticScoringSettings
+    extraction: QuerySemanticExtractionSettings
+    routing: QuerySemanticRoutingSettings
+    traversal: QuerySemanticTraversalSettings
+    adaptive_traversal: QuerySemanticAdaptiveTraversalSettings
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        return cls.model_validate(dict(data or {}))
+
+
+class QueryUnderstandingSettings(ConfigSection):
+    policy: QueryPolicySelectorSettings = Field(default_factory=QueryPolicySelectorSettings)
+    planner: QueryPlannerSettings
+    semantics: QuerySemanticSettings
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        return cls.model_validate(dict(data or {}))
+
+
+class RetrievalSettings(ConfigSection):
+    top_k: int = 5
+    vector_search_ef: int = 128
+    vector_search_max_k: int = 50
+    rrf_k: int = 60
+    hybrid_default_candidate_multiplier: int = 2
+    hybrid_default_candidate_min_candidates: int = 10
+    hybrid_constraint_candidate_multiplier: int = 6
+    hybrid_constraint_candidate_min_candidates: int = 30
+    router_combined_candidate_multiplier: int = 6
+    router_combined_candidate_min_candidates: int = 30
+    router_graph_supplement_candidate_multiplier: int = 2
+    router_graph_supplement_candidate_min_candidates: int = 10
+    retrieval_preserve_graph_evidence: bool = True
+    retrieval_graph_preservation_strategies: list[str] = ["graph_rag", "combined"]
+    enable_parent_doc_retrieval: bool = True
+    parent_doc_top_n: int = 3
+    parent_doc_max_chars: int = 4000
+    candidate_source_failure_threshold: int = Field(ge=1)
+    candidate_source_recovery_seconds: float = Field(ge=0.1)
+    candidate_source_degradation_strategy: str
+
+    @model_validator(mode="after")
+    def normalize_degradation_strategy(self) -> Self:
+        try:
+            strategy = candidate_source_degradation_strategy(
+                self.candidate_source_degradation_strategy
+            )
+        except ValueError:
+            supported = ", ".join(strategy.value for strategy in CandidateSourceDegradationStrategy)
+            raise ValueError(
+                f"candidate_source_degradation_strategy must be one of: {supported}"
+            ) from None
+        object.__setattr__(self, "candidate_source_degradation_strategy", strategy.value)
+        return self
+
+
+class StorageSettings(ConfigSection):
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = Field(default="password", repr=False)
+    neo4j_database: str = "neo4j"
+    milvus_host: str = "localhost"
+    milvus_port: int = 19530
+    milvus_collection_name: str = "cooking_knowledge"
+    milvus_dimension: int = Field(default=1024, ge=0)
+    enable_index_cache: bool = True
+    index_cache_dir: str = "storage/indexes"
+    artifact_manifest_path: str = ""
+    milvus_blue_green_enabled: bool = True
+    milvus_collection_alias_suffix: str = "__active"
+    build_job_store_path: str = ""
+    neo4j_max_connection_pool_size: int = Field(default=50, ge=1)
+    neo4j_connection_acquisition_timeout_seconds: float = 30.0
+    neo4j_max_connection_lifetime_seconds: float = 3600.0
+    neo4j_connection_timeout_seconds: float = 15.0
+
+
+class DomainSettings(ConfigSection):
+    """Select the versioned business-domain behavior pack."""
+
+    name: str = "recipe"
+
+    @field_validator("name")
+    @classmethod
+    def validate_domain_pack_name(cls, value: str) -> str:
+        return get_domain_pack(value).name
+
 
 SECTION_TYPES: Dict[str, type[ConfigSection]] = {
     "domain": DomainSettings,

@@ -10,13 +10,43 @@ from unittest.mock import patch
 
 from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.environment_schema import ENV_FIELD_SPECS, EnvFieldSpec
 from rag_modules.configuration.loader import load_config
-from rag_modules.configuration.models import GraphRAGConfig
+from rag_modules.configuration.models import (
+    ApiSettings,
+    GenerationSettings,
+    GraphRAGConfig,
+    GraphSettings,
+    ModelSettings,
+    ObservabilitySettings,
+    QueryUnderstandingSettings,
+    RetrievalSettings,
+    StorageSettings,
+)
 from rag_modules.configuration.testing import (
     build_test_config,
     planner_runtime_settings,
     semantic_runtime_settings,
 )
+
+
+def test_configuration_declarations_have_canonical_owners() -> None:
+    section_types = (
+        ApiSettings,
+        GenerationSettings,
+        GraphSettings,
+        ModelSettings,
+        ObservabilitySettings,
+        QueryUnderstandingSettings,
+        RetrievalSettings,
+        StorageSettings,
+    )
+    assert {section_type.__module__ for section_type in section_types} == {
+        "rag_modules.configuration.models"
+    }
+    assert EnvFieldSpec.__module__ == "rag_modules.configuration.environment_schema"
+    top_k_spec = next(spec for spec in ENV_FIELD_SPECS if "TOP_K" in spec.names)
+    assert top_k_spec.path == ("retrieval", "top_k")
 
 
 class ConfigurationDefaultTests(unittest.TestCase):
