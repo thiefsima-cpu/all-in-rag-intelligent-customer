@@ -1,6 +1,6 @@
 # Configuration, Contract, and Kernel Convergence Design
 
-Status: approved design, awaiting written-spec review
+Status: approved
 
 Date: 2026-07-22
 
