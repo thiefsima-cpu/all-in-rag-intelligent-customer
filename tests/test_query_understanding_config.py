@@ -23,7 +23,16 @@ class _ControlCapturingLLM:
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
 
+class _SemanticSettingsSubclass(QuerySemanticRuntimeSettings):
+    pass
+
+
 class QueryUnderstandingConfigTests(unittest.TestCase):
+    def test_semantic_settings_from_config_preserves_subclass(self) -> None:
+        settings = _SemanticSettingsSubclass.from_config(build_test_config())
+
+        self.assertIsInstance(settings, _SemanticSettingsSubclass)
+
     def test_query_planner_passes_request_control_to_llm_client(self) -> None:
         llm_client = _ControlCapturingLLM()
         control = RequestControl.for_timeout(5.0, scope="query_planning")

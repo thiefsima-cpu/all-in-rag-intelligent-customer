@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ..contracts import EvidenceDocument
-from .models import AggregatedEvidence, RecipeEvidence
+from .models import AggregatedEvidence
 from .normalization import normalize_evidence_document
 
 
@@ -58,18 +58,6 @@ def aggregate_evidence(documents: Sequence[EvidenceDocument]) -> list[Aggregated
     return [grouped[key] for key in order]
 
 
-def aggregate_recipe_evidence(documents: Sequence[EvidenceDocument]) -> list[RecipeEvidence]:
-    """Compatibility alias for recipe-domain callers."""
-
-    return aggregate_evidence(documents)
-
-
-def aggregate_recipe_evidence_from_documents(
-    documents: Sequence[EvidenceDocument],
-) -> list[RecipeEvidence]:
-    return aggregate_recipe_evidence(documents)
-
-
 def aggregate_evidence_from_documents(
     documents: Sequence[EvidenceDocument],
 ) -> list[AggregatedEvidence]:
@@ -79,6 +67,4 @@ def aggregate_evidence_from_documents(
 __all__ = [
     "aggregate_evidence",
     "aggregate_evidence_from_documents",
-    "aggregate_recipe_evidence",
-    "aggregate_recipe_evidence_from_documents",
 ]

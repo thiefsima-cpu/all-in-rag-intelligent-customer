@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import TypeAlias
+from typing import Self, TypeAlias
 
 from pydantic import BaseModel
 
@@ -207,13 +207,9 @@ class QuerySemanticRuntimeSettings:
         )
 
     @classmethod
-    def from_config(
-        cls, config: Mapping[str, object] | BaseModel
-    ) -> "QuerySemanticRuntimeSettings":
+    def from_config(cls, config: Mapping[str, object] | BaseModel) -> Self:
         scoring, extraction, routing, traversal, adaptive = _semantic_config_sections(config)
-        return QuerySemanticRuntimeSettings(
-            *_semantic_runtime_values(scoring, extraction, routing, traversal, adaptive)
-        )
+        return cls(*_semantic_runtime_values(scoring, extraction, routing, traversal, adaptive))
 
     def to_dict(self) -> JsonObject:
         return coerce_json_object(asdict(self))

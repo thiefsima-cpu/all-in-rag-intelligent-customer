@@ -312,6 +312,19 @@ def test_evidence_contract_rejects_deprecated_recipe_aliases() -> None:
     assert "recipe_graph_evidence" not in evidence.to_dict()
 
 
+def test_evidence_processing_retires_generic_recipe_compatibility_exports() -> None:
+    import rag_modules.evidence_processing as evidence_processing
+    from rag_modules.evidence_processing.models import AggregatedEvidence
+
+    assert not hasattr(evidence_processing, "RecipeEvidence")
+    assert not hasattr(evidence_processing, "aggregate_recipe_evidence")
+    assert not hasattr(evidence_processing, "aggregate_recipe_evidence_from_documents")
+    aggregate = AggregatedEvidence(entity_id="r1", entity_name="Mapo tofu")
+    assert not hasattr(aggregate, "recipe_id")
+    assert not hasattr(aggregate, "recipe_name")
+    assert not hasattr(aggregate, "full_recipe_doc")
+
+
 def test_customer_service_domain_selects_its_policy_and_citation_label() -> None:
     config = load_config(source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": "customer_service"}))
     bundle_path = (

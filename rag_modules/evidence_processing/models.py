@@ -31,13 +31,12 @@ class EvidenceUnit:
             "score": self.score,
             "entity_id": self.entity_id,
             "entity_name": self.entity_name,
+            "domain": self.domain,
             "relation_type": self.relation_type,
             "entities": list(self.entities),
             "is_graph_evidence": self.is_graph_evidence,
             "metadata": dict(self.metadata or {}),
         }
-        if self.domain == "recipe":
-            payload.update({"recipe_id": self.entity_id, "recipe_name": self.entity_name})
         return coerce_json_object(payload)
 
 
@@ -67,23 +66,5 @@ class AggregatedEvidence:
             "documents": [doc.to_metadata() for doc in self.documents],
         }
 
-    @property
-    def recipe_id(self) -> str:
-        return self.entity_id
 
-    @property
-    def recipe_name(self) -> str:
-        return self.entity_name
-
-    @property
-    def full_recipe_doc(self) -> str:
-        return self.full_document
-
-    @full_recipe_doc.setter
-    def full_recipe_doc(self, value: str) -> None:
-        self.full_document = str(value or "")
-
-
-RecipeEvidence = AggregatedEvidence
-
-__all__ = ["AggregatedEvidence", "EvidenceUnit", "RecipeEvidence"]
+__all__ = ["AggregatedEvidence", "EvidenceUnit"]

@@ -67,9 +67,7 @@ def normalize_evidence_document(
             "primary": graph_evidence,
             "merged": metadata.get("merged_graph_evidence"),
         }
-    domain_graph_evidence = (
-        metadata.get("domain_graph_evidence") or metadata.get("recipe_graph_evidence") or {}
-    )
+    domain_graph_evidence = metadata.get("domain_graph_evidence") or {}
     evidence_units = extract_evidence_units(document, metadata)
 
     constraint_evidence = {

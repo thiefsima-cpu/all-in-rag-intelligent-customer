@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.evidence_processing.extraction import extract_evidence_units
 from rag_modules.evidence_processing.models import EvidenceUnit
+from rag_modules.evidence_processing.normalization import normalize_evidence_document
 from rag_modules.kernel.documents import TextDocument
 
 
@@ -76,7 +78,9 @@ def test_extracts_direct_graph_payload_and_metadata_recipe_fallbacks() -> None:
     )
 
     assert unit["claim"] == "a -[RELATED]-> Broth"
-    assert unit["recipe_id"] == "r2"
+    assert unit["entity_id"] == "r2"
+    assert "recipe_id" not in unit
+    assert "recipe_name" not in unit
     assert unit["source"] == "neo4j"
 
 
@@ -100,3 +104,32 @@ def test_falls_back_to_trimmed_document_claim_and_handles_empty_content() -> Non
         )
         == []
     )
+
+
+def test_evidence_unit_serializes_canonical_fields_for_recipe_domain() -> None:
+    unit = EvidenceUnit(
+        unit_id="unit-1",
+        evidence_type="text",
+        claim="canonical",
+        entity_id="r1",
+        entity_name="Mapo tofu",
+        domain="recipe",
+    )
+
+    payload = unit.to_dict()
+
+    assert payload["entity_id"] == "r1"
+    assert payload["entity_name"] == "Mapo tofu"
+    assert "recipe_id" not in payload
+    assert "recipe_name" not in payload
+
+
+def test_normalization_ignores_deprecated_recipe_graph_evidence() -> None:
+    evidence = normalize_evidence_document(
+        EvidenceDocument(
+            content="legacy graph payload",
+            metadata={"recipe_graph_evidence": {"legacy": True}},
+        )
+    )
+
+    assert evidence.domain_graph_evidence == {}
