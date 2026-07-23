@@ -8,7 +8,7 @@ import logging
 from typing import Callable, List, Optional
 
 from ...contracts import EvidenceDocument, RetrievalRequest
-from ...contracts.retrieval import evidence_document_from_page_like
+from ...contracts.retrieval_documents import evidence_document_from_page_like
 from ..evidence import RecipeConstraintMatcher
 
 logger = logging.getLogger(__name__)

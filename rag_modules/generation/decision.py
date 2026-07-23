@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..contracts.runtime import AnalysisInput, analysis_strategy_name, analysis_value
 from ..evidence_processing.answer_builder import AnswerEvidencePackage
+from ..kernel.json_types import coerce_float
 from ..query_policy import get_query_policy
 from .models import GenerationDecision, GenerationMode, GenerationSettings
 
@@ -43,8 +44,8 @@ def decide_generation_mode(
         )
 
     strategy = analysis_strategy_name(analysis)
-    complexity = float(analysis_value(analysis, "query_complexity", 0.0) or 0.0)
-    relationship_intensity = float(analysis_value(analysis, "relationship_intensity", 0.0) or 0.0)
+    complexity = coerce_float(analysis_value(analysis, "query_complexity", 0.0))
+    relationship_intensity = coerce_float(analysis_value(analysis, "relationship_intensity", 0.0))
     reasoning_required = bool(analysis_value(analysis, "reasoning_required", False))
 
     if strategy == "graph_rag":

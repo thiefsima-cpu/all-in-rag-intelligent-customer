@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 
 from rag_modules.contracts import (
@@ -200,7 +201,11 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             top_k=2,
             strategy="combined",
             query_plan=plan,
-        ).copy_with(metadata={SKIP_CANDIDATE_SOURCES_METADATA_KEY: ["bm25"]})
+        )
+        retrieval_request = replace(
+            retrieval_request,
+            metadata={SKIP_CANDIDATE_SOURCES_METADATA_KEY: ["bm25"]},
+        )
         request = RouteExecutionRequest(
             query="recommend tofu dishes",
             top_k=2,

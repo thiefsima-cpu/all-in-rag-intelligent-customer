@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict
 
+from ...kernel.json_types import JsonObject, coerce_float, coerce_int, coerce_str
 from ...kernel.routing import SearchStrategy
-from .. import QuerySemanticProfile
+from ..query_semantics import QuerySemanticProfile
 
 
 @dataclass
@@ -38,7 +38,7 @@ class QueryAnalysis:
         self.entity_count = max(0, int(self.entity_count or 0))
         self.confidence = float(self.confidence or 0.0)
         self.reasoning = str(self.reasoning or "")
-        if isinstance(self.semantic_profile, dict):
+        if isinstance(self.semantic_profile, Mapping):
             self.semantic_profile = QuerySemanticProfile.from_dict(self.semantic_profile)
         elif not isinstance(self.semantic_profile, QuerySemanticProfile):
             self.semantic_profile = QuerySemanticProfile()
@@ -48,23 +48,22 @@ class QueryAnalysis:
         return self.recommended_strategy.value
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "QueryAnalysis":
+    def from_dict(cls, data: Mapping[str, object] | None) -> "QueryAnalysis":
         payload = dict(data or {})
         return cls(
-            query_complexity=payload.get("query_complexity", 0.0),
-            relationship_intensity=payload.get("relationship_intensity", 0.0),
-            reasoning_required=payload.get("reasoning_required", False),
-            entity_count=payload.get("entity_count", 0),
-            recommended_strategy=payload.get(
-                "recommended_strategy",
-                SearchStrategy.HYBRID_TRADITIONAL.value,
+            query_complexity=coerce_float(payload.get("query_complexity")),
+            relationship_intensity=coerce_float(payload.get("relationship_intensity")),
+            reasoning_required=bool(payload.get("reasoning_required")),
+            entity_count=coerce_int(payload.get("entity_count")),
+            recommended_strategy=_strategy_from(
+                payload.get("recommended_strategy", SearchStrategy.HYBRID_TRADITIONAL.value)
             ),
-            confidence=payload.get("confidence", 0.0),
-            reasoning=payload.get("reasoning", ""),
-            semantic_profile=QuerySemanticProfile.from_dict(payload.get("semantic_profile")),
+            confidence=coerce_float(payload.get("confidence")),
+            reasoning=coerce_str(payload.get("reasoning")),
+            semantic_profile=QuerySemanticProfile.from_dict(_profile_payload(payload)),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "query_complexity": self.query_complexity,
             "relationship_intensity": self.relationship_intensity,
@@ -81,7 +80,7 @@ AnalysisMapping = Mapping[str, object]
 AnalysisInput = QueryAnalysis | AnalysisMapping | None
 
 
-def analysis_payload(analysis: Any) -> Dict[str, Any]:
+def analysis_payload(analysis: object) -> JsonObject:
     if isinstance(analysis, QueryAnalysis):
         payload = analysis.to_dict()
     elif isinstance(analysis, Mapping):
@@ -89,20 +88,7 @@ def analysis_payload(analysis: Any) -> Dict[str, Any]:
     elif analysis is None:
         payload = {}
     else:
-        payload = {
-            "query_complexity": getattr(analysis, "query_complexity", 0.0),
-            "relationship_intensity": getattr(analysis, "relationship_intensity", 0.0),
-            "reasoning_required": getattr(analysis, "reasoning_required", False),
-            "entity_count": getattr(analysis, "entity_count", 0),
-            "recommended_strategy": getattr(
-                getattr(analysis, "recommended_strategy", None),
-                "value",
-                "",
-            ),
-            "confidence": getattr(analysis, "confidence", 0.0),
-            "reasoning": getattr(analysis, "reasoning", ""),
-            "semantic_profile": getattr(analysis, "semantic_profile", {}),
-        }
+        payload = {}
 
     strategy = payload.get("recommended_strategy")
     if isinstance(strategy, SearchStrategy):
@@ -114,7 +100,7 @@ def analysis_payload(analysis: Any) -> Dict[str, Any]:
     return QueryAnalysis.from_dict(payload).to_dict()
 
 
-def ensure_query_analysis(analysis: Any) -> QueryAnalysis:
+def ensure_query_analysis(analysis: object) -> QueryAnalysis:
     if isinstance(analysis, QueryAnalysis):
         return analysis
     if analysis is None:
@@ -130,9 +116,23 @@ def ensure_optional_query_analysis(analysis: AnalysisInput) -> QueryAnalysis | N
     return ensure_query_analysis(analysis)
 
 
-def analysis_value(analysis: Any, key: str, default: Any = None) -> Any:
+def analysis_value(analysis: object, key: str, default: object = None) -> object:
     return analysis_payload(analysis).get(key, default)
 
 
-def analysis_strategy_name(analysis: Any) -> str:
+def analysis_strategy_name(analysis: object) -> str:
     return str(analysis_value(analysis, "recommended_strategy", "") or "")
+
+
+def _profile_payload(payload: Mapping[str, object]) -> Mapping[str, object] | None:
+    value = payload.get("semantic_profile")
+    return value if isinstance(value, Mapping) else None
+
+
+def _strategy_from(value: object) -> SearchStrategy:
+    if isinstance(value, SearchStrategy):
+        return value
+    try:
+        return SearchStrategy(coerce_str(value) or SearchStrategy.HYBRID_TRADITIONAL.value)
+    except ValueError:
+        return SearchStrategy.HYBRID_TRADITIONAL

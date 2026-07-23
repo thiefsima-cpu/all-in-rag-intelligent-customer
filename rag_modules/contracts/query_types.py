@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 from ..kernel.routing import SearchStrategy
 
@@ -26,14 +25,14 @@ class QueryPlannerMode(str, Enum):
 VALID_GRAPH_QUERY_TYPES = {query_type.value for query_type in GraphQueryType}
 
 
-def search_strategy(value: Any) -> SearchStrategy:
+def search_strategy(value: object) -> SearchStrategy:
     if isinstance(value, SearchStrategy):
         return value
     return SearchStrategy(str(value or SearchStrategy.HYBRID_TRADITIONAL.value))
 
 
 def graph_query_type(
-    value: Any,
+    value: object,
     default: GraphQueryType = GraphQueryType.SUBGRAPH,
 ) -> GraphQueryType:
     if isinstance(value, GraphQueryType):
@@ -42,7 +41,7 @@ def graph_query_type(
 
 
 def graph_query_type_or_default(
-    value: Any,
+    value: object,
     default: GraphQueryType = GraphQueryType.SUBGRAPH,
 ) -> GraphQueryType:
     try:
@@ -57,7 +56,7 @@ def graph_query_type_value(value: GraphQueryType | str) -> str:
     return str(value or "")
 
 
-def query_planner_mode(value: Any) -> QueryPlannerMode:
+def query_planner_mode(value: object) -> QueryPlannerMode:
     if isinstance(value, QueryPlannerMode):
         return value
     try:

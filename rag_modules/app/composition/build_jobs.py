@@ -9,7 +9,8 @@ from importlib import import_module
 from typing import Protocol, cast
 
 from ...configuration.models import GraphRAGConfig
-from ...kernel.json_types import coerce_json_object
+from ...contracts.build_jobs import JobProgressRecorded, JobSucceeded
+from ...kernel.json_types import JsonObject, coerce_json_object
 from ...telemetry import get_runtime_telemetry
 from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
@@ -19,8 +20,15 @@ from ..build_jobs import (
     BuildJobRepositorySettings,
     BuildJobRunnerPort,
     BuildJobRuntimeHooks,
+    BuildJobSnapshot,
 )
 from ..runtime_operations import RuntimeOperationCoordinator
+
+_BuildJobExecution = Callable[
+    [BuildJobSnapshot, Callable[[JobProgressRecorded], None], Callable[[], None]],
+    JobSucceeded,
+]
+_BuildJobResult = Callable[[], JsonObject]
 
 _Clock = Callable[[], datetime]
 BuildJobRepositoryFactory = Callable[[GraphRAGConfig], BuildJobRepositoryPort]
@@ -50,7 +58,9 @@ class _InProcessBuildJobRunnerFactory(Protocol):
         self,
         *,
         repository: BuildJobRepositoryPort,
-        executor: BuildJobExecutor,
+        execute_build: _BuildJobExecution,
+        cancelled_result: _BuildJobResult,
+        failed_result: _BuildJobResult,
         max_workers: int,
         worker_id: str,
         heartbeat_seconds: float,
@@ -74,7 +84,9 @@ class _ExternalBuildJobWorkerRunnerFactory(Protocol):
         self,
         *,
         repository: BuildJobRepositoryPort,
-        executor: BuildJobExecutor,
+        execute_build: _BuildJobExecution,
+        cancelled_result: _BuildJobResult,
+        failed_result: _BuildJobResult,
         max_workers: int,
         worker_id: str,
         heartbeat_seconds: float,
@@ -143,7 +155,13 @@ def compose_build_job_worker(
     executor = _compose_executor(system=system, coordinator=coordinator)
     return runtime_build_jobs.ExternalBuildJobWorkerRunner(
         repository=repository,
-        executor=executor,
+        execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
+            snapshot,
+            progress=progress,
+            cancellation_check=cancellation_check,
+        ),
+        cancelled_result=executor.cancelled_result,
+        failed_result=executor.failed_result,
         max_workers=int(api_settings.build_job_runner_max_workers),
         worker_id=worker_id,
         heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
@@ -192,9 +210,16 @@ def _compose_api_runner(
     if backend == "external_worker":
         return runtime_build_jobs.ExternalBuildJobQueueRunner()
     if backend == "in_process":
+        executor = executor_factory()
         return runtime_build_jobs.InProcessBuildJobRunner(
             repository=repository,
-            executor=executor_factory(),
+            execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
+                snapshot,
+                progress=progress,
+                cancellation_check=cancellation_check,
+            ),
+            cancelled_result=executor.cancelled_result,
+            failed_result=executor.failed_result,
             max_workers=max_workers,
             worker_id="in_process",
             heartbeat_seconds=heartbeat_seconds,

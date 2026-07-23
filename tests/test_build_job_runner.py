@@ -211,7 +211,13 @@ def _stack(
     executor = BuildJobExecutor(hooks=hooks)
     runner = InProcessBuildJobRunner(
         repository=build_job_repository,
-        executor=executor,
+        execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
+            snapshot,
+            progress=progress,
+            cancellation_check=cancellation_check,
+        ),
+        cancelled_result=executor.cancelled_result,
+        failed_result=executor.failed_result,
         max_workers=1,
         worker_id="test-worker",
         heartbeat_seconds=10.0,

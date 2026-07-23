@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Sequence, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
@@ -181,18 +181,21 @@ class RetrievalCandidateGenerator:
         effective_request = request
         if request.query_plan:
             if not request.entity_keywords and request.planned_entity_keywords:
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     entity_keywords=request.planned_entity_keywords,
                 )
             if not request.topic_keywords and request.planned_topic_keywords:
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     topic_keywords=request.planned_topic_keywords,
                 )
             if (
                 not request.effective_constraints.has_constraints()
                 and request.query_plan.constraints.has_constraints()
             ):
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     constraints=request.query_plan.constraints,
                 )
         return effective_request
@@ -202,7 +205,9 @@ class RetrievalCandidateGenerator:
         raw_sources = request.metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
         if isinstance(raw_sources, str):
             raw_sources = [raw_sources]
-        return {str(item).strip() for item in (raw_sources or []) if str(item).strip()}
+        if not isinstance(raw_sources, list):
+            return set()
+        return {str(item).strip() for item in raw_sources if str(item).strip()}
 
     def _retrieve_source(
         self,

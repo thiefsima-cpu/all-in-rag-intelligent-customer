@@ -6,7 +6,7 @@ from typing import Iterable, List
 
 from langchain_core.documents import Document
 
-from .retrieval import EvidenceDocument, evidence_document_from_page_like
+from .retrieval_documents import EvidenceDocument, evidence_document_from_page_like
 
 
 def evidence_document_from_langchain(doc: Document) -> EvidenceDocument:

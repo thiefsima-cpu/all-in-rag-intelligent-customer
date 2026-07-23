@@ -38,6 +38,15 @@ def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None
     assert child.reason == "combined_branch_timeout"
 
 
+def test_request_control_shares_typed_cancellation_state() -> None:
+    parent = RequestControl.for_timeout(5.0)
+    child = parent.child(2.0, scope="child")
+    parent.cancel("manual")
+    assert child.cancelled is True
+    assert child.reason == "manual"
+    assert not hasattr(parent.cancel_event, "_request_control_reason")
+
+
 def test_request_control_raises_cancelled_and_budget_exceeded() -> None:
     cancelled = RequestControl.for_timeout(5.0, scope="answer")
     cancelled.cancel("client_disconnect")

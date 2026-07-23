@@ -36,6 +36,21 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
 
+    def test_contract_facades_are_retired(self) -> None:
+        for module_name in (
+            "rag_modules.contracts.query",
+            "rag_modules.contracts.retrieval",
+            "rag_modules.contracts.build_jobs.executor",
+        ):
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
     def test_application_use_case_compatibility_modules_are_retired(self) -> None:
         module_names = (
             "rag_modules.app.services.answer_copy",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import HybridRetrievalOutcome
@@ -67,11 +68,12 @@ class HybridSearchService:
         effective_constraints = request.effective_constraints
         if request.candidate_k <= 0:
             constrained = bool(effective_constraints and effective_constraints.has_constraints())
-            request = request.copy_with(
+            request = replace(
+                request,
                 candidate_k=self.retrieval_profile.candidates.hybrid_candidate_k(
                     request.top_k,
                     constrained=constrained,
-                )
+                ),
             )
         return request
 

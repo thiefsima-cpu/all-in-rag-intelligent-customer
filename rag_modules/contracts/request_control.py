@@ -5,12 +5,10 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
-JsonObject = dict[str, Any]
+from ..kernel.json_types import JsonObject
 
 _MIN_TIMEOUT_SECONDS = 0.1
-_REASON_ATTR = "_request_control_reason"
 
 
 class RequestControlError(RuntimeError):
@@ -26,11 +24,16 @@ class RequestBudgetExceeded(RequestControlError):
 
 
 @dataclass(slots=True)
+class _CancellationState:
+    event: threading.Event = field(default_factory=threading.Event)
+    reason: str = ""
+
+
+@dataclass(slots=True)
 class RequestControl:
     deadline: float
     scope: str = "request"
-    cancel_event: threading.Event = field(default_factory=threading.Event)
-    _reason: str = ""
+    _state: _CancellationState = field(default_factory=_CancellationState, repr=False)
     _parent: RequestControl | None = field(default=None, repr=False)
 
     @classmethod
@@ -40,13 +43,16 @@ class RequestControl:
 
     @property
     def cancelled(self) -> bool:
-        return self.cancel_event.is_set() or bool(self._parent and self._parent.cancelled)
+        return self._state.event.is_set() or bool(self._parent and self._parent.cancelled)
+
+    @property
+    def cancel_event(self) -> threading.Event:
+        return self._state.event
 
     @property
     def reason(self) -> str:
-        own_reason = self._reason or str(getattr(self.cancel_event, _REASON_ATTR, "") or "")
-        if own_reason:
-            return own_reason
+        if self._state.reason:
+            return self._state.reason
         return self._parent.reason if self._parent is not None else ""
 
     @property
@@ -61,9 +67,8 @@ class RequestControl:
 
     def cancel(self, reason: str = "request_cancelled") -> None:
         if not self.reason:
-            self._reason = str(reason or "request_cancelled")
-            setattr(self.cancel_event, _REASON_ATTR, self._reason)
-        self.cancel_event.set()
+            self._state.reason = str(reason or "request_cancelled")
+        self._state.event.set()
 
     def child(self, timeout_seconds: float, *, scope: str) -> "RequestControl":
         timeout = max(_MIN_TIMEOUT_SECONDS, float(timeout_seconds or _MIN_TIMEOUT_SECONDS))
@@ -71,8 +76,7 @@ class RequestControl:
         return RequestControl(
             deadline=child_deadline,
             scope=str(scope or self.scope),
-            cancel_event=self.cancel_event,
-            _reason=self.reason,
+            _state=self._state,
         )
 
     def isolated_child(self, timeout_seconds: float, *, scope: str) -> "RequestControl":
@@ -90,9 +94,9 @@ class RequestControl:
         if self.cancelled:
             raise RequestCancelled(self.reason or f"{self.scope}_cancelled")
         if self.budget_exhausted:
-            self._reason = self.reason or f"{self.scope}_budget_exhausted"
-            setattr(self.cancel_event, _REASON_ATTR, self._reason)
-            raise RequestBudgetExceeded(self._reason)
+            self._state.reason = self.reason or f"{self.scope}_budget_exhausted"
+            self._state.event.set()
+            raise RequestBudgetExceeded(self._state.reason)
 
     def to_trace_details(self) -> JsonObject:
         return {

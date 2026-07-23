@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -421,7 +422,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         request = _request(query="cancelled graph", top_k=2, strategy=SearchStrategy.GRAPH_RAG)
         control = RequestControl.for_timeout(5.0, scope="route")
         control.cancel("caller_cancelled")
-        request.retrieval_request = request.retrieval_request.copy_with(control=control)
+        request.retrieval_request = replace(request.retrieval_request, control=control)
 
         with self.assertRaisesRegex(RequestCancelled, "caller_cancelled"):
             GraphRouteStrategy().execute(request, services=services)
@@ -489,7 +490,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         )
         request = _request(query="supplement graph", top_k=2, strategy=SearchStrategy.GRAPH_RAG)
         control = RequestControl.for_timeout(5.0, scope="route")
-        request.retrieval_request = request.retrieval_request.copy_with(control=control)
+        request.retrieval_request = replace(request.retrieval_request, control=control)
 
         outcome = GraphRouteStrategy().execute(request, services=services)
 
@@ -746,8 +747,8 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             retrieval_profile=_FakeRetrievalProfile(),
         )
         request = _request(query="slow graph", top_k=2, strategy=SearchStrategy.COMBINED)
-        request.retrieval_request = request.retrieval_request.copy_with(
-            control=RequestControl.for_timeout(5.0, scope="route")
+        request.retrieval_request = replace(
+            request.retrieval_request, control=RequestControl.for_timeout(5.0, scope="route")
         )
         strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
 
@@ -780,8 +781,8 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             retrieval_profile=_FakeRetrievalProfile(),
         )
         request = _request(query="slow hybrid", top_k=2, strategy=SearchStrategy.COMBINED)
-        request.retrieval_request = request.retrieval_request.copy_with(
-            control=RequestControl.for_timeout(5.0, scope="route")
+        request.retrieval_request = replace(
+            request.retrieval_request, control=RequestControl.for_timeout(5.0, scope="route")
         )
         strategy = CombinedRouteStrategy(branch_timeout_seconds=0.05)
 
