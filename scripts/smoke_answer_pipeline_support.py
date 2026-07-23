@@ -17,6 +17,7 @@ from rag_modules.generation import (
     GenerationPromptBuilder,
     GenerationSettings,
 )
+from rag_modules.kernel.json_types import coerce_json_object
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import QueryTraceSink
 from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
@@ -100,7 +101,7 @@ class OfflineGenerationModule:
             context.evidence_documents,
         )
         return self.executor.generate_with_trace(
-            answer_context=context.with_evidence_package(package),
+            answer_context=context.with_evidence_package(coerce_json_object(package.to_dict())),
             control=control,
         )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_float, coerce_int, coerce_json_object
 from .. import QuerySemanticRuntimeSettings, RetrievalRequest
 from .errors import (
     CANDIDATE_SOURCE_ERROR_CIRCUIT_OPEN,
@@ -37,8 +37,8 @@ class RouteStageSnapshot:
             if key not in {"latency_ms", "doc_count", "sources"}
         }
         return cls(
-            latency_ms=coerce_json_float(payload.get("latency_ms")),
-            doc_count=coerce_json_int(payload.get("doc_count")),
+            latency_ms=coerce_float(payload.get("latency_ms")),
+            doc_count=coerce_int(payload.get("doc_count")),
             sources=_int_mapping(payload.get("sources")),
             details=coerce_json_object(details),
         )
@@ -97,11 +97,11 @@ class RouteDiagnostics:
         )
         return cls(
             used_fallback=bool(payload.get("used_fallback", False)),
-            fallback_count=coerce_json_int(payload.get("fallback_count")),
+            fallback_count=coerce_int(payload.get("fallback_count")),
             planner_used_cache=_optional_bool(payload.get("planner_used_cache")),
-            graph_doc_count=coerce_json_int(payload.get("graph_doc_count")),
-            hybrid_doc_count=coerce_json_int(payload.get("hybrid_doc_count")),
-            post_process_doc_count=coerce_json_int(payload.get("post_process_doc_count")),
+            graph_doc_count=coerce_int(payload.get("graph_doc_count")),
+            hybrid_doc_count=coerce_int(payload.get("hybrid_doc_count")),
+            post_process_doc_count=coerce_int(payload.get("post_process_doc_count")),
             retrieval_degraded=bool(payload.get("retrieval_degraded", False)),
             degraded_sources=_string_list(payload.get("degraded_sources")),
             degraded_candidates=degraded_candidates,
@@ -185,7 +185,7 @@ class RouteSnapshot:
         return cls(
             query=str(payload.get("query") or ""),
             strategy=str(payload.get("strategy") or ""),
-            requested_top_k=coerce_json_int(payload.get("requested_top_k")),
+            requested_top_k=coerce_int(payload.get("requested_top_k")),
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             retrieval_request=_retrieval_request_from_payload(
                 payload.get("retrieval_request"),
@@ -194,8 +194,8 @@ class RouteSnapshot:
             stages=_stage_mapping(payload.get("stages")),
             fallbacks=_string_list(payload.get("fallbacks")),
             diagnostics=RouteDiagnostics.from_dict(_mapping_or_none(payload.get("diagnostics"))),
-            total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
-            final_doc_count=coerce_json_int(payload.get("final_doc_count")),
+            total_latency_ms=coerce_float(payload.get("total_latency_ms")),
+            final_doc_count=coerce_int(payload.get("final_doc_count")),
             error=ensure_runtime_error_detail(payload.get("error")),
         )
 
@@ -250,7 +250,7 @@ class RouteSnapshot:
         elif combined_stage:
             graph_doc_count = max(
                 0,
-                coerce_json_int((combined_stage.details or {}).get("graph_doc_count")),
+                coerce_int((combined_stage.details or {}).get("graph_doc_count")),
             )
         if (graph_stage or combined_stage) and graph_doc_count == 0:
             failure_reasons.append("graph_empty")
@@ -369,7 +369,7 @@ def _summarize_stage_degradation(
 def _int_mapping(value: object) -> dict[str, int]:
     if not isinstance(value, Mapping):
         return {}
-    return {str(key): coerce_json_int(item) for key, item in value.items()}
+    return {str(key): coerce_int(item) for key, item in value.items()}
 
 
 def _list_or_empty(value: object) -> list[object]:

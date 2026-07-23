@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...contracts.graph_preparation import GraphPreparationStats
 from ...kernel.artifacts import DocumentArtifactStats
 from ...kernel.json_types import coerce_json_object
 
@@ -11,7 +12,9 @@ class DocumentArtifactStatsCollector:
 
     def collect(self, data_module) -> DocumentArtifactStats:
         raw_stats = data_module.get_statistics() if hasattr(data_module, "get_statistics") else {}
-        stats = coerce_json_object(raw_stats)
+        stats = coerce_json_object(
+            raw_stats.to_dict() if isinstance(raw_stats, GraphPreparationStats) else raw_stats
+        )
         return DocumentArtifactStats(
             total_recipes=_count_value(
                 stats.get("total_recipes"),

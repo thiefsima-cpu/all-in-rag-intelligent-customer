@@ -24,6 +24,7 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         for module_name in (
             "rag_modules.app.contracts",
             "rag_modules.app.diagnostics_models",
+            "rag_modules.kernel.artifact_validation",
             "rag_modules.runtime.snapshot_utils",
         ):
             parent_name, attr_name = module_name.rsplit(".", 1)

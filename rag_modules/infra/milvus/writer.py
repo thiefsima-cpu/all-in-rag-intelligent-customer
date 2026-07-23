@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import List, Optional
 
 from ...kernel.documents import TextDocument
+from ...kernel.json_types import coerce_int
 from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class _MilvusWriterOperations(MilvusOperationHost):
-    def _safe_truncate(self, text: str, max_length: int) -> str:
+    def _safe_truncate(self, text: object, max_length: int) -> str:
         """
         安全截取字符串，处理None值
 
@@ -62,7 +63,7 @@ class _MilvusWriterOperations(MilvusOperationHost):
             "node_type": self._safe_truncate(entity_type, 100),
             "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
             "cuisine_type": self._safe_truncate(chunk.metadata.get("cuisine_type", ""), 200),
-            "difficulty": int(chunk.metadata.get("difficulty", 0)),
+            "difficulty": coerce_int(chunk.metadata.get("difficulty"), 0),
             "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
             "chunk_id": self._safe_truncate(chunk_id, 150),
             "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),

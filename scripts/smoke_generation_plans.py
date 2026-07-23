@@ -21,6 +21,7 @@ from rag_modules.generation import (
     GenerationSettings,
     decide_generation_mode,
 )
+from rag_modules.kernel.json_types import coerce_json_object
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "generation_plan_corpus.json"
@@ -114,14 +115,16 @@ def evaluate_case(
             evidence_documents=case.evidence_documents,
         ),
         analysis=case.analysis,
-    ).with_evidence_package(package)
+    ).with_evidence_package(coerce_json_object(package.to_dict()))
     decision = decide_generation_mode(
         package=package,
         settings=settings,
         analysis=case.analysis,
     )
     selected_package = package.limit_items(decision.evidence_limit)
-    selected_context = answer_context.with_evidence_package(selected_package)
+    selected_context = answer_context.with_evidence_package(
+        coerce_json_object(selected_package.to_dict())
+    )
     plan = planner.build_answer_plan_from_context(selected_context)
     rendered_prompt = prompt_builder.render_compose_prompt_from_context(
         selected_context,

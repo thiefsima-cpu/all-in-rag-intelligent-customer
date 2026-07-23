@@ -19,8 +19,10 @@ from rag_modules.kernel.artifacts import (
     DocumentArtifactResult,
     DocumentArtifactSignatures,
     DocumentArtifactStats,
+    vector_artifact_mismatch_reason,
 )
 from rag_modules.kernel.documents import TextDocument
+from rag_modules.kernel.json_types import as_string_list, clamp_float, coerce_json_value, coerce_str
 from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.kernel.routing import RouteStatistics, SearchStrategy
 from rag_modules.retrieval import candidate_generator
@@ -58,6 +60,31 @@ def test_shared_types_have_canonical_module_ownership() -> None:
     }
 
     assert {value: value.__module__ for value in expected_modules} == expected_modules
+
+
+def test_kernel_owns_shared_primitive_normalization() -> None:
+    assert coerce_str(None) == ""
+    assert as_string_list([" a ", "", 2]) == ["a", "2"]
+    assert clamp_float("2.0") == 1.0
+    assert vector_artifact_mismatch_reason.__module__ == "rag_modules.kernel.artifacts"
+
+
+def test_kernel_json_normalization_preserves_set_metadata_as_a_json_list() -> None:
+    assert set(coerce_json_value({"tags": {"fast", "spicy"}})["tags"]) == {"fast", "spicy"}
+
+
+def test_artifact_manifest_payload_detaches_nested_build_metadata() -> None:
+    manifest = ArtifactManifest(build_metadata={"nested": {"labels": ["original"]}})
+
+    payload_metadata = manifest.to_dict()["build_metadata"]
+    assert isinstance(payload_metadata, dict)
+    nested = payload_metadata["nested"]
+    assert isinstance(nested, dict)
+    labels = nested["labels"]
+    assert isinstance(labels, list)
+    labels.append("mutated")
+
+    assert manifest.build_metadata == {"nested": {"labels": ["original"]}}
 
 
 def test_kernel_package_exports_only_canonical_kernel_types() -> None:

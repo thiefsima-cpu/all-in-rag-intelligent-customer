@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Dict, Iterable, List, Optional
 
 from ..contracts import EvidenceDocument
@@ -163,7 +164,7 @@ class ParentDocumentEnricher:
 
         return self.attach_evidence(enriched, top_n=top_n)
 
-    def _find_parent(self, metadata: Dict[str, object]) -> Optional[TextDocument]:
+    def _find_parent(self, metadata: Mapping[str, object]) -> Optional[TextDocument]:
         for node_id in _iter_metadata_values(metadata.get("recipe_node_ids")):
             parent = self.parent_doc_map.get(str(node_id))
             if parent:
@@ -195,7 +196,7 @@ class ParentDocumentEnricher:
         return content[:max_chars] + "... (truncated parent document)"
 
     @staticmethod
-    def _doc_parent_key(metadata: Dict[str, object]) -> str:
+    def _doc_parent_key(metadata: Mapping[str, object]) -> str:
         return str(
             metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id") or ""
         )

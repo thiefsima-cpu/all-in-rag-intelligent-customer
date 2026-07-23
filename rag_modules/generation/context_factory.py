@@ -12,6 +12,7 @@ from ..contracts.runtime import (
     ensure_optional_query_analysis,
 )
 from ..evidence_processing.answer_builder import AnswerEvidenceBuilder, AnswerEvidencePackage
+from ..kernel.json_types import coerce_json_object
 from .models import AnswerPlan
 
 
@@ -49,7 +50,7 @@ class GenerationContextFactory:
         if answer_context.has_evidence_package:
             return answer_context
         package = self.package_from_context(answer_context)
-        return answer_context.with_evidence_package(package)
+        return answer_context.with_evidence_package(coerce_json_object(package.to_dict()))
 
     def resolve_package_from_evidence(
         self,

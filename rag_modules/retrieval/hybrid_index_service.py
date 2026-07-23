@@ -14,6 +14,7 @@ from rank_bm25 import BM25Okapi
 from ..configuration.models import GraphRAGConfig
 from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..safe_logging import log_failure
 from .adapters import BM25Retriever
 from .cache import RetrievalCacheStore
@@ -249,8 +250,6 @@ class HybridIndexService:
         return relationships
 
 
-def _parent_document_metadata(item: Mapping[object, object]) -> Dict[str, object]:
+def _parent_document_metadata(item: Mapping[object, object]) -> JsonObject:
     metadata = item.get("metadata")
-    if not isinstance(metadata, Mapping):
-        return {}
-    return {str(key): value for key, value in metadata.items()}
+    return coerce_json_object(metadata)

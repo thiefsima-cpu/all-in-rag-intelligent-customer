@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from ..kernel.json_types import JsonObject, coerce_json_object
 from .stats_ports import (
     GraphStatisticsSourcePort,
     QueryTraceStatisticsSourcePort,
     RouteStatisticsSourcePort,
     RuntimeProfilePayloadSource,
+    StatisticsPayload,
     VectorCollectionStatisticsSourcePort,
 )
 
@@ -21,7 +24,7 @@ class DefaultRuntimeStatsAccess:
     ) -> JsonObject:
         if data_module is None:
             return {}
-        return coerce_json_object(data_module.get_statistics())
+        return _statistics_payload(data_module.get_statistics())
 
     def get_vector_collection_stats(
         self,
@@ -29,7 +32,7 @@ class DefaultRuntimeStatsAccess:
     ) -> JsonObject:
         if index_module is None:
             return {}
-        return coerce_json_object(index_module.get_collection_stats())
+        return _statistics_payload(index_module.get_collection_stats())
 
     def get_route_stats(
         self,
@@ -37,7 +40,7 @@ class DefaultRuntimeStatsAccess:
     ) -> JsonObject:
         if routing_workflow is None:
             return {}
-        return coerce_json_object(routing_workflow.get_route_statistics())
+        return _statistics_payload(routing_workflow.get_route_statistics())
 
     def get_retrieval_runtime_profile(
         self,
@@ -51,12 +54,15 @@ class DefaultRuntimeStatsAccess:
         self,
         query_tracer: QueryTraceStatisticsSourcePort | None,
     ) -> JsonObject:
-        if query_tracer is None:
+        if not isinstance(query_tracer, QueryTraceStatisticsSourcePort):
             return {}
-        stats = getattr(query_tracer, "stats", None)
-        if not callable(stats):
-            return {}
-        return coerce_json_object(stats())
+        return _statistics_payload(query_tracer.stats())
+
+
+def _statistics_payload(payload: StatisticsPayload) -> JsonObject:
+    if isinstance(payload, Mapping):
+        return coerce_json_object(payload)
+    return coerce_json_object(payload.to_dict())
 
 
 __all__ = ["DefaultRuntimeStatsAccess"]

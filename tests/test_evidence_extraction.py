@@ -19,7 +19,7 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
         "recipe_names": ["Mapo tofu"],
         "matched_terms": ["tofu", "tofu"],
         "evidence_units": [
-            explicit,
+            explicit.to_dict(),
             {"claim": "dict claim", "entities": ["tofu", ""], "metadata": {"rank": 1}},
             {"ignored": True},
         ],

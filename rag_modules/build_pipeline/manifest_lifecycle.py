@@ -13,6 +13,7 @@ from ..kernel.artifacts import (
     ArtifactManifest,
     utc_now_iso,
 )
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..runtime.artifact_ports import ArtifactManifestStorePort
 
 BUILD_FAILED_ERROR_CODE = "BUILD_FAILED"
@@ -23,7 +24,7 @@ def _failure_metadata(
     *,
     request_id: str = "",
     build_job_id: str = "",
-) -> dict[str, str]:
+) -> JsonObject:
     metadata = {
         "code": BUILD_FAILED_ERROR_CODE,
         "error_type": type(exc).__name__,
@@ -32,7 +33,7 @@ def _failure_metadata(
         metadata["request_id"] = str(request_id)
     if build_job_id:
         metadata["build_job_id"] = str(build_job_id)
-    return metadata
+    return coerce_json_object(metadata)
 
 
 class KnowledgeBaseManifestLifecycle:

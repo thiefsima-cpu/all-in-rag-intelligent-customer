@@ -4,7 +4,7 @@ import pytest
 
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import AnswerContext, RetrievalOutcome
-from rag_modules.evidence_processing.answer_builder import AnswerEvidencePackage
+from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation.context_factory import GenerationContextFactory
 from rag_modules.generation.models import AnswerPlan
 from rag_modules.kernel.documents import TextDocument
@@ -16,11 +16,17 @@ class _Builder:
 
     def build(self, question: str, documents: list[EvidenceDocument]) -> AnswerEvidencePackage:
         self.calls.append(("evidence", question, list(documents)))
-        return AnswerEvidencePackage(question=question, items=[])
+        return AnswerEvidencePackage(
+            question=question,
+            items=[AnswerEvidenceItem(citation="Evidence 1", content="evidence")],
+        )
 
     def build_from_documents(self, question: str, documents: list[object]) -> AnswerEvidencePackage:
         self.calls.append(("documents", question, list(documents)))
-        return AnswerEvidencePackage(question=question, items=[])
+        return AnswerEvidencePackage(
+            question=question,
+            items=[AnswerEvidenceItem(citation="Evidence 1", content="document")],
+        )
 
 
 def _factory() -> tuple[GenerationContextFactory, _Builder]:
@@ -81,7 +87,8 @@ def test_context_package_and_document_build_paths_preserve_evidence() -> None:
     package = factory.package_from_context(context)
     enriched = factory.ensure_evidence_package(context)
     assert package.question == "tofu"
-    assert enriched.has_evidence_package is False
+    assert enriched.has_evidence_package is True
+    assert enriched.evidence_package["items"][0]["citation"] == "Evidence 1"
     assert len(builder.calls) == 2
 
     packaged = AnswerContext(

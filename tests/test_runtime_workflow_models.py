@@ -62,7 +62,9 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             ],
         )
 
-        context = AnswerContext(question="how to make dish A").with_evidence_package(package)
+        context = AnswerContext(question="how to make dish A").with_evidence_package(
+            package.to_dict()
+        )
         round_trip = AnswerContext.from_dict(
             context.to_dict(),
             semantic_settings=QuerySemanticRuntimeSettings.from_config(build_test_config()),

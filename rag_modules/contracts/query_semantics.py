@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+from ..kernel.json_types import dedupe_preserve_order
 from .query_types import (
     GraphQueryType,
     graph_query_type_or_default,
     graph_query_type_value,
 )
-from .query_utils import dedupe_preserve_order
 
 
 @dataclass(frozen=True)

@@ -9,8 +9,8 @@ from ..contracts import EvidenceDocument
 from ..evidence_processing import extract_evidence_units
 from ..kernel.json_types import (
     JsonObject,
-    coerce_json_float,
-    coerce_json_int,
+    coerce_float,
+    coerce_int,
     coerce_json_object,
 )
 from ..safe_logging import log_failure
@@ -48,8 +48,8 @@ class GraphRetrievalPostProcessor:
             return GraphPath(
                 nodes=path_nodes,
                 relationships=relationships,
-                path_length=coerce_json_int(record.get("path_len"), 0),
-                relevance_score=coerce_json_float(record.get("relevance"), 0.0),
+                path_length=coerce_int(record.get("path_len"), 0),
+                relevance_score=coerce_float(record.get("relevance"), 0.0),
                 path_type=path_type,
             )
         except Exception as exc:
@@ -265,6 +265,4 @@ def _node_id(node: object) -> str:
 
 
 def _float_metrics(value: object) -> dict[str, float]:
-    return {
-        str(key): coerce_json_float(item, 0.0) for key, item in coerce_json_object(value).items()
-    }
+    return {str(key): coerce_float(item, 0.0) for key, item in coerce_json_object(value).items()}

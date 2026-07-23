@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Mapping
+from typing import Mapping, TypedDict, Unpack
 
 from .documents import TextDocument
+from .json_types import JsonObject, coerce_int, coerce_json_object, coerce_str
 from .semantic_schema import SEMANTIC_SCHEMA_VERSION
 
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "graph-rag-artifact-manifest-v2"
@@ -24,7 +25,7 @@ class ArtifactStage(str, Enum):
     MANIFEST_UNREADABLE = "manifest_unreadable"
 
 
-def _artifact_stage(value: "ArtifactStage | str | None") -> ArtifactStage:
+def _artifact_stage(value: object) -> ArtifactStage:
     if isinstance(value, ArtifactStage):
         return value
     try:
@@ -62,6 +63,36 @@ ARTIFACT_INVALID_STAGES = frozenset(
         ArtifactStage.MANIFEST_UNREADABLE,
     }
 )
+
+
+class ArtifactManifestUpdate(TypedDict, total=False):
+    schema_version: str
+    manifest_version: int
+    semantic_schema_version: str
+    stage: ArtifactStage | str
+    updated_at: str
+    published_at: str
+    graph_signature: str
+    document_signature: str
+    embedding_signature: str
+    index_signature: str
+    index_version: str
+    collection_name: str
+    collection_base_name: str
+    collection_slot: str
+    previous_collection_name: str
+    documents_path: str
+    chunks_path: str
+    manifest_path: str
+    total_recipes: int
+    total_ingredients: int
+    total_cooking_steps: int
+    total_documents: int
+    total_chunks: int
+    vector_rows: int
+    cache_hit: bool
+    last_error: str
+    build_metadata: JsonObject
 
 
 def utc_now_iso() -> str:
@@ -111,10 +142,11 @@ class ArtifactManifest:
     vector_rows: int = 0
     cache_hit: bool = False
     last_error: str = ""
-    build_metadata: Dict[str, Any] = field(default_factory=dict)
+    build_metadata: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.stage = _artifact_stage(self.stage)
+        self.build_metadata = coerce_json_object(self.build_metadata)
 
     @property
     def is_ready(self) -> bool:
@@ -140,7 +172,7 @@ class ArtifactManifest:
     def is_invalid(self) -> bool:
         return self.stage in ARTIFACT_INVALID_STAGES
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "schema_version": self.schema_version,
             "manifest_version": self.manifest_version,
@@ -168,18 +200,15 @@ class ArtifactManifest:
             "vector_rows": self.vector_rows,
             "cache_hit": self.cache_hit,
             "last_error": self.last_error,
-            "build_metadata": _json_safe(self.build_metadata),
+            "build_metadata": coerce_json_object(self.build_metadata),
         }
 
-    def evolve(self, **changes: Any) -> "ArtifactManifest":
-        build_metadata = changes.pop("build_metadata", None)
+    def evolve(self, **changes: Unpack[ArtifactManifestUpdate]) -> "ArtifactManifest":
+        build_metadata = changes.get("build_metadata")
         if "stage" in changes:
             changes["stage"] = _artifact_stage(changes["stage"])
-        next_manifest = replace(
-            self,
-            updated_at=changes.pop("updated_at", utc_now_iso()),
-            **changes,
-        )
+        changes.setdefault("updated_at", utc_now_iso())
+        next_manifest = replace(self, **changes)
         if build_metadata is not None:
             merged_metadata = dict(self.build_metadata)
             merged_metadata.update(dict(build_metadata))
@@ -187,41 +216,42 @@ class ArtifactManifest:
         return next_manifest
 
     @classmethod
-    def from_dict(cls, payload: Mapping[str, Any] | None) -> "ArtifactManifest":
+    def from_dict(cls, payload: Mapping[str, object] | None) -> "ArtifactManifest":
         if not payload:
             return cls()
         return cls(
-            schema_version=str(payload.get("schema_version") or ARTIFACT_MANIFEST_SCHEMA_VERSION),
-            manifest_version=int(payload.get("manifest_version") or 0),
-            semantic_schema_version=str(
+            schema_version=coerce_str(payload.get("schema_version"))
+            or ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            manifest_version=coerce_int(payload.get("manifest_version")),
+            semantic_schema_version=coerce_str(
                 payload.get("semantic_schema_version") or SEMANTIC_SCHEMA_VERSION
             ),
             stage=_artifact_stage(payload.get("stage")),
-            updated_at=str(payload.get("updated_at") or utc_now_iso()),
-            published_at=str(payload.get("published_at") or ""),
-            graph_signature=str(payload.get("graph_signature") or ""),
-            document_signature=str(payload.get("document_signature") or ""),
-            embedding_signature=str(payload.get("embedding_signature") or ""),
-            index_signature=str(payload.get("index_signature") or ""),
-            index_version=str(payload.get("index_version") or ""),
-            collection_name=str(payload.get("collection_name") or ""),
-            collection_base_name=str(
+            updated_at=coerce_str(payload.get("updated_at")) or utc_now_iso(),
+            published_at=coerce_str(payload.get("published_at")),
+            graph_signature=coerce_str(payload.get("graph_signature")),
+            document_signature=coerce_str(payload.get("document_signature")),
+            embedding_signature=coerce_str(payload.get("embedding_signature")),
+            index_signature=coerce_str(payload.get("index_signature")),
+            index_version=coerce_str(payload.get("index_version")),
+            collection_name=coerce_str(payload.get("collection_name")),
+            collection_base_name=coerce_str(
                 payload.get("collection_base_name") or payload.get("collection_name") or ""
             ),
-            collection_slot=str(payload.get("collection_slot") or ""),
-            previous_collection_name=str(payload.get("previous_collection_name") or ""),
-            documents_path=str(payload.get("documents_path") or ""),
-            chunks_path=str(payload.get("chunks_path") or ""),
-            manifest_path=str(payload.get("manifest_path") or ""),
-            total_recipes=int(payload.get("total_recipes") or 0),
-            total_ingredients=int(payload.get("total_ingredients") or 0),
-            total_cooking_steps=int(payload.get("total_cooking_steps") or 0),
-            total_documents=int(payload.get("total_documents") or 0),
-            total_chunks=int(payload.get("total_chunks") or 0),
-            vector_rows=int(payload.get("vector_rows") or 0),
+            collection_slot=coerce_str(payload.get("collection_slot")),
+            previous_collection_name=coerce_str(payload.get("previous_collection_name")),
+            documents_path=coerce_str(payload.get("documents_path")),
+            chunks_path=coerce_str(payload.get("chunks_path")),
+            manifest_path=coerce_str(payload.get("manifest_path")),
+            total_recipes=coerce_int(payload.get("total_recipes")),
+            total_ingredients=coerce_int(payload.get("total_ingredients")),
+            total_cooking_steps=coerce_int(payload.get("total_cooking_steps")),
+            total_documents=coerce_int(payload.get("total_documents")),
+            total_chunks=coerce_int(payload.get("total_chunks")),
+            vector_rows=coerce_int(payload.get("vector_rows")),
             cache_hit=bool(payload.get("cache_hit")),
-            last_error=str(payload.get("last_error") or ""),
-            build_metadata=dict(payload.get("build_metadata") or {}),
+            last_error=coerce_str(payload.get("last_error")),
+            build_metadata=coerce_json_object(payload.get("build_metadata")),
         )
 
     @classmethod
@@ -244,20 +274,43 @@ class ArtifactManifest:
         )
 
 
-def _json_safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_json_safe(item) for item in value]
-    return str(value)
+def vector_artifact_mismatch_reason(
+    *,
+    persisted_manifest: ArtifactManifest,
+    current_manifest: ArtifactManifest,
+) -> str:
+    if not persisted_manifest.is_ready:
+        return "Artifact manifest is missing or not ready. Existing vector collection cannot be trusted."
+    if (
+        not persisted_manifest.index_signature
+        or not current_manifest.index_signature
+        or persisted_manifest.index_signature != current_manifest.index_signature
+    ):
+        return "Persisted vector artifacts do not match the current document or embedding configuration."
+    persisted_base_name = (
+        persisted_manifest.collection_base_name or persisted_manifest.collection_name
+    )
+    current_base_name = current_manifest.collection_base_name or current_manifest.collection_name
+    if persisted_base_name and current_base_name and persisted_base_name != current_base_name:
+        return "Persisted vector collection name does not match the current runtime configuration."
+    return ""
+
+
+def vector_artifacts_compatible(
+    *,
+    persisted_manifest: ArtifactManifest,
+    current_manifest: ArtifactManifest,
+) -> bool:
+    return not vector_artifact_mismatch_reason(
+        persisted_manifest=persisted_manifest,
+        current_manifest=current_manifest,
+    )
 
 
 @dataclass(slots=True)
 class DocumentArtifactResult:
-    documents: List[TextDocument]
-    chunks: List[TextDocument]
+    documents: list[TextDocument]
+    chunks: list[TextDocument]
     manifest: ArtifactManifest
     cache_hit: bool
 
@@ -298,10 +351,13 @@ __all__ = [
     "ARTIFACT_STAGE_REBUILDING",
     "ARTIFACT_STAGE_STALE",
     "ArtifactManifest",
+    "ArtifactManifestUpdate",
     "ArtifactStage",
     "DocumentArtifactResult",
     "DocumentArtifactSignatures",
     "DocumentArtifactStats",
     "artifact_health",
     "utc_now_iso",
+    "vector_artifact_mismatch_reason",
+    "vector_artifacts_compatible",
 ]

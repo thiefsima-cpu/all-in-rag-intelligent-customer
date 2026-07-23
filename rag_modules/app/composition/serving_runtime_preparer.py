@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from ...configuration.models import GraphRAGConfig
-from ...kernel.artifact_validation import vector_artifact_mismatch_reason
-from ...kernel.artifacts import ARTIFACT_STAGE_STALE, ArtifactManifest
+from ...kernel.artifacts import (
+    ARTIFACT_STAGE_STALE,
+    ArtifactManifest,
+    vector_artifact_mismatch_reason,
+)
 from ...kernel.documents import TextDocument
 from ...runtime.artifact_ports import (
     ArtifactManifestStorePort,

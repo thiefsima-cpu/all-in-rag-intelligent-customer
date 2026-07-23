@@ -2,39 +2,47 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Mapping
+from typing import Protocol, TypeAlias, runtime_checkable
 
 from ..kernel.json_types import JsonObject
+
+
+class RuntimeProfilePayloadSource(Protocol):
+    """Typed runtime DTO that exposes an explicit JSON serialization boundary."""
+
+    def to_dict(self) -> object: ...
+
+
+StatisticsPayload: TypeAlias = Mapping[str, object] | RuntimeProfilePayloadSource
 
 
 class GraphStatisticsSourcePort(Protocol):
     """Graph data source shape needed for runtime diagnostics."""
 
-    def get_statistics(self) -> object: ...
+    def get_statistics(self) -> StatisticsPayload: ...
 
 
 class VectorCollectionStatisticsSourcePort(Protocol):
     """Vector collection source shape needed for runtime diagnostics."""
 
-    def get_collection_stats(self, collection_name: str | None = None) -> object: ...
+    def get_collection_stats(
+        self,
+        collection_name: str | None = None,
+    ) -> StatisticsPayload: ...
 
 
 class RouteStatisticsSourcePort(Protocol):
     """Routing source shape needed for runtime diagnostics."""
 
-    def get_route_statistics(self) -> object: ...
+    def get_route_statistics(self) -> StatisticsPayload: ...
 
 
+@runtime_checkable
 class QueryTraceStatisticsSourcePort(Protocol):
     """Query trace source shape needed for runtime diagnostics."""
 
-    def stats(self) -> object: ...
-
-
-class RuntimeProfilePayloadSource(Protocol):
-    """Runtime-profile shaped object that can expose a JSON-compatible payload."""
-
-    def to_dict(self) -> object: ...
+    def stats(self) -> StatisticsPayload: ...
 
 
 class RuntimeStatsAccessPort(Protocol):
@@ -72,5 +80,6 @@ __all__ = [
     "RouteStatisticsSourcePort",
     "RuntimeProfilePayloadSource",
     "RuntimeStatsAccessPort",
+    "StatisticsPayload",
     "VectorCollectionStatisticsSourcePort",
 ]

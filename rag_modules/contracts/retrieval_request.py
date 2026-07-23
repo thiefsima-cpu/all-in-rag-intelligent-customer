@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
-from ._common import coerce_str
+from ..kernel.json_types import coerce_str
 from .query_constraints import QueryConstraints
 from .query_plan import QueryPlan
 from .query_settings import QuerySemanticRuntimeSettings

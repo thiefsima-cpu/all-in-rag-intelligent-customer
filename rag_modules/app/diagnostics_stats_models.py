@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from ..kernel.json_types import (
     JsonObject,
     JsonValue,
-    coerce_json_float,
-    coerce_json_int,
+    coerce_float,
+    coerce_int,
     coerce_json_object,
 )
 from .diagnostics_payloads import (
@@ -118,14 +118,14 @@ class TraceStatsDiagnostics:
             enabled=coerce_json_bool(data.get("enabled"), False),
             path=str(data.get("path") or ""),
             sink_type=str(data.get("sink_type") or ""),
-            dropped_events=coerce_json_int(data.get("dropped_events"), 0),
-            queued_events=coerce_json_int(data.get("queued_events"), 0),
-            emitted_events=coerce_json_int(data.get("emitted_events"), 0),
-            failed_events=coerce_json_int(data.get("failed_events"), 0),
+            dropped_events=coerce_int(data.get("dropped_events"), 0),
+            queued_events=coerce_int(data.get("queued_events"), 0),
+            emitted_events=coerce_int(data.get("emitted_events"), 0),
+            failed_events=coerce_int(data.get("failed_events"), 0),
             async_enabled=coerce_json_bool(data.get("async_enabled"), False),
-            written_events=coerce_json_int(data.get("written_events"), 0),
+            written_events=coerce_int(data.get("written_events"), 0),
             closed=coerce_json_bool(data.get("closed"), False),
-            max_queue_size=coerce_json_int(data.get("max_queue_size"), 0),
+            max_queue_size=coerce_int(data.get("max_queue_size"), 0),
             extra=extra_payload(data, _TRACE_STATS_KEYS),
             present_keys=frozenset(data),
         )
@@ -179,16 +179,16 @@ class DataStatsDiagnostics:
     def from_payload(cls, payload: object) -> "DataStatsDiagnostics":
         data = coerce_json_object(payload)
         return cls(
-            total_recipes=coerce_json_int(data.get("total_recipes"), 0),
-            total_ingredients=coerce_json_int(data.get("total_ingredients"), 0),
-            total_cooking_steps=coerce_json_int(data.get("total_cooking_steps"), 0),
-            total_documents=coerce_json_int(data.get("total_documents"), 0),
-            total_chunks=coerce_json_int(data.get("total_chunks"), 0),
+            total_recipes=coerce_int(data.get("total_recipes"), 0),
+            total_ingredients=coerce_int(data.get("total_ingredients"), 0),
+            total_cooking_steps=coerce_int(data.get("total_cooking_steps"), 0),
+            total_documents=coerce_int(data.get("total_documents"), 0),
+            total_chunks=coerce_int(data.get("total_chunks"), 0),
             categories=int_map(data.get("categories")),
             cuisines=int_map(data.get("cuisines")),
             difficulties=int_map(data.get("difficulties")),
-            avg_content_length=coerce_json_float(data.get("avg_content_length"), 0.0),
-            avg_chunk_size=coerce_json_float(data.get("avg_chunk_size"), 0.0),
+            avg_content_length=coerce_float(data.get("avg_content_length"), 0.0),
+            avg_chunk_size=coerce_float(data.get("avg_chunk_size"), 0.0),
             extra=extra_payload(data, _DATA_STATS_KEYS),
             present_keys=frozenset(data),
         )
@@ -248,8 +248,8 @@ class IndexStatsDiagnostics:
             collection_name=str(data.get("collection_name") or ""),
             active_collection_name=str(data.get("active_collection_name") or ""),
             collection_slot=str(data.get("collection_slot") or ""),
-            row_count=coerce_json_int(data.get("row_count"), 0),
-            index_building_progress=coerce_json_int(data.get("index_building_progress"), 0),
+            row_count=coerce_int(data.get("row_count"), 0),
+            index_building_progress=coerce_int(data.get("index_building_progress"), 0),
             stats=coerce_json_object(data.get("stats")),
             error=str(data.get("error") or ""),
             extra=extra_payload(data, _INDEX_STATS_KEYS),
@@ -295,10 +295,10 @@ class RouteStatsDiagnostics:
     def from_payload(cls, payload: object) -> "RouteStatsDiagnostics":
         data = coerce_json_object(payload)
         return cls(
-            traditional_count=coerce_json_int(data.get("traditional_count"), 0),
-            graph_rag_count=coerce_json_int(data.get("graph_rag_count"), 0),
-            combined_count=coerce_json_int(data.get("combined_count"), 0),
-            total_queries=coerce_json_int(data.get("total_queries"), 0),
+            traditional_count=coerce_int(data.get("traditional_count"), 0),
+            graph_rag_count=coerce_int(data.get("graph_rag_count"), 0),
+            combined_count=coerce_int(data.get("combined_count"), 0),
+            total_queries=coerce_int(data.get("total_queries"), 0),
             traditional_ratio=optional_json_float(data, "traditional_ratio"),
             graph_rag_ratio=optional_json_float(data, "graph_rag_ratio"),
             combined_ratio=optional_json_float(data, "combined_ratio"),

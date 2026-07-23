@@ -27,7 +27,7 @@ class GenerationPromptContractTests(unittest.TestCase):
                 )
             ],
         )
-        return AnswerContext(question=package.question).with_evidence_package(package)
+        return AnswerContext(question=package.question).with_evidence_package(package.to_dict())
 
     def test_direct_prompt_render_exposes_contract_metadata(self) -> None:
         builder = GenerationPromptBuilder(

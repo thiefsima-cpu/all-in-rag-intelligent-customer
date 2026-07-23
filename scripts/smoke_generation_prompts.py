@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag_modules.contracts.runtime import AnswerContext, RetrievalOutcome
 from rag_modules.generation import RenderedPrompt, decide_generation_mode
+from rag_modules.kernel.json_types import coerce_json_object
 from scripts.smoke_generation_plans import (
     DEFAULT_CORPUS_PATH as DEFAULT_PLAN_CORPUS_PATH,
 )
@@ -98,14 +99,16 @@ def build_rendered_prompt(
             evidence_documents=plan_case.evidence_documents,
         ),
         analysis=plan_case.analysis,
-    ).with_evidence_package(package)
+    ).with_evidence_package(coerce_json_object(package.to_dict()))
     decision = decide_generation_mode(
         package=package,
         settings=settings,
         analysis=plan_case.analysis,
     )
     selected_package = package.limit_items(decision.evidence_limit)
-    selected_context = answer_context.with_evidence_package(selected_package)
+    selected_context = answer_context.with_evidence_package(
+        coerce_json_object(selected_package.to_dict())
+    )
 
     if case.prompt_type == "direct":
         return prompt_builder.render_direct_answer_prompt_from_context(selected_context)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, TypeVar, cast
 
-from ._common import coerce_float, coerce_str
+from ..kernel.json_types import coerce_float, coerce_str
 
 
 class PageDocumentLike(Protocol):

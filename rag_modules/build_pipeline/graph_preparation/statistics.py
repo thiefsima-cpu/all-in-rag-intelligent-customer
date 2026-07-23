@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...contracts.graph_preparation import GraphPreparationStats as _GraphPreparationStats
+from ...kernel.json_types import coerce_int
 from .state import GraphPreparationState
 
 UNKNOWN_VALUE = "未知"
@@ -50,11 +51,12 @@ class GraphPreparationStatisticsService:
             cuisines=cuisines,
             difficulties=difficulties,
             avg_content_length=sum(
-                int(document.metadata.get("content_length", 0) or 0) for document in state.documents
+                coerce_int(document.metadata.get("content_length"), 0)
+                for document in state.documents
             )
             / len(state.documents),
             avg_chunk_size=(
-                sum(int(chunk.metadata.get("chunk_size", 0) or 0) for chunk in state.chunks)
+                sum(coerce_int(chunk.metadata.get("chunk_size"), 0) for chunk in state.chunks)
                 / len(state.chunks)
                 if state.chunks
                 else 0.0
@@ -85,7 +87,7 @@ class GraphPreparationStatisticsService:
             document_types=document_types,
             avg_content_length=(
                 sum(
-                    int(document.metadata.get("content_length", 0) or 0)
+                    coerce_int(document.metadata.get("content_length"), 0)
                     for document in state.documents
                 )
                 / len(state.documents)
@@ -93,7 +95,7 @@ class GraphPreparationStatisticsService:
                 else 0.0
             ),
             avg_chunk_size=(
-                sum(int(chunk.metadata.get("chunk_size", 0) or 0) for chunk in state.chunks)
+                sum(coerce_int(chunk.metadata.get("chunk_size"), 0) for chunk in state.chunks)
                 / len(state.chunks)
                 if state.chunks
                 else 0.0

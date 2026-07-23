@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List
 
+from ..kernel.json_types import as_string_list, clamp_float, clamp_int
 from ..kernel.routing import SearchStrategy
 from ..kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .query_constraints import QueryConstraints
@@ -19,7 +20,6 @@ from .query_types import (
     query_planner_mode,
     search_strategy,
 )
-from .query_utils import as_list, clamp_float, clamp_int
 
 
 def _resolve_semantic_profile(data: Dict[str, Any]) -> QuerySemanticProfile:
@@ -60,7 +60,7 @@ def _resolve_plan_graph_query_type(
 
 
 def _profile_values(data: Dict[str, Any], key: str, fallback: Iterable[str]) -> List[str]:
-    return as_list(data.get(key)) or list(fallback)
+    return as_string_list(data.get(key)) or list(fallback)
 
 
 @dataclass

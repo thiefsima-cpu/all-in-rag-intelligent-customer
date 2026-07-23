@@ -288,7 +288,7 @@ class AnswerContext:
         items = self.evidence_package.get("items")
         return bool(items)
 
-    def with_evidence_package(self, payload: object) -> "AnswerContext":
+    def with_evidence_package(self, payload: JsonObject) -> "AnswerContext":
         return replace(self, evidence_package=coerce_json_object(payload))
 
     def to_dict(self) -> JsonObject:
