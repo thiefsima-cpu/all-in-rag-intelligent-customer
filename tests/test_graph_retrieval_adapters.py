@@ -92,7 +92,7 @@ def test_graph_kv_guards_scores_deduplicates_and_interleaves() -> None:
 
     assert [document.retrieval_level for document in results] == ["entity", "topic"]
     assert results[0].score <= 1.0
-    assert results[1].recipe_name == "Mapo tofu"
+    assert results[1].entity_name == "Mapo tofu"
 
 
 def test_graph_kv_skips_nonmatching_entries_and_limits_results() -> None:

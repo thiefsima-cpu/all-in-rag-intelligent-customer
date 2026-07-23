@@ -17,6 +17,7 @@ from ..contracts.runtime.errors import (
     retrieval_error_detail,
 )
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
+from ..kernel.json_types import coerce_json_object
 from ..kernel.retrieval import (
     CandidateSourceDegradationStrategy as _CandidateSourceDegradationStrategy,
 )
@@ -298,10 +299,11 @@ class RetrievalCandidateGenerator:
             metadata.setdefault("search_method", doc.search_method or spec.search_method)
             metadata.setdefault("search_type", doc.search_type or spec.search_type)
             normalized.append(
-                doc.copy_with(
+                replace(
+                    doc,
                     search_method=doc.search_method or spec.search_method,
                     search_type=doc.search_type or spec.search_type,
-                    metadata=metadata,
+                    metadata=coerce_json_object(metadata),
                 )
             )
         return normalized

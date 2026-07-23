@@ -20,8 +20,8 @@
     "evidence_documents": [
       {
         "content": "水煮肉片的麻辣鲜香主要来自豆瓣酱、花椒和辣椒的共同作用，上浆能让肉片更滑嫩，垫底蔬菜吸收汤汁后补充层次感。",
-        "recipe_id": "recipe-1",
-        "recipe_name": "水煮肉片",
+        "entity_id": "recipe-1",
+        "entity_name": "水煮肉片",
         "source": "graph_rag",
         "score": 0.96,
         "matched_terms": ["麻辣鲜香", "豆瓣酱", "花椒", "辣椒", "上浆"],
@@ -44,8 +44,8 @@
       },
       {
         "content": "垫底蔬菜吸收汤汁和油香，能承接辣味与香味，让整体口感更有层次。",
-        "recipe_id": "recipe-1",
-        "recipe_name": "水煮肉片",
+        "entity_id": "recipe-1",
+        "entity_name": "水煮肉片",
         "source": "graph_rag",
         "score": 0.89,
         "matched_terms": ["垫底蔬菜", "层次感"],
@@ -80,8 +80,8 @@
     "evidence_documents": [
       {
         "content": "鲫鱼豆腐汤口味清淡，豆腐吸收汤味，适合想吃得温和一点的场景。",
-        "recipe_id": "recipe-2",
-        "recipe_name": "鲫鱼豆腐汤",
+        "entity_id": "recipe-2",
+        "entity_name": "鲫鱼豆腐汤",
         "source": "hybrid",
         "score": 0.91,
         "matched_terms": ["豆腐", "清淡"],
@@ -99,8 +99,8 @@
       },
       {
         "content": "家常豆腐可以少油处理，豆腐是主料，整体风味比重口菜更克制。",
-        "recipe_id": "recipe-3",
-        "recipe_name": "家常豆腐",
+        "entity_id": "recipe-3",
+        "entity_name": "家常豆腐",
         "source": "hybrid",
         "score": 0.88,
         "matched_terms": ["豆腐", "少油"],
@@ -139,8 +139,8 @@
     "evidence_documents": [
       {
         "content": "宫保鸡丁常用花生补充香脆口感，辣椒提供辣味和香气，但当前证据没有直接给出两者之间的图谱关系链。",
-        "recipe_id": "recipe-4",
-        "recipe_name": "宫保鸡丁",
+        "entity_id": "recipe-4",
+        "entity_name": "宫保鸡丁",
         "source": "combined",
         "score": 0.9,
         "matched_terms": ["花生", "辣椒", "风味"],

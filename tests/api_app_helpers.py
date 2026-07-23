@@ -226,7 +226,7 @@ def _answer_result(question: str, *, stream: bool = False) -> QuestionAnswerResu
     )
     evidence_document = EvidenceDocument(
         content="Mapo tofu is a tofu dish.",
-        recipe_name="mapo tofu",
+        entity_name="mapo tofu",
         score=0.93,
         search_type="hybrid",
         search_method="vector",

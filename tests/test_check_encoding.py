@@ -58,5 +58,5 @@ class GraphEvidenceBuilderEncodingTests(unittest.TestCase):
 
         evidence = GraphEvidenceBuilder().subgraph_to_evidence(subgraph, [], "query")
 
-        self.assertEqual(evidence[0].recipe_name, READABLE_SUBGRAPH_NAME)
+        self.assertEqual(evidence[0].entity_name, READABLE_SUBGRAPH_NAME)
         self.assertEqual(evidence[0].metadata["recipe_name"], READABLE_SUBGRAPH_NAME)

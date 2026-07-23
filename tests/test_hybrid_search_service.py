@@ -64,7 +64,7 @@ class _ControlCapturingRuntime(_FakeRuntime):
 
     def vector_candidates(self, request):
         self.vector_requests.append(request)
-        return [EvidenceDocument(content="v", recipe_name="V")]
+        return [EvidenceDocument(content="v", entity_name="V")]
 
 
 class _StubCandidateGenerator:
@@ -100,11 +100,11 @@ class _StubCandidateGenerator:
                         search_type="constraint_recipe",
                         rank_order=0,
                     ),
-                    documents=[EvidenceDocument(content="c", recipe_name="C")],
+                    documents=[EvidenceDocument(content="c", entity_name="C")],
                 ),
                 CandidateSourceResult(
                     spec=vector_spec,
-                    documents=[EvidenceDocument(content="v", recipe_name="V")],
+                    documents=[EvidenceDocument(content="v", entity_name="V")],
                 ),
             ],
             degraded=degraded,
@@ -139,7 +139,7 @@ class HybridSearchServiceTests(unittest.TestCase):
 
         docs = source.retrieve(request)
 
-        self.assertEqual(docs[0].recipe_name, "V")
+        self.assertEqual(docs[0].entity_name, "V")
         self.assertIs(runtime.vector_requests[0].control, control)
 
     def test_hybrid_evidence_search_uses_generator_and_parent_enrichment(self) -> None:
@@ -163,7 +163,7 @@ class HybridSearchServiceTests(unittest.TestCase):
 
         outcome = service.hybrid_evidence_search(request)
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["C", "V"])
         self.assertEqual(generator.requests[0].candidate_k, 4)
         self.assertEqual(runtime.attach_calls[0]["top_n"], 2)
         self.assertEqual(
@@ -187,7 +187,7 @@ class HybridSearchServiceTests(unittest.TestCase):
 
         outcome = service.hybrid_evidence_search(request)
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["C", "V"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["C", "V"])
         self.assertTrue(outcome.retrieval_degraded)
         self.assertEqual(outcome.degraded_sources, ["vector"])
         self.assertTrue(outcome.circuit_breaker_triggered)
@@ -216,8 +216,8 @@ class HybridSearchServiceTests(unittest.TestCase):
         dual_docs = service.dual_level_candidates(request)
         bm25_docs = service.bm25_candidates(request)
 
-        self.assertEqual([doc.recipe_name for doc in constraint_docs], ["C"])
-        self.assertEqual([doc.recipe_name for doc in vector_docs], ["V"])
+        self.assertEqual([doc.entity_name for doc in constraint_docs], ["C"])
+        self.assertEqual([doc.entity_name for doc in vector_docs], ["V"])
         self.assertEqual(dual_docs, [])
         self.assertEqual(bm25_docs, [])
         self.assertEqual([seen.candidate_k for seen in generator.requests], [3, 3, 3, 3])

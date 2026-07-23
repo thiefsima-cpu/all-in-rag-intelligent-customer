@@ -3,14 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Protocol
 
-from ..contracts import EvidenceDocument
-
-
-class PageDocumentLike(Protocol):
-    page_content: str
-    metadata: Dict[str, Any]
+from ..contracts import EvidenceDocument, JsonObject, coerce_json_object
 
 
 @dataclass
@@ -24,11 +18,11 @@ class EvidenceUnit:
     entity_name: str = ""
     domain: str = ""
     relation_type: str = ""
-    entities: List[str] = field(default_factory=list)
+    entities: list[str] = field(default_factory=list)
     is_graph_evidence: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: JsonObject = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         payload = {
             "unit_id": self.unit_id,
             "evidence_type": self.evidence_type,
@@ -44,7 +38,7 @@ class EvidenceUnit:
         }
         if self.domain == "recipe":
             payload.update({"recipe_id": self.entity_id, "recipe_name": self.entity_name})
-        return payload
+        return coerce_json_object(payload)
 
 
 @dataclass
@@ -52,15 +46,15 @@ class AggregatedEvidence:
     entity_id: str
     entity_name: str
     full_document: str = ""
-    documents: List[EvidenceDocument] = field(default_factory=list)
-    matched_terms: List[str] = field(default_factory=list)
-    graph_paths: List[Any] = field(default_factory=list)
-    evidence_units: List[Dict[str, Any]] = field(default_factory=list)
-    constraint_reasons: List[str] = field(default_factory=list)
-    retrieval_sources: List[str] = field(default_factory=list)
+    documents: list[EvidenceDocument] = field(default_factory=list)
+    matched_terms: list[str] = field(default_factory=list)
+    graph_paths: list[JsonObject] = field(default_factory=list)
+    evidence_units: list[JsonObject] = field(default_factory=list)
+    constraint_reasons: list[str] = field(default_factory=list)
+    retrieval_sources: list[str] = field(default_factory=list)
     confidence: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "entity_id": self.entity_id,
             "entity_name": self.entity_name,
@@ -92,4 +86,4 @@ class AggregatedEvidence:
 
 RecipeEvidence = AggregatedEvidence
 
-__all__ = ["AggregatedEvidence", "EvidenceUnit", "PageDocumentLike", "RecipeEvidence"]
+__all__ = ["AggregatedEvidence", "EvidenceUnit", "RecipeEvidence"]

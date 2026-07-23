@@ -83,12 +83,12 @@ class _StubStrategy:
     def execute(self, request, *, services):
         self.calls.append({"request": request, "services": services})
         return RouteExecutionOutcome(
-            documents=[EvidenceDocument(content="graph", recipe_name="Fish-Fragrant Pork")],
+            documents=[EvidenceDocument(content="graph", entity_name="Fish-Fragrant Pork")],
             fallbacks=["graph_empty_to_hybrid"],
             stages=[
                 RouteExecutionStageResult(
                     name="graph_rag",
-                    documents=[EvidenceDocument(content="graph", recipe_name="Fish-Fragrant Pork")],
+                    documents=[EvidenceDocument(content="graph", entity_name="Fish-Fragrant Pork")],
                     latency_ms=12.5,
                     details={"path_count": 2},
                 )
@@ -140,7 +140,7 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
 
         docs = orchestrator.execute(request, trace=trace)
 
-        self.assertEqual([doc.recipe_name for doc in docs], ["Fish-Fragrant Pork"])
+        self.assertEqual([doc.entity_name for doc in docs], ["Fish-Fragrant Pork"])
         self.assertEqual(len(strategy.calls), 1)
         self.assertEqual(trace.snapshot.fallbacks, ["graph_empty_to_hybrid"])
         self.assertIn("graph_rag", trace.snapshot.stages)
@@ -149,7 +149,7 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
     def test_execute_exception_fallback_records_hybrid_stage(self) -> None:
         orchestrator = RouteSearchOrchestrator(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="fallback", recipe_name="Mapo Tofu")]
+                [EvidenceDocument(content="fallback", entity_name="Mapo Tofu")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(),
             retrieval_profile=SimpleNamespace(candidates=SimpleNamespace()),
@@ -181,13 +181,13 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
             error=RuntimeError("boom"),
         )
 
-        self.assertEqual([doc.recipe_name for doc in docs], ["Mapo Tofu"])
+        self.assertEqual([doc.entity_name for doc in docs], ["Mapo Tofu"])
         self.assertEqual(trace.snapshot.fallbacks, ["router_exception_to_hybrid"])
         self.assertIn("hybrid_exception_fallback", trace.snapshot.stages)
 
     def test_execute_exception_fallback_skips_already_degraded_candidate_sources(self) -> None:
         traditional = _FakeTraditionalRetrieval(
-            [EvidenceDocument(content="fallback", recipe_name="Mapo Tofu")]
+            [EvidenceDocument(content="fallback", entity_name="Mapo Tofu")]
         )
         orchestrator = RouteSearchOrchestrator(
             traditional_retrieval=traditional,
@@ -306,7 +306,7 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
 
         orchestrator.post_process(
             request,
-            [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")],
+            [EvidenceDocument(content="hybrid", entity_name="Mapo Tofu")],
             trace=RouteTraceRecorder(
                 query=request.query,
                 requested_top_k=request.top_k,
@@ -347,7 +347,7 @@ class RouteSearchOrchestratorTests(unittest.TestCase):
 
         orchestrator.post_process(
             request,
-            [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")],
+            [EvidenceDocument(content="hybrid", entity_name="Mapo Tofu")],
             trace=trace,
         )
 

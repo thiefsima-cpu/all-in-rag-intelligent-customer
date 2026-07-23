@@ -19,8 +19,8 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     evidence_units=[{"claim": "ingredient X balances ingredient Y"}],
                     content="dish A balances ingredient X and Y",
@@ -101,8 +101,8 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     evidence_units=[
                         {
@@ -134,8 +134,8 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     graph_paths=[oversized_path],
                 )

@@ -275,7 +275,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
     def test_hybrid_strategy_returns_hybrid_stage(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")]
+                [EvidenceDocument(content="hybrid", entity_name="Mapo Tofu")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(),
             retrieval_profile=_FakeRetrievalProfile(),
@@ -290,14 +290,14 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             services=services,
         )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Mapo Tofu"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Mapo Tofu"])
         self.assertEqual(outcome.stages[0].name, "hybrid")
         self.assertEqual(outcome.fallbacks, [])
 
     def test_hybrid_strategy_records_degradation_details_on_stage(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_DegradedTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Mapo Tofu")]
+                [EvidenceDocument(content="hybrid", entity_name="Mapo Tofu")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(),
             retrieval_profile=_FakeRetrievalProfile(),
@@ -312,7 +312,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             services=services,
         )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Mapo Tofu"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Mapo Tofu"])
         self.assertTrue(outcome.stages[0].details["retrieval_degraded"])
         self.assertEqual(outcome.stages[0].details["degraded_sources"], ["bm25"])
         self.assertTrue(outcome.stages[0].details["circuit_breaker_triggered"])
@@ -321,7 +321,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
     def test_graph_strategy_falls_back_to_hybrid_when_graph_is_empty(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="fallback", recipe_name="Shui Zhu Pork")]
+                [EvidenceDocument(content="fallback", entity_name="Shui Zhu Pork")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval([]),
             retrieval_profile=_FakeRetrievalProfile(),
@@ -336,17 +336,17 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             services=services,
         )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Shui Zhu Pork"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Shui Zhu Pork"])
         self.assertEqual(outcome.fallbacks, ["graph_empty_to_hybrid"])
         self.assertEqual([stage.name for stage in outcome.stages], ["graph_rag", "hybrid_fallback"])
 
     def test_graph_strategy_does_not_count_normal_supplement_as_fallback(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="supplement", recipe_name="Supplement Dish")]
+                [EvidenceDocument(content="supplement", entity_name="Supplement Dish")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish")]
+                [EvidenceDocument(content="graph", entity_name="Graph Dish")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )
@@ -368,8 +368,8 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
     def test_graph_strategy_copies_request_fields_for_graph_execution(self) -> None:
         graph = _FakeGraphRetrieval(
             [
-                EvidenceDocument(content="graph-1", recipe_name="Graph One"),
-                EvidenceDocument(content="graph-2", recipe_name="Graph Two"),
+                EvidenceDocument(content="graph-1", entity_name="Graph One"),
+                EvidenceDocument(content="graph-2", entity_name="Graph Two"),
             ]
         )
         traditional = _FakeTraditionalRetrieval()
@@ -412,7 +412,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(traditional.enrich_calls[0]["top_n"], 2)
 
     def test_graph_strategy_stops_before_retrieval_when_control_is_cancelled(self) -> None:
-        graph = _FakeGraphRetrieval([EvidenceDocument(content="graph", recipe_name="Must Not Run")])
+        graph = _FakeGraphRetrieval([EvidenceDocument(content="graph", entity_name="Must Not Run")])
         traditional = _FakeTraditionalRetrieval()
         services = RouteRetrievalServices(
             traditional_retrieval=traditional,
@@ -435,7 +435,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         events: list[str] = []
         graph_trace = {"query_type": "path_finding", "path_count": 0, "doc_count": 0}
         traditional = _OrderedTraditionalRetrieval(
-            [EvidenceDocument(content="fallback", recipe_name="Fallback Dish")],
+            [EvidenceDocument(content="fallback", entity_name="Fallback Dish")],
             events=events,
         )
         services = RouteRetrievalServices(
@@ -458,7 +458,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             [
                 (
                     stage.name,
-                    [doc.recipe_name for doc in stage.documents],
+                    [doc.entity_name for doc in stage.documents],
                     stage.extra,
                     stage.details,
                 )
@@ -476,13 +476,13 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         events: list[str] = []
         graph_trace = {"query_type": "multi_hop", "path_count": 1, "doc_count": 1}
         traditional = _OrderedTraditionalRetrieval(
-            [EvidenceDocument(content="supplement", recipe_name="Supplement Dish", node_id="2")],
+            [EvidenceDocument(content="supplement", entity_name="Supplement Dish", node_id="2")],
             events=events,
         )
         services = RouteRetrievalServices(
             traditional_retrieval=traditional,
             graph_rag_retrieval=_OrderedGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="1")],
+                [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="1")],
                 events=events,
                 trace=graph_trace,
             ),
@@ -499,7 +499,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             [
                 (
                     stage.name,
-                    [doc.recipe_name for doc in stage.documents],
+                    [doc.entity_name for doc in stage.documents],
                     stage.extra,
                     stage.details,
                 )
@@ -522,7 +522,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertIs(supplement_request.query_plan, request.query_plan)
         self.assertIs(supplement_request.control, control)
         self.assertEqual(
-            [doc.recipe_name for doc in outcome.documents],
+            [doc.entity_name for doc in outcome.documents],
             ["Graph Dish", "Supplement Dish"],
         )
         self.assertEqual(outcome.fallbacks, [])
@@ -531,14 +531,14 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
                 [
-                    EvidenceDocument(content="traditional-1", recipe_name="A", node_id="1"),
-                    EvidenceDocument(content="traditional-2", recipe_name="B", node_id="2"),
+                    EvidenceDocument(content="traditional-1", entity_name="A", node_id="1"),
+                    EvidenceDocument(content="traditional-2", entity_name="B", node_id="2"),
                 ]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
                 [
-                    EvidenceDocument(content="graph-1", recipe_name="C", node_id="3"),
-                    EvidenceDocument(content="graph-2", recipe_name="D", node_id="4"),
+                    EvidenceDocument(content="graph-1", entity_name="C", node_id="3"),
+                    EvidenceDocument(content="graph-2", entity_name="D", node_id="4"),
                 ]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
@@ -553,7 +553,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             services=services,
         )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents[:4]], ["C", "A", "D", "B"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents[:4]], ["C", "A", "D", "B"])
         self.assertEqual(outcome.stages[0].name, "combined")
         self.assertEqual(outcome.stages[0].details["traditional_doc_count"], 2)
         self.assertEqual(outcome.stages[0].details["graph_doc_count"], 2)
@@ -563,10 +563,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
     def test_graph_strategy_uses_request_scoped_trace_when_available(self) -> None:
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="fallback", recipe_name="Fallback")]
+                [EvidenceDocument(content="fallback", entity_name="Fallback")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish")],
+                [EvidenceDocument(content="graph", entity_name="Graph Dish")],
                 trace={"query_type": "path_finding", "path_count": 3, "doc_count": 1},
             ),
             retrieval_profile=_FakeRetrievalProfile(),
@@ -589,12 +589,12 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         traditional_started = threading.Event()
         graph_started = threading.Event()
         traditional = _ParallelTraditionalRetrieval(
-            [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")],
+            [EvidenceDocument(content="traditional", entity_name="T", node_id="10")],
             own_started=traditional_started,
             other_started=graph_started,
         )
         graph = _ParallelGraphRetrieval(
-            [EvidenceDocument(content="graph", recipe_name="G", node_id="20")],
+            [EvidenceDocument(content="graph", entity_name="G", node_id="20")],
             own_started=graph_started,
             other_started=traditional_started,
         )
@@ -625,10 +625,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         release_graph = threading.Event()
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+                [EvidenceDocument(content="hybrid", entity_name="Hybrid Dish", node_id="10")]
             ),
             graph_rag_retrieval=_BlockingGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+                [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="20")],
                 started=graph_started,
                 release=release_graph,
             ),
@@ -651,7 +651,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             strategy.close()
 
         self.assertLess(time.perf_counter() - started_at, 1.0)
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Hybrid Dish"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Hybrid Dish"])
         self.assertEqual(outcome.fallbacks, ["combined_graph_timeout_to_hybrid"])
         self.assertEqual(outcome.stages[0].details["timed_out_branches"], ["graph"])
         self.assertTrue(outcome.stages[0].details["graph_timed_out"])
@@ -664,12 +664,12 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         release_hybrid = threading.Event()
         services = RouteRetrievalServices(
             traditional_retrieval=_BlockingTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")],
+                [EvidenceDocument(content="hybrid", entity_name="Hybrid Dish", node_id="10")],
                 started=hybrid_started,
                 release=release_hybrid,
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")]
+                [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="20")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )
@@ -690,7 +690,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             strategy.close()
 
         self.assertLess(time.perf_counter() - started_at, 1.0)
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Graph Dish"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Graph Dish"])
         self.assertEqual(outcome.fallbacks, ["combined_hybrid_timeout_to_graph"])
         self.assertEqual(outcome.stages[0].details["timed_out_branches"], ["traditional"])
         self.assertFalse(outcome.stages[0].details["graph_timed_out"])
@@ -703,10 +703,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         release_graph = threading.Event()
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+                [EvidenceDocument(content="hybrid", entity_name="Hybrid Dish", node_id="10")]
             ),
             graph_rag_retrieval=_BlockingGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+                [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="20")],
                 started=graph_started,
                 release=release_graph,
             ),
@@ -728,20 +728,20 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             strategy.close()
 
         self.assertLess(time.perf_counter() - started_at, 1.0)
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["Hybrid Dish"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["Hybrid Dish"])
         self.assertEqual(outcome.stages[0].details["branch_timeout_seconds"], 0.05)
 
     def test_combined_strategy_cancels_running_graph_branch_control_on_timeout(self) -> None:
         graph_started = threading.Event()
         release_graph = threading.Event()
         graph = _ControlAwareBlockingGraphRetrieval(
-            [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")],
+            [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="20")],
             started=graph_started,
             release=release_graph,
         )
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")]
+                [EvidenceDocument(content="hybrid", entity_name="Hybrid Dish", node_id="10")]
             ),
             graph_rag_retrieval=graph,
             retrieval_profile=_FakeRetrievalProfile(),
@@ -769,14 +769,14 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         traditional_started = threading.Event()
         release_traditional = threading.Event()
         traditional = _ControlAwareBlockingTraditionalRetrieval(
-            [EvidenceDocument(content="hybrid", recipe_name="Hybrid Dish", node_id="10")],
+            [EvidenceDocument(content="hybrid", entity_name="Hybrid Dish", node_id="10")],
             started=traditional_started,
             release=release_traditional,
         )
         services = RouteRetrievalServices(
             traditional_retrieval=traditional,
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="Graph Dish", node_id="20")]
+                [EvidenceDocument(content="graph", entity_name="Graph Dish", node_id="20")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )
@@ -809,10 +809,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
 
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+                [EvidenceDocument(content="traditional", entity_name="T", node_id="10")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+                [EvidenceDocument(content="graph", entity_name="G", node_id="20")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )
@@ -846,10 +846,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
 
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+                [EvidenceDocument(content="traditional", entity_name="T", node_id="10")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+                [EvidenceDocument(content="graph", entity_name="G", node_id="20")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )
@@ -889,10 +889,10 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         executor = _SynchronousExecutor()
         services = RouteRetrievalServices(
             traditional_retrieval=_FakeTraditionalRetrieval(
-                [EvidenceDocument(content="traditional", recipe_name="T", node_id="10")]
+                [EvidenceDocument(content="traditional", entity_name="T", node_id="10")]
             ),
             graph_rag_retrieval=_FakeGraphRetrieval(
-                [EvidenceDocument(content="graph", recipe_name="G", node_id="20")]
+                [EvidenceDocument(content="graph", entity_name="G", node_id="20")]
             ),
             retrieval_profile=_FakeRetrievalProfile(),
         )

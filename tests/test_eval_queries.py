@@ -158,7 +158,7 @@ def _eval_observation(
         documents = (
             EvidenceDocument(
                 content="gongbao chicken uses peanuts.",
-                recipe_name="gongbao chicken",
+                entity_name="gongbao chicken",
                 doc_id="doc-1",
                 score=1.0,
                 source="test",
@@ -632,7 +632,7 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 documents=(
                     EvidenceDocument(
                         content="irrelevant content",
-                        recipe_name="wrong dish",
+                        entity_name="wrong dish",
                         doc_id="wrong-doc",
                         score=0.5,
                         source="test",

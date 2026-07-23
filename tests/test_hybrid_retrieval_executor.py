@@ -11,11 +11,11 @@ from rag_modules.retrieval.hybrid_executor import HybridRetrievalExecutor
 class _FakeDualLevelService:
     def entity_level_retrieval(self, entity_keywords, top_k=5):
         del entity_keywords, top_k
-        return [EvidenceDocument(content="entity", recipe_name="A", score=0.9)]
+        return [EvidenceDocument(content="entity", entity_name="A", score=0.9)]
 
     def topic_level_retrieval(self, topic_keywords, top_k=5):
         del topic_keywords, top_k
-        return [EvidenceDocument(content="topic", recipe_name="B", score=0.8)]
+        return [EvidenceDocument(content="topic", entity_name="B", score=0.8)]
 
 
 class _FakeRuntime:
@@ -93,24 +93,24 @@ class _FakeSearchService:
 
     def dual_level_candidates(self, request):
         self.calls.append(("dual_level_candidates", request.query))
-        return [EvidenceDocument(content="dual", recipe_name="dual")]
+        return [EvidenceDocument(content="dual", entity_name="dual")]
 
     def vector_candidates(self, request):
         self.calls.append(("vector_candidates", request.query))
-        return [EvidenceDocument(content="vector", recipe_name="vector")]
+        return [EvidenceDocument(content="vector", entity_name="vector")]
 
     def bm25_candidates(self, request):
         self.calls.append(("bm25_candidates", request.query))
-        return [EvidenceDocument(content="bm25", recipe_name="bm25")]
+        return [EvidenceDocument(content="bm25", entity_name="bm25")]
 
     def constraint_candidates(self, request):
         self.calls.append(("constraint_candidates", request.effective_constraints.to_dict()))
-        return [EvidenceDocument(content="constraint", recipe_name="constraint")]
+        return [EvidenceDocument(content="constraint", entity_name="constraint")]
 
     def hybrid_evidence_search(self, request):
         self.calls.append(("hybrid_evidence_search", request))
         return HybridRetrievalOutcome(
-            documents=[EvidenceDocument(content="hybrid", recipe_name="hybrid")],
+            documents=[EvidenceDocument(content="hybrid", entity_name="hybrid")],
             candidate_counts={"vector": 1},
         )
 
@@ -147,15 +147,15 @@ class HybridRetrievalExecutorTests(unittest.TestCase):
 
         outcome = self.executor.hybrid_evidence_search(request)
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["hybrid"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["hybrid"])
         self.assertEqual(self.search_service.calls[-1][0], "hybrid_evidence_search")
 
     def test_entity_and_topic_results_use_runtime_contract(self) -> None:
         entity_results = self.executor.entity_level_results(["tofu"], top_k=2)
         topic_results = self.executor.topic_level_results(["light"], top_k=2)
 
-        self.assertEqual(entity_results[0].recipe_name, "A")
-        self.assertEqual(topic_results[0].recipe_name, "B")
+        self.assertEqual(entity_results[0].entity_name, "A")
+        self.assertEqual(topic_results[0].entity_name, "B")
         self.assertEqual(self.runtime.calls[0][0], "entity_level_results")
         self.assertEqual(self.runtime.calls[1][0], "topic_level_results")
 
@@ -168,7 +168,7 @@ class HybridRetrievalExecutorTests(unittest.TestCase):
         docs = self.executor.constraint_candidates(request)
 
         self.assertEqual(request.query, "recommend tofu dishes")
-        self.assertEqual(docs[0].recipe_name, "constraint")
+        self.assertEqual(docs[0].entity_name, "constraint")
         self.assertEqual(self.search_service.calls[-1][0], "constraint_candidates")
 
 

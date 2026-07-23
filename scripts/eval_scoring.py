@@ -33,7 +33,7 @@ def _document_metadata(doc: EvidenceDocument | dict[str, Any]) -> dict[str, Any]
 def _document_recipe_name(doc: EvidenceDocument | dict[str, Any]) -> str:
     if isinstance(doc, dict):
         return str(doc.get("recipe_name") or _document_metadata(doc).get("recipe_name") or "")
-    return str(doc.recipe_name or _document_metadata(doc).get("recipe_name") or "")
+    return str(doc.entity_name or _document_metadata(doc).get("recipe_name") or "")
 
 
 def _document_evidence_units(doc: EvidenceDocument | dict[str, Any]) -> List[dict]:
@@ -528,7 +528,7 @@ def build_offline_eval_observation(
     documents = tuple(
         EvidenceDocument(
             content=fixture.content,
-            recipe_name=fixture.recipe_name,
+            entity_name=fixture.recipe_name,
             node_id=f"offline-quality-{case.case_id}-{rank}",
             doc_id=f"offline-quality-{case.case_id}-{rank}",
             score=fixture.score,

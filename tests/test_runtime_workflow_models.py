@@ -32,7 +32,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             evidence_documents=[
                 EvidenceDocument(
                     content="dish A balances ingredient X and Y",
-                    recipe_name="dish A",
+                    entity_name="dish A",
                     source="graph_rag",
                     score=0.93,
                 )
@@ -53,8 +53,8 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.91,
                     evidence_units=[{"claim": "dish A uses ingredient X"}],
                     content="dish A uses ingredient X and Y",
@@ -91,7 +91,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             evidence_documents=[
                 EvidenceDocument(
                     content="dish A balances ingredient X and Y",
-                    recipe_name="dish A",
+                    entity_name="dish A",
                     source="graph_rag",
                     score=0.93,
                 )

@@ -155,7 +155,7 @@ class _PressureTestSystem:
         self.query_tracer.record(
             query=question,
             analysis=None,
-            documents=[EvidenceDocument(content="pressure-doc", recipe_name="pressure")],
+            documents=[EvidenceDocument(content="pressure-doc", entity_name="pressure")],
             latency_ms=latency_ms,
             answer="ok",
         )

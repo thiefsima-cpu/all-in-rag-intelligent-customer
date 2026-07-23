@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.evidence_processing.extraction import extract_evidence_units
 from rag_modules.evidence_processing.models import EvidenceUnit
 from rag_modules.kernel.documents import TextDocument
@@ -46,7 +47,9 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
         },
     }
 
-    units = extract_evidence_units(TextDocument(content="fallback", metadata=metadata))
+    units = extract_evidence_units(
+        evidence_document_from_text_document(TextDocument(content="fallback", metadata=metadata))
+    )
     claims = [unit["claim"] for unit in units]
 
     assert "explicit claim" in claims
@@ -68,7 +71,9 @@ def test_extracts_direct_graph_payload_and_metadata_recipe_fallbacks() -> None:
         },
     }
 
-    [unit] = extract_evidence_units(TextDocument(content="ignored", metadata=metadata))
+    [unit] = extract_evidence_units(
+        evidence_document_from_text_document(TextDocument(content="ignored", metadata=metadata))
+    )
 
     assert unit["claim"] == "a -[RELATED]-> Broth"
     assert unit["recipe_id"] == "r2"
@@ -78,13 +83,20 @@ def test_extracts_direct_graph_payload_and_metadata_recipe_fallbacks() -> None:
 def test_falls_back_to_trimmed_document_claim_and_handles_empty_content() -> None:
     long_content = "x" * 300
     [unit] = extract_evidence_units(
-        TextDocument(
-            content=long_content,
-            metadata={"node_id": "r3", "recipe_name": "Soup", "search_type": "vector"},
+        evidence_document_from_text_document(
+            TextDocument(
+                content=long_content,
+                metadata={"node_id": "r3", "recipe_name": "Soup", "search_type": "vector"},
+            )
         )
     )
 
     assert len(unit["claim"]) == 260
     assert unit["entities"] == ["Soup"]
     assert unit["is_graph_evidence"] is False
-    assert extract_evidence_units(TextDocument(content="", metadata={})) == []
+    assert (
+        extract_evidence_units(
+            evidence_document_from_text_document(TextDocument(content="", metadata={}))
+        )
+        == []
+    )

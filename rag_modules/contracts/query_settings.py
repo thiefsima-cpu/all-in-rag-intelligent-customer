@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from typing import TypeAlias
 
 from pydantic import BaseModel
 
@@ -20,6 +21,9 @@ class QueryPlannerRuntimeSettings:
     llm_max_tokens: int
 
     def __post_init__(self) -> None:
+        self._normalize_unit_values()
+
+    def _normalize_unit_values(self) -> None:
         self.model_name = str(self.model_name)
         self.cache_size = max(0, int(self.cache_size))
         self.timeout_seconds = max(1, int(self.timeout_seconds))
@@ -146,12 +150,19 @@ class QuerySemanticRuntimeSettings:
         self.adaptive_entity_relation_multi_hop_threshold = _unit(
             self.adaptive_entity_relation_multi_hop_threshold
         )
+
+        self._normalize_weight_values()
+        self._normalize_minimum_values()
+
+    def _normalize_weight_values(self) -> None:
         self.complexity_relation_hit_weight = _weight(self.complexity_relation_hit_weight)
         self.complexity_constraint_hit_weight = _weight(self.complexity_constraint_hit_weight)
         self.complexity_structural_hit_weight = _weight(self.complexity_structural_hit_weight)
         self.complexity_length_weight = _weight(self.complexity_length_weight)
         self.relation_hit_intensity_boost_step = _weight(self.relation_hit_intensity_boost_step)
         self.relation_hit_complexity_boost_step = _weight(self.relation_hit_complexity_boost_step)
+
+    def _normalize_minimum_values(self) -> None:
         self.complexity_length_norm_chars = _minimum(self.complexity_length_norm_chars, 1)
         self.source_entity_limit = _minimum(self.source_entity_limit, 1)
         self.entity_keyword_limit = _minimum(self.entity_keyword_limit, 1)
@@ -199,122 +210,9 @@ class QuerySemanticRuntimeSettings:
     def from_config(
         cls, config: Mapping[str, object] | BaseModel
     ) -> "QuerySemanticRuntimeSettings":
-        payload = _settings_payload(config)
-        semantics = _section(_section(payload, "query_understanding"), "semantics")
-        scoring = _section(semantics, "scoring")
-        extraction = _section(semantics, "extraction")
-        routing = _section(semantics, "routing")
-        traversal = _section(semantics, "traversal")
-        adaptive = _section(semantics, "adaptive_traversal")
-        return cls(
-            relation_intensity_reference_ratio=_number(
-                scoring.get("relation_intensity_reference_ratio")
-            ),
-            complexity_relation_hit_weight=_number(scoring.get("complexity_relation_hit_weight")),
-            complexity_constraint_hit_weight=_number(
-                scoring.get("complexity_constraint_hit_weight")
-            ),
-            complexity_structural_hit_weight=_number(
-                scoring.get("complexity_structural_hit_weight")
-            ),
-            complexity_length_weight=_number(scoring.get("complexity_length_weight")),
-            complexity_length_norm_chars=_integer(scoring.get("complexity_length_norm_chars")),
-            reasoning_complexity_threshold=_number(scoring.get("reasoning_complexity_threshold")),
-            reasoning_relationship_threshold=_number(
-                scoring.get("reasoning_relationship_threshold")
-            ),
-            high_relationship_routing_threshold=_number(
-                routing.get("high_relationship_routing_threshold")
-            ),
-            relation_hit_intensity_boost_base=_number(
-                scoring.get("relation_hit_intensity_boost_base")
-            ),
-            relation_hit_intensity_boost_step=_number(
-                scoring.get("relation_hit_intensity_boost_step")
-            ),
-            relation_hit_complexity_boost_base=_number(
-                scoring.get("relation_hit_complexity_boost_base")
-            ),
-            relation_hit_complexity_boost_step=_number(
-                scoring.get("relation_hit_complexity_boost_step")
-            ),
-            source_entity_limit=_integer(extraction.get("source_entity_limit")),
-            entity_keyword_limit=_integer(extraction.get("entity_keyword_limit")),
-            semantic_profile_entity_keyword_limit=_integer(
-                extraction.get("semantic_profile_entity_keyword_limit")
-            ),
-            topic_keyword_limit=_integer(extraction.get("topic_keyword_limit")),
-            semantic_profile_topic_keyword_start=_integer(
-                extraction.get("semantic_profile_topic_keyword_start")
-            ),
-            semantic_profile_topic_keyword_limit=_integer(
-                extraction.get("semantic_profile_topic_keyword_limit")
-            ),
-            target_entity_limit=_integer(extraction.get("target_entity_limit")),
-            multi_hop_hint_entity_count=_integer(routing.get("multi_hop_hint_entity_count")),
-            multi_hop_hint_relationship_threshold=_number(
-                routing.get("multi_hop_hint_relationship_threshold")
-            ),
-            combined_strategy_relationship_threshold=_number(
-                routing.get("combined_strategy_relationship_threshold")
-            ),
-            combined_strategy_complexity_threshold=_number(
-                routing.get("combined_strategy_complexity_threshold")
-            ),
-            source_entity_seed_relationship_threshold=_number(
-                routing.get("source_entity_seed_relationship_threshold")
-            ),
-            source_entity_backfill_relationship_threshold=_number(
-                routing.get("source_entity_backfill_relationship_threshold")
-            ),
-            rule_fallback_confidence=_number(routing.get("rule_fallback_confidence")),
-            entity_relation_max_depth=_integer(traversal.get("entity_relation_max_depth")),
-            path_finding_max_depth=_integer(traversal.get("path_finding_max_depth")),
-            path_finding_high_intensity_max_depth=_integer(
-                traversal.get("path_finding_high_intensity_max_depth")
-            ),
-            path_finding_high_intensity_threshold=_number(
-                traversal.get("path_finding_high_intensity_threshold")
-            ),
-            subgraph_max_depth=_integer(traversal.get("subgraph_max_depth")),
-            subgraph_high_intensity_max_depth=_integer(
-                traversal.get("subgraph_high_intensity_max_depth")
-            ),
-            subgraph_high_intensity_threshold=_number(
-                traversal.get("subgraph_high_intensity_threshold")
-            ),
-            clustering_max_depth=_integer(traversal.get("clustering_max_depth")),
-            default_max_depth=_integer(traversal.get("default_max_depth")),
-            default_high_intensity_max_depth=_integer(
-                traversal.get("default_high_intensity_max_depth")
-            ),
-            default_high_intensity_threshold=_number(
-                traversal.get("default_high_intensity_threshold")
-            ),
-            entity_relation_max_nodes=_integer(traversal.get("entity_relation_max_nodes")),
-            path_finding_max_nodes=_integer(traversal.get("path_finding_max_nodes")),
-            subgraph_max_nodes=_integer(traversal.get("subgraph_max_nodes")),
-            clustering_max_nodes=_integer(traversal.get("clustering_max_nodes")),
-            default_max_nodes=_integer(traversal.get("default_max_nodes")),
-            graph_query_max_depth_cap=_integer(traversal.get("graph_query_max_depth_cap")),
-            graph_query_fallback_name_chars=_integer(
-                traversal.get("graph_query_fallback_name_chars")
-            ),
-            adaptive_multi_hop_subgraph_threshold=_number(
-                adaptive.get("multi_hop_subgraph_threshold")
-            ),
-            adaptive_subgraph_multi_hop_threshold=_number(
-                adaptive.get("subgraph_multi_hop_threshold")
-            ),
-            adaptive_entity_relation_multi_hop_threshold=_number(
-                adaptive.get("entity_relation_multi_hop_threshold")
-            ),
-            adaptive_subgraph_max_depth=_integer(adaptive.get("subgraph_max_depth")),
-            adaptive_subgraph_max_nodes=_integer(adaptive.get("subgraph_max_nodes")),
-            adaptive_multi_hop_max_depth=_integer(adaptive.get("multi_hop_max_depth")),
-            adaptive_multi_hop_max_nodes=_integer(adaptive.get("multi_hop_max_nodes")),
-            adaptive_entity_relation_max_depth=_integer(adaptive.get("entity_relation_max_depth")),
-            adaptive_entity_relation_max_nodes=_integer(adaptive.get("entity_relation_max_nodes")),
+        scoring, extraction, routing, traversal, adaptive = _semantic_config_sections(config)
+        return QuerySemanticRuntimeSettings(
+            *_semantic_runtime_values(scoring, extraction, routing, traversal, adaptive)
         )
 
     def to_dict(self) -> JsonObject:
@@ -342,6 +240,206 @@ def _settings_payload(config: Mapping[str, object] | BaseModel) -> JsonObject:
 def _section(payload: Mapping[str, object], key: str) -> Mapping[str, object]:
     value = payload.get(key)
     return value if isinstance(value, Mapping) else {}
+
+
+def _semantic_config_sections(
+    config: Mapping[str, object] | BaseModel,
+) -> tuple[
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+]:
+    payload = _settings_payload(config)
+    semantics = _section(_section(payload, "query_understanding"), "semantics")
+    return (
+        _section(semantics, "scoring"),
+        _section(semantics, "extraction"),
+        _section(semantics, "routing"),
+        _section(semantics, "traversal"),
+        _section(semantics, "adaptive_traversal"),
+    )
+
+
+SemanticRuntimeSettingsArgs: TypeAlias = tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    int,
+    int,
+    float,
+    int,
+    int,
+    float,
+    int,
+    int,
+    int,
+    float,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    float,
+    float,
+    float,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+]
+
+
+def _semantic_runtime_values(
+    scoring: Mapping[str, object],
+    extraction: Mapping[str, object],
+    routing: Mapping[str, object],
+    traversal: Mapping[str, object],
+    adaptive: Mapping[str, object],
+) -> SemanticRuntimeSettingsArgs:
+    return (
+        *_scoring_and_extraction_values(scoring, extraction, routing),
+        *_routing_values(routing),
+        *_traversal_values(traversal),
+        *_adaptive_traversal_values(adaptive),
+    )
+
+
+def _scoring_and_extraction_values(
+    scoring: Mapping[str, object],
+    extraction: Mapping[str, object],
+    routing: Mapping[str, object],
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+]:
+    return (
+        _number(scoring.get("relation_intensity_reference_ratio")),
+        _number(scoring.get("complexity_relation_hit_weight")),
+        _number(scoring.get("complexity_constraint_hit_weight")),
+        _number(scoring.get("complexity_structural_hit_weight")),
+        _number(scoring.get("complexity_length_weight")),
+        _integer(scoring.get("complexity_length_norm_chars")),
+        _number(scoring.get("reasoning_complexity_threshold")),
+        _number(scoring.get("reasoning_relationship_threshold")),
+        _number(routing.get("high_relationship_routing_threshold")),
+        _number(scoring.get("relation_hit_intensity_boost_base")),
+        _number(scoring.get("relation_hit_intensity_boost_step")),
+        _number(scoring.get("relation_hit_complexity_boost_base")),
+        _number(scoring.get("relation_hit_complexity_boost_step")),
+        _integer(extraction.get("source_entity_limit")),
+        _integer(extraction.get("entity_keyword_limit")),
+        _integer(extraction.get("semantic_profile_entity_keyword_limit")),
+        _integer(extraction.get("topic_keyword_limit")),
+        _integer(extraction.get("semantic_profile_topic_keyword_start")),
+        _integer(extraction.get("semantic_profile_topic_keyword_limit")),
+        _integer(extraction.get("target_entity_limit")),
+    )
+
+
+def _routing_values(
+    routing: Mapping[str, object],
+) -> tuple[int, float, float, float, float, float, float]:
+    return (
+        _integer(routing.get("multi_hop_hint_entity_count")),
+        _number(routing.get("multi_hop_hint_relationship_threshold")),
+        _number(routing.get("combined_strategy_relationship_threshold")),
+        _number(routing.get("combined_strategy_complexity_threshold")),
+        _number(routing.get("source_entity_seed_relationship_threshold")),
+        _number(routing.get("source_entity_backfill_relationship_threshold")),
+        _number(routing.get("rule_fallback_confidence")),
+    )
+
+
+def _traversal_values(
+    traversal: Mapping[str, object],
+) -> tuple[
+    int, int, int, float, int, int, float, int, int, int, float, int, int, int, int, int, int, int
+]:
+    return (
+        _integer(traversal.get("entity_relation_max_depth")),
+        _integer(traversal.get("path_finding_max_depth")),
+        _integer(traversal.get("path_finding_high_intensity_max_depth")),
+        _number(traversal.get("path_finding_high_intensity_threshold")),
+        _integer(traversal.get("subgraph_max_depth")),
+        _integer(traversal.get("subgraph_high_intensity_max_depth")),
+        _number(traversal.get("subgraph_high_intensity_threshold")),
+        _integer(traversal.get("clustering_max_depth")),
+        _integer(traversal.get("default_max_depth")),
+        _integer(traversal.get("default_high_intensity_max_depth")),
+        _number(traversal.get("default_high_intensity_threshold")),
+        _integer(traversal.get("entity_relation_max_nodes")),
+        _integer(traversal.get("path_finding_max_nodes")),
+        _integer(traversal.get("subgraph_max_nodes")),
+        _integer(traversal.get("clustering_max_nodes")),
+        _integer(traversal.get("default_max_nodes")),
+        _integer(traversal.get("graph_query_max_depth_cap")),
+        _integer(traversal.get("graph_query_fallback_name_chars")),
+    )
+
+
+def _adaptive_traversal_values(
+    adaptive: Mapping[str, object],
+) -> tuple[float, float, float, int, int, int, int, int, int]:
+    return (
+        _number(adaptive.get("multi_hop_subgraph_threshold")),
+        _number(adaptive.get("subgraph_multi_hop_threshold")),
+        _number(adaptive.get("entity_relation_multi_hop_threshold")),
+        _integer(adaptive.get("subgraph_max_depth")),
+        _integer(adaptive.get("subgraph_max_nodes")),
+        _integer(adaptive.get("multi_hop_max_depth")),
+        _integer(adaptive.get("multi_hop_max_nodes")),
+        _integer(adaptive.get("entity_relation_max_depth")),
+        _integer(adaptive.get("entity_relation_max_nodes")),
+    )
 
 
 def _text(value: object) -> str:

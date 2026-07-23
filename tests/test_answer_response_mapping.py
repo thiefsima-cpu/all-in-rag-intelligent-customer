@@ -98,6 +98,18 @@ def test_typed_mapper_matches_compatibility_payload() -> None:
             stage.setdefault("rerank_succeeded", False)
             stage.setdefault("rerank_latency_ms", None)
 
+    evidence_collections = (
+        expected["grounding"]["evidence_documents"],
+        expected["grounding"]["retrieval_outcome"]["evidence_documents"],
+        expected["grounding"]["answer_context"]["retrieval"]["evidence_documents"],
+        expected["grounding"]["route_resolution"]["retrieval"]["evidence_documents"],
+    )
+    for documents in evidence_collections:
+        for document in documents:
+            document["recipe_name"] = document["entity_name"]
+            document["recipe_id"] = document["entity_id"]
+            document["recipe_graph_evidence"] = document["domain_graph_evidence"]
+
     assert AnswerPayloadModel.from_dto(response).model_dump() == expected
 
 
@@ -286,19 +298,19 @@ def _complete_result() -> QuestionAnswerResult:
     evidence = EvidenceDocument(
         content="Mapo tofu balances tofu and chili bean paste.",
         node_id="node-1",
-        recipe_name="mapo tofu",
+        entity_name="mapo tofu",
         node_type="recipe",
         score=0.95,
         search_type="graph",
         search_method="path",
         retrieval_level="recipe",
         doc_id="doc-1",
-        recipe_id="recipe-1",
+        entity_id="recipe-1",
         source="graph",
         evidence_type="graph_relation",
         matched_terms=["tofu"],
         graph_evidence={"edge": "CONTRIBUTES_TO"},
-        recipe_graph_evidence={"recipe": "mapo tofu"},
+        domain_graph_evidence={"recipe": "mapo tofu"},
         constraint_evidence={"cook_minutes": 20},
         evidence_units=[{"claim": "tofu carries the sauce"}],
         route_strategy="combined",

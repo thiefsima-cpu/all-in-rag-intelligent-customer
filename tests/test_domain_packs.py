@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,7 +21,7 @@ from rag_modules.configuration import load_config
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from rag_modules.contracts.graph_preparation import GraphNode
-from rag_modules.contracts.retrieval_documents import evidence_document_from_page_like
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.domains import domain_pack_names, get_domain_pack, load_domain_evaluation
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
 from rag_modules.graph.evidence_builder import GraphEvidenceBuilder
@@ -252,7 +252,7 @@ def test_customer_service_mapper_builds_generic_evidence_and_semantic_relations(
         }
     )
 
-    evidence = evidence_document_from_page_like(document)
+    evidence = evidence_document_from_text_document(document)
     assert evidence.entity_id == "POL-REFUND-2026-07"
     assert evidence.entity_name == "七天无理由退货政策"
     assert evidence.entity_type == "RefundPolicy"
@@ -297,17 +297,19 @@ def test_each_domain_pack_ships_a_grounded_evaluation_resource() -> None:
         )
 
 
-def test_evidence_contract_is_domain_neutral_with_recipe_compatibility_properties() -> None:
-    field_names = {item.name for item in fields(EvidenceDocument)}
+def test_evidence_contract_rejects_deprecated_recipe_aliases() -> None:
+    with pytest.raises(TypeError):
+        EvidenceDocument(content="legacy", recipe_id="r1", recipe_name="Mapo tofu")
 
-    assert {"entity_id", "entity_name", "entity_type", "domain_graph_evidence"} <= field_names
-    assert "recipe_id" not in field_names
-    assert "recipe_name" not in field_names
-    legacy = EvidenceDocument(content="legacy", recipe_id="r1", recipe_name="Mapo tofu")
-    assert legacy.entity_id == "r1"
-    assert legacy.entity_name == "Mapo tofu"
-    assert legacy.recipe_id == "r1"
-    assert legacy.recipe_name == "Mapo tofu"
+    evidence = EvidenceDocument(
+        content="canonical",
+        entity_id="r1",
+        entity_name="Mapo tofu",
+        domain_graph_evidence={"kind": "recipe"},
+    )
+    assert "recipe_id" not in evidence.to_dict()
+    assert "recipe_name" not in evidence.to_dict()
+    assert "recipe_graph_evidence" not in evidence.to_dict()
 
 
 def test_customer_service_domain_selects_its_policy_and_citation_label() -> None:

@@ -71,7 +71,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                     search_type="vector_enhanced",
                     rank_order=2,
                 ),
-                [EvidenceDocument(content="vector-doc", recipe_name="V")],
+                [EvidenceDocument(content="vector-doc", entity_name="V")],
             ),
             _StubSource(
                 CandidateSourceSpec(
@@ -81,7 +81,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                     search_type="constraint_recipe",
                     rank_order=0,
                 ),
-                [EvidenceDocument(content="constraint-doc", recipe_name="C")],
+                [EvidenceDocument(content="constraint-doc", entity_name="C")],
             ),
             _StubSource(
                 CandidateSourceSpec(
@@ -91,7 +91,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                     search_type="dual_level",
                     rank_order=1,
                 ),
-                [EvidenceDocument(content="dual-doc", recipe_name="D")],
+                [EvidenceDocument(content="dual-doc", entity_name="D")],
             ),
             _StubSource(
                 CandidateSourceSpec(
@@ -101,7 +101,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                     search_type="bm25",
                     rank_order=3,
                 ),
-                [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+                [EvidenceDocument(content="bm25-doc", entity_name="B")],
             ),
         ]
         generator = RetrievalCandidateGenerator(sources=sources)
@@ -149,7 +149,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="bm25",
                 rank_order=2,
             ),
-            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+            [EvidenceDocument(content="bm25-doc", entity_name="B")],
         )
         generator = RetrievalCandidateGenerator(sources=[failing, bm25])
 
@@ -218,7 +218,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="bm25",
                 rank_order=2,
             ),
-            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+            [EvidenceDocument(content="bm25-doc", entity_name="B")],
         )
         generator = RetrievalCandidateGenerator(
             sources=[vector, bm25],
@@ -264,7 +264,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="bm25",
                 rank_order=2,
             ),
-            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+            [EvidenceDocument(content="bm25-doc", entity_name="B")],
         )
         generator = RetrievalCandidateGenerator(
             sources=[vector, bm25],
@@ -296,7 +296,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="bm25",
                 rank_order=2,
             ),
-            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+            [EvidenceDocument(content="bm25-doc", entity_name="B")],
         )
         generator = RetrievalCandidateGenerator(sources=[vector, bm25])
         request = RetrievalRequest.from_inputs(query="recommend tofu", top_k=2, candidate_k=4)
@@ -316,7 +316,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 },
             },
         )
-        self.assertEqual(second.bm25_docs[0].recipe_name, "B")
+        self.assertEqual(second.bm25_docs[0].entity_name, "B")
 
     def test_request_skip_metadata_does_not_touch_source_or_circuit(self) -> None:
         vector = _StubSource(
@@ -327,7 +327,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="vector_enhanced",
                 rank_order=1,
             ),
-            [EvidenceDocument(content="vector-doc", recipe_name="V")],
+            [EvidenceDocument(content="vector-doc", entity_name="V")],
         )
         bm25 = _StubSource(
             CandidateSourceSpec(
@@ -337,7 +337,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                 search_type="bm25",
                 rank_order=2,
             ),
-            [EvidenceDocument(content="bm25-doc", recipe_name="B")],
+            [EvidenceDocument(content="bm25-doc", entity_name="B")],
         )
         request = RetrievalRequest.from_inputs(
             query="recommend tofu",

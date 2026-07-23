@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional, Protocol
 
 from ...contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
@@ -132,7 +132,8 @@ def interleave_route_documents(
             metadata = dict(doc.metadata or {})
             metadata["search_source"] = source_name
             combined_docs.append(
-                doc.copy_with(
+                replace(
+                    doc,
                     source=source_name,
                     metadata=metadata,
                 )

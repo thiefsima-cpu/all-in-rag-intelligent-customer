@@ -75,7 +75,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
     def test_retrieval_outcome_uses_evidence_as_canonical_payload(self) -> None:
         evidence = EvidenceDocument(
             content="宫保鸡丁是一道经典川菜。",
-            recipe_name="宫保鸡丁",
+            entity_name="宫保鸡丁",
             source="hybrid",
             score=0.91,
         )
@@ -86,7 +86,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         )
 
         self.assertEqual(outcome.doc_count, 1)
-        self.assertEqual(outcome.evidence_documents[0].recipe_name, "宫保鸡丁")
+        self.assertEqual(outcome.evidence_documents[0].entity_name, "宫保鸡丁")
         self.assertFalse(hasattr(outcome, "documents"))
 
     def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
@@ -118,7 +118,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         outcome = RetrievalOutcome(
             query="recommend tofu dishes",
             strategy="hybrid_traditional",
-            evidence_documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu")],
+            evidence_documents=[EvidenceDocument(content="doc", entity_name="Mapo Tofu")],
             route_trace=route_trace,
         )
 
@@ -141,7 +141,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
                     "evidence_documents": [
                         {
                             "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
-                            "recipe_name": "水煮肉片",
+                            "entity_name": "水煮肉片",
                             "source": "graph_rag",
                             "score": 0.95,
                         }
@@ -152,7 +152,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         )
 
         self.assertEqual(len(context.evidence_documents), 1)
-        self.assertEqual(context.evidence_documents[0].recipe_name, "水煮肉片")
+        self.assertEqual(context.evidence_documents[0].entity_name, "水煮肉片")
         self.assertFalse(hasattr(context, "documents"))
 
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List
+from collections.abc import Sequence
 
-from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+from ..contracts import EvidenceDocument
 from ..contracts.runtime import (
     AnalysisInput,
     AnswerContext,
@@ -56,7 +56,7 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        evidence_documents: List[EvidenceDocument] | None = None,
+        evidence_documents: Sequence[EvidenceDocument] | None = None,
         package: AnswerEvidencePackage | None = None,
     ) -> AnswerEvidencePackage:
         if package is not None:
@@ -67,23 +67,23 @@ class GenerationContextFactory:
         self,
         *,
         question: str,
-        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
+        documents: Sequence[EvidenceDocument] | None = None,
         package: AnswerEvidencePackage | None = None,
     ) -> AnswerEvidencePackage:
         if package is not None:
             return package
-        return self.evidence_builder.build_from_documents(question, list(documents or []))
+        return self.evidence_builder.build_from_documents(question, documents or [])
 
     def build_answer_context_from_documents(
         self,
         *,
         question: str,
-        documents: List[PageDocumentLike | EvidenceDocument] | None = None,
+        documents: Sequence[EvidenceDocument] | None = None,
         analysis: AnalysisInput = None,
     ) -> AnswerContext:
         return self.build_answer_context_from_evidence(
             question=question,
-            evidence_documents=ensure_evidence_documents(documents or []),
+            evidence_documents=list(documents or []),
             analysis=analysis,
         )
 
@@ -91,7 +91,7 @@ class GenerationContextFactory:
     def build_answer_context_from_evidence(
         *,
         question: str,
-        evidence_documents: List[EvidenceDocument] | None = None,
+        evidence_documents: Sequence[EvidenceDocument] | None = None,
         analysis: AnalysisInput = None,
     ) -> AnswerContext:
         return AnswerContext(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from ..contracts import EvidenceDocument
 from ..evidence_processing import extract_evidence_units
@@ -196,10 +197,11 @@ class GraphRetrievalPostProcessor:
         enriched: list[EvidenceDocument] = []
         for doc in documents:
             metadata = dict(doc.metadata or {})
-            metadata["evidence_units"] = extract_evidence_units(doc, metadata)
-            enriched.append(
-                doc.copy_with(evidence_units=metadata["evidence_units"], metadata=metadata)
-            )
+            evidence_units = [
+                coerce_json_object(unit) for unit in extract_evidence_units(doc, metadata)
+            ]
+            metadata.update(coerce_json_object({"evidence_units": evidence_units}))
+            enriched.append(replace(doc, evidence_units=evidence_units, metadata=metadata))
         return enriched
 
     @staticmethod

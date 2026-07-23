@@ -28,7 +28,7 @@ class _FakeHybridExecutor:
     def hybrid_evidence_search(self, request):
         self.calls.append(("hybrid_evidence_search", request))
         return HybridRetrievalOutcome(
-            documents=[EvidenceDocument(content="hybrid", recipe_name="HybridRecipe")],
+            documents=[EvidenceDocument(content="hybrid", entity_name="HybridRecipe")],
             candidate_counts={"vector": 1},
         )
 
@@ -107,7 +107,7 @@ class _FakeGraphExecutor:
     def execute_with_trace(self, request):
         self.calls.append(request)
         return (
-            [EvidenceDocument(content="graph", recipe_name=request.query)],
+            [EvidenceDocument(content="graph", entity_name=request.query)],
             GraphRetrievalSnapshot(requested_top_k=request.top_k),
         )
 
@@ -239,7 +239,7 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
 
         outcome = module.hybrid_evidence_search(request)
 
-        self.assertEqual(outcome.documents[0].recipe_name, "HybridRecipe")
+        self.assertEqual(outcome.documents[0].entity_name, "HybridRecipe")
         self.assertEqual(module.driver, "driver")
         self.assertEqual(
             module.extract_query_keywords("mapo tofu"),
@@ -274,7 +274,7 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
 
         results, trace = module.graph_rag_evidence_search_with_trace(request)
 
-        self.assertEqual(results[0].recipe_name, "Explain the layered flavor path")
+        self.assertEqual(results[0].entity_name, "Explain the layered flavor path")
         self.assertEqual(trace.requested_top_k, 3)
         with self.assertRaises(AttributeError):
             _ = module.understand_graph_query

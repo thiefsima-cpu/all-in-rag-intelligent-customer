@@ -121,10 +121,7 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
     @classmethod
     def from_dto(cls, document: EvidenceDocument) -> "PublicEvidenceDocumentResponseModel":
         metadata = coerce_json_object(document.metadata)
-        legacy_recipe = bool(
-            getattr(document, "_legacy_recipe_compat", False)
-            or document.entity_type.casefold() == "recipe"
-        )
+        legacy_recipe = bool(document.entity_type.casefold() == "recipe")
         domain_name, projection = cls._domain_projection(
             metadata=metadata,
             legacy_recipe=legacy_recipe,

@@ -26,7 +26,7 @@ class _FakeGraphKVRetriever:
             EvidenceDocument(
                 content="entity-content",
                 node_id="n1",
-                recipe_name="RecipeA",
+                entity_name="RecipeA",
                 score=0.82,
                 metadata={"relevance_score": 0.82, "entity_type": "Recipe"},
             )
@@ -40,7 +40,7 @@ class _FakeGraphKVRetriever:
             EvidenceDocument(
                 content="topic-content",
                 node_id="rel-source",
-                recipe_name="",
+                entity_name="",
                 score=0.73,
                 metadata={
                     "relevance_score": 0.73,
@@ -61,7 +61,7 @@ class _FakeFallbackRetriever:
             EvidenceDocument(
                 content=f"fallback-entity-{limit}",
                 node_id="n2",
-                recipe_name="RecipeFallback",
+                entity_name="RecipeFallback",
                 score=0.6,
                 search_method="neo4j_fallback",
             )
@@ -73,7 +73,7 @@ class _FakeFallbackRetriever:
             EvidenceDocument(
                 content=f"fallback-topic-{limit}",
                 node_id="n3",
-                recipe_name="RecipeTopicFallback",
+                entity_name="RecipeTopicFallback",
                 score=0.5,
                 search_method="neo4j_fallback",
             )
@@ -130,7 +130,7 @@ class DualLevelRetrieverTests(unittest.TestCase):
     def test_topic_level_retrieval_composes_recipe_context_and_category_hits(self) -> None:
         results = self.retriever.topic_level_retrieval(["light"], top_k=3)
 
-        self.assertEqual([doc.recipe_name for doc in results[:2]], ["RecipeCategory", "RecipeB"])
+        self.assertEqual([doc.entity_name for doc in results[:2]], ["RecipeCategory", "RecipeB"])
         self.assertIn("主题: light", results[1].content)
         self.assertIn("菜谱详情: RecipeB first line", results[1].content)
 
@@ -139,7 +139,7 @@ class DualLevelRetrieverTests(unittest.TestCase):
         results = self.retriever.search(request)
 
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0].recipe_name, "RecipeA")
+        self.assertEqual(results[0].entity_name, "RecipeA")
 
 
 if __name__ == "__main__":

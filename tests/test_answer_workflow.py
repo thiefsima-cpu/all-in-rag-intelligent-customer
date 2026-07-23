@@ -272,7 +272,7 @@ class _ControlCapturingRouter:
         return (
             _build_resolution(
                 question,
-                documents=[EvidenceDocument(content="doc", recipe_name="recipe")],
+                documents=[EvidenceDocument(content="doc", entity_name="recipe")],
             ),
             RouteSnapshot(query=question, requested_top_k=top_k),
         )
@@ -379,7 +379,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         documents = [
             EvidenceDocument(
                 content="doc one",
-                recipe_name="mapo tofu",
+                entity_name="mapo tofu",
                 search_type="graph",
                 score=0.91,
             )
@@ -434,7 +434,7 @@ class AnswerWorkflowTests(unittest.TestCase):
             ],
             "combined",
         )
-        self.assertEqual(payload["grounding"]["evidence_documents"][0]["recipe_name"], "mapo tofu")
+        self.assertEqual(payload["grounding"]["evidence_documents"][0]["entity_name"], "mapo tofu")
         self.assertEqual(payload["traces"]["route_trace"]["strategy"], "combined")
         self.assertEqual(payload["traces"]["graph_trace"]["doc_count"], 1)
         self.assertEqual(result.to_dict(), response.to_dict())
@@ -460,7 +460,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         documents = [
             EvidenceDocument(
                 content="grounded evidence",
-                recipe_name="fallback recipe",
+                entity_name="fallback recipe",
                 search_type="graph",
                 score=0.9,
             )
@@ -507,7 +507,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         documents = [
             EvidenceDocument(
                 content="grounded evidence",
-                recipe_name="fallback recipe",
+                entity_name="fallback recipe",
                 search_type="hybrid",
                 score=0.9,
             )
@@ -568,7 +568,7 @@ class AnswerWorkflowTests(unittest.TestCase):
         documents = [
             EvidenceDocument(
                 content="doc one",
-                recipe_name="active recipe",
+                entity_name="active recipe",
                 search_type="graph",
                 score=0.88,
             )
@@ -615,7 +615,7 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_result_uses_explicit_route_and_generation_traces_when_available(self) -> None:
         question = "Use explicit trace interfaces."
-        documents = [EvidenceDocument(content="doc", recipe_name="recipe", search_type="graph")]
+        documents = [EvidenceDocument(content="doc", entity_name="recipe", search_type="graph")]
         router = _FakeQueryRouter(
             semantic_settings=QuerySemanticRuntimeSettings.from_config(self.config),
             resolution=_build_resolution(question, documents=documents),
@@ -641,7 +641,7 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_streaming_success_returns_joined_chunks(self) -> None:
         question = "Summarize the sauce adjustments."
-        documents = [EvidenceDocument(content="doc", recipe_name="recipe", search_type="hybrid")]
+        documents = [EvidenceDocument(content="doc", entity_name="recipe", search_type="hybrid")]
         router = _FakeQueryRouter(
             semantic_settings=QuerySemanticRuntimeSettings.from_config(self.config),
             resolution=_build_resolution(question, documents=documents),
@@ -666,7 +666,7 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_streaming_prefers_explicit_request_trace_over_stale_last_trace(self) -> None:
         question = "Summarize the sauce adjustments with explicit trace."
-        documents = [EvidenceDocument(content="doc", recipe_name="recipe", search_type="hybrid")]
+        documents = [EvidenceDocument(content="doc", entity_name="recipe", search_type="hybrid")]
         router = _FakeQueryRouter(
             semantic_settings=QuerySemanticRuntimeSettings.from_config(self.config),
             resolution=_build_resolution(question, documents=documents),
@@ -690,7 +690,7 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_streaming_failure_falls_back_to_standard_generation(self) -> None:
         question = "Explain the graph evidence."
-        documents = [EvidenceDocument(content="doc", recipe_name="recipe", search_type="graph")]
+        documents = [EvidenceDocument(content="doc", entity_name="recipe", search_type="graph")]
         router = _FakeQueryRouter(
             semantic_settings=QuerySemanticRuntimeSettings.from_config(self.config),
             resolution=_build_resolution(question, documents=documents),
@@ -736,7 +736,7 @@ class AnswerWorkflowTests(unittest.TestCase):
                 del control
                 document = EvidenceDocument(
                     content=f"evidence:{question}",
-                    recipe_name=question,
+                    entity_name=question,
                     search_type="graph",
                 )
                 resolution = _build_resolution(
@@ -813,7 +813,7 @@ class AnswerWorkflowTests(unittest.TestCase):
 
     def test_legacy_services_do_not_leak_shared_trace_state(self) -> None:
         question = "Use legacy services."
-        documents = [EvidenceDocument(content="doc", recipe_name="recipe", search_type="graph")]
+        documents = [EvidenceDocument(content="doc", entity_name="recipe", search_type="graph")]
         resolution = _build_resolution(
             question,
             documents=documents,

@@ -246,7 +246,7 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         executor = GraphRetrievalExecutor(
             services=_executor_services(
                 runtime,
-                [EvidenceDocument(content="should not return", recipe_name="late")],
+                [EvidenceDocument(content="should not return", entity_name="late")],
             ),
         )
         executor.driver = object()
@@ -289,7 +289,7 @@ class GraphRetrievalExecutorTests(unittest.TestCase):
         docs = [
             EvidenceDocument(
                 content="图证据",
-                recipe_name="水煮肉片",
+                entity_name="水煮肉片",
                 evidence_units=[{"claim": "豆瓣酱贡献麻辣鲜香"}],
             )
         ]

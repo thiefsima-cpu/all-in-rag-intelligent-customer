@@ -153,8 +153,8 @@ class ModelClientPortTests(unittest.TestCase):
             rerank_client=rerank_client,
         )
         docs = [
-            EvidenceDocument(content="first", recipe_name="first"),
-            EvidenceDocument(content="second", recipe_name="second"),
+            EvidenceDocument(content="first", entity_name="first"),
+            EvidenceDocument(content="second", entity_name="second"),
         ]
 
         result = processor.post_process(
@@ -169,7 +169,7 @@ class ModelClientPortTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual([doc.recipe_name for doc in result], ["second", "first"])
+        self.assertEqual([doc.entity_name for doc in result], ["second", "first"])
         self.assertEqual(rerank_client.calls[0]["query"], "which one")
 
     def test_retrieval_post_processor_records_successful_rerank_timing(self) -> None:
@@ -179,8 +179,8 @@ class ModelClientPortTests(unittest.TestCase):
             rerank_client=rerank_client,
         )
         docs = [
-            EvidenceDocument(content="first", recipe_name="first"),
-            EvidenceDocument(content="second", recipe_name="second"),
+            EvidenceDocument(content="first", entity_name="first"),
+            EvidenceDocument(content="second", entity_name="second"),
         ]
 
         with patch(
@@ -199,7 +199,7 @@ class ModelClientPortTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["second", "first"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["second", "first"])
         self.assertTrue(outcome.rerank_attempted)
         self.assertTrue(outcome.rerank_succeeded)
         self.assertEqual(outcome.rerank_latency_ms, 125.0)
@@ -211,7 +211,7 @@ class ModelClientPortTests(unittest.TestCase):
             settings=self.postprocess_settings,
             rerank_client=_FailingRerankClient(),
         )
-        docs = [EvidenceDocument(content="first", recipe_name="first")]
+        docs = [EvidenceDocument(content="first", entity_name="first")]
 
         with patch(
             "rag_modules.retrieval.post_processor.time.perf_counter",
@@ -266,7 +266,7 @@ class ModelClientPortTests(unittest.TestCase):
         )
 
         processor.post_process(
-            [EvidenceDocument(content="first", recipe_name="first")],
+            [EvidenceDocument(content="first", entity_name="first")],
             top_k=1,
             context=RetrievalPostProcessContext(
                 query="which one",

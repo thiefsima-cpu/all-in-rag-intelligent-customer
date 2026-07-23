@@ -6,7 +6,7 @@ from .aggregation import (
 )
 from .extraction import extract_evidence_units
 from .helpers import infer_evidence_type
-from .models import EvidenceUnit, PageDocumentLike, RecipeEvidence
+from .models import EvidenceUnit, RecipeEvidence
 from .normalization import (
     evidence_from_document,
     normalize_document_evidence,
@@ -17,7 +17,6 @@ from .ranking import EvidenceUnitRanker
 __all__ = [
     "EvidenceUnit",
     "EvidenceUnitRanker",
-    "PageDocumentLike",
     "RecipeEvidence",
     "aggregate_recipe_evidence",
     "aggregate_recipe_evidence_from_documents",

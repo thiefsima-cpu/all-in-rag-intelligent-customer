@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Dict, List, Tuple
 
 from ..contracts import EvidenceDocument
+from ..kernel.json_types import coerce_float
 
 
 class FusionRanker:
@@ -64,8 +66,9 @@ class FusionRanker:
             metadata["rrf_chunk_hits"] = dict(chunk_hits_per_source[doc_id])
             metadata["final_score"] = rrf_scores[doc_id]
             merged.append(
-                source_doc.copy_with(
-                    score=float(metadata.get("final_score") or source_doc.score or 0.0),
+                replace(
+                    source_doc,
+                    score=coerce_float(metadata.get("final_score") or source_doc.score),
                     metadata=metadata,
                 )
             )

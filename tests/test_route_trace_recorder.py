@@ -48,7 +48,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             documents=[
                 EvidenceDocument(
                     content="graph evidence",
-                    recipe_name="Fish-Fragrant Pork",
+                    entity_name="Fish-Fragrant Pork",
                     source="graph_rag",
                     search_method="graph_rag",
                 )
@@ -70,7 +70,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             requested_top_k=2,
             semantic_settings=self.semantic_settings,
         )
-        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
+        document = EvidenceDocument(content="doc", entity_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],
             fallbacks=["graph_empty_to_hybrid"],
@@ -98,7 +98,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             requested_top_k=2,
             semantic_settings=self.semantic_settings,
         )
-        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
+        document = EvidenceDocument(content="doc", entity_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],
             stages=[

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
+from collections.abc import Sequence
 
-from ..contracts import EvidenceDocument, ensure_evidence_documents
-from .models import AggregatedEvidence, PageDocumentLike, RecipeEvidence
+from ..contracts import EvidenceDocument
+from .models import AggregatedEvidence, RecipeEvidence
 from .normalization import normalize_evidence_document
 
 
-def aggregate_evidence(documents: List[EvidenceDocument]) -> List[AggregatedEvidence]:
-    grouped: Dict[str, AggregatedEvidence] = {}
-    order: List[str] = []
+def aggregate_evidence(documents: Sequence[EvidenceDocument]) -> list[AggregatedEvidence]:
+    grouped: dict[str, AggregatedEvidence] = {}
+    order: list[str] = []
 
     for doc in documents or []:
         evidence = normalize_evidence_document(doc)
@@ -51,29 +51,29 @@ def aggregate_evidence(documents: List[EvidenceDocument]) -> List[AggregatedEvid
         reasons = (
             evidence.constraint_evidence.get("reasons") if evidence.constraint_evidence else []
         )
-        for reason in reasons or []:
+        for reason in reasons if isinstance(reasons, list) else []:
             if reason and reason not in aggregate.constraint_reasons:
-                aggregate.constraint_reasons.append(reason)
+                aggregate.constraint_reasons.append(str(reason))
 
     return [grouped[key] for key in order]
 
 
-def aggregate_recipe_evidence(documents: List[EvidenceDocument]) -> List[RecipeEvidence]:
+def aggregate_recipe_evidence(documents: Sequence[EvidenceDocument]) -> list[RecipeEvidence]:
     """Compatibility alias for recipe-domain callers."""
 
     return aggregate_evidence(documents)
 
 
 def aggregate_recipe_evidence_from_documents(
-    documents: List[PageDocumentLike | EvidenceDocument],
-) -> List[RecipeEvidence]:
-    return aggregate_recipe_evidence(ensure_evidence_documents(documents))
+    documents: Sequence[EvidenceDocument],
+) -> list[RecipeEvidence]:
+    return aggregate_recipe_evidence(documents)
 
 
 def aggregate_evidence_from_documents(
-    documents: List[PageDocumentLike | EvidenceDocument],
-) -> List[AggregatedEvidence]:
-    return aggregate_evidence(ensure_evidence_documents(documents))
+    documents: Sequence[EvidenceDocument],
+) -> list[AggregatedEvidence]:
+    return aggregate_evidence(documents)
 
 
 __all__ = [

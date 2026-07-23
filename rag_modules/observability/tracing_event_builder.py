@@ -10,7 +10,6 @@ from typing import Protocol
 from ..contracts import (
     EvidenceDocument,
     QuerySemanticRuntimeSettings,
-    ensure_evidence_documents,
 )
 from ..contracts.runtime import (
     AnswerContext,
@@ -126,7 +125,7 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
             return list(documents.evidence_documents)
         if isinstance(documents, RetrievalOutcome):
             return list(documents.evidence_documents)
-        return ensure_evidence_documents(documents)
+        return list(documents)
 
     @staticmethod
     def _extract_plan(

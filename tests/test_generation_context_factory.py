@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.contracts.runtime import AnswerContext, RetrievalOutcome
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.generation.context_factory import GenerationContextFactory
@@ -21,7 +22,9 @@ class _Builder:
             items=[AnswerEvidenceItem(citation="Evidence 1", content="evidence")],
         )
 
-    def build_from_documents(self, question: str, documents: list[object]) -> AnswerEvidencePackage:
+    def build_from_documents(
+        self, question: str, documents: list[EvidenceDocument]
+    ) -> AnswerEvidencePackage:
         self.calls.append(("documents", question, list(documents)))
         return AnswerEvidencePackage(
             question=question,
@@ -53,8 +56,8 @@ def test_context_and_plan_normalization_accept_valid_forms_and_rejects_others() 
 def test_package_resolution_reuses_explicit_packages_and_builds_missing_ones() -> None:
     factory, builder = _factory()
     explicit = AnswerEvidencePackage(question="explicit", items=[])
-    evidence = EvidenceDocument(content="evidence", recipe_id="r1")
-    document = TextDocument(content="document")
+    evidence = EvidenceDocument(content="evidence", entity_id="r1")
+    document = evidence_document_from_text_document(TextDocument(content="document"))
 
     assert (
         factory.resolve_package_from_evidence(
@@ -78,7 +81,7 @@ def test_package_resolution_reuses_explicit_packages_and_builds_missing_ones() -
 
 def test_context_package_and_document_build_paths_preserve_evidence() -> None:
     factory, builder = _factory()
-    evidence = EvidenceDocument(content="evidence", recipe_id="r1")
+    evidence = EvidenceDocument(content="evidence", entity_id="r1")
     context = AnswerContext(
         question="tofu",
         retrieval=RetrievalOutcome(query="tofu", evidence_documents=[evidence]),
@@ -99,7 +102,12 @@ def test_context_package_and_document_build_paths_preserve_evidence() -> None:
     assert factory.ensure_evidence_package(packaged) is packaged
 
     built = factory.build_answer_context_from_documents(
-        question="documents", documents=[TextDocument(content="text", metadata={"node_id": "r1"})]
+        question="documents",
+        documents=[
+            evidence_document_from_text_document(
+                TextDocument(content="text", metadata={"node_id": "r1"})
+            )
+        ],
     )
     assert built.question == "documents"
     assert built.evidence_documents[0].content == "text"

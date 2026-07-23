@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..contracts import EvidenceDocument
+from ..contracts import EvidenceDocument, coerce_float
 from .helpers import (
     document_content,
     document_metadata,
@@ -12,7 +12,7 @@ from .helpers import (
     infer_evidence_type,
     stable_hash,
 )
-from .models import EvidenceUnit, PageDocumentLike
+from .models import EvidenceUnit
 
 
 def _node_label_names(nodes: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -262,7 +262,7 @@ def _dedupe_units(units: List[EvidenceUnit]) -> List[Dict[str, Any]]:
 
 
 def extract_evidence_units(
-    doc: PageDocumentLike | EvidenceDocument,
+    doc: EvidenceDocument,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     content = document_content(doc)
@@ -270,13 +270,12 @@ def extract_evidence_units(
     source = str(
         first_value(metadata, ["search_source", "search_method", "search_type"], "unknown")
     )
-    score = float(
+    score = coerce_float(
         first_value(
             metadata,
             ["final_score", "relevance_score", "constraint_score", "score"],
             0.0,
         )
-        or 0.0
     )
 
     units = _explicit_units(metadata, source, score)

@@ -283,7 +283,7 @@ class GraphRetrievalDtoBoundaryTests(unittest.TestCase):
 
         self.assertEqual(document.node_id, "")
         self.assertEqual(document.score, 0.25)
-        self.assertEqual(document.recipe_graph_evidence["reasoning_chains"], ["chain"])
+        self.assertEqual(document.domain_graph_evidence["reasoning_chains"], ["chain"])
 
     def test_subgraph_description_includes_nodes_and_deduplicated_relationships(self) -> None:
         builder = GraphEvidenceBuilder()

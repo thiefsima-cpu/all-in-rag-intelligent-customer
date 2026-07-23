@@ -12,7 +12,7 @@ def _ranker() -> GraphDocumentRanker:
 def test_rank_rewards_semantic_relationships_recipe_identity_and_query_overlap() -> None:
     rich = EvidenceDocument(
         content="pepper aroma",
-        recipe_name="Mapo tofu",
+        entity_name="Mapo tofu",
         score=0.1,
         evidence_units=[{"claim": "aroma"}],
         graph_evidence={"relationships": [{"type": "CONTRIBUTES_TO"}]},
@@ -37,7 +37,7 @@ def test_relationships_collect_only_mapping_values_from_both_shapes() -> None:
     document = EvidenceDocument(
         content="graph",
         graph_evidence={"relationships": [{"type": "A"}, "invalid"]},
-        recipe_graph_evidence={"semantic_relations": [{"type": "B"}, 7]},
+        domain_graph_evidence={"semantic_relations": [{"type": "B"}, 7]},
     )
 
     assert _ranker()._relationships(document) == [{"type": "A"}, {"type": "B"}]
@@ -76,8 +76,8 @@ def test_dedupe_merges_duplicate_recipe_evidence_without_reordering() -> None:
 
 
 def test_dedupe_keeps_identical_duplicate_content_once() -> None:
-    first = EvidenceDocument(content="same", recipe_name="Recipe")
-    duplicate = EvidenceDocument(content="same", recipe_name="Recipe")
+    first = EvidenceDocument(content="same", entity_name="Recipe")
+    duplicate = EvidenceDocument(content="same", entity_name="Recipe")
 
     [merged] = _ranker().dedupe([first, duplicate])
 
