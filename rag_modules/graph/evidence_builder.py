@@ -211,7 +211,6 @@ class GraphEvidenceBuilder:
                     {
                         "recipe_node_ids": primary_ids,
                         "recipe_names": primary_names,
-                        "recipe_graph_evidence": domain_evidence,
                         "recipe_name": entity_name,
                     }
                 )
@@ -327,7 +326,6 @@ class GraphEvidenceBuilder:
                 {
                     "recipe_node_ids": primary_ids,
                     "recipe_names": primary_names,
-                    "recipe_graph_evidence": domain_evidence,
                     "recipe_name": entity_name,
                     "domain_graph_evidence": domain_evidence,
                 }

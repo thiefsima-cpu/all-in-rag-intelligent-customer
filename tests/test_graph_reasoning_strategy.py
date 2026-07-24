@@ -304,6 +304,30 @@ class GraphRetrievalDtoBoundaryTests(unittest.TestCase):
         self.assertIn("Pepper", description)
         self.assertIn("USES", description)
 
+    def test_recipe_graph_evidence_uses_only_the_canonical_domain_metadata_key(self) -> None:
+        builder = GraphEvidenceBuilder()
+        path = GraphPath(
+            nodes=[
+                GraphNodeSnapshot(node_id="r1", name="Mapo tofu", labels=("Recipe",)),
+                GraphNodeSnapshot(node_id="i1", name="Tofu", labels=("Ingredient",)),
+            ],
+            relationships=[GraphRelationshipSnapshot(relation_type="USES")],
+        )
+        subgraph = KnowledgeSubgraph(
+            central_nodes=[GraphNodeSnapshot(node_id="r1", name="Mapo tofu", labels=("Recipe",))],
+            connected_nodes=[GraphNodeSnapshot(node_id="i1", name="Tofu", labels=("Ingredient",))],
+            relationships=[GraphRelationshipSnapshot(relation_type="USES")],
+        )
+
+        [path_document] = builder.paths_to_evidence([path], "why")
+        [subgraph_document] = builder.subgraph_to_evidence(subgraph, ["chain"], "why")
+
+        for document in (path_document, subgraph_document):
+            self.assertEqual(
+                document.metadata["domain_graph_evidence"], document.domain_graph_evidence
+            )
+            self.assertNotIn("recipe_graph_evidence", document.metadata)
+
 
 if __name__ == "__main__":
     unittest.main()

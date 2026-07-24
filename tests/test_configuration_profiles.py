@@ -212,6 +212,30 @@ class ConfigurationProfilesTests(unittest.TestCase):
             "string",
         )
 
+    def test_profile_selector_toml_dates_reach_strict_validation_with_source(self) -> None:
+        for field in ("bundle", "bundle_path"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmpdir:
+                profile_path = Path(tmpdir) / "bad.toml"
+                profile_path.write_text(
+                    f"[query_understanding.policy]\n{field} = 2026-07-24\n",
+                    encoding="utf-8",
+                )
+
+                with self.assertRaises(ConfigurationError) as context:
+                    load_config(
+                        source=EnvConfigSource(environ={}),
+                        profile_path=str(profile_path),
+                        profiles_dir=tmpdir,
+                    )
+
+            self.assertConfigErrorMentions(
+                context.exception,
+                "profile",
+                str(profile_path.resolve()),
+                f"query_understanding.policy.{field}",
+                "string",
+            )
+
     def test_profile_scalar_for_nested_section_reports_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "bad.toml"

@@ -145,19 +145,64 @@ def _is_policy_free_forwarder(node: ast.FunctionDef | ast.AsyncFunctionDef) -> b
         return False
     expression = body[0].value
     call = expression.value if isinstance(expression, ast.Await) else expression
-    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+    if not isinstance(call, ast.Call) or not isinstance(call.func, (ast.Name, ast.Attribute)):
         return False
-    if call.func.id in {"bool", "float", "int", "str"}:
+    if isinstance(call.func, ast.Name) and call.func.id in {"bool", "float", "int", "str"}:
         return False
     parameter_names = {
         argument.arg
         for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
     }
+    if node.args.vararg is not None:
+        parameter_names.add(node.args.vararg.arg)
+    if node.args.kwarg is not None:
+        parameter_names.add(node.args.kwarg.arg)
     forwarded_names = {argument.id for argument in call.args if isinstance(argument, ast.Name)}
+    forwarded_names.update(
+        argument.value.id
+        for argument in call.args
+        if isinstance(argument, ast.Starred) and isinstance(argument.value, ast.Name)
+    )
     forwarded_names.update(
         keyword.value.id for keyword in call.keywords if isinstance(keyword.value, ast.Name)
     )
+    receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
+    while isinstance(receiver, ast.Attribute):
+        receiver = receiver.value
+    if isinstance(receiver, ast.Name):
+        forwarded_names.add(receiver.id)
     return bool(parameter_names) and parameter_names == forwarded_names
+
+
+def _forwarder_candidate(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    tree = ast.parse(source)
+    return next(
+        node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+
+
+def test_policy_free_forwarder_predicate_detects_semantic_delegates() -> None:
+    assert _is_policy_free_forwarder(_forwarder_candidate("def f(query): return target(query)"))
+    assert _is_policy_free_forwarder(
+        _forwarder_candidate("def f(client, query): return client.execute(query)")
+    )
+    assert _is_policy_free_forwarder(
+        _forwarder_candidate("async def f(client, query): return await client.execute(query)")
+    )
+    assert _is_policy_free_forwarder(
+        _forwarder_candidate("def f(*args, **kwargs): return target(*args, **kwargs)")
+    )
+
+
+def test_policy_free_forwarder_predicate_rejects_non_forwarders() -> None:
+    assert not _is_policy_free_forwarder(
+        _forwarder_candidate("def f(query): return target(query.strip())")
+    )
+    assert not _is_policy_free_forwarder(_forwarder_candidate("def f(query): return str(query)"))
+    assert not _is_policy_free_forwarder(_forwarder_candidate("def f(): return target()"))
+    assert not _is_policy_free_forwarder(
+        _forwarder_candidate("def f(query):\n    result = target(query)\n    return result")
+    )
 
 
 def test_scoped_leaf_modules_are_not_pure_forwarders() -> None:

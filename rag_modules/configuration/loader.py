@@ -19,6 +19,7 @@ from .assembly import (
 from .env import EnvConfigSource, build_env_overrides, default_env_source
 from .models import GraphRAGConfig, default_domain_payload
 from .profiles import load_profile
+from .validation import validate_query_policy_selector_payload
 
 
 def _align_domain_pack_storage(
@@ -43,6 +44,16 @@ def _align_domain_pack_storage(
     storage_section["milvus_collection_name"] = get_domain_pack(domain_name).vector_collection_name
 
 
+def _validate_selector_layer(
+    layer: Mapping[str, object] | None,
+    *,
+    source_kind: str,
+    source: str,
+) -> None:
+    if layer:
+        validate_query_policy_selector_payload(layer, source_kind=source_kind, source=source)
+
+
 def load_config(
     overrides: Mapping[str, object] | None = None,
     *,
@@ -64,6 +75,18 @@ def load_config(
         profile_path=profile_path or env_source.get_first("GRAPH_RAG_PROFILE_PATH"),
         profiles_dir=profiles_dir or env_source.get_first("GRAPH_RAG_PROFILES_DIR"),
     )
+    _validate_selector_layer(
+        resolved_profile.overrides,
+        source_kind="profile",
+        source=resolved_profile.path or resolved_profile.name,
+    )
+    env_overrides = build_env_overrides(env_source)
+    _validate_selector_layer(env_overrides, source_kind="environment", source="")
+    _validate_selector_layer(
+        overrides,
+        source_kind="overrides",
+        source=_overrides_source,
+    )
     selector = resolve_query_policy_selector(
         base_domain_payload,
         resolved_profile.overrides or {},
@@ -82,7 +105,6 @@ def load_config(
         )
         _align_domain_pack_storage(domain_payload, layer=resolved_profile.overrides)
 
-    env_overrides = build_env_overrides(env_source)
     if env_overrides:
         merge_overrides(domain_payload, env_overrides)
         build_config_from_domain_dict(

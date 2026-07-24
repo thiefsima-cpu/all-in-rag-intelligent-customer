@@ -16,6 +16,7 @@ from ..query_policy.selector import (
 )
 from .assembly import build_config_from_resolved_overrides
 from .models import default_domain_payload
+from .validation import validate_query_policy_selector_payload
 
 
 def _repo_root() -> Path:
@@ -70,6 +71,11 @@ def _read_profile_file(path: Path) -> dict[str, object]:
 
 
 def _validate_profile_payload(path: Path, payload: Mapping[str, object]) -> None:
+    validate_query_policy_selector_payload(
+        payload,
+        source_kind="profile",
+        source=str(path),
+    )
     selector = resolve_query_policy_selector(default_domain_payload(), payload)
     bundle = resolve_query_policy_bundle_from_selector(selector)
     build_config_from_resolved_overrides(

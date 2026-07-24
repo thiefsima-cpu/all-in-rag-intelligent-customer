@@ -80,6 +80,7 @@ def test_answer_payload_maps_typed_response_without_to_dict() -> None:
     assert post_process.rerank_succeeded is True
     assert post_process.rerank_latency_ms == 2.75
     assert post_process.model_dump()["rerank_latency_ms"] == 2.75
+    assert "recipe_graph_evidence" not in payload.grounding.evidence_documents[0].model_dump()
 
 
 def test_typed_mapper_matches_compatibility_payload() -> None:
@@ -108,7 +109,6 @@ def test_typed_mapper_matches_compatibility_payload() -> None:
         for document in documents:
             document["recipe_name"] = document["entity_name"]
             document["recipe_id"] = document["entity_id"]
-            document["recipe_graph_evidence"] = document["domain_graph_evidence"]
 
     assert AnswerPayloadModel.from_dto(response).model_dump() == expected
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -100,6 +100,56 @@ def raise_parser_error(
     )
 
 
+def validate_query_policy_selector_payload(
+    payload: Mapping[str, object],
+    *,
+    source_kind: str,
+    source: str,
+) -> None:
+    """Validate raw query-policy selector data before it can select a bundle."""
+    query_understanding = payload.get("query_understanding")
+    if query_understanding is None:
+        return
+    if not isinstance(query_understanding, Mapping):
+        raise_parser_error(
+            source_kind,
+            source,
+            "query_understanding",
+            "expected dictionary",
+        )
+    policy = query_understanding.get("policy")
+    if policy is None:
+        return
+    if not isinstance(policy, Mapping):
+        raise_parser_error(
+            source_kind,
+            source,
+            "query_understanding.policy",
+            "expected dictionary",
+        )
+
+    from .models import QueryPolicySelectorSettings
+
+    try:
+        QueryPolicySelectorSettings.model_validate(dict(policy))
+    except ValidationError as exc:
+        details = [
+            ConfigErrorDetail(
+                source_kind=source_kind,
+                source=source,
+                path="query_understanding.policy"
+                + (
+                    f".{dotted_path(error.get('loc', ()))}"
+                    if dotted_path(error.get("loc", ()))
+                    else ""
+                ),
+                message=normalize_reason(str(error.get("msg", ""))),
+            )
+            for error in exc.errors()
+        ]
+        raise ConfigurationError(details) from exc
+
+
 __all__ = [
     "ConfigErrorDetail",
     "ConfigurationError",
@@ -107,4 +157,5 @@ __all__ = [
     "normalize_reason",
     "raise_parser_error",
     "raise_validation_error",
+    "validate_query_policy_selector_payload",
 ]

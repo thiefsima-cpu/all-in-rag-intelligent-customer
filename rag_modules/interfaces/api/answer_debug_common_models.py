@@ -59,7 +59,6 @@ class EvidenceDocumentResponseModel(BaseModel):
     matched_terms: list[str] = Field(default_factory=list)
     graph_evidence: JsonObject = Field(default_factory=dict)
     domain_graph_evidence: JsonObject = Field(default_factory=dict)
-    recipe_graph_evidence: JsonObject = Field(default_factory=dict)
     constraint_evidence: JsonObject = Field(default_factory=dict)
     evidence_units: list[JsonObject] = Field(default_factory=list)
     route_strategy: str = ""
@@ -86,7 +85,6 @@ class EvidenceDocumentResponseModel(BaseModel):
             matched_terms=list(document.matched_terms),
             graph_evidence=coerce_json_object(document.graph_evidence),
             domain_graph_evidence=coerce_json_object(document.domain_graph_evidence),
-            recipe_graph_evidence=coerce_json_object(document.domain_graph_evidence),
             constraint_evidence=coerce_json_object(document.constraint_evidence),
             evidence_units=[coerce_json_object(item) for item in document.evidence_units],
             route_strategy=document.route_strategy,

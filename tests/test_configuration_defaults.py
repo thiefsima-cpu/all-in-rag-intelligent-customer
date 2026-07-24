@@ -199,6 +199,21 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertIn("models.llm_model", message)
         self.assertIn("string", message)
 
+    def test_explicit_selector_non_strings_reach_strict_validation_with_source(self) -> None:
+        for field in ("bundle", "bundle_path"):
+            with self.subTest(field=field):
+                with self.assertRaises(ConfigurationError) as context:
+                    load_config(
+                        {"query_understanding": {"policy": {field: Path("not-a-policy")}}},
+                        source=EnvConfigSource(environ={}),
+                    )
+
+                message = str(context.exception)
+                self.assertIn("overrides", message)
+                self.assertIn("load_config", message)
+                self.assertIn(f"query_understanding.policy.{field}", message)
+                self.assertIn("string", message)
+
     def test_runtime_settings_are_derived_from_resolved_config(self) -> None:
         config = build_test_config(
             {
