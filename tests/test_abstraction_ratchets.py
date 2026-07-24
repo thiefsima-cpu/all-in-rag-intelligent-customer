@@ -5,8 +5,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "rag_modules"
-MAX_PRODUCTION_PROTOCOLS = 155
-MAX_PRODUCTION_MODULES_UNDER_60_LINES = 97
+MAX_PRODUCTION_PROTOCOLS = 152
+MAX_PRODUCTION_MODULES_UNDER_60_LINES = 64
+MAX_PRODUCTION_ANY_NAME_NODES = 174
+MAX_PRODUCTION_PYTHON_FILES = 379
 SCOPED_ROOTS = (
     ROOT / "rag_modules" / "app",
     ROOT / "rag_modules" / "application",
@@ -49,6 +51,25 @@ APPROVED_PROTOCOL_EXCEPTIONS = {
             "_RollbackVectorIndexPort",
         }
     ),
+}
+FOUNDATION_ROOTS = (
+    ROOT / "rag_modules" / "configuration",
+    ROOT / "rag_modules" / "contracts",
+    ROOT / "rag_modules" / "kernel",
+)
+APPROVED_FOUNDATION_PROTOCOLS = {
+    Path("rag_modules/contracts/build_jobs/ports.py"): frozenset(
+        {"BuildJobRepositoryPort", "BuildJobRunnerPort"}
+    )
+}
+APPROVED_FOUNDATION_SHORT_MODULES = {
+    Path("rag_modules/contracts/build_jobs/errors.py"): "build-job domain errors",
+    Path("rag_modules/contracts/graph.py"): "graph query DTOs",
+    Path("rag_modules/contracts/runtime/policy.py"): "runtime policy DTOs",
+    Path("rag_modules/kernel/documents.py"): "document normalization primitives",
+    Path("rag_modules/kernel/retrieval.py"): "retrieval strategy primitives",
+    Path("rag_modules/kernel/semantic_schema.py"): "semantic schema identifiers",
+    Path("rag_modules/kernel/time_parsing.py"): "timestamp parsing primitives",
 }
 
 
@@ -135,6 +156,17 @@ def test_protocols_outside_port_and_contract_modules_match_approved_baseline() -
     assert actual == APPROVED_PROTOCOL_EXCEPTIONS
 
 
+def test_foundation_protocols_match_the_two_retained_build_job_ports() -> None:
+    actual: dict[Path, frozenset[str]] = {}
+    for package_root in FOUNDATION_ROOTS:
+        for path in package_root.rglob("*.py"):
+            names = _protocol_definitions(path)
+            if names:
+                actual[path.relative_to(ROOT)] = frozenset(names)
+
+    assert actual == APPROVED_FOUNDATION_PROTOCOLS
+
+
 def test_concrete_adapters_do_not_explicitly_inherit_protocols() -> None:
     protocol_names: set[str] = set()
     for package_root in SCOPED_ROOTS:
@@ -186,4 +218,66 @@ def test_small_production_module_count_does_not_exceed_ratchet() -> None:
         "Sub-60-line production module count exceeded the approved ratchet. Add a module only "
         "when it owns a stable responsibility; otherwise keep behavior with its owner. "
         f"count={len(small_modules)} baseline={MAX_PRODUCTION_MODULES_UNDER_60_LINES}"
+    )
+
+
+def test_foundation_short_modules_match_responsibility_registry() -> None:
+    actual = {
+        path.relative_to(ROOT)
+        for package_root in FOUNDATION_ROOTS
+        for path in package_root.rglob("*.py")
+        if path.name != "__init__.py"
+        and len(path.read_text(encoding="utf-8-sig").splitlines()) < 60
+    }
+
+    assert actual == set(APPROVED_FOUNDATION_SHORT_MODULES)
+
+
+def test_foundation_modules_do_not_use_dynamic_type_escape_hatches() -> None:
+    violations: list[str] = []
+    prohibited_call_names = {"cast", "getattr"}
+    for package_root in FOUNDATION_ROOTS:
+        for path in package_root.rglob("*.py"):
+            source = path.read_text(encoding="utf-8-sig")
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in prohibited_call_names
+                ):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{node.lineno}: {node.func.id}(...)"
+                    )
+            violations.extend(
+                f"{path.relative_to(ROOT)}:{line_number}: type ignore"
+                for line_number, line in enumerate(source.splitlines(), start=1)
+                if "type: ignore" in line
+            )
+
+    assert violations == []
+
+
+def test_production_explicit_any_count_does_not_exceed_ratchet() -> None:
+    any_name_nodes = [
+        (path.relative_to(ROOT), node.lineno)
+        for path in PRODUCTION_ROOT.rglob("*.py")
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path)))
+        if isinstance(node, ast.Name) and node.id == "Any"
+    ]
+
+    assert len(any_name_nodes) <= MAX_PRODUCTION_ANY_NAME_NODES, (
+        "Production explicit Any count exceeded the approved ratchet. Prefer object at ingress, "
+        "JsonObject for JSON output, or a concrete DTO for known shapes. "
+        f"count={len(any_name_nodes)} baseline={MAX_PRODUCTION_ANY_NAME_NODES}"
+    )
+
+
+def test_production_python_file_count_does_not_exceed_ratchet() -> None:
+    python_files = list(PRODUCTION_ROOT.rglob("*.py"))
+
+    assert len(python_files) <= MAX_PRODUCTION_PYTHON_FILES, (
+        "Production Python file count exceeded the approved ratchet. Merge a new module into "
+        "its canonical owner unless it has a stable independent responsibility. "
+        f"count={len(python_files)} baseline={MAX_PRODUCTION_PYTHON_FILES}"
     )

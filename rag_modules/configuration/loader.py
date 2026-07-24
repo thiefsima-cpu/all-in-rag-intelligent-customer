@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
 
 from dotenv import load_dotenv
 
 from ..domains import get_domain_pack
+from ..kernel.json_types import JsonObject
 from ..query_policy.selector import (
     resolve_query_policy_bundle_from_selector,
     resolve_query_policy_selector,
@@ -21,14 +22,10 @@ from .models import GraphRAGConfig, default_domain_payload
 from .profiles import load_profile
 
 
-def _default_domain_payload() -> dict[str, dict[str, Any]]:
-    return default_domain_payload()
-
-
 def _align_domain_pack_storage(
-    domain_payload: dict[str, dict[str, Any]],
+    domain_payload: JsonObject,
     *,
-    layer: Mapping[str, Any] | None = None,
+    layer: Mapping[str, object] | None = None,
 ) -> None:
     domain_layer = (layer or {}).get("domain")
     if layer is not None and not (isinstance(domain_layer, Mapping) and "name" in domain_layer):
@@ -36,14 +33,17 @@ def _align_domain_pack_storage(
     storage_layer = (layer or {}).get("storage")
     if isinstance(storage_layer, Mapping) and "milvus_collection_name" in storage_layer:
         return
-    domain_name = str(domain_payload.get("domain", {}).get("name") or "recipe")
-    domain_payload.setdefault("storage", {})["milvus_collection_name"] = get_domain_pack(
-        domain_name
-    ).vector_collection_name
+    domain_section = domain_payload.get("domain")
+    domain_name = str(domain_section.get("name") if isinstance(domain_section, dict) else "recipe")
+    storage_section = domain_payload.get("storage")
+    if not isinstance(storage_section, dict):
+        storage_section = {}
+        domain_payload["storage"] = storage_section
+    storage_section["milvus_collection_name"] = get_domain_pack(domain_name).vector_collection_name
 
 
 def load_config(
-    overrides: Mapping[str, Any] | None = None,
+    overrides: Mapping[str, object] | None = None,
     *,
     source: EnvConfigSource | None = None,
     profile: str | None = None,
@@ -57,7 +57,7 @@ def load_config(
     else:
         env_source = source
 
-    base_domain_payload = _default_domain_payload()
+    base_domain_payload = default_domain_payload()
     resolved_profile = load_profile(
         profile=profile or env_source.get_first("GRAPH_RAG_PROFILE"),
         profile_path=profile_path or env_source.get_first("GRAPH_RAG_PROFILE_PATH"),

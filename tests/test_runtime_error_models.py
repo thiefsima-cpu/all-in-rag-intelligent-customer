@@ -6,7 +6,6 @@ import unittest
 from rag_modules.contracts.runtime import RuntimeErrorDetail
 from rag_modules.contracts.runtime.errors import (
     answer_error_detail,
-    generation_error_detail,
     retrieval_error_detail,
     routing_error_detail,
     runtime_error_detail,
@@ -14,6 +13,9 @@ from rag_modules.contracts.runtime.errors import (
 from rag_modules.generation.clients.errors import (
     GenerationLatencyBudgetExceeded,
     GenerationProviderResponseError,
+)
+from rag_modules.generation.clients.errors import (
+    generation_error_detail as generation_client_error_detail,
 )
 
 
@@ -64,7 +66,7 @@ class RuntimeErrorDetailTests(unittest.TestCase):
 
         for error, expected in cases:
             with self.subTest(expected=expected):
-                detail = generation_error_detail(error)
+                detail = generation_client_error_detail(error)
                 self.assertEqual(detail.to_dict(), expected)
                 self.assertNotIn(secret, json.dumps(detail.to_dict()))
 

@@ -6,6 +6,7 @@ from .adapter import GenerationClientAdapter
 from .errors import (
     GenerationLatencyBudgetExceeded,
     GenerationProviderResponseError,
+    generation_error_detail,
     generation_failure_code,
     is_retryable_generation_error,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "GenerationLatencyBudgetExceeded",
     "GenerationProviderResponseError",
     "build_openai_client",
+    "generation_error_detail",
     "generation_failure_code",
     "is_retryable_generation_error",
     "resolve_api_key",

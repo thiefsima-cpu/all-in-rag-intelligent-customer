@@ -27,7 +27,7 @@ class GenerationPromptBuilder:
         self.policy_bundle = policy_bundle or get_query_policy()
         self.generation_policy = self.policy_bundle.generation
         self.prompts = self.policy_bundle.prompts
-        self.policy_snapshot = PolicySnapshot.from_metadata(self.policy_bundle.metadata)
+        self.policy_snapshot = PolicySnapshot.from_dict(self.policy_bundle.metadata.to_dict())
 
     @staticmethod
     def _package_from_context(answer_context: AnswerContext) -> AnswerEvidencePackage:

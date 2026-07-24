@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping
 
+from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
 from .environment_schema import ENV_FIELD_SPECS as _ENV_FIELD_SPEC_GROUPS
 from .environment_schema import EnvFieldSpec, EnvValueKind
 from .validation import raise_parser_error
@@ -54,7 +55,7 @@ class EnvConfigSource:
         found = self.get_first_with_name(*names)
         return found[1] if found is not None else None
 
-    def get_json_dict(self, name: str, default: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    def get_json_dict(self, name: str, default: dict[str, list[str]]) -> dict[str, list[str]]:
         value = self.environ.get(name)
         if value in (None, ""):
             return {key: list(items) for key, items in default.items()}
@@ -65,7 +66,7 @@ class EnvConfigSource:
         if not isinstance(parsed, dict):
             return {key: list(items) for key, items in default.items()}
 
-        normalized: Dict[str, List[str]] = {}
+        normalized: dict[str, list[str]] = {}
         for key, items in parsed.items():
             if isinstance(items, list):
                 normalized[str(key)] = [str(item).strip() for item in items if str(item).strip()]
@@ -157,7 +158,7 @@ def _parse_json_dict(value: str, source: str, path: str) -> dict[str, list[str]]
     return normalized
 
 
-def _parse_value(spec: EnvFieldSpec, source: str, value: str) -> Any:
+def _parse_value(spec: EnvFieldSpec, source: str, value: str) -> JsonValue:
     path = spec.dotted_path
     if spec.value_kind == "str":
         return value
@@ -167,11 +168,11 @@ def _parse_value(spec: EnvFieldSpec, source: str, value: str) -> Any:
         return _parse_float(value, source, path)
     if spec.value_kind == "bool":
         return _parse_bool(value, source, path)
-    return _parse_json_dict(value, source, path)
+    return coerce_json_object(_parse_json_dict(value, source, path))
 
 
-def _assign_path(payload: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
-    target = payload
+def _assign_path(payload: JsonObject, path: tuple[str, ...], value: JsonValue) -> None:
+    target: JsonObject = payload
     for part in path[:-1]:
         next_value = target.setdefault(part, {})
         if not isinstance(next_value, dict):
@@ -185,10 +186,10 @@ def build_env_overrides(
     source: EnvConfigSource,
     *,
     section_name: str | None = None,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Build strict nested configuration overrides from supported environment variables."""
 
-    payload: dict[str, Any] = {}
+    payload: JsonObject = {}
     seen_specs: set[EnvFieldSpec] = set()
     for spec in ENV_FIELD_SPECS.values():
         if section_name is not None and spec.path[:1] != (section_name,):

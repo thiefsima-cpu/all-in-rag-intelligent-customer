@@ -49,7 +49,7 @@ class GraphRetrievalRuntime:
         return graph_query, evidence_goals
 
     def _policy_snapshot(self) -> PolicySnapshot:
-        return PolicySnapshot.from_metadata(self.policy_bundle.metadata)
+        return PolicySnapshot.from_dict(self.policy_bundle.metadata.to_dict())
 
     def start_trace(
         self,

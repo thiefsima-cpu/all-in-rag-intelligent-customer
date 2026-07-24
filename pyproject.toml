@@ -209,6 +209,8 @@ module = [
   "rag_modules.build_pipeline.graph_preparation",
   "rag_modules.build_pipeline.graph_preparation.*",
   "rag_modules.build_pipeline.ports",
+  "rag_modules.configuration",
+  "rag_modules.configuration.*",
   "rag_modules.contracts",
   "rag_modules.contracts.*",
   "rag_modules.domain",

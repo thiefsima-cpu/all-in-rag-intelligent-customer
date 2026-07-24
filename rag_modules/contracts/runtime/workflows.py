@@ -53,9 +53,9 @@ class QueryUnderstandingSnapshot:
             )
         elif not isinstance(self.semantic_profile, QuerySemanticProfile):
             self.semantic_profile = QuerySemanticProfile()
-        if not self.semantic_profile.query and getattr(self.query_plan, "semantic_profile", None):
+        if not self.semantic_profile.query:
             self.semantic_profile = self.query_plan.semantic_profile
-        if not self.constraints.has_constraints() and getattr(self.query_plan, "constraints", None):
+        if not self.constraints.has_constraints():
             self.constraints = self.query_plan.constraints
         self.metadata = coerce_json_object(self.metadata)
 

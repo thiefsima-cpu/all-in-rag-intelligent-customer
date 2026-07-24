@@ -38,7 +38,7 @@ class RouteTraceRecorder:
         self.snapshot = RouteSnapshot(
             query=query,
             requested_top_k=requested_top_k,
-            policy=PolicySnapshot.from_metadata(self.policy_bundle.metadata),
+            policy=PolicySnapshot.from_dict(self.policy_bundle.metadata.to_dict()),
         )
 
     def record_plan(self, plan: QueryPlan, *, start_time: float) -> None:

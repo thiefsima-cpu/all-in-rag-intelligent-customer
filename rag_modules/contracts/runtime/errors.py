@@ -117,8 +117,12 @@ def retrieval_error_detail(
     return RuntimeErrorDetail(code=code, detail=detail)
 
 
-def generation_error_detail(error: BaseException) -> RuntimeErrorDetail:
-    explicit_detail = _safe_token(getattr(error, "failure_code", ""))
+def generation_error_detail(
+    error: BaseException,
+    *,
+    failure_code: str = "",
+) -> RuntimeErrorDetail:
+    explicit_detail = _safe_token(failure_code)
     if explicit_detail:
         return RuntimeErrorDetail(code=_detail_to_code(explicit_detail), detail=explicit_detail)
     if isinstance(error, TimeoutError) or "timeout" in type(error).__name__.lower():

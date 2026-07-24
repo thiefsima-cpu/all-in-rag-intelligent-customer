@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import NoReturn
 
 from pydantic import ValidationError
 
@@ -35,7 +35,7 @@ class ConfigurationError(ValueError):
         super().__init__(message)
 
 
-def dotted_path(location: Iterable[Any]) -> str:
+def dotted_path(location: Iterable[object]) -> str:
     return ".".join(str(part) for part in location if str(part))
 
 

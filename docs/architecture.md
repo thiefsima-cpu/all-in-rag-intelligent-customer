@@ -58,6 +58,29 @@ diagnostics and shutdown services; it does not forward application use cases or
 DTOs. Public bootstrappers delegate directly to collaborators resolved by the
 composition roots and do not insert invocation adapters.
 
+## Foundation-boundary ratchets
+
+Configuration has exactly eight Python modules: `__init__.py`, `assembly.py`,
+`env.py`, `environment_schema.py`, `loader.py`, `models.py`, `profiles.py`,
+and `validation.py`. All configuration entry points follow one loader flow:
+environment variables, TOML profile data, and explicit overrides become
+JSON-shaped nested data, are merged and validated in precedence order, then
+produce `GraphRAGConfig`. There are no section-specific loader modules.
+
+The contract kernel accepts unvalidated mapping input as `Mapping[str, object]`
+and normalizes JSON output through `JsonObject`/`JsonValue`. LangChain
+`Document` conversion occurs only at `rag_modules.langchain_document_adapter`;
+the adapter produces `TextDocument` or `EvidenceDocument` before values enter
+retrieval, evidence processing, or generation. The retired `PageDocumentLike`
+surface and the deprecated `EvidenceDocument` recipe aliases (`recipe_id`,
+`recipe_name`, `recipe_graph_evidence`, and `_legacy_recipe_compat`) are not
+part of the internal contract.
+
+The foundation layer retains exactly two substitution seams:
+`BuildJobRepositoryPort` (file-backed or externally supplied job persistence)
+and `BuildJobRunnerPort` (in-process or external-worker execution). No other
+foundation Protocol is a canonical abstraction.
+
 provider 边界刻意保持狭窄。`RuntimeProviderSurface` 只暴露当前 facet：
 `infrastructure`、`build_pipeline`、`retrieval_runtime`、顶层 `provide_generation_module`
 和 `services`。Query understanding 属于 retrieval-runtime facet，因为 routing 会同时消费两者；

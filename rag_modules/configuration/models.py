@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Literal, Mapping, Self, cast
+from collections.abc import Mapping
+from typing import Dict, List, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -15,6 +16,7 @@ from pydantic import (
 )
 
 from ..domains import get_domain_pack
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..kernel.retrieval import (
     CandidateSourceDegradationStrategy,
     candidate_source_degradation_strategy,
@@ -26,8 +28,8 @@ class ConfigSection(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return self.model_dump(mode="python")
+    def to_dict(self) -> JsonObject:
+        return coerce_json_object(self.model_dump(mode="json"))
 
 
 class ApiSettings(ConfigSection):
@@ -265,7 +267,7 @@ class QuerySemanticSettings(ConfigSection):
     adaptive_traversal: QuerySemanticAdaptiveTraversalSettings
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+    def from_dict(cls, data: Mapping[str, object]) -> Self:
         return cls.model_validate(dict(data or {}))
 
 
@@ -275,7 +277,7 @@ class QueryUnderstandingSettings(ConfigSection):
     semantics: QuerySemanticSettings
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+    def from_dict(cls, data: Mapping[str, object]) -> Self:
         return cls.model_validate(dict(data or {}))
 
 
@@ -348,7 +350,7 @@ class DomainSettings(ConfigSection):
         return get_domain_pack(value).name
 
 
-SECTION_TYPES: Dict[str, type[ConfigSection]] = {
+SECTION_TYPES: dict[str, type[ConfigSection]] = {
     "domain": DomainSettings,
     "storage": StorageSettings,
     "models": ModelSettings,
@@ -361,12 +363,12 @@ SECTION_TYPES: Dict[str, type[ConfigSection]] = {
 }
 SECTION_ORDER = tuple(SECTION_TYPES.keys())
 SECTION_FIELD_NAMES = {
-    section_name: tuple(cast(Any, section_type).model_fields)
+    section_name: tuple(section_type.model_fields)
     for section_name, section_type in SECTION_TYPES.items()
 }
 
 
-def default_domain_payload() -> Dict[str, Dict[str, Any]]:
+def default_domain_payload() -> JsonObject:
     return {
         section_name: section_type.model_construct().to_dict()
         for section_name, section_type in SECTION_TYPES.items()
@@ -374,8 +376,8 @@ def default_domain_payload() -> Dict[str, Dict[str, Any]]:
 
 
 def _clear_storage_derived_paths_for_overrides(
-    domain_payload: Dict[str, Dict[str, Any]],
-    overrides: Mapping[str, Any],
+    domain_payload: JsonObject,
+    overrides: Mapping[str, object],
 ) -> None:
     storage_overrides = overrides.get("storage")
     storage_payload = domain_payload.get("storage")
@@ -450,30 +452,34 @@ class GraphRAGConfig(BaseModel):
             )
         return self
 
-    def to_domain_dict(self) -> Dict[str, Dict[str, Any]]:
+    def to_domain_dict(self) -> JsonObject:
         return {
-            section_name: getattr(self, section_name).to_dict() for section_name in SECTION_ORDER
+            "domain": self.domain.to_dict(),
+            "storage": self.storage.to_dict(),
+            "models": self.models.to_dict(),
+            "retrieval": self.retrieval.to_dict(),
+            "query_understanding": self.query_understanding.to_dict(),
+            "generation": self.generation.to_dict(),
+            "graph": self.graph.to_dict(),
+            "observability": self.observability.to_dict(),
+            "api": self.api.to_dict(),
         }
 
-    def to_dict(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = self.to_domain_dict()
+    def to_dict(self) -> JsonObject:
+        payload = self.to_domain_dict()
         if self.profile_name:
             payload["profile_name"] = self.profile_name
         if self.profile_path:
             payload["profile_path"] = self.profile_path
         if self.profile_hash:
             payload["profile_hash"] = self.profile_hash
-        if payload["models"].get("api_key"):
-            payload["models"]["api_key"] = "***"
-        if payload["storage"].get("neo4j_password"):
-            payload["storage"]["neo4j_password"] = "***"
-        if payload["api"].get("access_token"):
-            payload["api"]["access_token"] = "***"
-        if payload["observability"].get("query_trace_fingerprint_salt"):
-            payload["observability"]["query_trace_fingerprint_salt"] = "***"
+        _redact_secret(payload, "models", "api_key")
+        _redact_secret(payload, "storage", "neo4j_password")
+        _redact_secret(payload, "api", "access_token")
+        _redact_secret(payload, "observability", "query_trace_fingerprint_salt")
         return payload
 
-    def with_overrides(self, overrides: Mapping[str, Any]) -> "GraphRAGConfig":
+    def with_overrides(self, overrides: Mapping[str, object]) -> "GraphRAGConfig":
         merged = self.to_domain_dict()
         _clear_storage_derived_paths_for_overrides(merged, overrides)
         from .assembly import apply_overrides
@@ -492,7 +498,7 @@ class GraphRAGConfig(BaseModel):
         return config
 
     @classmethod
-    def from_dict(cls, config_dict: Mapping[str, Any]) -> "GraphRAGConfig":
+    def from_dict(cls, config_dict: Mapping[str, object]) -> "GraphRAGConfig":
         if isinstance(config_dict, cls):
             return config_dict
 
@@ -513,6 +519,12 @@ class GraphRAGConfig(BaseModel):
         config.profile_path = profile_metadata["profile_path"]
         config.profile_hash = profile_metadata["profile_hash"]
         return config
+
+
+def _redact_secret(payload: JsonObject, section_name: str, field_name: str) -> None:
+    section = payload.get(section_name)
+    if isinstance(section, dict) and section.get(field_name):
+        section[field_name] = "***"
 
 
 __all__ = [

@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
 
+from ..kernel.json_types import JsonObject, coerce_json_object, coerce_json_value
 from ..query_policy.selector import (
     resolve_query_policy_bundle_from_selector,
     resolve_query_policy_selector,
@@ -32,10 +33,10 @@ class ConfigProfile:
     name: str = ""
     path: str = ""
     profile_hash: str = ""
-    overrides: dict[str, Any] | None = None
+    overrides: JsonObject | None = None
     loaded_files: tuple[str, ...] = ()
 
-    def to_metadata(self) -> dict[str, Any]:
+    def to_metadata(self) -> JsonObject:
         return {
             "name": self.name,
             "path": self.path,
@@ -44,7 +45,7 @@ class ConfigProfile:
         }
 
 
-def _merge_nested(target: dict[str, Any], updates: Mapping[str, Any]) -> dict[str, Any]:
+def _merge_nested(target: JsonObject, updates: Mapping[str, object]) -> JsonObject:
     for key, value in updates.items():
         key_text = str(key)
         if isinstance(value, Mapping):
@@ -54,21 +55,21 @@ def _merge_nested(target: dict[str, Any], updates: Mapping[str, Any]) -> dict[st
                 target[key_text] = child
             _merge_nested(child, value)
         else:
-            target[key_text] = value
+            target[key_text] = coerce_json_value(value)
     return target
 
 
-def _read_profile_file(path: Path) -> dict[str, Any]:
+def _read_profile_file(path: Path) -> JsonObject:
     with path.open("rb") as file:
         payload = tomllib.load(file)
     if not isinstance(payload, dict):
         raise ValueError(f"Profile at {path} must decode to a TOML table.")
-    result = dict(payload)
+    result = coerce_json_object(payload)
     _validate_profile_payload(path, result)
     return result
 
 
-def _validate_profile_payload(path: Path, payload: Mapping[str, Any]) -> None:
+def _validate_profile_payload(path: Path, payload: Mapping[str, object]) -> None:
     selector = resolve_query_policy_selector(default_domain_payload(), payload)
     bundle = resolve_query_policy_bundle_from_selector(selector)
     build_config_from_resolved_overrides(
@@ -95,7 +96,7 @@ def load_profile(
     resolved_profiles_dir = (
         Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
     )
-    merged: dict[str, Any] = {}
+    merged: JsonObject = {}
     loaded_files: list[str] = []
     selected_name = str(profile or "").strip()
     selected_path = Path(profile_path).resolve() if profile_path is not None else None

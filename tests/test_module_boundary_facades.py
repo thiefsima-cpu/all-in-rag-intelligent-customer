@@ -41,6 +41,10 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
             "rag_modules.contracts.query",
             "rag_modules.contracts.retrieval",
             "rag_modules.contracts.build_jobs.executor",
+            "rag_modules.contracts._common",
+            "rag_modules.contracts.query_utils",
+            "rag_modules.contracts.runtime.snapshot_utils",
+            "rag_modules.contracts.langchain_compat",
         ):
             parent_name, attr_name = module_name.rsplit(".", 1)
             parent = importlib.import_module(parent_name)
