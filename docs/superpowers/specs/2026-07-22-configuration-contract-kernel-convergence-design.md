@@ -1,6 +1,6 @@
 # Configuration, Contract, and Kernel Convergence Design
 
-Status: approved
+Status: implemented
 
 Date: 2026-07-22
 
@@ -347,3 +347,62 @@ unchanged.
 After this wave passes all gates, measure the new repository baseline and start the application,
 app-composition, and runtime convergence design. That wave must consume the lower ratchets from
 this wave and may not recreate a deleted configuration, contract, or kernel abstraction.
+
+## Implementation Evidence
+
+Implementation commits:
+
+- `7a1eb7ee` `refactor: converge configuration declarations`
+- `f6a71fab` `refactor: retire parallel configuration surfaces`
+- `2e356ffa` `refactor: converge typed kernel primitives`
+- `d4696a51` `refactor: converge contract ownership and types`
+- `00d13bb3` `refactor: normalize document boundaries`
+- `2e857fbd` `fix: complete document compatibility retirement`
+- `df3323af` `refactor: move runtime normalization to DTO owners`
+- `1dd05c87` `test: ratchet foundational abstraction convergence`
+
+The approved pre-wave baseline was 417 production Python files, 155 Protocol declarations,
+95 non-`__init__.py` modules below 60 physical lines, and 367 `ast.Name(id="Any")` nodes.
+The final AST measurement on 2026-07-24 is 379 production Python files, 152 Protocol
+declarations, 64 non-`__init__.py` modules below 60 lines, and 174 `Any` name nodes. The
+configuration package contains exactly eight Python modules, and configuration, contracts, and
+kernel together contain zero `Any` name nodes. The fresh measurements equal every current
+ratchet ceiling, so no ceiling was changed and no headroom remains.
+
+The retained foundation Protocol declarations are deliberately limited to:
+
+- `BuildJobRepositoryPort`: isolates the file-backed persistence implementation from callers
+  and permits the distinct persistence execution modes.
+- `BuildJobRunnerPort`: isolates in-process runners from external-worker dispatch while keeping
+  the build-job execution boundary substitutable.
+
+The reviewed sub-60-line foundation modules remain responsibility-owned rather than forwarding
+leaves:
+
+- `rag_modules/contracts/build_jobs/errors.py` — build-job domain errors.
+- `rag_modules/contracts/graph.py` — graph-query DTOs.
+- `rag_modules/contracts/runtime/policy.py` — runtime-policy DTOs.
+- `rag_modules/kernel/documents.py` — document-normalization primitives.
+- `rag_modules/kernel/retrieval.py` — retrieval-strategy primitives.
+- `rag_modules/kernel/semantic_schema.py` — semantic-schema identifiers.
+- `rag_modules/kernel/time_parsing.py` — timestamp-parsing primitives.
+
+Fresh verification record:
+
+| Command | Result |
+| --- | --- |
+| `python -m pytest tests/test_abstraction_ratchets.py -q` | 10 passed in 5.88s |
+| `python -m pytest tests/test_type_contract_ratchets.py -q` | 10 passed in 0.50s |
+| Final AST inventory over `rag_modules/**/*.py` | 379 files; 152 Protocols; 64 sub-60 modules; 174 `Any`; 8 configuration modules; 0 foundation `Any` |
+| `python -m pytest tests/test_api_answer.py tests/test_api_build.py tests/test_api_public_surface.py tests/test_api_security.py tests/test_api_sse.py tests/test_entrypoints.py -q` | 104 passed in 29.93s |
+| `python -m mypy --config-file pyproject.toml` | Success: no issues found in 384 source files (48.2s) |
+| `python -m ruff check rag_modules scripts tests` | All checks passed (19.8s) |
+| `python -m ruff format --check rag_modules scripts tests` | 630 files already formatted (2.2s) |
+| `python -m pytest -q` | 2238 passed, 237 subtests passed in 760.68s |
+| `python scripts/release_gate.py` | PASS: 69/69 cases, pass rate 1.0000, 9 route categories (6.2s) |
+| `git diff --check` | Exit 0; no whitespace errors |
+| `PRE_COMMIT_HOME=.pre-commit-task-8-cache pre-commit run --all-files` | Ruff check, Ruff format, and mypy hooks passed (9.2s) |
+
+The initial `pre-commit run --all-files` attempt could not write the user-level pre-commit SQLite
+cache. Re-running the identical hooks with a worktree-local cache passed; the temporary cache was
+removed before committing.
