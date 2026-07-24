@@ -10,11 +10,6 @@ from ...contracts.runtime import (
     RouteSnapshot,
     RuntimeErrorDetail,
 )
-from ...contracts.runtime.snapshot_utils import (
-    clone_generation_snapshot,
-    clone_graph_snapshot,
-    clone_route_snapshot,
-)
 from ..ports import QueryTracerPort
 from .answer_models import AnswerPipelineState, AnswerTraceBundle
 
@@ -66,23 +61,14 @@ class AnswerTraceAssembler:
         )
 
     def _state_route_snapshot(self, state: AnswerPipelineState) -> RouteSnapshot:
-        route_trace = getattr(state, "route_trace", RouteSnapshot())
-        return clone_route_snapshot(
-            route_trace,
-            semantic_settings=self.semantic_settings,
-        )
+        return state.route_trace.copy(semantic_settings=self.semantic_settings)
 
     @staticmethod
     def _state_generation_snapshot(state: AnswerPipelineState) -> GenerationSnapshot:
-        generation_trace = getattr(state, "generation_trace", GenerationSnapshot())
-        return clone_generation_snapshot(generation_trace)
+        return state.generation_trace.copy()
 
     def _state_graph_snapshot(self, state: AnswerPipelineState) -> GraphRetrievalSnapshot:
-        graph_trace = getattr(state, "graph_trace", GraphRetrievalSnapshot())
-        return clone_graph_snapshot(
-            graph_trace,
-            semantic_settings=self.semantic_settings,
-        )
+        return state.graph_trace.copy(semantic_settings=self.semantic_settings)
 
 
 __all__ = ["AnswerTraceAssembler"]

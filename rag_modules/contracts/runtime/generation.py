@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Self
 
 from ...kernel.json_types import JsonObject, coerce_float, coerce_int
 from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
@@ -80,7 +81,7 @@ class GenerationSnapshot:
         return generation_mode_value(self.mode)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "GenerationSnapshot":
+    def from_dict(cls: type[Self], data: Mapping[str, object] | None) -> Self:
         payload = dict(data or {})
         return cls(
             status=str(payload.get("status") or ""),
@@ -132,6 +133,9 @@ class GenerationSnapshot:
             "estimated_cost_usd": self.estimated_cost_usd,
             "token_usage_source": self.token_usage_source,
         }
+
+    def copy(self) -> Self:
+        return type(self).from_dict(self.to_dict())
 
     def is_recorded(self) -> bool:
         return any(

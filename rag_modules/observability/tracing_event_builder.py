@@ -27,11 +27,6 @@ from ..contracts.runtime import (
     analysis_strategy_name,
 )
 from ..contracts.runtime.errors import ensure_runtime_error_detail
-from ..contracts.runtime.snapshot_utils import (
-    clone_generation_snapshot,
-    clone_graph_snapshot,
-    clone_route_snapshot,
-)
 from ..kernel.json_types import JsonObject, JsonValue, coerce_json_object
 from .retrieval_snapshots import summarize_documents
 
@@ -150,25 +145,37 @@ class _TraceEventBuilderMixin(_TraceEventBuilderHost):
         self,
         route_trace: Mapping[str, JsonValue] | RouteSnapshot | None,
     ) -> RouteSnapshot:
-        return clone_route_snapshot(
-            route_trace,
-            semantic_settings=self.semantic_settings,
-        )
+        if isinstance(route_trace, RouteSnapshot):
+            return route_trace.copy(semantic_settings=self.semantic_settings)
+        if isinstance(route_trace, Mapping):
+            return RouteSnapshot.from_dict(
+                route_trace,
+                semantic_settings=self.semantic_settings,
+            )
+        return RouteSnapshot()
 
     def _normalize_graph_snapshot(
         self,
         graph_trace: Mapping[str, JsonValue] | GraphRetrievalSnapshot | None,
     ) -> GraphRetrievalSnapshot:
-        return clone_graph_snapshot(
-            graph_trace,
-            semantic_settings=self.semantic_settings,
-        )
+        if isinstance(graph_trace, GraphRetrievalSnapshot):
+            return graph_trace.copy(semantic_settings=self.semantic_settings)
+        if isinstance(graph_trace, Mapping):
+            return GraphRetrievalSnapshot.from_dict(
+                graph_trace,
+                semantic_settings=self.semantic_settings,
+            )
+        return GraphRetrievalSnapshot()
 
     @staticmethod
     def _normalize_generation_snapshot(
         generation_trace: Mapping[str, JsonValue] | GenerationSnapshot | None,
     ) -> GenerationSnapshot:
-        return clone_generation_snapshot(generation_trace)
+        if isinstance(generation_trace, GenerationSnapshot):
+            return generation_trace.copy()
+        if isinstance(generation_trace, Mapping):
+            return GenerationSnapshot.from_dict(generation_trace)
+        return GenerationSnapshot()
 
     @staticmethod
     def _select_policy_snapshot(

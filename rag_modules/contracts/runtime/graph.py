@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Self
 
 from ...kernel.json_types import JsonObject, coerce_float, coerce_int, coerce_json_object
 from .. import QuerySemanticRuntimeSettings, RetrievalRequest
@@ -114,11 +115,11 @@ class GraphRetrievalSnapshot:
 
     @classmethod
     def from_dict(
-        cls,
+        cls: type[Self],
         data: Mapping[str, object] | None,
         *,
         semantic_settings: QuerySemanticRuntimeSettings,
-    ) -> "GraphRetrievalSnapshot":
+    ) -> Self:
         payload = dict(data or {})
         return cls(
             query=str(payload.get("query") or ""),
@@ -223,6 +224,9 @@ class GraphRetrievalSnapshot:
             "error": self.error.to_dict(),
         }
 
+    def copy(self, *, semantic_settings: QuerySemanticRuntimeSettings) -> Self:
+        return type(self).from_dict(self.to_dict(), semantic_settings=semantic_settings)
+
     def has_content(self) -> bool:
         return any(
             (
@@ -259,6 +263,8 @@ def _retrieval_request_from_payload(
     if isinstance(value, RetrievalRequest):
         return value
     if isinstance(value, Mapping):
+        if not value:
+            return None
         return RetrievalRequest.from_dict(
             dict(value),
             semantic_settings=semantic_settings,

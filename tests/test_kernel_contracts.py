@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import ast
-import inspect
 import tomllib
 from pathlib import Path
-from typing import Any, get_type_hints
 
 from rag_modules.contracts.graph import GraphQuery
 from rag_modules.contracts.runtime.analysis import QueryAnalysis
@@ -104,13 +102,8 @@ def test_kernel_package_exports_only_canonical_kernel_types() -> None:
     }
 
 
-def test_hybrid_outcome_candidate_set_contract_is_structural_and_typed() -> None:
-    candidates_annotation = get_type_hints(HybridRetrievalOutcome.from_candidate_set)["candidates"]
-
-    assert candidates_annotation is not Any
-    assert getattr(candidates_annotation, "_is_protocol", False)
-    assert isinstance(inspect.getattr_static(candidates_annotation, "stats"), property)
-    assert isinstance(inspect.getattr_static(candidates_annotation, "degraded_details"), property)
+def test_hybrid_outcome_owns_concrete_candidate_data() -> None:
+    assert "from_candidate_set" not in HybridRetrievalOutcome.__dict__
 
 
 def test_canonical_kernel_and_runtime_contract_modules_use_strict_mypy() -> None:

@@ -222,19 +222,10 @@ hybrid_retrieval: HybridRetrievalPort = _HybridRetrieval()
 graph_retrieval: GraphRAGRetrievalPort = _GraphRetrieval()
 
 
-class _CandidateSetView:
-    @property
-    def stats(self) -> Mapping[str, int]:
-        return {"vector": 1}
-
-    @property
-    def degraded_details(self) -> Sequence[Mapping[str, object]]:
-        return ({"source": "bm25"},)
-
-
-hybrid_outcome_from_candidate_view = HybridRetrievalOutcome.from_candidate_set(
+hybrid_outcome_from_candidate_data = HybridRetrievalOutcome(
     documents=[],
-    candidates=_CandidateSetView(),
+    candidate_counts={"vector": 1},
+    degraded_candidates=[{"source": "bm25"}],
 )
 
 
