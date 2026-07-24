@@ -376,7 +376,7 @@ def default_domain_payload() -> JsonObject:
 
 
 def _clear_storage_derived_paths_for_overrides(
-    domain_payload: JsonObject,
+    domain_payload: dict[str, object],
     overrides: Mapping[str, object],
 ) -> None:
     storage_overrides = overrides.get("storage")
@@ -480,13 +480,13 @@ class GraphRAGConfig(BaseModel):
         return payload
 
     def with_overrides(self, overrides: Mapping[str, object]) -> "GraphRAGConfig":
-        merged = self.to_domain_dict()
+        merged: dict[str, object] = dict(self.to_domain_dict())
         _clear_storage_derived_paths_for_overrides(merged, overrides)
-        from .assembly import apply_overrides
+        from .assembly import merge_overrides
         from .env import EnvConfigSource
         from .loader import load_config
 
-        apply_overrides(merged, overrides)
+        merge_overrides(merged, overrides)
         config = load_config(
             overrides=merged,
             source=EnvConfigSource(environ={}),

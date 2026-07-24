@@ -20,7 +20,12 @@ from rag_modules.kernel.artifacts import (
     vector_artifact_mismatch_reason,
 )
 from rag_modules.kernel.documents import TextDocument
-from rag_modules.kernel.json_types import as_string_list, clamp_float, coerce_json_value, coerce_str
+from rag_modules.kernel.json_types import (
+    as_string_list,
+    bounded_float,
+    coerce_json_value,
+    coerce_str,
+)
 from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.kernel.routing import RouteStatistics, SearchStrategy
 from rag_modules.retrieval import candidate_generator
@@ -63,7 +68,7 @@ def test_shared_types_have_canonical_module_ownership() -> None:
 def test_kernel_owns_shared_primitive_normalization() -> None:
     assert coerce_str(None) == ""
     assert as_string_list([" a ", "", 2]) == ["a", "2"]
-    assert clamp_float("2.0") == 1.0
+    assert bounded_float("2.0", 0.5) == 1.0
     assert vector_artifact_mismatch_reason.__module__ == "rag_modules.kernel.artifacts"
 
 

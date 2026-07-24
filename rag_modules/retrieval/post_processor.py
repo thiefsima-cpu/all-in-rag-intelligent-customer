@@ -242,8 +242,14 @@ class RetrievalPostProcessor:
             if isinstance(relationships_text, list):
                 graph_parts.extend(str(line) for line in relationships_text[:8])
 
+        is_recipe = (
+            doc.entity_type.casefold() == "recipe"
+            or doc.evidence_type.casefold() == "recipe"
+            or str(metadata.get("domain") or "").strip().casefold() == "recipe"
+        )
+        entity_label = "菜谱" if is_recipe else "实体"
         fields = [
-            f"实体: {doc.entity_name or metadata.get('name') or ''}",
+            f"{entity_label}: {doc.entity_name or metadata.get('name') or ''}",
             f"来源: {doc.source or metadata.get('search_method') or metadata.get('search_type') or ''}",
             f"证据类型: {doc.evidence_type or metadata.get('search_type') or ''}",
             f"匹配词: {', '.join((doc.matched_terms or as_string_list(metadata.get('matched_ingredients')))[:12])}",

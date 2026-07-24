@@ -7,14 +7,13 @@ from collections.abc import Mapping
 from dotenv import load_dotenv
 
 from ..domains import get_domain_pack
-from ..kernel.json_types import JsonObject
 from ..query_policy.selector import (
     resolve_query_policy_bundle_from_selector,
     resolve_query_policy_selector,
 )
 from .assembly import (
-    apply_overrides,
     build_config_from_domain_dict,
+    merge_overrides,
     policy_resolved_domain_payload,
 )
 from .env import EnvConfigSource, build_env_overrides, default_env_source
@@ -23,7 +22,7 @@ from .profiles import load_profile
 
 
 def _align_domain_pack_storage(
-    domain_payload: JsonObject,
+    domain_payload: dict[str, object],
     *,
     layer: Mapping[str, object] | None = None,
 ) -> None:
@@ -34,7 +33,9 @@ def _align_domain_pack_storage(
     if isinstance(storage_layer, Mapping) and "milvus_collection_name" in storage_layer:
         return
     domain_section = domain_payload.get("domain")
-    domain_name = str(domain_section.get("name") if isinstance(domain_section, dict) else "recipe")
+    domain_name = domain_section.get("name") if isinstance(domain_section, dict) else "recipe"
+    if not isinstance(domain_name, str):
+        return
     storage_section = domain_payload.get("storage")
     if not isinstance(storage_section, dict):
         storage_section = {}
@@ -73,35 +74,32 @@ def load_config(
     domain_payload = policy_resolved_domain_payload(bundle)
     _align_domain_pack_storage(domain_payload)
     if resolved_profile.overrides:
-        apply_overrides(domain_payload, resolved_profile.overrides)
-        _align_domain_pack_storage(
-            domain_payload,
-            layer=resolved_profile.overrides,
-        )
+        merge_overrides(domain_payload, resolved_profile.overrides)
         build_config_from_domain_dict(
             domain_payload,
             source_kind="profile",
             source=resolved_profile.path or resolved_profile.name,
         )
+        _align_domain_pack_storage(domain_payload, layer=resolved_profile.overrides)
 
     env_overrides = build_env_overrides(env_source)
     if env_overrides:
-        apply_overrides(domain_payload, env_overrides)
-        _align_domain_pack_storage(domain_payload, layer=env_overrides)
+        merge_overrides(domain_payload, env_overrides)
         build_config_from_domain_dict(
             domain_payload,
             source_kind="environment",
             source="",
         )
+        _align_domain_pack_storage(domain_payload, layer=env_overrides)
 
     if overrides:
-        apply_overrides(domain_payload, overrides)
-        _align_domain_pack_storage(domain_payload, layer=overrides)
+        merge_overrides(domain_payload, overrides)
         build_config_from_domain_dict(
             domain_payload,
             source_kind="overrides",
             source=_overrides_source,
         )
+        _align_domain_pack_storage(domain_payload, layer=overrides)
 
     config = build_config_from_domain_dict(
         domain_payload,

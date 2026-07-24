@@ -17,7 +17,7 @@ from rag_modules.build_pipeline.graph_preparation.statistics import (
     GraphPreparationStatisticsService,
 )
 from rag_modules.build_pipeline.schema_sync import SemanticGraphSchemaSyncService
-from rag_modules.configuration import load_config
+from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from rag_modules.contracts.graph_preparation import GraphNode
@@ -192,6 +192,20 @@ def test_domain_registry_accepts_a_pack_without_selector_changes(
 def test_domain_settings_reject_unknown_pack_without_literal_domain_coupling() -> None:
     with pytest.raises(ValueError, match="Unknown domain pack"):
         load_config(source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": "unknown_domain"}))
+
+
+@pytest.mark.parametrize("domain_name", [None, 0, False, [], {}])
+def test_falsy_domain_override_uses_sourced_configuration_error(domain_name: object) -> None:
+    with pytest.raises(ConfigurationError) as context:
+        load_config(
+            {"domain": {"name": domain_name}},
+            source=EnvConfigSource(environ={}),
+        )
+
+    message = str(context.value)
+    assert "overrides load_config" in message
+    assert "domain.name" in message
+    assert "string" in message
 
 
 def test_domain_graph_loader_resolves_identity_from_ontology_fields() -> None:
@@ -422,6 +436,23 @@ def test_public_citation_projection_fails_closed_without_domain_or_recipe_marker
     assert public.entity_name == ""
     assert public.recipe_name == ""
     assert public.matched_terms == []
+
+
+def test_recipe_text_document_projects_through_canonical_evidence_type() -> None:
+    document = TextDocument(
+        content="Mapo tofu uses tofu and chili bean paste.",
+        metadata={"recipe_id": "recipe-1", "recipe_name": "Mapo tofu", "matched_terms": ["tofu"]},
+    )
+
+    public = PublicEvidenceDocumentResponseModel.from_dto(
+        evidence_document_from_text_document(document)
+    )
+
+    assert public.content == document.content
+    assert public.entity_id == "recipe-1"
+    assert public.entity_name == "Mapo tofu"
+    assert public.recipe_name == "Mapo tofu"
+    assert public.matched_terms == ["tofu"]
 
 
 def test_customer_service_build_does_not_run_recipe_semantic_writer() -> None:

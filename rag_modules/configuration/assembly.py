@@ -6,24 +6,21 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from ..kernel.json_types import JsonObject, coerce_json_object, coerce_json_value
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..query_policy.models import QueryPolicyBundle
 from .models import GraphRAGConfig, default_domain_payload
 from .validation import raise_validation_error
 
 
-def _merge_nested_mapping(target: JsonObject, updates: Mapping[str, object]) -> None:
+def merge_overrides(target: dict[str, object], updates: Mapping[str, object]) -> None:
+    """Apply one configuration layer without erasing values before validation."""
     for key, value in updates.items():
         key_text = str(key)
         current = target.get(key_text)
         if isinstance(current, dict) and isinstance(value, Mapping):
-            _merge_nested_mapping(current, value)
+            merge_overrides(current, value)
         else:
-            target[key_text] = coerce_json_value(value)
-
-
-def apply_overrides(domain_payload: JsonObject, overrides: Mapping[str, object]) -> None:
-    _merge_nested_mapping(domain_payload, overrides)
+            target[key_text] = dict(value) if isinstance(value, Mapping) else value
 
 
 def query_policy_default_overlay(bundle: QueryPolicyBundle) -> JsonObject:
@@ -80,9 +77,9 @@ def query_policy_default_overlay(bundle: QueryPolicyBundle) -> JsonObject:
     )
 
 
-def policy_resolved_domain_payload(bundle: QueryPolicyBundle) -> JsonObject:
-    payload = default_domain_payload()
-    apply_overrides(payload, query_policy_default_overlay(bundle))
+def policy_resolved_domain_payload(bundle: QueryPolicyBundle) -> dict[str, object]:
+    payload: dict[str, object] = dict(default_domain_payload())
+    merge_overrides(payload, query_policy_default_overlay(bundle))
     return payload
 
 
@@ -94,7 +91,7 @@ def build_config_from_resolved_overrides(
     source: str,
 ) -> GraphRAGConfig:
     domain_payload = policy_resolved_domain_payload(bundle)
-    apply_overrides(domain_payload, overrides)
+    merge_overrides(domain_payload, overrides)
     return build_config_from_domain_dict(
         domain_payload,
         source_kind=source_kind,
@@ -116,9 +113,9 @@ def build_config_from_domain_dict(
 
 
 __all__ = [
-    "apply_overrides",
     "build_config_from_domain_dict",
     "build_config_from_resolved_overrides",
+    "merge_overrides",
     "policy_resolved_domain_payload",
     "query_policy_default_overlay",
 ]

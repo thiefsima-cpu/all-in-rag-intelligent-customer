@@ -57,6 +57,7 @@ FOUNDATION_ROOTS = (
     ROOT / "rag_modules" / "contracts",
     ROOT / "rag_modules" / "kernel",
 )
+FORWARDER_ROOTS = SCOPED_ROOTS + FOUNDATION_ROOTS
 APPROVED_FOUNDATION_PROTOCOLS = {
     Path("rag_modules/contracts/build_jobs/ports.py"): frozenset(
         {"BuildJobRepositoryPort", "BuildJobRunnerPort"}
@@ -131,14 +132,56 @@ def _is_forwarding_module(path: Path) -> bool:
     )
 
 
+def _is_policy_free_forwarder(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    body = list(node.body)
+    if body and _is_docstring(body[0]):
+        body.pop(0)
+    if len(body) != 1 or not isinstance(body[0], ast.Return):
+        return False
+    if node.name.startswith("__") or any(
+        isinstance(decorator, ast.Name) and decorator.id == "property"
+        for decorator in node.decorator_list
+    ):
+        return False
+    expression = body[0].value
+    call = expression.value if isinstance(expression, ast.Await) else expression
+    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+        return False
+    if call.func.id in {"bool", "float", "int", "str"}:
+        return False
+    parameter_names = {
+        argument.arg
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    }
+    forwarded_names = {argument.id for argument in call.args if isinstance(argument, ast.Name)}
+    forwarded_names.update(
+        keyword.value.id for keyword in call.keywords if isinstance(keyword.value, ast.Name)
+    )
+    return bool(parameter_names) and parameter_names == forwarded_names
+
+
 def test_scoped_leaf_modules_are_not_pure_forwarders() -> None:
     violations = []
-    for package_root in SCOPED_ROOTS:
+    for package_root in FORWARDER_ROOTS:
         for path in package_root.rglob("*.py"):
             if path.name == "__init__.py" or path in APPROVED_FORWARDING_MODULES:
                 continue
             if _is_forwarding_module(path):
                 violations.append(str(path.relative_to(ROOT)))
+
+    assert violations == []
+
+
+def test_wave_scope_does_not_have_policy_free_single_call_functions() -> None:
+    violations = []
+    for package_root in FOUNDATION_ROOTS:
+        for path in package_root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ) and _is_policy_free_forwarder(node):
+                    violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: {node.name}")
 
     assert violations == []
 

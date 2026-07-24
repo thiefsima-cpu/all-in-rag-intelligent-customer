@@ -32,7 +32,8 @@ def _domain_name(payload: Mapping[str, object]) -> str:
     domain = payload.get("domain")
     if not isinstance(domain, Mapping):
         return ""
-    return str(domain.get("name") or "").strip().casefold().replace("-", "_")
+    name = domain.get("name")
+    return name.strip().casefold().replace("-", "_") if isinstance(name, str) else ""
 
 
 def resolve_query_policy_selector(

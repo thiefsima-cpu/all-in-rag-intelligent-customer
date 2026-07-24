@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from ..kernel.json_types import (
     JsonObject,
     as_string_list,
-    clamp_float,
+    bounded_float,
     clamp_int,
     coerce_json_object,
 )
@@ -149,8 +149,8 @@ class QueryPlan:
         resolved_graph_query_type = _resolve_plan_graph_query_type(
             data, resolved_profile, validation_errors
         )
-        complexity = clamp_float(data.get("complexity"), resolved_profile.complexity)
-        relationship_intensity = clamp_float(
+        complexity = bounded_float(data.get("complexity"), resolved_profile.complexity)
+        relationship_intensity = bounded_float(
             data.get("relationship_intensity"),
             resolved_profile.relationship_intensity,
         )
@@ -185,7 +185,7 @@ class QueryPlan:
             relationship_intensity=relationship_intensity,
             reasoning_required=reasoning_required,
             strategy=strategy,
-            confidence=clamp_float(data.get("confidence"), 0.6),
+            confidence=bounded_float(data.get("confidence"), 0.6),
             reasoning=str(data.get("reasoning") or ""),
             entity_keywords=entity_keywords[: semantic_settings.entity_keyword_limit],
             topic_keywords=topic_keywords[: semantic_settings.topic_keyword_limit],

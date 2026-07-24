@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..kernel.json_types import JsonObject, coerce_json_object, coerce_json_value
+from ..kernel.json_types import JsonObject
 from ..query_policy.selector import (
     resolve_query_policy_bundle_from_selector,
     resolve_query_policy_selector,
@@ -33,7 +33,7 @@ class ConfigProfile:
     name: str = ""
     path: str = ""
     profile_hash: str = ""
-    overrides: JsonObject | None = None
+    overrides: dict[str, object] | None = None
     loaded_files: tuple[str, ...] = ()
 
     def to_metadata(self) -> JsonObject:
@@ -45,7 +45,7 @@ class ConfigProfile:
         }
 
 
-def _merge_nested(target: JsonObject, updates: Mapping[str, object]) -> JsonObject:
+def _merge_nested(target: dict[str, object], updates: Mapping[str, object]) -> dict[str, object]:
     for key, value in updates.items():
         key_text = str(key)
         if isinstance(value, Mapping):
@@ -55,16 +55,16 @@ def _merge_nested(target: JsonObject, updates: Mapping[str, object]) -> JsonObje
                 target[key_text] = child
             _merge_nested(child, value)
         else:
-            target[key_text] = coerce_json_value(value)
+            target[key_text] = value
     return target
 
 
-def _read_profile_file(path: Path) -> JsonObject:
+def _read_profile_file(path: Path) -> dict[str, object]:
     with path.open("rb") as file:
         payload = tomllib.load(file)
     if not isinstance(payload, dict):
         raise ValueError(f"Profile at {path} must decode to a TOML table.")
-    result = coerce_json_object(payload)
+    result: dict[str, object] = dict(payload)
     _validate_profile_payload(path, result)
     return result
 
@@ -96,7 +96,7 @@ def load_profile(
     resolved_profiles_dir = (
         Path(profiles_dir) if profiles_dir is not None else default_profiles_dir()
     )
-    merged: JsonObject = {}
+    merged: dict[str, object] = {}
     loaded_files: list[str] = []
     selected_name = str(profile or "").strip()
     selected_path = Path(profile_path).resolve() if profile_path is not None else None

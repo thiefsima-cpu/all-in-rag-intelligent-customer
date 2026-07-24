@@ -186,6 +186,19 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertIn("GraphRAGConfig.from_dict", message)
         self.assertIn("must match", message)
 
+    def test_explicit_non_json_override_reaches_strict_validation_with_source(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                {"models": {"llm_model": Path("not-a-model")}},
+                source=EnvConfigSource(environ={}),
+            )
+
+        message = str(context.exception)
+        self.assertIn("overrides", message)
+        self.assertIn("load_config", message)
+        self.assertIn("models.llm_model", message)
+        self.assertIn("string", message)
+
     def test_runtime_settings_are_derived_from_resolved_config(self) -> None:
         config = build_test_config(
             {

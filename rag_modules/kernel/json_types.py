@@ -77,10 +77,6 @@ def as_string_list(value: object) -> list[str]:
     return [text] if text else []
 
 
-def clamp_float(value: object, default: float = 0.5) -> float:
-    return bounded_float(value, default)
-
-
 def clamp_int(value: object, default: int = 2, minimum: int = 1, maximum: int = 32) -> int:
     return max(minimum, min(maximum, coerce_int(value, default, minimum=minimum)))
 
@@ -103,7 +99,6 @@ __all__ = [
     "JsonValue",
     "as_string_list",
     "bounded_float",
-    "clamp_float",
     "clamp_int",
     "coerce_float",
     "coerce_int",

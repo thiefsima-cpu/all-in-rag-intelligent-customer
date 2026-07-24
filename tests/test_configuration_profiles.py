@@ -189,6 +189,29 @@ class ConfigurationProfilesTests(unittest.TestCase):
             "integer",
         )
 
+    def test_profile_toml_date_reaches_strict_validation_with_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text(
+                "[models]\nllm_model = 2026-07-24\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "models.llm_model",
+            "string",
+        )
+
     def test_profile_scalar_for_nested_section_reports_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "bad.toml"
