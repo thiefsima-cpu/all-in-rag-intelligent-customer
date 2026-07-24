@@ -361,6 +361,7 @@ Implementation commits:
 - `df3323af` `refactor: move runtime normalization to DTO owners`
 - `1dd05c87` `test: ratchet foundational abstraction convergence`
 - `56cd7e62` `fix: close final convergence review findings`
+- `b618a505` `fix: complete final convergence hard cutover`
 
 The approved pre-wave baseline was 417 production Python files, 155 Protocol declarations,
 95 non-`__init__.py` modules below 60 physical lines, and 367 `ast.Name(id="Any")` nodes.
@@ -392,13 +393,13 @@ Fresh verification record:
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/test_abstraction_ratchets.py tests/test_type_contract_ratchets.py -q` | 21 passed in 3.30s |
+| `python -m pytest tests/test_abstraction_ratchets.py tests/test_type_contract_ratchets.py -q` | 23 passed in 3.32s |
 | Final AST inventory over `rag_modules/**/*.py` | 379 files; 152 Protocols; 64 sub-60 modules; 174 `Any`; 8 configuration modules; 0 foundation `Any` |
 | `python -m pytest tests/test_api_answer.py tests/test_api_build.py tests/test_api_public_surface.py tests/test_api_security.py tests/test_api_sse.py tests/test_entrypoints.py -q` | 104 passed in 29.93s |
 | `python -m mypy --config-file pyproject.toml` | Success: no issues found in 384 source files (48.2s) |
 | `python -m ruff check rag_modules scripts tests` | All checks passed (19.8s) |
 | `python -m ruff format --check rag_modules scripts tests` | 630 files already formatted (2.2s) |
-| Logged `python -m pytest -q` | 2248 passed, 237 subtests passed in 582.76s; exit 0 |
+| Logged `python -m pytest -q` | 2253 passed, 241 subtests passed in 591.22s; exit 0 |
 | `python scripts/release_gate.py` | PASS: 69/69 cases, pass rate 1.0000, 9 route categories (6.2s) |
 | `git diff --check` | Exit 0; no whitespace errors |
 | `PRE_COMMIT_HOME=.pre-commit-task-8-cache pre-commit run --all-files` | Ruff check, Ruff format, and mypy hooks passed (9.2s) |
@@ -413,3 +414,10 @@ only after validation; canonical recipe evidence retains public identity and con
 prompt labels remain behaviorally stable; and the abstraction ratchet now scans foundation
 modules for policy-free single-call forwarding functions. `apply_overrides` and the kernel
 `clamp_float` wrapper were deleted, with callers moved directly to the canonical owners.
+
+The independent re-review also removed the final `recipe_graph_evidence` graph/API debug writes,
+validated raw policy-selector fields with source provenance before bundle resolution, and
+strengthened the forwarder predicate for attribute, awaited, and variadic delegates with
+predicate self-tests. The existing function-hotspot ceiling was preserved; configuration loading
+was decomposed at a semantic selector-layer validation boundary rather than allowlisting the
+larger function.
