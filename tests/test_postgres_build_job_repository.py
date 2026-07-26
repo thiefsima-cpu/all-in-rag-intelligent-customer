@@ -126,6 +126,26 @@ class _FakePool:
         self.close_calls += 1
 
 
+class _LoggingFailurePool(_FakePool):
+    def __init__(self, *, fail_open: bool) -> None:
+        super().__init__()
+        self.fail_open = fail_open
+        self.name = ""
+
+    def open(self, *, wait: bool, timeout: float) -> None:
+        super().open(wait=wait, timeout=timeout)
+        if self.fail_open:
+            self.emit_connection_failure("pool-open-raw-secret")
+            raise _ConnectionFailure("pool-open-final-secret")
+
+    def emit_connection_failure(self, detail: str) -> None:
+        logging.getLogger("psycopg.pool").warning(
+            "error connecting in %r: %s",
+            self.name,
+            _ConnectionFailure(f"{detail} dsn=postgresql://user:dsn-secret@unit-test.invalid/jobs"),
+        )
+
+
 class _NamedUniqueViolation(psycopg.errors.UniqueViolation):
     def __init__(self, constraint_name: str) -> None:
         super().__init__("raw-unique-violation-secret")
@@ -273,7 +293,11 @@ def test_pool_lifecycle_opens_explicitly_verifies_schema_and_closes_once() -> No
             pool_timeout_seconds=3.5,
         )
 
-    assert pool_class.call_args.kwargs == {
+    pool_arguments = dict(pool_class.call_args.kwargs)
+    pool_name = pool_arguments.pop("name")
+    assert isinstance(pool_name, str)
+    assert pool_name.startswith("build-job-")
+    assert pool_arguments == {
         "conninfo": "postgresql://user:private@unit-test.invalid/jobs",
         "min_size": 2,
         "max_size": 6,
@@ -288,6 +312,131 @@ def test_pool_lifecycle_opens_explicitly_verifies_schema_and_closes_once() -> No
     repository.close()
 
     assert pool.close_calls == 1
+
+
+def test_pool_open_failure_sanitizes_dependency_logger_and_removes_filter(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _LoggingFailurePool(fail_open=True)
+
+    def build_pool(**kwargs):
+        pool.name = str(kwargs.get("name") or "")
+        return pool
+
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    with (
+        patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+        pytest.raises(
+            BuildJobRepositoryUnavailableError,
+            match=r"^Build job repository is unavailable\.$",
+        ),
+    ):
+        PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            pool_min_size=1,
+            pool_max_size=2,
+            pool_timeout_seconds=1.0,
+        )
+
+    dependency_records = [record for record in caplog.records if record.name == "psycopg.pool"]
+    assert len(dependency_records) == 1
+    record = dependency_records[0]
+    assert record.getMessage() == "Build job PostgreSQL pool connection failed."
+    assert getattr(record, "backend") == "postgresql"
+    assert getattr(record, "operation") == "pool_connect"
+    assert getattr(record, "sqlstate_class") == "08"
+    assert "raw-secret" not in repr(record.__dict__)
+    assert "dsn-secret" not in repr(record.__dict__)
+    assert pool.close_calls == 1
+
+    caplog.clear()
+    pool.emit_connection_failure("post-close-visible")
+    assert "post-close-visible" in caplog.records[-1].getMessage()
+
+
+def test_real_pool_worker_open_failure_never_emits_raw_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    with (
+        patch.object(
+            psycopg.Connection,
+            "connect",
+            side_effect=_ConnectionFailure(
+                "actual-worker-raw-secret dsn=postgresql://user:dsn-secret@unit-test.invalid/jobs"
+            ),
+        ),
+        pytest.raises(
+            BuildJobRepositoryUnavailableError,
+            match=r"^Build job repository is unavailable\.$",
+        ),
+    ):
+        PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            pool_min_size=1,
+            pool_max_size=1,
+            pool_timeout_seconds=0.05,
+        )
+
+    dependency_records = [record for record in caplog.records if record.name == "psycopg.pool"]
+    assert dependency_records
+    assert all(
+        record.getMessage() == "Build job PostgreSQL pool connection failed."
+        for record in dependency_records
+    )
+    assert all("raw-secret" not in repr(record.__dict__) for record in dependency_records)
+    assert all("dsn-secret" not in repr(record.__dict__) for record in dependency_records)
+
+
+def test_runtime_pool_replenishment_sanitizes_only_this_repository_pool(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _LoggingFailurePool(fail_open=False)
+
+    def build_pool(**kwargs):
+        pool.name = str(kwargs.get("name") or "")
+        return pool
+
+    schema_manager = SimpleNamespace(verify=lambda: None)
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    with (
+        patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+        patch.object(
+            repository_module,
+            "PostgresBuildJobSchemaManager",
+            return_value=schema_manager,
+        ),
+    ):
+        repository = PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            pool_min_size=1,
+            pool_max_size=2,
+            pool_timeout_seconds=1.0,
+        )
+
+    try:
+        pool.emit_connection_failure("runtime-replenishment-raw-secret")
+        logging.getLogger("psycopg.pool").warning(
+            "error connecting in %r: %s",
+            "unrelated-pool",
+            "unrelated-detail-visible",
+        )
+    finally:
+        repository.close()
+
+    dependency_records = [record for record in caplog.records if record.name == "psycopg.pool"]
+    assert dependency_records[0].getMessage() == ("Build job PostgreSQL pool connection failed.")
+    assert "runtime-replenishment-raw-secret" not in repr(dependency_records[0].__dict__)
+    assert "dsn-secret" not in repr(dependency_records[0].__dict__)
+    assert dependency_records[1].getMessage() == (
+        "error connecting in 'unrelated-pool': unrelated-detail-visible"
+    )
 
 
 def test_schema_verification_failure_closes_the_open_pool() -> None:

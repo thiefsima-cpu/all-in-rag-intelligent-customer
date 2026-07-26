@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -56,6 +57,9 @@ from .schema import PostgresBuildJobSchemaManager
 _LOGGER = logging.getLogger(__name__)
 _BACKEND = "postgresql"
 _DATABASE_FAILURE_MESSAGE = "Build job PostgreSQL repository operation failed."
+_POOL_CONNECTION_FAILURE_MESSAGE = "Build job PostgreSQL pool connection failed."
+_POOL_CONNECTION_FAILURE_TEMPLATE = "error connecting in %r: %s"
+_POOL_LOGGER_NAME = "psycopg.pool"
 _UNAVAILABLE_MESSAGE = "Build job repository is unavailable."
 
 _SNAPSHOT_COLUMNS = """
@@ -152,6 +156,34 @@ class _PersistedDataError(RuntimeError):
     pass
 
 
+class _PoolConnectionLogSanitizer(logging.Filter):
+    """Sanitize connection errors emitted by one Psycopg pool's worker threads."""
+
+    def __init__(self, pool_name: str) -> None:
+        super().__init__()
+        self._pool_name = pool_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        arguments = record.args
+        if (
+            record.msg != _POOL_CONNECTION_FAILURE_TEMPLATE
+            or not isinstance(arguments, tuple)
+            or len(arguments) != 2
+            or arguments[0] != self._pool_name
+        ):
+            return True
+        error = arguments[1]
+        record.msg = _POOL_CONNECTION_FAILURE_MESSAGE
+        record.args = ()
+        record.exc_info = None
+        record.exc_text = None
+        record.stack_info = None
+        record.backend = _BACKEND
+        record.operation = "pool_connect"
+        record.sqlstate_class = _sqlstate_class(error)
+        return True
+
+
 class PostgresBuildJobRepository:
     """Own a Psycopg pool and persist current projections with append-only audit events."""
 
@@ -168,13 +200,18 @@ class PostgresBuildJobRepository:
         self._now = now
         self.settings = settings or BuildJobRepositorySettings()
         self._pool_timeout_seconds = float(pool_timeout_seconds)
+        self._pool_name = f"build-job-{secrets.token_hex(8)}"
+        self._pool_logger = logging.getLogger(_POOL_LOGGER_NAME)
+        self._pool_log_sanitizer = _PoolConnectionLogSanitizer(self._pool_name)
         self._pool = ConnectionPool(
             conninfo=dsn,
             min_size=int(pool_min_size),
             max_size=int(pool_max_size),
+            name=self._pool_name,
             open=False,
             timeout=self._pool_timeout_seconds,
         )
+        self._pool_logger.addFilter(self._pool_log_sanitizer)
         self._close_lock = threading.Lock()
         self._closed = False
         try:
@@ -346,6 +383,8 @@ class PostgresBuildJobRepository:
                 self._pool.close()
             except psycopg.Error as error:
                 self._raise_unavailable("close", error)
+            finally:
+                self._remove_pool_log_sanitizer()
 
     def _resolve_submit_unique_violation(
         self,
@@ -573,17 +612,20 @@ class PostgresBuildJobRepository:
                 self._pool.close()
             except Exception:
                 pass
+            finally:
+                self._remove_pool_log_sanitizer()
+
+    def _remove_pool_log_sanitizer(self) -> None:
+        self._pool_logger.removeFilter(self._pool_log_sanitizer)
 
     @staticmethod
     def _raise_unavailable(operation: str, error: object) -> Never:
-        sqlstate = getattr(error, "sqlstate", None)
-        sqlstate_class = sqlstate[:2] if isinstance(sqlstate, str) and len(sqlstate) >= 2 else "XX"
         _LOGGER.error(
             _DATABASE_FAILURE_MESSAGE,
             extra={
                 "backend": _BACKEND,
                 "operation": operation,
-                "sqlstate_class": sqlstate_class,
+                "sqlstate_class": _sqlstate_class(error),
             },
         )
         raise BuildJobRepositoryUnavailableError(_UNAVAILABLE_MESSAGE) from None
@@ -593,6 +635,11 @@ def _required_string(value: object) -> str:
     if not isinstance(value, str):
         raise _PersistedDataError
     return value
+
+
+def _sqlstate_class(error: object) -> str:
+    sqlstate = getattr(error, "sqlstate", None)
+    return sqlstate[:2] if isinstance(sqlstate, str) and len(sqlstate) >= 2 else "XX"
 
 
 def _positive_integer(value: object) -> int:
