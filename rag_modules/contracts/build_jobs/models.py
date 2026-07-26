@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 BUILD_JOB_LOG_LIMIT = 200
 _BUILD_JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")
+_PUBLIC_BUILD_JOB_REPOSITORY_BACKENDS = frozenset({"file", "postgresql", "unknown"})
+_PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN = re.compile(
+    r"(?:\d+|build-jobs-v\d+)\Z"
+)
 
 _SAFE_BUILD_LOGS = frozenset(
     {
@@ -230,9 +234,9 @@ class BuildJobRepositoryDiagnostics:
         warnings = [warning.to_public_dict() for warning in self.warnings]
         return coerce_json_object(
             {
-                "backend": self.backend,
+                "backend": _public_repository_backend(self.backend),
                 "ready": self.ready,
-                "schema_version": self.schema_version,
+                "schema_version": _public_repository_schema_version(self.schema_version),
                 "warning_count": len(warnings),
                 "warning_codes": sorted({warning["code"] for warning in warnings}),
                 "warnings": warnings,
@@ -250,6 +254,18 @@ def build_failed_error(request_id: str) -> dict[str, str]:
 
 def _iso_or_empty(value: datetime | None) -> str:
     return value.isoformat() if value is not None else ""
+
+
+def _public_repository_backend(value: object) -> str:
+    backend = str(value or "").strip().lower()
+    return backend if backend in _PUBLIC_BUILD_JOB_REPOSITORY_BACKENDS else "unknown"
+
+
+def _public_repository_schema_version(value: object) -> str:
+    schema_version = str(value or "").strip()
+    if _PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN.fullmatch(schema_version) is None:
+        return ""
+    return schema_version
 
 
 def _safe_build_log(value: object) -> str:

@@ -81,6 +81,17 @@ class BuildJobDomainTests(unittest.TestCase):
             },
         )
 
+    def test_repository_diagnostics_redacts_unrecognized_backend_and_schema_values(self) -> None:
+        public = BuildJobRepositoryDiagnostics(
+            backend="postgresql://user:private-password@db.example/build_jobs",
+            schema_version="SELECT * FROM build_jobs WHERE token = 'private-token'",
+        ).to_public_dict()
+
+        self.assertEqual(public["backend"], "unknown")
+        self.assertEqual(public["schema_version"], "")
+        self.assertNotIn("private-password", json.dumps(public))
+        self.assertNotIn("private-token", json.dumps(public))
+
     def test_repository_unavailable_error_is_a_public_repository_error(self) -> None:
         self.assertTrue(issubclass(BuildJobRepositoryUnavailableError, BuildJobRepositoryError))
 
