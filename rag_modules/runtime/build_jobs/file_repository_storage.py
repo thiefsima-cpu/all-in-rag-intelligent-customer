@@ -147,6 +147,12 @@ def load_any_envelope(
     return load_archived_envelope(repository, job_id)
 
 
+def envelope_record_exists(repository: FileBuildJobRepository, job_id: BuildJobId) -> bool:
+    return os.path.exists(job_path(repository, job_id)) or os.path.exists(
+        archived_job_path(repository, job_id)
+    )
+
+
 def require_envelope(
     repository: FileBuildJobRepository,
     job_id: BuildJobId,
@@ -391,6 +397,7 @@ __all__ = [
     "archived_at_path",
     "archived_job_path",
     "ensure_directories",
+    "envelope_record_exists",
     "ensure_v3_repository_or_empty",
     "idempotency_path",
     "job_path",

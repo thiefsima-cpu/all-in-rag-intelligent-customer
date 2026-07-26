@@ -8,7 +8,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rag_modules.contracts.build_jobs import BuildJobId, BuildJobSnapshot, BuildJobType, JobQueued
+from rag_modules.contracts.build_jobs import (
+    BuildJobId,
+    BuildJobRepositoryError,
+    BuildJobSnapshot,
+    BuildJobType,
+    JobQueued,
+)
 from rag_modules.runtime.artifacts import write_json_atomic
 
 from . import file_repository_storage as storage
@@ -94,6 +100,8 @@ def find_indexed_idempotent_job(
         job_id = BuildJobId(str(payload.get("job_id") or ""))
         envelope = storage.load_any_envelope(repository, job_id)
         if envelope is None:
+            if storage.envelope_record_exists(repository, job_id):
+                raise BuildJobRepositoryError("Build job idempotency record is unavailable.")
             return None
         queued = envelope.events[0].payload if envelope.events else None
         if not isinstance(queued, JobQueued) or queued.idempotency_key_hash != key_hash:

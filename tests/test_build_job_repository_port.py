@@ -14,6 +14,7 @@ from rag_modules.app.build_jobs import (
     BuildJobId,
     BuildJobLeaseLostError,
     BuildJobListQuery,
+    BuildJobRepositoryError,
     BuildJobRepositorySettings,
     BuildJobSubmissionDisposition,
     BuildJobType,
@@ -358,6 +359,30 @@ class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
             self.assertEqual(timestamp_path.read_text(encoding="utf-8"), clock.now().isoformat())
             self.assertFalse((root / "build_jobs.d" / "jobs" / f"{oldest.job_id}.json").exists())
             self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
+
+    def test_idempotency_rejects_a_corrupt_archived_job_without_leaking_storage_details(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            clock = MutableClock()
+            repository = FileBuildJobRepository(
+                str(root / "build_jobs.json"),
+                now=clock.now,
+                settings=BuildJobRepositorySettings(retention_limit=1),
+            )
+            archived = _submit(repository, "b" * 32, key="archive-key")
+            _succeed(repository, archived, clock=clock)
+            clock.advance(seconds=1)
+            newest = _submit(repository, "c" * 32, key="newest-key")
+            _succeed(repository, newest, clock=clock)
+            archive_path = root / "build_jobs.d" / "archive" / f"{archived.job_id}.json"
+            archive_path.write_text("secret-malformed-archive", encoding="utf-8")
+
+            with self.assertRaises(BuildJobRepositoryError) as caught:
+                _submit(repository, "d" * 32, key="archive-key")
+
+            self.assertNotIn("secret-malformed-archive", str(caught.exception))
+            self.assertNotIn(str(archive_path), str(caught.exception))
+            self.assertIsNone(repository.get(BuildJobId("d" * 32)))
 
     def test_malformed_envelope_is_reported_without_leaking_file_contents(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
