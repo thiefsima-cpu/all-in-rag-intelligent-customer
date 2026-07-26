@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import unittest
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -112,6 +113,8 @@ class _FakePool:
         self.open_calls: list[tuple[bool, float]] = []
         self.checkout_timeouts: list[float | None] = []
         self.close_calls = 0
+        self._workers: list[threading.Thread] = []
+        self._sched_runner: threading.Thread | None = None
 
     def open(self, *, wait: bool, timeout: float) -> None:
         self.open_calls.append((wait, timeout))
@@ -144,6 +147,34 @@ class _LoggingFailurePool(_FakePool):
             self.name,
             _ConnectionFailure(f"{detail} dsn=postgresql://user:dsn-secret@unit-test.invalid/jobs"),
         )
+
+
+class _HungConnectionFailurePool(_LoggingFailurePool):
+    def __init__(self) -> None:
+        super().__init__(fail_open=False)
+        self._release_connection = threading.Event()
+        self._failure_logged = threading.Event()
+        self.worker = threading.Thread(
+            target=self._connect_until_released,
+            name="hung-pool-connect",
+            daemon=True,
+        )
+
+    def open(self, *, wait: bool, timeout: float) -> None:
+        _FakePool.open(self, wait=wait, timeout=timeout)
+        self._workers = [self.worker]
+        self.worker.start()
+        raise _ConnectionFailure("pool initialization wait timed out")
+
+    def release_and_wait(self) -> None:
+        self._release_connection.set()
+        assert self._failure_logged.wait(timeout=2.0)
+        self.worker.join(timeout=2.0)
+
+    def _connect_until_released(self) -> None:
+        self._release_connection.wait()
+        self.emit_connection_failure("hung-connect-late-raw-secret")
+        self._failure_logged.set()
 
 
 class _NamedUniqueViolation(psycopg.errors.UniqueViolation):
@@ -314,7 +345,7 @@ def test_pool_lifecycle_opens_explicitly_verifies_schema_and_closes_once() -> No
     assert pool.close_calls == 1
 
 
-def test_pool_open_failure_sanitizes_dependency_logger_and_removes_filter(
+def test_pool_open_failure_sanitizes_dependency_logger_and_retains_fail_safe_protection(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     pool = _LoggingFailurePool(fail_open=True)
@@ -352,8 +383,9 @@ def test_pool_open_failure_sanitizes_dependency_logger_and_removes_filter(
     assert pool.close_calls == 1
 
     caplog.clear()
-    pool.emit_connection_failure("post-close-visible")
-    assert "post-close-visible" in caplog.records[-1].getMessage()
+    pool.emit_connection_failure("post-close-still-sensitive")
+    assert caplog.records[-1].getMessage() == ("Build job PostgreSQL pool connection failed.")
+    assert "post-close-still-sensitive" not in repr(caplog.records[-1].__dict__)
 
 
 def test_real_pool_worker_open_failure_never_emits_raw_exception(
@@ -390,6 +422,41 @@ def test_real_pool_worker_open_failure_never_emits_raw_exception(
     )
     assert all("raw-secret" not in repr(record.__dict__) for record in dependency_records)
     assert all("dsn-secret" not in repr(record.__dict__) for record in dependency_records)
+
+
+def test_hung_connect_failure_after_close_timeout_remains_sanitized(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _HungConnectionFailurePool()
+
+    def build_pool(**kwargs):
+        pool.name = str(kwargs.get("name") or "")
+        return pool
+
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    try:
+        with (
+            patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+            pytest.raises(
+                BuildJobRepositoryUnavailableError,
+                match=r"^Build job repository is unavailable\.$",
+            ),
+        ):
+            PostgresBuildJobRepository(
+                "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+                now=lambda: NOW,
+                settings=BuildJobRepositorySettings(),
+                pool_min_size=1,
+                pool_max_size=1,
+                pool_timeout_seconds=0.05,
+            )
+    finally:
+        pool.release_and_wait()
+
+    dependency_records = [record for record in caplog.records if record.name == "psycopg.pool"]
+    assert dependency_records[-1].getMessage() == ("Build job PostgreSQL pool connection failed.")
+    assert "hung-connect-late-raw-secret" not in repr(dependency_records[-1].__dict__)
+    assert "dsn-secret" not in repr(dependency_records[-1].__dict__)
 
 
 def test_runtime_pool_replenishment_sanitizes_only_this_repository_pool(
@@ -437,6 +504,83 @@ def test_runtime_pool_replenishment_sanitizes_only_this_repository_pool(
     assert dependency_records[1].getMessage() == (
         "error connecting in 'unrelated-pool': unrelated-detail-visible"
     )
+
+    caplog.clear()
+    pool.emit_connection_failure("post-normal-close-visible")
+    assert "post-normal-close-visible" in caplog.records[-1].getMessage()
+
+
+def test_two_repositories_concurrently_close_and_log_with_one_process_filter(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    first_pool = _LoggingFailurePool(fail_open=False)
+    second_pool = _LoggingFailurePool(fail_open=False)
+
+    def make_repository(pool: _LoggingFailurePool) -> PostgresBuildJobRepository:
+        def build_pool(**kwargs):
+            pool.name = str(kwargs.get("name") or "")
+            return pool
+
+        schema_manager = SimpleNamespace(verify=lambda: None)
+        with (
+            patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+            patch.object(
+                repository_module,
+                "PostgresBuildJobSchemaManager",
+                return_value=schema_manager,
+            ),
+        ):
+            return PostgresBuildJobRepository(
+                "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+                now=lambda: NOW,
+                settings=BuildJobRepositorySettings(),
+                pool_min_size=1,
+                pool_max_size=2,
+                pool_timeout_seconds=1.0,
+            )
+
+    first_repository = make_repository(first_pool)
+    second_repository = make_repository(second_pool)
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    caplog.clear()
+    try:
+        process_filters = [
+            item
+            for item in logging.getLogger("psycopg.pool").filters
+            if isinstance(item, repository_module._PoolConnectionLogSanitizer)
+        ]
+        assert len(process_filters) == 1
+
+        start = threading.Barrier(2)
+
+        def close_first() -> None:
+            start.wait()
+            first_repository.close()
+
+        def log_from_second() -> None:
+            start.wait()
+            for index in range(100):
+                second_pool.emit_connection_failure(f"concurrent-raw-secret-{index}")
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            close_future = executor.submit(close_first)
+            log_future = executor.submit(log_from_second)
+            close_future.result()
+            log_future.result()
+
+        second_pool.emit_connection_failure("after-first-close-raw-secret")
+    finally:
+        first_repository.close()
+        second_repository.close()
+
+    dependency_records = [record for record in caplog.records if record.name == "psycopg.pool"]
+    assert len(dependency_records) == 101
+    assert all(
+        record.getMessage() == "Build job PostgreSQL pool connection failed."
+        for record in dependency_records
+    )
+    assert all("raw-secret" not in repr(record.__dict__) for record in dependency_records)
+    assert all("dsn-secret" not in repr(record.__dict__) for record in dependency_records)
 
 
 def test_schema_verification_failure_closes_the_open_pool() -> None:

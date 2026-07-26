@@ -61,6 +61,7 @@ _POOL_CONNECTION_FAILURE_MESSAGE = "Build job PostgreSQL pool connection failed.
 _POOL_CONNECTION_FAILURE_TEMPLATE = "error connecting in %r: %s"
 _POOL_LOGGER_NAME = "psycopg.pool"
 _UNAVAILABLE_MESSAGE = "Build job repository is unavailable."
+_MISSING_POOL_WORKER_STATE = object()
 
 _SNAPSHOT_COLUMNS = """
     job_id, request_id, job_type, status, revision,
@@ -157,11 +158,20 @@ class _PersistedDataError(RuntimeError):
 
 
 class _PoolConnectionLogSanitizer(logging.Filter):
-    """Sanitize connection errors emitted by one Psycopg pool's worker threads."""
+    """Sanitize connection errors for registered build-job Psycopg pools."""
 
-    def __init__(self, pool_name: str) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._pool_name = pool_name
+        self._lock = threading.Lock()
+        self._pool_names: set[str] = set()
+
+    def register(self, pool_name: str) -> None:
+        with self._lock:
+            self._pool_names.add(pool_name)
+
+    def unregister(self, pool_name: str) -> None:
+        with self._lock:
+            self._pool_names.discard(pool_name)
 
     def filter(self, record: logging.LogRecord) -> bool:
         arguments = record.args
@@ -169,9 +179,12 @@ class _PoolConnectionLogSanitizer(logging.Filter):
             record.msg != _POOL_CONNECTION_FAILURE_TEMPLATE
             or not isinstance(arguments, tuple)
             or len(arguments) != 2
-            or arguments[0] != self._pool_name
         ):
             return True
+        pool_name = arguments[0]
+        with self._lock:
+            if not isinstance(pool_name, str) or pool_name not in self._pool_names:
+                return True
         error = arguments[1]
         record.msg = _POOL_CONNECTION_FAILURE_MESSAGE
         record.args = ()
@@ -182,6 +195,11 @@ class _PoolConnectionLogSanitizer(logging.Filter):
         record.operation = "pool_connect"
         record.sqlstate_class = _sqlstate_class(error)
         return True
+
+
+_POOL_LOGGER = logging.getLogger(_POOL_LOGGER_NAME)
+_POOL_LOG_SANITIZER = _PoolConnectionLogSanitizer()
+_POOL_LOGGER.addFilter(_POOL_LOG_SANITIZER)
 
 
 class PostgresBuildJobRepository:
@@ -201,8 +219,6 @@ class PostgresBuildJobRepository:
         self.settings = settings or BuildJobRepositorySettings()
         self._pool_timeout_seconds = float(pool_timeout_seconds)
         self._pool_name = f"build-job-{secrets.token_hex(8)}"
-        self._pool_logger = logging.getLogger(_POOL_LOGGER_NAME)
-        self._pool_log_sanitizer = _PoolConnectionLogSanitizer(self._pool_name)
         self._pool = ConnectionPool(
             conninfo=dsn,
             min_size=int(pool_min_size),
@@ -211,21 +227,25 @@ class PostgresBuildJobRepository:
             open=False,
             timeout=self._pool_timeout_seconds,
         )
-        self._pool_logger.addFilter(self._pool_log_sanitizer)
+        _POOL_LOG_SANITIZER.register(self._pool_name)
         self._close_lock = threading.Lock()
         self._closed = False
         try:
             self._pool.open(wait=True, timeout=self._pool_timeout_seconds)
         except psycopg.Error as error:
-            self._close_after_failed_start()
+            self._close_after_failed_start(worker_references=None)
             self._raise_unavailable("open", error)
         try:
             PostgresBuildJobSchemaManager(dsn).verify()
         except BuildJobRepositoryError:
-            self._close_after_failed_start()
+            self._close_after_failed_start(
+                worker_references=_capture_pool_worker_references(self._pool)
+            )
             raise
         except Exception as error:
-            self._close_after_failed_start()
+            self._close_after_failed_start(
+                worker_references=_capture_pool_worker_references(self._pool)
+            )
             self._raise_unavailable("verify_schema", error)
 
     @property
@@ -379,12 +399,13 @@ class PostgresBuildJobRepository:
             if self._closed:
                 return
             self._closed = True
+            worker_references = _capture_pool_worker_references(self._pool)
             try:
                 self._pool.close()
             except psycopg.Error as error:
                 self._raise_unavailable("close", error)
             finally:
-                self._remove_pool_log_sanitizer()
+                self._unregister_pool_log_protection_if_stopped(worker_references)
 
     def _resolve_submit_unique_violation(
         self,
@@ -603,7 +624,11 @@ class PostgresBuildJobRepository:
             raise _PersistedDataError
         return bool(row[0]), bool(row[1])
 
-    def _close_after_failed_start(self) -> None:
+    def _close_after_failed_start(
+        self,
+        *,
+        worker_references: tuple[threading.Thread, ...] | None,
+    ) -> None:
         with self._close_lock:
             if self._closed:
                 return
@@ -613,10 +638,14 @@ class PostgresBuildJobRepository:
             except Exception:
                 pass
             finally:
-                self._remove_pool_log_sanitizer()
+                self._unregister_pool_log_protection_if_stopped(worker_references)
 
-    def _remove_pool_log_sanitizer(self) -> None:
-        self._pool_logger.removeFilter(self._pool_log_sanitizer)
+    def _unregister_pool_log_protection_if_stopped(
+        self,
+        worker_references: tuple[threading.Thread, ...] | None,
+    ) -> None:
+        if _pool_workers_are_stopped(worker_references):
+            _POOL_LOG_SANITIZER.unregister(self._pool_name)
 
     @staticmethod
     def _raise_unavailable(operation: str, error: object) -> Never:
@@ -640,6 +669,39 @@ def _required_string(value: object) -> str:
 def _sqlstate_class(error: object) -> str:
     sqlstate = getattr(error, "sqlstate", None)
     return sqlstate[:2] if isinstance(sqlstate, str) and len(sqlstate) >= 2 else "XX"
+
+
+def _capture_pool_worker_references(
+    pool: object,
+) -> tuple[threading.Thread, ...] | None:
+    workers = getattr(pool, "_workers", _MISSING_POOL_WORKER_STATE)
+    scheduler = getattr(pool, "_sched_runner", _MISSING_POOL_WORKER_STATE)
+    if workers is _MISSING_POOL_WORKER_STATE or scheduler is _MISSING_POOL_WORKER_STATE:
+        return None
+    if not isinstance(workers, list):
+        return None
+
+    references: list[threading.Thread] = []
+    for worker in workers:
+        if not isinstance(worker, threading.Thread):
+            return None
+        references.append(worker)
+    if scheduler is not None:
+        if not isinstance(scheduler, threading.Thread):
+            return None
+        references.append(scheduler)
+    return tuple(references)
+
+
+def _pool_workers_are_stopped(
+    worker_references: tuple[threading.Thread, ...] | None,
+) -> bool:
+    if worker_references is None:
+        return False
+    try:
+        return all(not worker.is_alive() for worker in worker_references)
+    except RuntimeError:
+        return False
 
 
 def _positive_integer(value: object) -> int:
