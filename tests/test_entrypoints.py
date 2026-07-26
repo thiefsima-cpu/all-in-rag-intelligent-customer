@@ -107,6 +107,14 @@ class EntrypointTests(unittest.TestCase):
             "main_build_worker:main",
         )
 
+    def test_build_job_database_console_script_is_registered(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            pyproject["project"]["scripts"]["graph-rag-build-job-db"],
+            "scripts.build_job_db:main",
+        )
+
     def test_integration_gate_module_help_exposes_command_arguments(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "scripts.integration_gate", "--help"],
