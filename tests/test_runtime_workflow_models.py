@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
-from rag_modules.contracts import EvidenceDocument, QueryPlan
+from rag_modules.contracts import EvidenceDocument, QueryPlan, QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
     AnswerContext,
     QueryUnderstandingSnapshot,
@@ -13,6 +12,7 @@ from rag_modules.contracts.runtime import (
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceItem, AnswerEvidencePackage
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.observability.tracing import QueryTracer
+from tests.configuration_test_helpers import build_test_config
 
 
 class RuntimeWorkflowModelTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             evidence_documents=[
                 EvidenceDocument(
                     content="dish A balances ingredient X and Y",
-                    recipe_name="dish A",
+                    entity_name="dish A",
                     source="graph_rag",
                     score=0.93,
                 )
@@ -53,8 +53,8 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.91,
                     evidence_units=[{"claim": "dish A uses ingredient X"}],
                     content="dish A uses ingredient X and Y",
@@ -62,10 +62,12 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             ],
         )
 
-        context = AnswerContext(question="how to make dish A").with_evidence_package(package)
+        context = AnswerContext(question="how to make dish A").with_evidence_package(
+            package.to_dict()
+        )
         round_trip = AnswerContext.from_dict(
             context.to_dict(),
-            semantic_settings=semantic_runtime_settings(build_test_config()),
+            semantic_settings=QuerySemanticRuntimeSettings.from_config(build_test_config()),
         )
 
         self.assertTrue(round_trip.has_evidence_package)
@@ -89,7 +91,7 @@ class RuntimeWorkflowModelTests(unittest.TestCase):
             evidence_documents=[
                 EvidenceDocument(
                     content="dish A balances ingredient X and Y",
-                    recipe_name="dish A",
+                    entity_name="dish A",
                     source="graph_rag",
                     score=0.93,
                 )

@@ -7,7 +7,6 @@ import time
 import unittest
 from pathlib import Path
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.contracts.runtime import (
     GenerationSnapshot,
@@ -20,6 +19,7 @@ from rag_modules.contracts.runtime import (
 from rag_modules.contracts.runtime.errors import answer_error_detail, routing_error_detail
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import AsyncQueryTraceSink, JsonlQueryTraceSink
+from tests.configuration_test_helpers import build_test_config
 
 
 class _CapturingSink:
@@ -80,7 +80,7 @@ class QueryTracerTests(unittest.TestCase):
         event = tracer.record(
             query="麻婆豆腐为什么更适合走图检索？",
             analysis=None,
-            documents=[EvidenceDocument(content="图证据", recipe_name="麻婆豆腐", score=0.93)],
+            documents=[EvidenceDocument(content="图证据", entity_name="麻婆豆腐", score=0.93)],
             latency_ms=18.6,
             answer="因为关系链更密集。",
         )

@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol
 
 from ...contracts import EvidenceDocument
+from ...kernel.json_types import coerce_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class GraphKVRetriever:
                         entity_type=entity.entity_type,
                         source="graph_entity",
                         matched_terms=[keyword],
-                        metadata=metadata,
+                        metadata=coerce_json_object(metadata),
                     )
                 )
 
@@ -215,7 +216,7 @@ class GraphKVRetriever:
                         entity_type="Relation",
                         source="graph_topic",
                         matched_terms=[keyword],
-                        metadata=metadata,
+                        metadata=coerce_json_object(metadata),
                     )
                 )
 

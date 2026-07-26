@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.hybrid_index_service import HybridIndexArtifacts
 from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
+from tests.configuration_test_helpers import build_test_config
 
 
 class _StubVectorRetriever:
@@ -16,7 +16,7 @@ class _StubVectorRetriever:
 
     def search(self, request):
         self.calls.append(request)
-        return [EvidenceDocument(content="vector", recipe_name=request.query)]
+        return [EvidenceDocument(content="vector", entity_name=request.query)]
 
 
 class _StubDualLevelService:
@@ -25,15 +25,15 @@ class _StubDualLevelService:
 
     def search(self, request):
         self.search_calls.append(request.query)
-        return [EvidenceDocument(content="dual", recipe_name=request.query)]
+        return [EvidenceDocument(content="dual", entity_name=request.query)]
 
     def entity_level_retrieval(self, entity_keywords, top_k=5):
         return [
-            EvidenceDocument(content="entity", recipe_name="|".join(entity_keywords), score=0.9)
+            EvidenceDocument(content="entity", entity_name="|".join(entity_keywords), score=0.9)
         ]
 
     def topic_level_retrieval(self, topic_keywords, top_k=5):
-        return [EvidenceDocument(content="topic", recipe_name="|".join(topic_keywords), score=0.8)]
+        return [EvidenceDocument(content="topic", entity_name="|".join(topic_keywords), score=0.8)]
 
 
 class _StubAdapterFactory:
@@ -151,7 +151,7 @@ class _StubBm25Retriever:
 
     def search(self, query, *, top_k):
         self.calls.append((query, top_k))
-        return [EvidenceDocument(content="bm25", recipe_name=query)]
+        return [EvidenceDocument(content="bm25", entity_name=query)]
 
     def build(self, chunks):
         self.calls.append(("build", list(chunks)))
@@ -236,7 +236,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
 
         docs = runtime.bm25_candidates(request)
 
-        self.assertEqual(docs[0].recipe_name, "spicy tofu")
+        self.assertEqual(docs[0].entity_name, "spicy tofu")
         self.assertEqual(bm25_retriever.calls[0][0], "build")
         self.assertEqual(bm25_retriever.calls[1], ("spicy tofu", 4))
 
@@ -259,7 +259,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
 
         docs = runtime.vector_candidates(request)
 
-        self.assertEqual(docs[0].recipe_name, "spicy tofu")
+        self.assertEqual(docs[0].entity_name, "spicy tofu")
         self.assertIs(adapter_factory.vector.calls[0].control, control)
 
     def test_sync_bm25_state_refreshes_runtime_state_from_retriever(self) -> None:
@@ -291,7 +291,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
             driver_service=_StubDriverService(),
             parent_documents=parent_documents,
         )
-        docs = [EvidenceDocument(content="doc", recipe_name="recipe")]
+        docs = [EvidenceDocument(content="doc", entity_name="recipe")]
 
         result = runtime.attach_parent_evidence_documents(docs, top_n=2)
 

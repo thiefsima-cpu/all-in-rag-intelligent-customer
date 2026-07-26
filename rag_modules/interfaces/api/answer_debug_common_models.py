@@ -59,7 +59,6 @@ class EvidenceDocumentResponseModel(BaseModel):
     matched_terms: list[str] = Field(default_factory=list)
     graph_evidence: JsonObject = Field(default_factory=dict)
     domain_graph_evidence: JsonObject = Field(default_factory=dict)
-    recipe_graph_evidence: JsonObject = Field(default_factory=dict)
     constraint_evidence: JsonObject = Field(default_factory=dict)
     evidence_units: list[JsonObject] = Field(default_factory=list)
     route_strategy: str = ""
@@ -73,20 +72,19 @@ class EvidenceDocumentResponseModel(BaseModel):
             entity_name=document.entity_name,
             entity_type=document.entity_type,
             node_id=document.node_id,
-            recipe_name=document.recipe_name,
+            recipe_name=document.entity_name,
             node_type=document.node_type,
             score=document.score,
             search_type=document.search_type,
             search_method=document.search_method,
             retrieval_level=document.retrieval_level,
             doc_id=document.doc_id,
-            recipe_id=document.recipe_id,
+            recipe_id=document.entity_id,
             source=document.source,
             evidence_type=document.evidence_type,
             matched_terms=list(document.matched_terms),
             graph_evidence=coerce_json_object(document.graph_evidence),
             domain_graph_evidence=coerce_json_object(document.domain_graph_evidence),
-            recipe_graph_evidence=coerce_json_object(document.recipe_graph_evidence),
             constraint_evidence=coerce_json_object(document.constraint_evidence),
             evidence_units=[coerce_json_object(item) for item in document.evidence_units],
             route_strategy=document.route_strategy,

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Optional
 
 
-def parse_minutes(value: Any) -> Optional[int]:
+def parse_minutes(value: object) -> Optional[int]:
     """Parse loose Chinese/English duration text into minutes."""
 
     if value in (None, ""):

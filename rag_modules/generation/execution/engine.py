@@ -143,7 +143,9 @@ class GenerationExecutionEngine:
             analysis=answer_context.analysis,
         )
         selected_package = package.limit_items(decision.evidence_limit)
-        selected_context = answer_context.with_evidence_package(selected_package)
+        selected_context = answer_context.with_evidence_package(
+            coerce_json_object(selected_package.to_dict())
+        )
         trace = self._trace_recorder.new_trace(decision, package, selected_package)
 
         try:
@@ -322,7 +324,7 @@ class GenerationExecutionEngine:
             analysis=ensure_optional_query_analysis(analysis),
         )
         if package is not None:
-            context = context.with_evidence_package(package)
+            context = context.with_evidence_package(coerce_json_object(package.to_dict()))
         resolved_package = (
             AnswerEvidencePackage.from_dict(context.evidence_package)
             if context.has_evidence_package

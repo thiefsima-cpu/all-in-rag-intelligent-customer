@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
 from rag_modules.kernel.documents import TextDocument
 
@@ -15,8 +16,8 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
         docs = [
             EvidenceDocument(
                 content="水煮肉片通过豆瓣酱、花椒和辣椒形成麻辣鲜香的风味。",
-                recipe_id="recipe-1",
-                recipe_name="水煮肉片",
+                entity_id="recipe-1",
+                entity_name="水煮肉片",
                 source="graph_rag",
                 score=0.95,
                 matched_terms=["麻辣", "花椒"],
@@ -32,8 +33,8 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
             ),
             EvidenceDocument(
                 content="肉片上浆能帮助口感更滑嫩。",
-                recipe_id="recipe-1",
-                recipe_name="水煮肉片",
+                entity_id="recipe-1",
+                entity_name="水煮肉片",
                 source="graph_rag",
                 score=0.88,
                 matched_terms=["上浆", "滑嫩"],
@@ -43,11 +44,11 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
         package = self.builder.build("为什么水煮肉片会麻辣鲜香？", docs)
 
         self.assertEqual(len(package.items), 1)
-        self.assertEqual(package.items[0].recipe_name, "水煮肉片")
+        self.assertEqual(package.items[0].entity_name, "水煮肉片")
         self.assertEqual(package.items[0].citation, "菜谱证据 1")
         self.assertIn("麻辣", package.items[0].matched_terms)
 
-    def test_document_wrapper_accepts_text_document_input(self) -> None:
+    def test_document_wrapper_accepts_converted_text_document_input(self) -> None:
         document = TextDocument(
             content="宫保鸡丁是一道经典川菜。",
             metadata={
@@ -58,10 +59,12 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
             },
         )
 
-        package = self.builder.build_from_documents("宫保鸡丁怎么做？", [document])
+        package = self.builder.build_from_documents(
+            "宫保鸡丁怎么做？", [evidence_document_from_text_document(document)]
+        )
 
         self.assertEqual(len(package.items), 1)
-        self.assertEqual(package.items[0].recipe_name, "宫保鸡丁")
+        self.assertEqual(package.items[0].entity_name, "宫保鸡丁")
 
 
 if __name__ == "__main__":

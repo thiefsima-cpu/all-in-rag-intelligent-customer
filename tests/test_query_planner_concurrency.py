@@ -7,12 +7,12 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
+from rag_modules.contracts.query_settings import (
+    QueryPlannerRuntimeSettings,
+    QuerySemanticRuntimeSettings,
 )
 from rag_modules.query_understanding import QueryPlanner
+from tests.configuration_test_helpers import build_test_config
 
 
 class _BlockingLLMClient:
@@ -47,8 +47,8 @@ class QueryPlannerConcurrencyTests(unittest.TestCase):
         )
         planner = QueryPlanner(
             client,
-            settings=planner_runtime_settings(config),
-            semantic_settings=semantic_runtime_settings(config),
+            settings=QueryPlannerRuntimeSettings.from_config(config),
+            semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
         )
         planner.rule_based_plan("warm up tokenizer")
 

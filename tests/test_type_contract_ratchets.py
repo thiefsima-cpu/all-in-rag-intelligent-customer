@@ -73,7 +73,10 @@ NO_EXPLICIT_ANY_PACKAGE_TARGETS = (
     ROOT / "rag_modules" / "app" / "providers",
     ROOT / "rag_modules" / "application",
     ROOT / "rag_modules" / "build_pipeline" / "graph_preparation",
+    ROOT / "rag_modules" / "configuration",
+    ROOT / "rag_modules" / "contracts",
     ROOT / "rag_modules" / "generation" / "execution",
+    ROOT / "rag_modules" / "kernel",
     ROOT / "rag_modules" / "query_policy" / "parsers",
 )
 
@@ -82,6 +85,7 @@ STRICT_PACKAGE_TARGETS = (
     ROOT / "rag_modules" / "app" / "services",
     ROOT / "rag_modules" / "application",
     ROOT / "rag_modules" / "build_pipeline" / "graph_preparation",
+    ROOT / "rag_modules" / "configuration",
     ROOT / "rag_modules" / "contracts",
     ROOT / "rag_modules" / "domain",
     ROOT / "rag_modules" / "generation" / "execution",
@@ -187,6 +191,26 @@ def _annotation_type_names(annotation: ast.AST | None) -> set[str]:
 
 
 class TypeContractRatchetTests(unittest.TestCase):
+    def test_configuration_package_has_exactly_eight_modules(self) -> None:
+        configuration_modules = {
+            path.relative_to(ROOT / "rag_modules" / "configuration")
+            for path in _python_files_under(ROOT / "rag_modules" / "configuration")
+        }
+
+        self.assertEqual(
+            configuration_modules,
+            {
+                Path("__init__.py"),
+                Path("assembly.py"),
+                Path("env.py"),
+                Path("environment_schema.py"),
+                Path("loader.py"),
+                Path("models.py"),
+                Path("profiles.py"),
+                Path("validation.py"),
+            },
+        )
+
     def test_core_strict_rules_are_global_mypy_baseline(self) -> None:
         config = _mypy_config()
         missing_flags = [

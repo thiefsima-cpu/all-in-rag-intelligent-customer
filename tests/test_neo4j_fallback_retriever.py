@@ -100,7 +100,7 @@ def test_topic_search_omits_empty_optional_fields_and_invalid_ingredients() -> N
 
     [document] = retriever.topic_search(["x"], 1)
 
-    assert document.recipe_name == "Recipe"
+    assert document.entity_name == "Recipe"
     assert document.matched_terms == []
 
 

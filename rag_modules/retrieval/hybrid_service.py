@@ -9,6 +9,7 @@ from ..contracts import EvidenceDocument, QueryPlan, RetrievalRequest
 from ..contracts.query_constraints import QueryConstraints
 from ..contracts.runtime import HybridRetrievalOutcome
 from ..kernel.documents import TextDocument
+from ..kernel.json_types import coerce_json_object
 from .adapters import tokenize_chinese
 from .evidence import RecipeConstraintMatcher
 from .fusion import FusionRanker
@@ -135,7 +136,7 @@ class HybridRetrievalService:
             query_plan=query_plan,
             entity_keywords=entity_keywords,
             topic_keywords=topic_keywords,
-            metadata=metadata,
+            metadata=coerce_json_object(metadata),
         )
 
     def _cache_signature(self, chunks: List[TextDocument]) -> str:

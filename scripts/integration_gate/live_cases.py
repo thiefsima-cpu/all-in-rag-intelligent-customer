@@ -112,9 +112,9 @@ def normalize_live_case_observation(
     generation_cost = generation_trace.estimated_cost_usd
     estimated_cost_usd = generation_cost if generation_cost > 0 else summary.estimated_cost_usd
     observed_entity_ids = {
-        _normalized_match_text(document.entity_id or document.recipe_id)
+        _normalized_match_text(document.entity_id)
         for document in evidence_documents
-        if document.entity_id or document.recipe_id
+        if document.entity_id
     }
     expected_entity_ids = {
         _normalized_match_text(entity_id) for entity_id in case.expected_entity_ids

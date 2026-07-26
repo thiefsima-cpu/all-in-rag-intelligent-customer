@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List
 
+from ..kernel.json_types import (
+    JsonObject,
+    as_string_list,
+    bounded_float,
+    clamp_int,
+    coerce_json_object,
+)
 from ..kernel.routing import SearchStrategy
 from ..kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .query_constraints import QueryConstraints
@@ -19,20 +26,19 @@ from .query_types import (
     query_planner_mode,
     search_strategy,
 )
-from .query_utils import as_list, clamp_float, clamp_int
 
 
-def _resolve_semantic_profile(data: Dict[str, Any]) -> QuerySemanticProfile:
+def _resolve_semantic_profile(data: Mapping[str, object]) -> QuerySemanticProfile:
     profile = data.get("semantic_profile")
     if isinstance(profile, QuerySemanticProfile):
         return profile
-    return QuerySemanticProfile.from_dict(profile)
+    return QuerySemanticProfile.from_dict(profile if isinstance(profile, Mapping) else None)
 
 
 def _resolve_plan_strategy(
-    data: Dict[str, Any],
+    data: Mapping[str, object],
     constraints: QueryConstraints,
-    validation_errors: List[str],
+    validation_errors: list[str],
 ) -> SearchStrategy:
     raw_strategy = str(data.get("strategy") or SearchStrategy.HYBRID_TRADITIONAL.value)
     try:
@@ -45,9 +51,9 @@ def _resolve_plan_strategy(
 
 
 def _resolve_plan_graph_query_type(
-    data: Dict[str, Any],
+    data: Mapping[str, object],
     profile: QuerySemanticProfile,
-    validation_errors: List[str],
+    validation_errors: list[str],
 ) -> GraphQueryType:
     raw_type = str(
         data.get("graph_query_type") or profile.query_type_value or GraphQueryType.SUBGRAPH.value
@@ -59,8 +65,18 @@ def _resolve_plan_graph_query_type(
         return graph_query_type_or_default(profile.query_type, GraphQueryType.SUBGRAPH)
 
 
-def _profile_values(data: Dict[str, Any], key: str, fallback: Iterable[str]) -> List[str]:
-    return as_list(data.get(key)) or list(fallback)
+def _profile_values(data: Mapping[str, object], key: str, fallback: Iterable[str]) -> list[str]:
+    return as_string_list(data.get(key)) or list(fallback)
+
+
+def _resolve_constraints(
+    data: Mapping[str, object],
+    profile: QuerySemanticProfile,
+) -> QueryConstraints:
+    raw_constraints = data.get("constraints")
+    return QueryConstraints.from_dict(
+        raw_constraints if isinstance(raw_constraints, Mapping) else profile.constraints
+    )
 
 
 @dataclass
@@ -73,12 +89,12 @@ class QueryPlan:
     strategy: SearchStrategy | str = "hybrid_traditional"
     confidence: float = 0.6
     reasoning: str = "rule-based fallback"
-    entity_keywords: List[str] = field(default_factory=list)
-    topic_keywords: List[str] = field(default_factory=list)
+    entity_keywords: list[str] = field(default_factory=list)
+    topic_keywords: list[str] = field(default_factory=list)
     graph_query_type: GraphQueryType | str = GraphQueryType.SUBGRAPH
-    source_entities: List[str] = field(default_factory=list)
-    target_entities: List[str] = field(default_factory=list)
-    relation_types: List[str] = field(default_factory=list)
+    source_entities: list[str] = field(default_factory=list)
+    target_entities: list[str] = field(default_factory=list)
+    relation_types: list[str] = field(default_factory=list)
     max_depth: int = 2
     constraints: QueryConstraints = field(default_factory=QueryConstraints)
     needs_recipe_recommendation: bool = False
@@ -88,8 +104,8 @@ class QueryPlan:
     fallback_reason: str = ""
     planner_mode: QueryPlannerMode | str = QueryPlannerMode.LLM
     semantic_profile: QuerySemanticProfile = field(default_factory=QuerySemanticProfile)
-    raw_plan: Dict[str, Any] = field(default_factory=dict)
-    validation_errors: List[str] = field(default_factory=list)
+    raw_plan: JsonObject = field(default_factory=dict)
+    validation_errors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.strategy = search_strategy(self.strategy)
@@ -116,7 +132,7 @@ class QueryPlan:
     def from_dict(
         cls,
         query: str,
-        data: Dict[str, Any],
+        data: Mapping[str, object],
         *,
         semantic_settings: QuerySemanticRuntimeSettings,
         schema_relation_types: Iterable[str] | None = None,
@@ -127,16 +143,14 @@ class QueryPlan:
             else None
         )
         resolved_profile = _resolve_semantic_profile(data)
-        validation_errors: List[str] = []
-        constraints = QueryConstraints.from_dict(
-            data.get("constraints") or resolved_profile.constraints or {}
-        )
+        validation_errors: list[str] = []
+        constraints = _resolve_constraints(data, resolved_profile)
         strategy = _resolve_plan_strategy(data, constraints, validation_errors)
         resolved_graph_query_type = _resolve_plan_graph_query_type(
             data, resolved_profile, validation_errors
         )
-        complexity = clamp_float(data.get("complexity"), resolved_profile.complexity)
-        relationship_intensity = clamp_float(
+        complexity = bounded_float(data.get("complexity"), resolved_profile.complexity)
+        relationship_intensity = bounded_float(
             data.get("relationship_intensity"),
             resolved_profile.relationship_intensity,
         )
@@ -171,7 +185,7 @@ class QueryPlan:
             relationship_intensity=relationship_intensity,
             reasoning_required=reasoning_required,
             strategy=strategy,
-            confidence=clamp_float(data.get("confidence"), 0.6),
+            confidence=bounded_float(data.get("confidence"), 0.6),
             reasoning=str(data.get("reasoning") or ""),
             entity_keywords=entity_keywords[: semantic_settings.entity_keyword_limit],
             topic_keywords=topic_keywords[: semantic_settings.topic_keyword_limit],
@@ -189,37 +203,39 @@ class QueryPlan:
             answer_style=str(data.get("answer_style") or "concise"),
             planner_mode=query_planner_mode(data.get("planner_mode")),
             semantic_profile=resolved_profile,
-            raw_plan=dict(data),
+            raw_plan=coerce_json_object(data),
             validation_errors=validation_errors,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "query": self.query,
-            "intent": self.intent,
-            "complexity": self.complexity,
-            "relationship_intensity": self.relationship_intensity,
-            "reasoning_required": self.reasoning_required,
-            "strategy": self.strategy_value,
-            "confidence": self.confidence,
-            "reasoning": self.reasoning,
-            "entity_keywords": self.entity_keywords,
-            "topic_keywords": self.topic_keywords,
-            "graph_query_type": self.graph_query_type_value,
-            "source_entities": self.source_entities,
-            "target_entities": self.target_entities,
-            "relation_types": self.relation_types,
-            "max_depth": self.max_depth,
-            "constraints": self.constraints.to_dict(),
-            "needs_recipe_recommendation": self.needs_recipe_recommendation,
-            "answer_style": self.answer_style,
-            "planner_version": self.planner_version,
-            "used_cache": self.used_cache,
-            "fallback_reason": self.fallback_reason,
-            "planner_mode": self.planner_mode_value,
-            "semantic_profile": self.semantic_profile.to_dict(),
-            "validation_errors": self.validation_errors,
-        }
+    def to_dict(self) -> JsonObject:
+        return coerce_json_object(
+            {
+                "query": self.query,
+                "intent": self.intent,
+                "complexity": self.complexity,
+                "relationship_intensity": self.relationship_intensity,
+                "reasoning_required": self.reasoning_required,
+                "strategy": self.strategy_value,
+                "confidence": self.confidence,
+                "reasoning": self.reasoning,
+                "entity_keywords": self.entity_keywords,
+                "topic_keywords": self.topic_keywords,
+                "graph_query_type": self.graph_query_type_value,
+                "source_entities": self.source_entities,
+                "target_entities": self.target_entities,
+                "relation_types": self.relation_types,
+                "max_depth": self.max_depth,
+                "constraints": self.constraints.to_dict(),
+                "needs_recipe_recommendation": self.needs_recipe_recommendation,
+                "answer_style": self.answer_style,
+                "planner_version": self.planner_version,
+                "used_cache": self.used_cache,
+                "fallback_reason": self.fallback_reason,
+                "planner_mode": self.planner_mode_value,
+                "semantic_profile": self.semantic_profile.to_dict(),
+                "validation_errors": self.validation_errors,
+            }
+        )
 
 
 __all__ = ["QueryPlan"]

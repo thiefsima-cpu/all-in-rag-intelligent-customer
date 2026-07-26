@@ -373,8 +373,8 @@ class GenerationExecutionEngineTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="菜谱证据 1",
-                    recipe_id="recipe-1",
-                    recipe_name="鱼香肉丝",
+                    entity_id="recipe-1",
+                    entity_name="鱼香肉丝",
                     confidence=0.92,
                     matched_terms=["酸甜", "鱼香汁"],
                     evidence_units=[

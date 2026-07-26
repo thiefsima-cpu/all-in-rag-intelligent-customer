@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,12 +17,11 @@ from rag_modules.build_pipeline.graph_preparation.statistics import (
     GraphPreparationStatisticsService,
 )
 from rag_modules.build_pipeline.schema_sync import SemanticGraphSchemaSyncService
-from rag_modules.configuration import load_config
+from rag_modules.configuration import ConfigurationError, load_config
 from rag_modules.configuration.env import EnvConfigSource
-from rag_modules.configuration.testing import semantic_runtime_settings
-from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts import EvidenceDocument, QuerySemanticRuntimeSettings
 from rag_modules.contracts.graph_preparation import GraphNode
-from rag_modules.contracts.retrieval_documents import evidence_document_from_page_like
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.domains import domain_pack_names, get_domain_pack, load_domain_evaluation
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
 from rag_modules.graph.evidence_builder import GraphEvidenceBuilder
@@ -94,7 +93,7 @@ def test_customer_service_policy_routes_live_gate_queries_and_extracts_identifie
         profile="dev",
         source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": "customer_service"}),
     )
-    settings = semantic_runtime_settings(config)
+    settings = QuerySemanticRuntimeSettings.from_config(config)
     bundle = load_policy_bundle(Path("rag_modules/query_policy/resources/customer-service-v1"))
     planner = RuleBasedPlanner(
         settings,
@@ -195,6 +194,20 @@ def test_domain_settings_reject_unknown_pack_without_literal_domain_coupling() -
         load_config(source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": "unknown_domain"}))
 
 
+@pytest.mark.parametrize("domain_name", [None, 0, False, [], {}])
+def test_falsy_domain_override_uses_sourced_configuration_error(domain_name: object) -> None:
+    with pytest.raises(ConfigurationError) as context:
+        load_config(
+            {"domain": {"name": domain_name}},
+            source=EnvConfigSource(environ={}),
+        )
+
+    message = str(context.value)
+    assert "overrides load_config" in message
+    assert "domain.name" in message
+    assert "string" in message
+
+
 def test_domain_graph_loader_resolves_identity_from_ontology_fields() -> None:
     class Session:
         def __enter__(self):
@@ -253,7 +266,7 @@ def test_customer_service_mapper_builds_generic_evidence_and_semantic_relations(
         }
     )
 
-    evidence = evidence_document_from_page_like(document)
+    evidence = evidence_document_from_text_document(document)
     assert evidence.entity_id == "POL-REFUND-2026-07"
     assert evidence.entity_name == "七天无理由退货政策"
     assert evidence.entity_type == "RefundPolicy"
@@ -298,17 +311,32 @@ def test_each_domain_pack_ships_a_grounded_evaluation_resource() -> None:
         )
 
 
-def test_evidence_contract_is_domain_neutral_with_recipe_compatibility_properties() -> None:
-    field_names = {item.name for item in fields(EvidenceDocument)}
+def test_evidence_contract_rejects_deprecated_recipe_aliases() -> None:
+    with pytest.raises(TypeError):
+        EvidenceDocument(content="legacy", recipe_id="r1", recipe_name="Mapo tofu")
 
-    assert {"entity_id", "entity_name", "entity_type", "domain_graph_evidence"} <= field_names
-    assert "recipe_id" not in field_names
-    assert "recipe_name" not in field_names
-    legacy = EvidenceDocument(content="legacy", recipe_id="r1", recipe_name="Mapo tofu")
-    assert legacy.entity_id == "r1"
-    assert legacy.entity_name == "Mapo tofu"
-    assert legacy.recipe_id == "r1"
-    assert legacy.recipe_name == "Mapo tofu"
+    evidence = EvidenceDocument(
+        content="canonical",
+        entity_id="r1",
+        entity_name="Mapo tofu",
+        domain_graph_evidence={"kind": "recipe"},
+    )
+    assert "recipe_id" not in evidence.to_dict()
+    assert "recipe_name" not in evidence.to_dict()
+    assert "recipe_graph_evidence" not in evidence.to_dict()
+
+
+def test_evidence_processing_retires_generic_recipe_compatibility_exports() -> None:
+    import rag_modules.evidence_processing as evidence_processing
+    from rag_modules.evidence_processing.models import AggregatedEvidence
+
+    assert not hasattr(evidence_processing, "RecipeEvidence")
+    assert not hasattr(evidence_processing, "aggregate_recipe_evidence")
+    assert not hasattr(evidence_processing, "aggregate_recipe_evidence_from_documents")
+    aggregate = AggregatedEvidence(entity_id="r1", entity_name="Mapo tofu")
+    assert not hasattr(aggregate, "recipe_id")
+    assert not hasattr(aggregate, "recipe_name")
+    assert not hasattr(aggregate, "full_recipe_doc")
 
 
 def test_customer_service_domain_selects_its_policy_and_citation_label() -> None:
@@ -408,6 +436,23 @@ def test_public_citation_projection_fails_closed_without_domain_or_recipe_marker
     assert public.entity_name == ""
     assert public.recipe_name == ""
     assert public.matched_terms == []
+
+
+def test_recipe_text_document_projects_through_canonical_evidence_type() -> None:
+    document = TextDocument(
+        content="Mapo tofu uses tofu and chili bean paste.",
+        metadata={"recipe_id": "recipe-1", "recipe_name": "Mapo tofu", "matched_terms": ["tofu"]},
+    )
+
+    public = PublicEvidenceDocumentResponseModel.from_dto(
+        evidence_document_from_text_document(document)
+    )
+
+    assert public.content == document.content
+    assert public.entity_id == "recipe-1"
+    assert public.entity_name == "Mapo tofu"
+    assert public.recipe_name == "Mapo tofu"
+    assert public.matched_terms == ["tofu"]
 
 
 def test_customer_service_build_does_not_run_recipe_semantic_writer() -> None:

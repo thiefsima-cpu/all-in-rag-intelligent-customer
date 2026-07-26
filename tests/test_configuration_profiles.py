@@ -189,6 +189,53 @@ class ConfigurationProfilesTests(unittest.TestCase):
             "integer",
         )
 
+    def test_profile_toml_date_reaches_strict_validation_with_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "bad.toml"
+            profile_path.write_text(
+                "[models]\nllm_model = 2026-07-24\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ConfigurationError) as context:
+                load_config(
+                    source=EnvConfigSource(environ={}),
+                    profile_path=str(profile_path),
+                    profiles_dir=tmpdir,
+                )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "profile",
+            str(profile_path.resolve()),
+            "models.llm_model",
+            "string",
+        )
+
+    def test_profile_selector_toml_dates_reach_strict_validation_with_source(self) -> None:
+        for field in ("bundle", "bundle_path"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmpdir:
+                profile_path = Path(tmpdir) / "bad.toml"
+                profile_path.write_text(
+                    f"[query_understanding.policy]\n{field} = 2026-07-24\n",
+                    encoding="utf-8",
+                )
+
+                with self.assertRaises(ConfigurationError) as context:
+                    load_config(
+                        source=EnvConfigSource(environ={}),
+                        profile_path=str(profile_path),
+                        profiles_dir=tmpdir,
+                    )
+
+            self.assertConfigErrorMentions(
+                context.exception,
+                "profile",
+                str(profile_path.resolve()),
+                f"query_understanding.policy.{field}",
+                "string",
+            )
+
     def test_profile_scalar_for_nested_section_reports_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "bad.toml"
@@ -208,6 +255,24 @@ class ConfigurationProfilesTests(unittest.TestCase):
             "query_understanding.planner",
             "dictionary",
         )
+
+
+def test_legacy_profile_environment_names_are_ignored() -> None:
+    config = load_config(
+        source=EnvConfigSource(
+            environ={
+                "CONFIG_PROFILE": "quality",
+                "CONFIG_PROFILE_PATH": "missing.toml",
+                "CONFIG_PROFILES_DIR": "missing-profiles",
+            }
+        )
+    )
+    assert config.profile_name == "base"
+
+
+def test_undocumented_api_token_alias_is_ignored() -> None:
+    config = load_config(source=EnvConfigSource(environ={"GRAPH_RAG_API_TOKEN": "legacy-token"}))
+    assert config.api.access_token == ""
 
 
 if __name__ == "__main__":

@@ -5,12 +5,12 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.interfaces.api.services import GraphRAGServingApiService
 from rag_modules.interfaces.api.services.errors import SystemNotReadyError
 from rag_modules.kernel.artifacts import ARTIFACT_STAGE_READY, ArtifactManifest
 from rag_modules.runtime.artifacts import ArtifactManifestStore
 from rag_modules.runtime.artifacts.registry import ArtifactRegistry
+from tests.configuration_test_helpers import build_test_config
 
 ROOT = Path(__file__).resolve().parents[1]
 

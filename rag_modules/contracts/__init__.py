@@ -1,14 +1,11 @@
 """Canonical cross-subsystem contract kernel."""
 
+from ..kernel.json_types import JsonObject, coerce_float, coerce_json_object
 from .graph_preparation import GraphLoadCounts, GraphNode, GraphPreparationStats
-from .query import (
-    GraphQueryType,
-    QueryPlan,
-    QueryPlannerMode,
-    QuerySemanticProfile,
-    QuerySemanticScoreBreakdown,
-)
+from .query_plan import QueryPlan
+from .query_semantics import QuerySemanticProfile, QuerySemanticScoreBreakdown
 from .query_settings import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from .query_types import GraphQueryType, QueryPlannerMode
 from .request_control import (
     RequestBudgetExceeded,
     RequestCancelled,
@@ -16,12 +13,8 @@ from .request_control import (
     RequestControlError,
     control_trace_details,
 )
-from .retrieval import (
-    EvidenceDocument,
-    PageDocumentLike,
-    RetrievalRequest,
-    ensure_evidence_documents,
-)
+from .retrieval_documents import EvidenceDocument, evidence_document_from_text_document
+from .retrieval_request import RetrievalRequest
 
 __all__ = [
     "EvidenceDocument",
@@ -29,7 +22,7 @@ __all__ = [
     "GraphNode",
     "GraphPreparationStats",
     "GraphQueryType",
-    "PageDocumentLike",
+    "JsonObject",
     "QueryPlan",
     "QueryPlannerMode",
     "QueryPlannerRuntimeSettings",
@@ -42,5 +35,7 @@ __all__ = [
     "RequestControlError",
     "RetrievalRequest",
     "control_trace_details",
-    "ensure_evidence_documents",
+    "coerce_float",
+    "coerce_json_object",
+    "evidence_document_from_text_document",
 ]

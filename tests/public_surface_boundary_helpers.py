@@ -87,6 +87,27 @@ RETIRED_LATE_MIGRATION_COMPAT_EXPORTS = {
     "rag_modules.retrieval.vector_retriever": RAG_MODULES_DIR / "retrieval" / "vector_retriever.py",
 }
 RETIRED_INTERNAL_COMPAT_SHELLS = {
+    "rag_modules.configuration.env_specs": RAG_MODULES_DIR / "configuration" / "env_specs.py",
+    "rag_modules.configuration.model_sections": RAG_MODULES_DIR
+    / "configuration"
+    / "model_sections",
+    "rag_modules.configuration.sections": RAG_MODULES_DIR / "configuration" / "sections",
+    "rag_modules.configuration.errors": RAG_MODULES_DIR / "configuration" / "errors.py",
+    "rag_modules.configuration.testing": RAG_MODULES_DIR / "configuration" / "testing.py",
+    "rag_modules.contracts._common": RAG_MODULES_DIR / "contracts" / "_common.py",
+    "rag_modules.contracts.langchain_compat": RAG_MODULES_DIR / "contracts" / "langchain_compat.py",
+    "rag_modules.contracts.query": RAG_MODULES_DIR / "contracts" / "query.py",
+    "rag_modules.contracts.query_utils": RAG_MODULES_DIR / "contracts" / "query_utils.py",
+    "rag_modules.contracts.retrieval": RAG_MODULES_DIR / "contracts" / "retrieval.py",
+    "rag_modules.contracts.build_jobs.executor": RAG_MODULES_DIR
+    / "contracts"
+    / "build_jobs"
+    / "executor.py",
+    "rag_modules.contracts.runtime.snapshot_utils": RAG_MODULES_DIR
+    / "contracts"
+    / "runtime"
+    / "snapshot_utils.py",
+    "rag_modules.kernel.artifact_validation": RAG_MODULES_DIR / "kernel" / "artifact_validation.py",
     "rag_modules.app.composition.build_runtime_assembler": RAG_MODULES_DIR
     / "app"
     / "composition"

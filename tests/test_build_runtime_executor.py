@@ -5,8 +5,8 @@ import pytest
 
 from rag_modules.app.composition.build_runtime_executor import BuildRuntimeExecutor
 from rag_modules.app.runtime_state import BuildRuntime
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest
+from tests.configuration_test_helpers import build_test_config
 
 
 class _StatefulKnowledgeBaseService:

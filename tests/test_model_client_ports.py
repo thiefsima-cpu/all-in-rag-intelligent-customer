@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument, RequestControl, RetrievalRequest
 from rag_modules.infra.milvus.module import MilvusIndexConstructionModule
 from rag_modules.retrieval.post_processor import (
@@ -14,6 +13,7 @@ from rag_modules.retrieval.post_processor import (
     RetrievalPostProcessor,
 )
 from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeEmbeddingClient:
@@ -153,8 +153,8 @@ class ModelClientPortTests(unittest.TestCase):
             rerank_client=rerank_client,
         )
         docs = [
-            EvidenceDocument(content="first", recipe_name="first"),
-            EvidenceDocument(content="second", recipe_name="second"),
+            EvidenceDocument(content="first", entity_name="first"),
+            EvidenceDocument(content="second", entity_name="second"),
         ]
 
         result = processor.post_process(
@@ -169,8 +169,49 @@ class ModelClientPortTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual([doc.recipe_name for doc in result], ["second", "first"])
+        self.assertEqual([doc.entity_name for doc in result], ["second", "first"])
         self.assertEqual(rerank_client.calls[0]["query"], "which one")
+
+    def test_retrieval_reranker_preserves_recipe_label_and_document_order(self) -> None:
+        rerank_client = _FakeRerankClient(order=[1, 0])
+        processor = RetrievalPostProcessor(
+            settings=self.postprocess_settings,
+            rerank_client=rerank_client,
+        )
+        documents = [
+            EvidenceDocument(
+                content="recipe content",
+                entity_name="Mapo tofu",
+                evidence_type="recipe",
+                metadata={"domain": "recipe"},
+            ),
+            EvidenceDocument(
+                content="order content",
+                entity_name="Order CS-1001",
+                evidence_type="text",
+                metadata={"domain": "customer_service"},
+            ),
+        ]
+
+        result = processor.post_process(
+            documents,
+            top_k=2,
+            context=RetrievalPostProcessContext(
+                query="which one",
+                strategy="hybrid_traditional",
+                query_complexity=0.1,
+                relationship_intensity=0.1,
+                route_confidence=0.9,
+            ),
+        )
+
+        assert rerank_client.calls[0]["documents"] == [
+            "菜谱: Mapo tofu\n来源: unknown\n证据类型: recipe\n内容摘要: recipe content",
+            "实体: Order CS-1001\n来源: unknown\n证据类型: text\n内容摘要: order content",
+        ]
+        self.assertEqual(
+            [document.entity_name for document in result], ["Order CS-1001", "Mapo tofu"]
+        )
 
     def test_retrieval_post_processor_records_successful_rerank_timing(self) -> None:
         rerank_client = _FakeRerankClient(order=[1, 0])
@@ -179,8 +220,8 @@ class ModelClientPortTests(unittest.TestCase):
             rerank_client=rerank_client,
         )
         docs = [
-            EvidenceDocument(content="first", recipe_name="first"),
-            EvidenceDocument(content="second", recipe_name="second"),
+            EvidenceDocument(content="first", entity_name="first"),
+            EvidenceDocument(content="second", entity_name="second"),
         ]
 
         with patch(
@@ -199,7 +240,7 @@ class ModelClientPortTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual([doc.recipe_name for doc in outcome.documents], ["second", "first"])
+        self.assertEqual([doc.entity_name for doc in outcome.documents], ["second", "first"])
         self.assertTrue(outcome.rerank_attempted)
         self.assertTrue(outcome.rerank_succeeded)
         self.assertEqual(outcome.rerank_latency_ms, 125.0)
@@ -211,7 +252,7 @@ class ModelClientPortTests(unittest.TestCase):
             settings=self.postprocess_settings,
             rerank_client=_FailingRerankClient(),
         )
-        docs = [EvidenceDocument(content="first", recipe_name="first")]
+        docs = [EvidenceDocument(content="first", entity_name="first")]
 
         with patch(
             "rag_modules.retrieval.post_processor.time.perf_counter",
@@ -266,7 +307,7 @@ class ModelClientPortTests(unittest.TestCase):
         )
 
         processor.post_process(
-            [EvidenceDocument(content="first", recipe_name="first")],
+            [EvidenceDocument(content="first", entity_name="first")],
             top_k=1,
             context=RetrievalPostProcessContext(
                 query="which one",

@@ -14,7 +14,6 @@ from rag_modules.contracts.build_jobs import (
     BuildJobEvent,
     BuildJobEventPayload,
     BuildJobEventType,
-    BuildJobExecutor,
     BuildJobId,
     BuildJobLease,
     BuildJobLeaseLostError,
@@ -25,8 +24,10 @@ from rag_modules.contracts.build_jobs import (
     JobFailed,
     JobProgressRecorded,
     JobStarted,
+    JobSucceeded,
     WorkerIdentity,
 )
+from rag_modules.kernel.json_types import JsonObject
 
 
 @dataclass(slots=True)
@@ -39,6 +40,11 @@ class _RunningJob:
 
 
 BuildLeaseRecorder = Callable[[str, str, int], None]
+BuildJobExecution = Callable[
+    [BuildJobSnapshot, Callable[[JobProgressRecorded], None], Callable[[], None]],
+    JobSucceeded,
+]
+BuildJobResult = Callable[[], JsonObject]
 
 
 class InProcessBuildJobRunner:
@@ -48,7 +54,9 @@ class InProcessBuildJobRunner:
         self,
         *,
         repository: BuildJobRepositoryPort,
-        executor: BuildJobExecutor,
+        execute_build: BuildJobExecution,
+        cancelled_result: BuildJobResult,
+        failed_result: BuildJobResult,
         max_workers: int,
         worker_id: str,
         heartbeat_seconds: float = 10.0,
@@ -56,7 +64,9 @@ class InProcessBuildJobRunner:
         lease_recorder: BuildLeaseRecorder | None = None,
     ) -> None:
         self._repository = repository
-        self._executor = executor
+        self._execute_build = execute_build
+        self._cancelled_result = cancelled_result
+        self._failed_result = failed_result
         self._max_workers = max(1, int(max_workers or 1))
         self._worker = WorkerIdentity(str(worker_id or "in-process-worker"), self.backend)
         self._heartbeat_seconds = max(0.1, float(heartbeat_seconds or 10.0))
@@ -160,10 +170,10 @@ class InProcessBuildJobRunner:
                 handle.snapshot = current
                 handle.lease = self._lease_for_revision(handle.lease, current.revision)
 
-            succeeded = self._executor.execute(
+            succeeded = self._execute_build(
                 current,
-                progress=progress,
-                cancellation_check=cancellation_check,
+                progress,
+                cancellation_check,
             )
             current = self._repository.apply(
                 self._event(current, BuildJobEventType.SUCCEEDED, succeeded),
@@ -203,7 +213,7 @@ class InProcessBuildJobRunner:
                 self._event(
                     current,
                     BuildJobEventType.CANCELLED,
-                    JobCancelled(result=self._executor.cancelled_result()),
+                    JobCancelled(result=self._cancelled_result()),
                 ),
                 expected_revision=current.revision,
                 lease=self._lease_for_revision(handle.lease, current.revision),
@@ -232,7 +242,7 @@ class InProcessBuildJobRunner:
                     BuildJobEventType.FAILED,
                     JobFailed(
                         message="Knowledge base build failed.",
-                        result=self._executor.failed_result(),
+                        result=self._failed_result(),
                     ),
                 ),
                 expected_revision=current.revision,
@@ -313,4 +323,4 @@ class InProcessBuildJobRunner:
         )
 
 
-__all__ = ["BuildLeaseRecorder", "InProcessBuildJobRunner"]
+__all__ = ["BuildJobExecution", "BuildJobResult", "BuildLeaseRecorder", "InProcessBuildJobRunner"]

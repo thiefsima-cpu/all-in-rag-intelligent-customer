@@ -8,6 +8,7 @@ import logging
 from typing import List, Tuple
 
 from ..contracts import QuerySemanticRuntimeSettings
+from ..kernel.json_types import as_string_list
 from ..query_understanding.features import normalize_graph_sources
 from ..query_understanding.graph_intent import infer_query_semantic_profile
 from ..query_understanding.registry import relation_index_terms
@@ -39,11 +40,11 @@ class QueryKeywordExtractor:
             [
                 *profile.topic_keywords,
                 *profile.recommendation_hits,
-                *(constraints.get("preference_terms") or []),
-                *(constraints.get("health_terms") or []),
-                *(constraints.get("cuisine_terms") or []),
-                *(constraints.get("category_terms") or []),
-                *(constraints.get("include_terms") or []),
+                *as_string_list(constraints.get("preference_terms")),
+                *as_string_list(constraints.get("health_terms")),
+                *as_string_list(constraints.get("cuisine_terms")),
+                *as_string_list(constraints.get("category_terms")),
+                *as_string_list(constraints.get("include_terms")),
             ]
         )
         for relation_type in profile.relation_types:
@@ -56,7 +57,7 @@ class QueryKeywordExtractor:
             topic_keywords = self.dedupe_terms(
                 [
                     *profile.recommendation_hits,
-                    *(constraints.get("preference_terms") or []),
+                    *as_string_list(constraints.get("preference_terms")),
                 ]
             )
 

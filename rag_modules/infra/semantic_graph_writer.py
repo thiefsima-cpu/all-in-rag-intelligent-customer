@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from typing import Any, Dict, Iterable, List, cast
 
 from ..kernel.documents import TextDocument
-from ..kernel.json_types import coerce_json_int
+from ..kernel.json_types import JsonObject, coerce_int, coerce_json_object
 from ..kernel.semantic_schema import (
     SEMANTIC_NODE_LABELS,
     SEMANTIC_RELATION_TYPES,
@@ -24,7 +24,7 @@ from .neo4j import Neo4jConnectionManager, create_neo4j_driver
 logger = logging.getLogger(__name__)
 
 
-def _dedupe_strings(values: Iterable[Any]) -> List[str]:
+def _dedupe_strings(values: Iterable[object]) -> List[str]:
     seen = set()
     out = []
     for value in values or []:
@@ -34,6 +34,18 @@ def _dedupe_strings(values: Iterable[Any]) -> List[str]:
         seen.add(text)
         out.append(text)
     return out
+
+
+def _json_object_items(value: object) -> list[JsonObject]:
+    if not isinstance(value, list):
+        return []
+    return [coerce_json_object(item) for item in value if isinstance(item, Mapping)]
+
+
+def _json_value_items(value: object) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    return list(value)
 
 
 class SemanticGraphSchemaWriter:
@@ -117,12 +129,12 @@ class SemanticGraphSchemaWriter:
             if not recipe_id:
                 continue
 
-            semantic_relations = metadata.get("semantic_relations") or {}
+            semantic_relations = coerce_json_object(metadata.get("semantic_relations"))
             relations = []
             for rel_type in SEMANTIC_RELATION_TYPES:
                 if rel_type == "CONTRIBUTES_TO":
-                    for item in semantic_relations.get(rel_type, []) or []:
-                        effect = str((item or {}).get("effect") or "").strip()
+                    for item in _json_object_items(semantic_relations.get(rel_type)):
+                        effect = str(item.get("effect") or "").strip()
                         if not effect:
                             continue
                         relations.append(
@@ -130,14 +142,14 @@ class SemanticGraphSchemaWriter:
                                 "rel_type": rel_type,
                                 "label": SEMANTIC_NODE_LABELS[rel_type],
                                 "name": effect,
-                                "causes": _dedupe_strings((item or {}).get("causes") or []),
+                                "causes": _dedupe_strings(_json_value_items(item.get("causes"))),
                             }
                         )
                     continue
                 if rel_type in {"INGREDIENT_CONTRIBUTES_TO", "TECHNIQUE_MODIFIES_TEXTURE"}:
-                    for item in semantic_relations.get(rel_type, []) or []:
-                        source = str((item or {}).get("source") or "").strip()
-                        effect = str((item or {}).get("effect") or "").strip()
+                    for item in _json_object_items(semantic_relations.get(rel_type)):
+                        source = str(item.get("source") or "").strip()
+                        effect = str(item.get("effect") or "").strip()
                         if not source or not effect:
                             continue
                         relations.append(
@@ -151,7 +163,7 @@ class SemanticGraphSchemaWriter:
                         )
                     continue
 
-                for target in _dedupe_strings(semantic_relations.get(rel_type) or []):
+                for target in _dedupe_strings(_json_value_items(semantic_relations.get(rel_type))):
                     relations.append(
                         {
                             "rel_type": rel_type,
@@ -377,4 +389,4 @@ def _count_semantic_schema_nodes(tx) -> int:
 def _count_result_value(result: object, key: str) -> int:
     if not isinstance(result, Mapping):
         return 0
-    return coerce_json_int(result.get(key))
+    return coerce_int(result.get(key))

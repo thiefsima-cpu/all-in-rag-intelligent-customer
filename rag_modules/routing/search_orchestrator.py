@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, QueryPlan, RequestControl, RetrievalRequest
 from ..contracts.query_constraints import QueryConstraints
 from ..contracts.runtime import QueryAnalysis
-from ..kernel.json_types import JsonObject
+from ..kernel.json_types import JsonObject, coerce_json_object
 from ..kernel.routing import SearchStrategy
 from ..retrieval.candidate_generator import SKIP_CANDIDATE_SOURCES_METADATA_KEY
 from ..retrieval.post_processor import RetrievalPostProcessContext, RetrievalPostProcessor
@@ -249,8 +249,12 @@ class RouteSearchOrchestrator:
             metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
         )
         merged_sources = _unique_source_names([*skipped_sources, *degraded_sources])
-        metadata[SKIP_CANDIDATE_SOURCES_METADATA_KEY] = merged_sources
-        return retrieval_request.copy_with(metadata=metadata)
+        return replace(
+            retrieval_request,
+            metadata=coerce_json_object(
+                {**metadata, SKIP_CANDIDATE_SOURCES_METADATA_KEY: merged_sources}
+            ),
+        )
 
 
 def _unique_source_names(values: object) -> List[str]:

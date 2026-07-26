@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
+from rag_modules.contracts.query_settings import (
+    QueryPlannerRuntimeSettings,
+    QuerySemanticRuntimeSettings,
 )
 from rag_modules.query_understanding import QueryPlanner
 from scripts.eval_queries import load_eval_cases
+from tests.configuration_test_helpers import build_test_config
 
 
 class _DummyCompletions:
@@ -31,8 +31,8 @@ class CuratedRouteExpectationTests(unittest.TestCase):
         config = build_test_config()
         planner = QueryPlanner(
             _DummyLLM(),
-            settings=planner_runtime_settings(config),
-            semantic_settings=semantic_runtime_settings(config),
+            settings=QueryPlannerRuntimeSettings.from_config(config),
+            semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
         )
 
         for case in load_eval_cases():

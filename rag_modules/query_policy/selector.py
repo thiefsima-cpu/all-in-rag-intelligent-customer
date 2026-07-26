@@ -32,7 +32,17 @@ def _domain_name(payload: Mapping[str, object]) -> str:
     domain = payload.get("domain")
     if not isinstance(domain, Mapping):
         return ""
-    return str(domain.get("name") or "").strip().casefold().replace("-", "_")
+    name = domain.get("name")
+    return name.strip().casefold().replace("-", "_") if isinstance(name, str) else ""
+
+
+def _selector_string(
+    selector: Mapping[str, object],
+    key: str,
+    default: str,
+) -> str:
+    value = selector.get(key, default)
+    return value.strip() if isinstance(value, str) else default
 
 
 def resolve_query_policy_selector(
@@ -50,8 +60,12 @@ def resolve_query_policy_selector(
         or _domain_name(domain_payload)
         or "recipe"
     )
-    bundle = str(profile.get("bundle", base.get("bundle", DEFAULT_BUNDLE_NAME)) or "").strip()
-    bundle_path = str(profile.get("bundle_path", base.get("bundle_path", "")) or "").strip()
+    bundle = _selector_string(
+        profile, "bundle", _selector_string(base, "bundle", DEFAULT_BUNDLE_NAME)
+    )
+    bundle_path = _selector_string(
+        profile, "bundle_path", _selector_string(base, "bundle_path", "")
+    )
     env_bundle = env_source.get_first("QUERY_POLICY_BUNDLE") if env_source is not None else None
     env_domain = (
         env_source.get_first("GRAPH_RAG_DOMAIN", "RAG_DOMAIN") if env_source is not None else None
@@ -69,12 +83,12 @@ def resolve_query_policy_selector(
     if env_bundle_path is not None:
         bundle_path = env_bundle_path
     if "bundle" in explicit:
-        bundle = str(explicit["bundle"] or "")
+        bundle = _selector_string(explicit, "bundle", "")
     if "bundle_path" in explicit:
-        bundle_path = str(explicit["bundle_path"] or "")
+        bundle_path = _selector_string(explicit, "bundle_path", "")
     return QueryPolicySelector(
-        bundle=str(bundle).strip() or DEFAULT_BUNDLE_NAME,
-        bundle_path=str(bundle_path).strip(),
+        bundle=bundle or DEFAULT_BUNDLE_NAME,
+        bundle_path=bundle_path,
     )
 
 

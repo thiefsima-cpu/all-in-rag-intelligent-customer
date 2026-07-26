@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import threading
 
-from rag_modules.contracts.build_jobs import BuildJobExecutor, BuildJobId, BuildJobRepositoryPort
+from rag_modules.contracts.build_jobs import BuildJobId, BuildJobRepositoryPort
 
-from .in_process_runner import BuildLeaseRecorder, InProcessBuildJobRunner
+from .in_process_runner import (
+    BuildJobExecution,
+    BuildJobResult,
+    BuildLeaseRecorder,
+    InProcessBuildJobRunner,
+)
 
 
 class ExternalBuildJobQueueRunner:
@@ -38,7 +43,9 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
         self,
         *,
         repository: BuildJobRepositoryPort,
-        executor: BuildJobExecutor,
+        execute_build: BuildJobExecution,
+        cancelled_result: BuildJobResult,
+        failed_result: BuildJobResult,
         max_workers: int,
         worker_id: str,
         heartbeat_seconds: float = 10.0,
@@ -49,7 +56,9 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
     ) -> None:
         super().__init__(
             repository=repository,
-            executor=executor,
+            execute_build=execute_build,
+            cancelled_result=cancelled_result,
+            failed_result=failed_result,
             max_workers=max_workers,
             worker_id=worker_id,
             heartbeat_seconds=heartbeat_seconds,

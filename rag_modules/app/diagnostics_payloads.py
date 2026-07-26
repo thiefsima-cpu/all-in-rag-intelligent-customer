@@ -5,15 +5,15 @@ from __future__ import annotations
 from ..kernel.json_types import (
     JsonObject,
     JsonValue,
-    coerce_json_float,
-    coerce_json_int,
+    coerce_float,
+    coerce_int,
     coerce_json_object,
 )
 
 
 def int_map(payload: object) -> dict[str, int]:
     data = coerce_json_object(payload)
-    return {str(key): coerce_json_int(value, 0) for key, value in data.items()}
+    return {str(key): coerce_int(value, 0) for key, value in data.items()}
 
 
 def coerce_json_bool(value: object, default: bool = False) -> bool:
@@ -33,7 +33,7 @@ def coerce_json_bool(value: object, default: bool = False) -> bool:
 def optional_json_float(data: JsonObject, key: str) -> float | None:
     if key not in data or data[key] is None:
         return None
-    return coerce_json_float(data[key], 0.0)
+    return coerce_float(data[key], 0.0)
 
 
 def extra_payload(data: JsonObject, known_keys: frozenset[str]) -> JsonObject:

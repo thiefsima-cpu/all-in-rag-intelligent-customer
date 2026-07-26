@@ -1,22 +1,15 @@
-"""Evidence document DTOs and page-like conversion helpers."""
+"""Canonical evidence document DTOs."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, TypeVar, cast
 
-from ._common import coerce_float, coerce_str
-
-
-class PageDocumentLike(Protocol):
-    @property
-    def page_content(self) -> str: ...
-
-    @property
-    def metadata(self) -> Mapping[str, Any]: ...
+from ..kernel.documents import TextDocument
+from ..kernel.json_types import JsonObject, coerce_float, coerce_json_object, coerce_str
 
 
-@dataclass(init=False)
+@dataclass
 class EvidenceDocument:
     content: str
     entity_id: str = ""
@@ -31,70 +24,13 @@ class EvidenceDocument:
     doc_id: str = ""
     source: str = "unknown"
     evidence_type: str = "text"
-    matched_terms: List[str] = field(default_factory=list)
-    graph_evidence: Dict[str, Any] = field(default_factory=dict)
-    domain_graph_evidence: Dict[str, Any] = field(default_factory=dict)
-    constraint_evidence: Dict[str, Any] = field(default_factory=dict)
-    evidence_units: List[Dict[str, Any]] = field(default_factory=list)
+    matched_terms: list[str] = field(default_factory=list)
+    graph_evidence: JsonObject = field(default_factory=dict)
+    domain_graph_evidence: JsonObject = field(default_factory=dict)
+    constraint_evidence: JsonObject = field(default_factory=dict)
+    evidence_units: list[JsonObject] = field(default_factory=list)
     route_strategy: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def __init__(
-        self,
-        content: str,
-        node_id: str = "",
-        recipe_name: str = "",
-        node_type: str = "",
-        score: float = 0.0,
-        search_type: str = "",
-        search_method: str = "",
-        retrieval_level: str = "",
-        doc_id: str = "",
-        recipe_id: str = "",
-        source: str = "unknown",
-        evidence_type: str = "text",
-        matched_terms: List[str] | None = None,
-        graph_evidence: Dict[str, Any] | None = None,
-        recipe_graph_evidence: Dict[str, Any] | None = None,
-        constraint_evidence: Dict[str, Any] | None = None,
-        evidence_units: List[Dict[str, Any]] | None = None,
-        route_strategy: str = "",
-        metadata: Dict[str, Any] | None = None,
-        *,
-        entity_id: str = "",
-        entity_name: str = "",
-        entity_type: str = "",
-        domain_graph_evidence: Dict[str, Any] | None = None,
-    ) -> None:
-        self.content = content
-        self.entity_id = entity_id or recipe_id
-        self.entity_name = entity_name or recipe_name
-        self.entity_type = entity_type or node_type
-        self.node_id = node_id
-        self.node_type = node_type
-        self.score = score
-        self.search_type = search_type
-        self.search_method = search_method
-        self.retrieval_level = retrieval_level
-        self.doc_id = doc_id
-        self.source = source
-        self.evidence_type = evidence_type
-        self.matched_terms = list(matched_terms or [])
-        self.graph_evidence = dict(graph_evidence or {})
-        self.domain_graph_evidence = dict(domain_graph_evidence or recipe_graph_evidence or {})
-        self.constraint_evidence = dict(constraint_evidence or {})
-        self.evidence_units = list(evidence_units or [])
-        self.route_strategy = route_strategy
-        self.metadata = dict(metadata or {})
-        self._legacy_recipe_compat = bool(
-            recipe_id
-            or recipe_name
-            or recipe_graph_evidence
-            or "recipe_id" in self.metadata
-            or "recipe_name" in self.metadata
-            or self.metadata.get("domain") == "recipe"
-        )
-        self.__post_init__()
+    metadata: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.content = coerce_str(self.content)
@@ -111,96 +47,63 @@ class EvidenceDocument:
         self.source = coerce_str(self.source or self.search_method or self.search_type or "unknown")
         self.evidence_type = coerce_str(self.evidence_type or "text")
         self.matched_terms = [
-            str(item).strip() for item in (self.matched_terms or []) if str(item).strip()
+            coerce_str(item).strip() for item in self.matched_terms if coerce_str(item).strip()
         ]
-        self.graph_evidence = dict(self.graph_evidence or {})
-        self.domain_graph_evidence = dict(self.domain_graph_evidence or {})
-        self.constraint_evidence = dict(self.constraint_evidence or {})
+        self.graph_evidence = coerce_json_object(self.graph_evidence)
+        self.domain_graph_evidence = coerce_json_object(self.domain_graph_evidence)
+        self.constraint_evidence = coerce_json_object(self.constraint_evidence)
         self.evidence_units = [
-            dict(item) for item in (self.evidence_units or []) if isinstance(item, dict)
+            coerce_json_object(item) for item in self.evidence_units if isinstance(item, Mapping)
         ]
         self.route_strategy = coerce_str(self.route_strategy)
-        self.metadata = dict(self.metadata or {})
-
-    @property
-    def recipe_id(self) -> str:
-        """Deprecated recipe-domain alias for ``entity_id``."""
-
-        return self.entity_id
-
-    @recipe_id.setter
-    def recipe_id(self, value: object) -> None:
-        self.entity_id = coerce_str(value)
-        self._legacy_recipe_compat = True
-
-    @property
-    def recipe_name(self) -> str:
-        """Deprecated recipe-domain alias for ``entity_name``."""
-
-        return self.entity_name
-
-    @recipe_name.setter
-    def recipe_name(self, value: object) -> None:
-        self.entity_name = coerce_str(value)
-        self._legacy_recipe_compat = True
-
-    @property
-    def recipe_graph_evidence(self) -> Dict[str, Any]:
-        """Deprecated recipe-domain alias for ``domain_graph_evidence``."""
-
-        return self.domain_graph_evidence
-
-    @recipe_graph_evidence.setter
-    def recipe_graph_evidence(self, value: object) -> None:
-        self.domain_graph_evidence = dict(value or {}) if isinstance(value, Mapping) else {}
-        self._legacy_recipe_compat = True
+        self.metadata = coerce_json_object(self.metadata)
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, Any] | None) -> "EvidenceDocument":
-        data = dict(payload or {})
+    def from_dict(cls, payload: Mapping[str, object] | None) -> "EvidenceDocument":
+        data = payload or {}
+        raw_matched_terms = data.get("matched_terms")
+        raw_evidence_units = data.get("evidence_units")
         return cls(
             content=coerce_str(data.get("content")),
             entity_id=coerce_str(data.get("entity_id")),
             entity_name=coerce_str(data.get("entity_name")),
             entity_type=coerce_str(data.get("entity_type")),
             node_id=coerce_str(data.get("node_id")),
-            recipe_name=coerce_str(data.get("recipe_name")),
             node_type=coerce_str(data.get("node_type")),
             score=coerce_float(data.get("score")),
             search_type=coerce_str(data.get("search_type")),
             search_method=coerce_str(data.get("search_method")),
             retrieval_level=coerce_str(data.get("retrieval_level")),
             doc_id=coerce_str(data.get("doc_id")),
-            recipe_id=coerce_str(data.get("recipe_id")),
             source=coerce_str(data.get("source")),
             evidence_type=coerce_str(data.get("evidence_type")),
             matched_terms=[
-                str(item).strip() for item in (data.get("matched_terms") or []) if str(item).strip()
-            ],
-            graph_evidence=dict(data.get("graph_evidence") or {}),
-            domain_graph_evidence=dict(data.get("domain_graph_evidence") or {}),
-            recipe_graph_evidence=dict(data.get("recipe_graph_evidence") or {}),
-            constraint_evidence=dict(data.get("constraint_evidence") or {}),
+                coerce_str(item).strip() for item in raw_matched_terms if coerce_str(item).strip()
+            ]
+            if isinstance(raw_matched_terms, list)
+            else [],
+            graph_evidence=coerce_json_object(data.get("graph_evidence")),
+            domain_graph_evidence=coerce_json_object(data.get("domain_graph_evidence")),
+            constraint_evidence=coerce_json_object(data.get("constraint_evidence")),
             evidence_units=[
-                dict(item) for item in (data.get("evidence_units") or []) if isinstance(item, dict)
-            ],
+                coerce_json_object(item) for item in raw_evidence_units if isinstance(item, Mapping)
+            ]
+            if isinstance(raw_evidence_units, list)
+            else [],
             route_strategy=coerce_str(data.get("route_strategy")),
-            metadata=dict(data.get("metadata") or {}),
+            metadata=coerce_json_object(data.get("metadata")),
         )
-
-    def copy_with(self, **changes: Any) -> "EvidenceDocument":
-        return replace(self, **changes)
 
     def with_search_fields(
         self,
         *,
-        search_method: Optional[str] = None,
-        search_type: Optional[str] = None,
-        retrieval_level: Optional[str] = None,
-        score: Optional[float] = None,
-        metadata_updates: Optional[Dict[str, Any]] = None,
+        search_method: str | None = None,
+        search_type: str | None = None,
+        retrieval_level: str | None = None,
+        score: float | None = None,
+        metadata_updates: JsonObject | None = None,
     ) -> "EvidenceDocument":
-        metadata = dict(self.metadata or {})
+        metadata = dict(self.metadata)
         if metadata_updates:
             metadata.update(metadata_updates)
         if search_method:
@@ -211,7 +114,8 @@ class EvidenceDocument:
             metadata.setdefault("retrieval_level", retrieval_level)
         if score is not None:
             metadata.setdefault("score", score)
-        return self.copy_with(
+        return replace(
+            self,
             score=self.score if score is None else score,
             search_method=self.search_method or coerce_str(search_method),
             search_type=self.search_type or coerce_str(search_type),
@@ -220,26 +124,27 @@ class EvidenceDocument:
         )
 
     def document_key(self) -> str:
-        metadata = self.metadata or {}
         node_id = self.node_id or coerce_str(
-            metadata.get("entity_id")
+            self.metadata.get("entity_id")
             or self.entity_id
-            or metadata.get("node_id")
-            or metadata.get("parent_id")
-            or metadata.get("recipe_id")
+            or self.metadata.get("node_id")
+            or self.metadata.get("parent_id")
+            or self.metadata.get("recipe_id")
         )
         if node_id:
             return node_id
         entity_name = self.entity_name or coerce_str(
-            metadata.get("entity_name") or metadata.get("recipe_name")
+            self.metadata.get("entity_name") or self.metadata.get("recipe_name")
         )
         if entity_name:
-            entity_type = self.entity_type or coerce_str(metadata.get("entity_type")) or "entity"
+            entity_type = (
+                self.entity_type or coerce_str(self.metadata.get("entity_type")) or "entity"
+            )
             return f"{entity_type.casefold()}::{entity_name}"
-        return f"hash::{hash((self.content or '')[:200])}"
+        return f"hash::{hash(self.content[:200])}"
 
-    def to_metadata(self) -> Dict[str, Any]:
-        payload = {
+    def to_metadata(self) -> JsonObject:
+        return {
             "doc_id": self.doc_id,
             "entity_id": self.entity_id or self.node_id,
             "entity_name": self.entity_name,
@@ -248,24 +153,15 @@ class EvidenceDocument:
             "score": self.score,
             "evidence_type": self.evidence_type,
             "matched_terms": list(self.matched_terms),
-            "graph_evidence": dict(self.graph_evidence or {}),
-            "domain_graph_evidence": dict(self.domain_graph_evidence or {}),
-            "constraint_evidence": dict(self.constraint_evidence or {}),
+            "graph_evidence": dict(self.graph_evidence),
+            "domain_graph_evidence": dict(self.domain_graph_evidence),
+            "constraint_evidence": dict(self.constraint_evidence),
             "evidence_units": [dict(item) for item in self.evidence_units],
             "route_strategy": self.route_strategy,
         }
-        if self._legacy_recipe_compat:
-            payload.update(
-                {
-                    "recipe_id": self.entity_id or self.node_id,
-                    "recipe_name": self.entity_name,
-                    "recipe_graph_evidence": dict(self.domain_graph_evidence or {}),
-                }
-            )
-        return payload
 
-    def to_dict(self) -> Dict[str, Any]:
-        payload = {
+    def to_dict(self) -> JsonObject:
+        return {
             "content": self.content,
             "entity_id": self.entity_id,
             "entity_name": self.entity_name,
@@ -280,33 +176,22 @@ class EvidenceDocument:
             "source": self.source,
             "evidence_type": self.evidence_type,
             "matched_terms": list(self.matched_terms),
-            "graph_evidence": dict(self.graph_evidence or {}),
-            "domain_graph_evidence": dict(self.domain_graph_evidence or {}),
-            "constraint_evidence": dict(self.constraint_evidence or {}),
+            "graph_evidence": dict(self.graph_evidence),
+            "domain_graph_evidence": dict(self.domain_graph_evidence),
+            "constraint_evidence": dict(self.constraint_evidence),
             "evidence_units": [dict(item) for item in self.evidence_units],
             "route_strategy": self.route_strategy,
-            "metadata": dict(self.metadata or {}),
+            "metadata": dict(self.metadata),
         }
-        if self._legacy_recipe_compat:
-            payload.update(
-                {
-                    "recipe_id": self.entity_id,
-                    "recipe_name": self.entity_name,
-                    "recipe_graph_evidence": dict(self.domain_graph_evidence or {}),
-                }
-            )
-        return payload
 
 
-EvidenceDocumentT = TypeVar("EvidenceDocumentT", bound=EvidenceDocument)
+def matched_terms_from_metadata(metadata: JsonObject) -> list[str]:
+    raw_matched_terms = metadata.get("matched_terms")
+    if isinstance(raw_matched_terms, list):
+        matched_terms = [coerce_str(item).strip() for item in raw_matched_terms]
+        return list(dict.fromkeys(item for item in matched_terms if item))
 
-
-def matched_terms_from_metadata(metadata: dict) -> List[str]:
-    matched_terms = list(metadata.get("matched_terms") or [])
-    if matched_terms:
-        return list(dict.fromkeys(str(item) for item in matched_terms if str(item).strip()))
-
-    collected: List[str] = []
+    collected: list[str] = []
     for key in (
         "matched_keyword",
         "matched_entities",
@@ -316,21 +201,17 @@ def matched_terms_from_metadata(metadata: dict) -> List[str]:
     ):
         value = metadata.get(key)
         if isinstance(value, list):
-            collected.extend(str(item) for item in value if item)
+            collected.extend(coerce_str(item).strip() for item in value if coerce_str(item).strip())
         elif value:
-            collected.append(str(value))
-    return list(dict.fromkeys(item for item in collected if item.strip()))
+            collected.append(coerce_str(value).strip())
+    return list(dict.fromkeys(item for item in collected if item))
 
 
-def evidence_document_from_page_like(
-    doc: PageDocumentLike,
-    *,
-    cls: type[EvidenceDocumentT] | None = None,
-) -> EvidenceDocumentT:
-    metadata = dict(doc.metadata or {})
-    document_cls = cls or cast(type[EvidenceDocumentT], EvidenceDocument)
-    return document_cls(
-        content=doc.page_content or "",
+def evidence_document_from_text_document(document: TextDocument) -> EvidenceDocument:
+    metadata = coerce_json_object(document.metadata)
+    raw_evidence_units = metadata.get("evidence_units")
+    return EvidenceDocument(
+        content=document.content,
         entity_id=coerce_str(
             metadata.get("entity_id")
             or metadata.get("node_id")
@@ -347,7 +228,6 @@ def evidence_document_from_page_like(
             or metadata.get("parent_id")
             or metadata.get("recipe_id")
         ),
-        recipe_name=coerce_str(metadata.get("recipe_name") or metadata.get("name")),
         node_type=coerce_str(metadata.get("node_type") or metadata.get("entity_type")),
         score=coerce_float(
             metadata.get("final_score")
@@ -360,9 +240,6 @@ def evidence_document_from_page_like(
         search_method=coerce_str(metadata.get("search_method") or metadata.get("search_source")),
         retrieval_level=coerce_str(metadata.get("retrieval_level")),
         doc_id=coerce_str(metadata.get("doc_id")),
-        recipe_id=coerce_str(
-            metadata.get("recipe_id") or metadata.get("node_id") or metadata.get("parent_id")
-        ),
         source=coerce_str(
             metadata.get("source")
             or metadata.get("search_source")
@@ -376,34 +253,21 @@ def evidence_document_from_page_like(
             or ("recipe" if metadata.get("recipe_name") else "text")
         ),
         matched_terms=matched_terms_from_metadata(metadata),
-        graph_evidence=dict(metadata.get("graph_evidence") or {}),
-        domain_graph_evidence=dict(metadata.get("domain_graph_evidence") or {}),
-        recipe_graph_evidence=dict(metadata.get("recipe_graph_evidence") or {}),
-        constraint_evidence=dict(metadata.get("constraint_evidence") or {}),
+        graph_evidence=coerce_json_object(metadata.get("graph_evidence")),
+        domain_graph_evidence=coerce_json_object(metadata.get("domain_graph_evidence")),
+        constraint_evidence=coerce_json_object(metadata.get("constraint_evidence")),
         evidence_units=[
-            dict(item) for item in (metadata.get("evidence_units") or []) if isinstance(item, dict)
+            coerce_json_object(item)
+            for item in (raw_evidence_units if isinstance(raw_evidence_units, list) else [])
+            if isinstance(item, Mapping)
         ],
         route_strategy=coerce_str(metadata.get("route_strategy")),
         metadata=metadata,
     )
 
 
-def ensure_evidence_documents(
-    documents: Iterable[PageDocumentLike | EvidenceDocument],
-) -> List[EvidenceDocument]:
-    evidence_documents: List[EvidenceDocument] = []
-    for doc in documents or []:
-        if isinstance(doc, EvidenceDocument):
-            evidence_documents.append(doc)
-        else:
-            evidence_documents.append(evidence_document_from_page_like(doc))
-    return evidence_documents
-
-
 __all__ = [
     "EvidenceDocument",
-    "PageDocumentLike",
-    "ensure_evidence_documents",
-    "evidence_document_from_page_like",
+    "evidence_document_from_text_document",
     "matched_terms_from_metadata",
 ]

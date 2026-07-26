@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import List
 
 from ...contracts import EvidenceDocument, RetrievalRequest
@@ -49,7 +50,8 @@ class GraphRouteStrategy:
         stages: List[RouteExecutionStageResult],
     ) -> tuple[RetrievalRequest, List[EvidenceDocument]]:
         graph_start = time.perf_counter()
-        graph_request = request.retrieval_request.copy_with(
+        graph_request = replace(
+            request.retrieval_request,
             top_k=request.top_k,
             candidate_k=request.top_k,
             strategy=SearchStrategy.GRAPH_RAG.value,

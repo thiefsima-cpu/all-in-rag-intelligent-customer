@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from ..contracts import EvidenceDocument
 from ..evidence_processing import extract_evidence_units
 from ..kernel.json_types import (
     JsonObject,
-    coerce_json_float,
-    coerce_json_int,
+    coerce_float,
+    coerce_int,
     coerce_json_object,
 )
 from ..safe_logging import log_failure
@@ -48,8 +49,8 @@ class GraphRetrievalPostProcessor:
             return GraphPath(
                 nodes=path_nodes,
                 relationships=relationships,
-                path_length=coerce_json_int(record.get("path_len"), 0),
-                relevance_score=coerce_json_float(record.get("relevance"), 0.0),
+                path_length=coerce_int(record.get("path_len"), 0),
+                relevance_score=coerce_float(record.get("relevance"), 0.0),
                 path_type=path_type,
             )
         except Exception as exc:
@@ -196,10 +197,11 @@ class GraphRetrievalPostProcessor:
         enriched: list[EvidenceDocument] = []
         for doc in documents:
             metadata = dict(doc.metadata or {})
-            metadata["evidence_units"] = extract_evidence_units(doc, metadata)
-            enriched.append(
-                doc.copy_with(evidence_units=metadata["evidence_units"], metadata=metadata)
-            )
+            evidence_units = [
+                coerce_json_object(unit) for unit in extract_evidence_units(doc, metadata)
+            ]
+            metadata.update(coerce_json_object({"evidence_units": evidence_units}))
+            enriched.append(replace(doc, evidence_units=evidence_units, metadata=metadata))
         return enriched
 
     @staticmethod
@@ -265,6 +267,4 @@ def _node_id(node: object) -> str:
 
 
 def _float_metrics(value: object) -> dict[str, float]:
-    return {
-        str(key): coerce_json_float(item, 0.0) for key, item in coerce_json_object(value).items()
-    }
+    return {str(key): coerce_float(item, 0.0) for key, item in coerce_json_object(value).items()}

@@ -9,8 +9,8 @@ from types import SimpleNamespace
 from rag_modules.app.assembly import assemble_build_job_application, compose_build_job_worker
 from rag_modules.app.build_jobs import BuildJobStatus
 from rag_modules.app.runtime_operations import resolve_runtime_operation_coordinator
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner, ExternalBuildJobWorkerRunner
+from tests.configuration_test_helpers import build_test_config
 
 
 class _WorkerSystem:

@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import TypedDict, cast
 
 from ...contracts import EvidenceDocument
+from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..ports import Neo4jDriverPort
 
@@ -107,12 +108,14 @@ def _entity_document(record: _EntityRecord, domain_name: str) -> EvidenceDocumen
         search_method="neo4j_fallback",
         retrieval_level="entity",
         source="neo4j_fallback",
-        metadata={
-            "domain": domain_name,
-            "name": record["name"],
-            "labels": labels,
-            "source": "neo4j_fallback",
-        },
+        metadata=coerce_json_object(
+            {
+                "domain": domain_name,
+                "name": record["name"],
+                "labels": labels,
+                "source": "neo4j_fallback",
+            }
+        ),
     )
 
 
@@ -209,7 +212,7 @@ class Neo4jFallbackRetriever:
                         EvidenceDocument(
                             content="\n".join(content_parts),
                             node_id=str(record["node_id"]),
-                            recipe_name=str(record["name"] or ""),
+                            entity_name=str(record["name"] or ""),
                             node_type="Recipe",
                             score=0.75,
                             search_type="graph_topic_fallback",
@@ -217,14 +220,16 @@ class Neo4jFallbackRetriever:
                             retrieval_level="topic",
                             source="neo4j_fallback",
                             matched_terms=[str(record["matched_keyword"] or "")],
-                            metadata={
-                                "name": record["name"],
-                                "category": record["category"],
-                                "cuisine_type": record["cuisine_type"],
-                                "difficulty": record["difficulty"],
-                                "matched_keyword": record["matched_keyword"],
-                                "source": "neo4j_fallback",
-                            },
+                            metadata=coerce_json_object(
+                                {
+                                    "name": record["name"],
+                                    "category": record["category"],
+                                    "cuisine_type": record["cuisine_type"],
+                                    "difficulty": record["difficulty"],
+                                    "matched_keyword": record["matched_keyword"],
+                                    "source": "neo4j_fallback",
+                                }
+                            ),
                         )
                     )
         except Exception as exc:

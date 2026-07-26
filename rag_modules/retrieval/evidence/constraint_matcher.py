@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 
 from ...contracts.query_constraints import QueryConstraints
 from ...kernel.documents import TextDocument
+from ...kernel.json_types import as_string_list, coerce_float, coerce_json_value
 from ...kernel.time_parsing import parse_minutes
 
 
@@ -24,14 +25,14 @@ class RecipeConstraintMatcher:
             str(metadata.get("prep_time", "")),
             str(metadata.get("cook_time", "")),
             str(metadata.get("servings", "")),
-            " ".join(metadata.get("flavor_tags") or []),
-            " ".join(metadata.get("technique_tags") or []),
-            " ".join(metadata.get("diet_tags") or []),
-            " ".join(metadata.get("health_tags") or []),
-            " ".join(metadata.get("cuisine_style_tags") or []),
-            " ".join(metadata.get("ingredient_category_tags") or []),
-            " ".join(metadata.get("time_profile_tags") or []),
-            " ".join(metadata.get("difficulty_level_tags") or []),
+            " ".join(as_string_list(metadata.get("flavor_tags"))),
+            " ".join(as_string_list(metadata.get("technique_tags"))),
+            " ".join(as_string_list(metadata.get("diet_tags"))),
+            " ".join(as_string_list(metadata.get("health_tags"))),
+            " ".join(as_string_list(metadata.get("cuisine_style_tags"))),
+            " ".join(as_string_list(metadata.get("ingredient_category_tags"))),
+            " ".join(as_string_list(metadata.get("time_profile_tags"))),
+            " ".join(as_string_list(metadata.get("difficulty_level_tags"))),
             str(metadata.get("semantic_relations", "")),
         ]
         return "\n".join(pieces)
@@ -148,15 +149,15 @@ class RecipeConstraintMatcher:
                 continue
             metadata = dict(doc.metadata)
             metadata["constraint_score"] = score
-            metadata["constraint_reasons"] = reasons
+            metadata["constraint_reasons"] = coerce_json_value(reasons)
             metadata["search_type"] = metadata.get(
                 "search_type",
                 "constraint_recipe",
             )
-            scored.append(doc.copy_with(metadata=metadata))
+            scored.append(TextDocument(content=doc.content, metadata=metadata))
 
         scored.sort(
-            key=lambda d: d.metadata.get("constraint_score", 0.0),
+            key=lambda d: coerce_float(d.metadata.get("constraint_score"), 0.0),
             reverse=True,
         )
         return scored[:limit]

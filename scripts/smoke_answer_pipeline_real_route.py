@@ -12,7 +12,8 @@ from typing import List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.loader import load_config
 from rag_modules.contracts import (
     EvidenceDocument,
     QueryPlan,
@@ -259,8 +260,9 @@ class _OfflineQueryUnderstandingService:
 
 
 def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
-    config = build_test_config(
-        {
+    config = load_config(
+        source=EnvConfigSource(environ={}),
+        overrides={
             "models": {"enable_rerank": False},
             "retrieval": {
                 "hybrid_default_candidate_multiplier": 1,
@@ -272,7 +274,7 @@ def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
                 "router_graph_supplement_candidate_multiplier": 1,
                 "router_graph_supplement_candidate_min_candidates": top_k,
             },
-        }
+        },
     )
     return RetrievalRuntimeProfileFactory().build(config)
 
@@ -411,7 +413,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
     retrieval_profile = build_retrieval_profile(case.top_k)
     hybrid_retrieval = _StaticHybridRetrieval(case)
     graph_retrieval = _StaticGraphRetrieval(case)
-    config = build_test_config({"retrieval": {"top_k": case.top_k}})
+    config = load_config(
+        source=EnvConfigSource(environ={}),
+        overrides={"retrieval": {"top_k": case.top_k}},
+    )
     routing_workflow = RoutingWorkflowService(
         traditional_retrieval=hybrid_retrieval,
         graph_rag_retrieval=graph_retrieval,

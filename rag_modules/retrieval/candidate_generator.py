@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Sequence, Tuple
 
 from ..contracts import EvidenceDocument, RetrievalRequest
@@ -17,6 +17,7 @@ from ..contracts.runtime.errors import (
     retrieval_error_detail,
 )
 from ..infra.resilience import CircuitBreaker, CircuitOpenError
+from ..kernel.json_types import coerce_json_object
 from ..kernel.retrieval import (
     CandidateSourceDegradationStrategy as _CandidateSourceDegradationStrategy,
 )
@@ -181,18 +182,21 @@ class RetrievalCandidateGenerator:
         effective_request = request
         if request.query_plan:
             if not request.entity_keywords and request.planned_entity_keywords:
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     entity_keywords=request.planned_entity_keywords,
                 )
             if not request.topic_keywords and request.planned_topic_keywords:
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     topic_keywords=request.planned_topic_keywords,
                 )
             if (
                 not request.effective_constraints.has_constraints()
                 and request.query_plan.constraints.has_constraints()
             ):
-                effective_request = effective_request.copy_with(
+                effective_request = replace(
+                    effective_request,
                     constraints=request.query_plan.constraints,
                 )
         return effective_request
@@ -202,7 +206,9 @@ class RetrievalCandidateGenerator:
         raw_sources = request.metadata.get(SKIP_CANDIDATE_SOURCES_METADATA_KEY, [])
         if isinstance(raw_sources, str):
             raw_sources = [raw_sources]
-        return {str(item).strip() for item in (raw_sources or []) if str(item).strip()}
+        if not isinstance(raw_sources, list):
+            return set()
+        return {str(item).strip() for item in raw_sources if str(item).strip()}
 
     def _retrieve_source(
         self,
@@ -293,10 +299,11 @@ class RetrievalCandidateGenerator:
             metadata.setdefault("search_method", doc.search_method or spec.search_method)
             metadata.setdefault("search_type", doc.search_type or spec.search_type)
             normalized.append(
-                doc.copy_with(
+                replace(
+                    doc,
                     search_method=doc.search_method or spec.search_method,
                     search_type=doc.search_type or spec.search_type,
-                    metadata=metadata,
+                    metadata=coerce_json_object(metadata),
                 )
             )
         return normalized

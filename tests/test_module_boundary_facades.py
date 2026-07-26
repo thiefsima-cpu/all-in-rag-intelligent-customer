@@ -24,7 +24,27 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
         for module_name in (
             "rag_modules.app.contracts",
             "rag_modules.app.diagnostics_models",
+            "rag_modules.kernel.artifact_validation",
             "rag_modules.runtime.snapshot_utils",
+        ):
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
+
+    def test_contract_facades_are_retired(self) -> None:
+        for module_name in (
+            "rag_modules.contracts.query",
+            "rag_modules.contracts.retrieval",
+            "rag_modules.contracts.build_jobs.executor",
+            "rag_modules.contracts._common",
+            "rag_modules.contracts.query_utils",
+            "rag_modules.contracts.runtime.snapshot_utils",
+            "rag_modules.contracts.langchain_compat",
         ):
             parent_name, attr_name = module_name.rsplit(".", 1)
             parent = importlib.import_module(parent_name)
@@ -57,21 +77,23 @@ class ModuleBoundaryFacadeTests(unittest.TestCase):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
 
-    def test_configuration_sections_package_exports_section_loaders(self) -> None:
-        from rag_modules.configuration import sections
-
-        self.assertEqual(
-            set(sections.__all__),
-            {
-                "load_api_settings",
-                "load_generation_settings",
-                "load_graph_settings",
-                "load_model_settings",
-                "load_observability_settings",
-                "load_retrieval_settings",
-                "load_storage_settings",
-            },
+    def test_configuration_fragment_packages_are_retired(self) -> None:
+        retired = (
+            "rag_modules.configuration.env_specs",
+            "rag_modules.configuration.model_sections",
+            "rag_modules.configuration.sections",
+            "rag_modules.configuration.errors",
+            "rag_modules.configuration.testing",
         )
+        for module_name in retired:
+            parent_name, attr_name = module_name.rsplit(".", 1)
+            parent = importlib.import_module(parent_name)
+            sys.modules.pop(module_name, None)
+            if hasattr(parent, attr_name):
+                delattr(parent, attr_name)
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
 
     def test_runtime_artifacts_package_reexports_owned_storage_capabilities(self) -> None:
         from rag_modules.runtime import artifacts

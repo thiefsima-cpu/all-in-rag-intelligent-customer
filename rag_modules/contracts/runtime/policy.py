@@ -29,11 +29,6 @@ class PolicySnapshot:
             bundle_name=str(payload.get("bundle_name") or ""),
         )
 
-    @classmethod
-    def from_metadata(cls, metadata: object) -> "PolicySnapshot":
-        to_dict = getattr(metadata, "to_dict", None)
-        return cls.from_dict(to_dict() if callable(to_dict) else {})
-
     def to_dict(self) -> JsonObject:
         return {
             "schema_version": self.schema_version,

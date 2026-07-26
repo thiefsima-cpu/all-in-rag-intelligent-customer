@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Self
 
-from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int
+from ...kernel.json_types import JsonObject, coerce_float, coerce_int
 from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
 from .policy import PolicySnapshot
 
@@ -80,30 +81,30 @@ class GenerationSnapshot:
         return generation_mode_value(self.mode)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object] | None) -> "GenerationSnapshot":
+    def from_dict(cls: type[Self], data: Mapping[str, object] | None) -> Self:
         payload = dict(data or {})
         return cls(
             status=str(payload.get("status") or ""),
             mode=str(payload.get("mode") or ""),
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             decision_reason=str(payload.get("decision_reason") or ""),
-            total_evidence_items=coerce_json_int(payload.get("total_evidence_items")),
-            selected_evidence_items=coerce_json_int(payload.get("selected_evidence_items")),
-            plan_latency_ms=coerce_json_float(payload.get("plan_latency_ms")),
-            compose_latency_ms=coerce_json_float(payload.get("compose_latency_ms")),
-            direct_latency_ms=coerce_json_float(payload.get("direct_latency_ms")),
+            total_evidence_items=coerce_int(payload.get("total_evidence_items")),
+            selected_evidence_items=coerce_int(payload.get("selected_evidence_items")),
+            plan_latency_ms=coerce_float(payload.get("plan_latency_ms")),
+            compose_latency_ms=coerce_float(payload.get("compose_latency_ms")),
+            direct_latency_ms=coerce_float(payload.get("direct_latency_ms")),
             fallback_used=bool(payload.get("fallback_used")),
             fallback_reason=str(payload.get("fallback_reason") or ""),
             failure_code=str(payload.get("failure_code") or ""),
             error=ensure_runtime_error_detail(payload.get("error")),
-            total_latency_ms=coerce_json_float(payload.get("total_latency_ms")),
-            provider_latency_ms=coerce_json_float(payload.get("provider_latency_ms")),
-            first_token_latency_ms=coerce_json_float(payload.get("first_token_latency_ms")),
-            request_retries=coerce_json_int(payload.get("request_retries")),
-            prompt_tokens=coerce_json_int(payload.get("prompt_tokens")),
-            completion_tokens=coerce_json_int(payload.get("completion_tokens")),
-            total_tokens=coerce_json_int(payload.get("total_tokens")),
-            estimated_cost_usd=coerce_json_float(payload.get("estimated_cost_usd")),
+            total_latency_ms=coerce_float(payload.get("total_latency_ms")),
+            provider_latency_ms=coerce_float(payload.get("provider_latency_ms")),
+            first_token_latency_ms=coerce_float(payload.get("first_token_latency_ms")),
+            request_retries=coerce_int(payload.get("request_retries")),
+            prompt_tokens=coerce_int(payload.get("prompt_tokens")),
+            completion_tokens=coerce_int(payload.get("completion_tokens")),
+            total_tokens=coerce_int(payload.get("total_tokens")),
+            estimated_cost_usd=coerce_float(payload.get("estimated_cost_usd")),
             token_usage_source=str(payload.get("token_usage_source") or ""),
         )
 
@@ -132,6 +133,9 @@ class GenerationSnapshot:
             "estimated_cost_usd": self.estimated_cost_usd,
             "token_usage_source": self.token_usage_source,
         }
+
+    def copy(self) -> Self:
+        return type(self).from_dict(self.to_dict())
 
     def is_recorded(self) -> bool:
         return any(

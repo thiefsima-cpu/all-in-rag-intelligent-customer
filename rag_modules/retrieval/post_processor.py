@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RequestControl
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
+from ..kernel.json_types import as_string_list
 from ..safe_logging import log_failure
 from .ports import RerankClientPort
 from .runtime_profile import RetrievalPostProcessSettings
@@ -77,7 +78,7 @@ class RetrievalPostProcessor:
         context: RetrievalPostProcessContext,
     ) -> RetrievalPostProcessResult:
         graph_candidates = [
-            doc for doc in evidence_documents if doc.graph_evidence or doc.recipe_graph_evidence
+            doc for doc in evidence_documents if doc.graph_evidence or doc.domain_graph_evidence
         ]
         (
             reranked_documents,
@@ -118,7 +119,8 @@ class RetrievalPostProcessor:
             )
             normalized_docs.append(
                 normalize_evidence_document(
-                    doc.copy_with(
+                    replace(
+                        doc,
                         metadata=metadata,
                         route_strategy=context.strategy,
                     ),
@@ -176,7 +178,7 @@ class RetrievalPostProcessor:
             metadata = dict(documents[index].metadata or {})
             metadata["rerank_rank"] = rank
             metadata["rerank_model"] = self.settings.rerank_model
-            reranked.append(documents[index].copy_with(metadata=metadata))
+            reranked.append(replace(documents[index], metadata=metadata))
         reranked.extend(doc for index, doc in enumerate(documents) if index not in seen)
         return reranked, True, True, rerank_latency_ms
 
@@ -198,7 +200,7 @@ class RetrievalPostProcessor:
             return documents
 
         top_docs = documents[:top_k]
-        if any(doc.graph_evidence or doc.recipe_graph_evidence for doc in top_docs):
+        if any(doc.graph_evidence or doc.domain_graph_evidence for doc in top_docs):
             return documents
 
         graph_doc = graph_candidates[0]
@@ -212,8 +214,8 @@ class RetrievalPostProcessor:
         metadata = doc.metadata or {}
         return str(
             doc.node_id
-            or doc.recipe_id
-            or doc.recipe_name
+            or doc.entity_id
+            or doc.entity_name
             or metadata.get("node_id")
             or metadata.get("recipe_id")
             or metadata.get("recipe_name")
@@ -229,7 +231,8 @@ class RetrievalPostProcessor:
             description = graph_evidence.get("description")
             if description:
                 graph_parts.append(str(description))
-            relationships = graph_evidence.get("relationships") or []
+            raw_relationships = graph_evidence.get("relationships")
+            relationships = raw_relationships if isinstance(raw_relationships, list) else []
             for rel in relationships[:8]:
                 if isinstance(rel, dict):
                     graph_parts.append(str(rel.get("type") or "RELATED"))
@@ -239,11 +242,17 @@ class RetrievalPostProcessor:
             if isinstance(relationships_text, list):
                 graph_parts.extend(str(line) for line in relationships_text[:8])
 
+        is_recipe = (
+            doc.entity_type.casefold() == "recipe"
+            or doc.evidence_type.casefold() == "recipe"
+            or str(metadata.get("domain") or "").strip().casefold() == "recipe"
+        )
+        entity_label = "菜谱" if is_recipe else "实体"
         fields = [
-            f"菜谱: {doc.recipe_name or metadata.get('name') or ''}",
+            f"{entity_label}: {doc.entity_name or metadata.get('name') or ''}",
             f"来源: {doc.source or metadata.get('search_method') or metadata.get('search_type') or ''}",
             f"证据类型: {doc.evidence_type or metadata.get('search_type') or ''}",
-            f"匹配词: {', '.join(str(x) for x in (doc.matched_terms or metadata.get('matched_ingredients') or [])[:12])}",
+            f"匹配词: {', '.join((doc.matched_terms or as_string_list(metadata.get('matched_ingredients')))[:12])}",
             f"约束证据: {doc.constraint_evidence or metadata.get('constraint_reasons') or ''}",
             f"图谱证据: {'; '.join(graph_parts[:12])}",
             f"内容摘要: {(doc.content or '')[:max_chars]}",

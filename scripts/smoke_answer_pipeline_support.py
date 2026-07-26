@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from typing import Iterable
 
 from rag_modules.app.providers import create_default_runtime_provider
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.loader import load_config
 from rag_modules.contracts.runtime.generation import GenerationSnapshot
 from rag_modules.contracts.runtime.workflows import AnswerContext
 from rag_modules.evidence_processing.answer_builder import AnswerEvidenceBuilder
@@ -16,6 +17,7 @@ from rag_modules.generation import (
     GenerationPromptBuilder,
     GenerationSettings,
 )
+from rag_modules.kernel.json_types import coerce_json_object
 from rag_modules.observability.tracing import QueryTracer
 from rag_modules.observability.tracing_sinks import QueryTraceSink
 from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfileFactory
@@ -99,7 +101,7 @@ class OfflineGenerationModule:
             context.evidence_documents,
         )
         return self.executor.generate_with_trace(
-            answer_context=context.with_evidence_package(package),
+            answer_context=context.with_evidence_package(coerce_json_object(package.to_dict())),
             control=control,
         )
 
@@ -107,13 +109,14 @@ class OfflineGenerationModule:
 def build_tracer() -> tuple[QueryTracer, CaptureSink]:
     sink = CaptureSink()
     tracer = QueryTracer(
-        build_test_config(
-            {
+        load_config(
+            source=EnvConfigSource(environ={}),
+            overrides={
                 "observability": {
                     "enable_query_tracing": True,
                     "query_trace_path": "unused.jsonl",
                 }
-            }
+            },
         ),
         sink=sink,
     )

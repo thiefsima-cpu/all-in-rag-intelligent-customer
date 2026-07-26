@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..kernel.json_types import JsonObject
-from .query import GraphQueryType
+from .query_types import GraphQueryType
 
 QueryType = GraphQueryType
 

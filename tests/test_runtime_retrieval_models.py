@@ -5,7 +5,6 @@ import unittest
 
 import pytest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     RequestBudgetExceeded,
@@ -13,12 +12,14 @@ from rag_modules.contracts import (
     RequestControl,
     RetrievalRequest,
 )
+from rag_modules.contracts.query_settings import QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
     RouteSnapshot,
     RouteStageSnapshot,
 )
 from rag_modules.contracts.runtime.retrieval import RetrievalOutcome
 from rag_modules.contracts.runtime.workflows import AnswerContext
+from tests.configuration_test_helpers import build_test_config
 
 
 def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None:
@@ -35,6 +36,15 @@ def test_request_control_child_uses_tighter_deadline_and_shared_cancel() -> None
     assert child.cancelled
     assert parent.reason == "combined_branch_timeout"
     assert child.reason == "combined_branch_timeout"
+
+
+def test_request_control_shares_typed_cancellation_state() -> None:
+    parent = RequestControl.for_timeout(5.0)
+    child = parent.child(2.0, scope="child")
+    parent.cancel("manual")
+    assert child.cancelled is True
+    assert child.reason == "manual"
+    assert not hasattr(parent.cancel_event, "_request_control_reason")
 
 
 def test_request_control_raises_cancelled_and_budget_exceeded() -> None:
@@ -65,7 +75,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
     def test_retrieval_outcome_uses_evidence_as_canonical_payload(self) -> None:
         evidence = EvidenceDocument(
             content="宫保鸡丁是一道经典川菜。",
-            recipe_name="宫保鸡丁",
+            entity_name="宫保鸡丁",
             source="hybrid",
             score=0.91,
         )
@@ -76,7 +86,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         )
 
         self.assertEqual(outcome.doc_count, 1)
-        self.assertEqual(outcome.evidence_documents[0].recipe_name, "宫保鸡丁")
+        self.assertEqual(outcome.evidence_documents[0].entity_name, "宫保鸡丁")
         self.assertFalse(hasattr(outcome, "documents"))
 
     def test_retrieval_outcome_exposes_route_degradation_summary(self) -> None:
@@ -108,7 +118,7 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
         outcome = RetrievalOutcome(
             query="recommend tofu dishes",
             strategy="hybrid_traditional",
-            evidence_documents=[EvidenceDocument(content="doc", recipe_name="Mapo Tofu")],
+            evidence_documents=[EvidenceDocument(content="doc", entity_name="Mapo Tofu")],
             route_trace=route_trace,
         )
 
@@ -131,18 +141,18 @@ class RetrievalRuntimeModelTests(unittest.TestCase):
                     "evidence_documents": [
                         {
                             "content": "豆瓣酱、花椒和辣椒共同贡献麻辣鲜香。",
-                            "recipe_name": "水煮肉片",
+                            "entity_name": "水煮肉片",
                             "source": "graph_rag",
                             "score": 0.95,
                         }
                     ],
                 },
             },
-            semantic_settings=semantic_runtime_settings(build_test_config()),
+            semantic_settings=QuerySemanticRuntimeSettings.from_config(build_test_config()),
         )
 
         self.assertEqual(len(context.evidence_documents), 1)
-        self.assertEqual(context.evidence_documents[0].recipe_name, "水煮肉片")
+        self.assertEqual(context.evidence_documents[0].entity_name, "水煮肉片")
         self.assertFalse(hasattr(context, "documents"))
 
 

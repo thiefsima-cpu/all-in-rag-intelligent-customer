@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from ...contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
 from ...contracts.runtime import AnswerContext, GenerationSnapshot
 from ...evidence_processing.answer_builder import AnswerEvidencePackage
+from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..clients import GenerationClientAdapter
 from ..decision import decide_generation_mode
@@ -112,7 +113,9 @@ class StreamingGenerationRunner:
             analysis=answer_context.analysis,
         )
         selected_package = package.limit_items(decision.evidence_limit)
-        selected_context = answer_context.with_evidence_package(selected_package)
+        selected_context = answer_context.with_evidence_package(
+            coerce_json_object(selected_package.to_dict())
+        )
         trace = self._trace_recorder.new_trace(decision, package, selected_package)
         resolved_retries = max(1, int(max_retries or self._settings.stream_retries))
         return _StreamingRequestState(

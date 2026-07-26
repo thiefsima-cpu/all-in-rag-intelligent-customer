@@ -4,8 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
-from rag_modules.contracts import GraphQueryType, QueryPlan, QuerySemanticProfile
+from rag_modules.contracts import (
+    GraphQueryType,
+    QueryPlan,
+    QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
+)
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding.planning.calibration import (
@@ -14,10 +18,11 @@ from rag_modules.query_understanding.planning.calibration import (
     _graph_query_type_value,
     _strategy_value,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 def _calibrator() -> QueryPlanCalibrator:
-    return QueryPlanCalibrator(semantic_runtime_settings(build_test_config()))
+    return QueryPlanCalibrator(QuerySemanticRuntimeSettings.from_config(build_test_config()))
 
 
 def test_calibration_value_helpers_accept_enums_strings_and_invalid_values() -> None:

@@ -8,7 +8,7 @@ from rag_modules.application.answering.answer_models import (
     QuestionAnswerResult,
 )
 from rag_modules.application.answering.answer_pipeline import AnswerPipelineService
-from rag_modules.configuration.testing import semantic_runtime_settings
+from rag_modules.contracts import QuerySemanticRuntimeSettings
 from rag_modules.contracts.runtime import (
     RetrievalOutcome,
     RouteResolution,
@@ -182,7 +182,7 @@ class ApiSseTests(unittest.TestCase):
                 self.pipeline = AnswerPipelineService(
                     query_router=_NoEvidenceRouter(),
                     generation_service=object(),
-                    semantic_settings=semantic_runtime_settings(config),
+                    semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
                     top_k=config.retrieval.top_k,
                     answer_workflow_copy=answer_copy,
                 )

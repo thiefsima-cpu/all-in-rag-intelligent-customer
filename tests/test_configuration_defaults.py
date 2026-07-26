@@ -10,13 +10,40 @@ from unittest.mock import patch
 
 from rag_modules.configuration import ConfigurationError
 from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.environment_schema import ENV_FIELD_SPECS, EnvFieldSpec
 from rag_modules.configuration.loader import load_config
-from rag_modules.configuration.models import GraphRAGConfig
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
+from rag_modules.configuration.models import (
+    ApiSettings,
+    GenerationSettings,
+    GraphRAGConfig,
+    GraphSettings,
+    ModelSettings,
+    ObservabilitySettings,
+    QueryUnderstandingSettings,
+    RetrievalSettings,
+    StorageSettings,
 )
+from rag_modules.contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from tests.configuration_test_helpers import build_test_config
+
+
+def test_configuration_declarations_have_canonical_owners() -> None:
+    section_types = (
+        ApiSettings,
+        GenerationSettings,
+        GraphSettings,
+        ModelSettings,
+        ObservabilitySettings,
+        QueryUnderstandingSettings,
+        RetrievalSettings,
+        StorageSettings,
+    )
+    assert {section_type.__module__ for section_type in section_types} == {
+        "rag_modules.configuration.models"
+    }
+    assert EnvFieldSpec.__module__ == "rag_modules.configuration.environment_schema"
+    top_k_spec = next(spec for spec in ENV_FIELD_SPECS if "TOP_K" in spec.names)
+    assert top_k_spec.path == ("retrieval", "top_k")
 
 
 class ConfigurationDefaultTests(unittest.TestCase):
@@ -159,6 +186,34 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertIn("GraphRAGConfig.from_dict", message)
         self.assertIn("must match", message)
 
+    def test_explicit_non_json_override_reaches_strict_validation_with_source(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                {"models": {"llm_model": Path("not-a-model")}},
+                source=EnvConfigSource(environ={}),
+            )
+
+        message = str(context.exception)
+        self.assertIn("overrides", message)
+        self.assertIn("load_config", message)
+        self.assertIn("models.llm_model", message)
+        self.assertIn("string", message)
+
+    def test_explicit_selector_non_strings_reach_strict_validation_with_source(self) -> None:
+        for field in ("bundle", "bundle_path"):
+            with self.subTest(field=field):
+                with self.assertRaises(ConfigurationError) as context:
+                    load_config(
+                        {"query_understanding": {"policy": {field: Path("not-a-policy")}}},
+                        source=EnvConfigSource(environ={}),
+                    )
+
+                message = str(context.exception)
+                self.assertIn("overrides", message)
+                self.assertIn("load_config", message)
+                self.assertIn(f"query_understanding.policy.{field}", message)
+                self.assertIn("string", message)
+
     def test_runtime_settings_are_derived_from_resolved_config(self) -> None:
         config = build_test_config(
             {
@@ -176,8 +231,8 @@ class ConfigurationDefaultTests(unittest.TestCase):
             }
         )
 
-        planner = planner_runtime_settings(config)
-        semantics = semantic_runtime_settings(config)
+        planner = QueryPlannerRuntimeSettings.from_config(config)
+        semantics = QuerySemanticRuntimeSettings.from_config(config)
 
         self.assertEqual(planner.model_name, config.models.llm_model)
         self.assertEqual(planner.timeout_seconds, config.models.llm_timeout_seconds)

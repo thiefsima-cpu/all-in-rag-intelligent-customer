@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from collections.abc import Sequence
+from dataclasses import replace
 
-from ..contracts import EvidenceDocument, ensure_evidence_documents
+from ..contracts import EvidenceDocument, JsonObject, coerce_float
 from .extraction import extract_evidence_units
-from .models import PageDocumentLike
 from .normalization import normalize_evidence_document
 
 
@@ -19,35 +19,31 @@ class EvidenceUnitRanker:
     def rank_evidence_documents(
         self,
         query: str,
-        documents: List[EvidenceDocument],
-    ) -> List[EvidenceDocument]:
+        documents: Sequence[EvidenceDocument],
+    ) -> list[EvidenceDocument]:
         if not documents:
-            return documents
+            return list(documents)
         scored = []
         for index, doc in enumerate(documents):
             score = self.document_score(query, doc)
             metadata = dict(doc.metadata or {})
             metadata["evidence_unit_score"] = score
-            scored.append((score, index, doc.copy_with(metadata=metadata)))
+            scored.append((score, index, replace(doc, metadata=metadata)))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [doc for _, _, doc in scored]
 
     def rank_documents(
         self,
         query: str,
-        documents: List[PageDocumentLike | EvidenceDocument],
-    ) -> List[EvidenceDocument]:
-        evidence_docs = ensure_evidence_documents(documents)
-        return self.rank_evidence_documents(query, evidence_docs)
+        documents: Sequence[EvidenceDocument],
+    ) -> list[EvidenceDocument]:
+        return self.rank_evidence_documents(query, documents)
 
-    def document_score(self, query: str, doc: PageDocumentLike | EvidenceDocument) -> float:
-        evidence_doc = normalize_evidence_document(doc)
+    def document_score(self, query: str, document: EvidenceDocument) -> float:
+        evidence_doc = normalize_evidence_document(document)
         metadata = evidence_doc.metadata or {}
-        base_score = float(
-            metadata.get("final_score")
-            or metadata.get("relevance_score")
-            or metadata.get("score")
-            or 0.0
+        base_score = coerce_float(
+            metadata.get("final_score") or metadata.get("relevance_score") or metadata.get("score")
         )
         units = evidence_doc.evidence_units or extract_evidence_units(evidence_doc, metadata)
         if not units:
@@ -56,9 +52,12 @@ class EvidenceUnitRanker:
         graph_count = sum(1 for unit in units if unit.get("is_graph_evidence"))
         return base_score + unit_score + min(graph_count, 3) * 0.05
 
-    def unit_score(self, query: str, unit: Dict[str, Any]) -> float:
+    def unit_score(self, query: str, unit: JsonObject) -> float:
         claim = str(unit.get("claim") or "")
-        entities = [str(entity) for entity in unit.get("entities") or []]
+        raw_entities = unit.get("entities")
+        entities = (
+            [str(entity) for entity in raw_entities] if isinstance(raw_entities, list) else []
+        )
         score = 0.0
         for token in self._query_terms(query):
             if token and token in claim:
@@ -72,7 +71,7 @@ class EvidenceUnitRanker:
         return min(score, 1.5)
 
     @staticmethod
-    def _query_terms(query: str) -> List[str]:
+    def _query_terms(query: str) -> list[str]:
         separators = ",.!?;: \n\r\t"
         text = str(query or "")
         for sep in separators:

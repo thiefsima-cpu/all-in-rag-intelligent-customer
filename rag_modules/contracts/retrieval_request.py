@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from ._common import coerce_str
+from ..kernel.json_types import (
+    JsonObject,
+    as_string_list,
+    coerce_int,
+    coerce_json_object,
+    coerce_str,
+)
 from .query_constraints import QueryConstraints
 from .query_plan import QueryPlan
 from .query_settings import QuerySemanticRuntimeSettings
@@ -21,11 +28,11 @@ class RetrievalRequest:
     candidate_k: int = 0
     strategy: str = ""
     constraints: QueryConstraints = field(default_factory=QueryConstraints)
-    query_plan: Optional[QueryPlan] = None
-    entity_keywords: List[str] = field(default_factory=list)
-    topic_keywords: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    control: Optional[RequestControl] = field(default=None, repr=False, compare=False)
+    query_plan: QueryPlan | None = None
+    entity_keywords: list[str] = field(default_factory=list)
+    topic_keywords: list[str] = field(default_factory=list)
+    metadata: JsonObject = field(default_factory=dict)
+    control: RequestControl | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.query = coerce_str(self.query)
@@ -33,34 +40,32 @@ class RetrievalRequest:
         self.candidate_k = max(0, int(self.candidate_k or 0))
         self.strategy = coerce_str(self.strategy)
         self.constraints = self.constraints or QueryConstraints()
-        self.entity_keywords = [
-            str(item).strip() for item in (self.entity_keywords or []) if str(item).strip()
-        ]
-        self.topic_keywords = [
-            str(item).strip() for item in (self.topic_keywords or []) if str(item).strip()
-        ]
-        self.metadata = dict(self.metadata or {})
+        self.entity_keywords = as_string_list(self.entity_keywords)
+        self.topic_keywords = as_string_list(self.topic_keywords)
+        self.metadata = coerce_json_object(self.metadata)
 
     @classmethod
     def from_dict(
         cls,
-        data: Dict[str, Any] | None,
+        data: Mapping[str, object] | None,
         *,
         semantic_settings: QuerySemanticRuntimeSettings,
     ) -> "RetrievalRequest":
         payload = dict(data or {})
         query = coerce_str(payload.get("query"))
-        constraints_data = payload.get("constraints") or {}
+        constraints_data = payload.get("constraints")
         constraints = (
             constraints_data
             if isinstance(constraints_data, QueryConstraints)
-            else QueryConstraints.from_dict(constraints_data)
+            else QueryConstraints.from_dict(
+                constraints_data if isinstance(constraints_data, Mapping) else None
+            )
         )
         query_plan_data = payload.get("query_plan")
         query_plan = None
         if isinstance(query_plan_data, QueryPlan):
             query_plan = query_plan_data
-        elif isinstance(query_plan_data, dict):
+        elif isinstance(query_plan_data, Mapping):
             query_plan = QueryPlan.from_dict(
                 query,
                 query_plan_data,
@@ -68,14 +73,14 @@ class RetrievalRequest:
             )
         return cls(
             query=query,
-            top_k=payload.get("top_k", 5),
-            candidate_k=payload.get("candidate_k", 0),
-            strategy=payload.get("strategy", ""),
+            top_k=coerce_int(payload.get("top_k"), 5, minimum=1),
+            candidate_k=coerce_int(payload.get("candidate_k")),
+            strategy=coerce_str(payload.get("strategy")),
             constraints=constraints,
             query_plan=query_plan,
-            entity_keywords=payload.get("entity_keywords") or [],
-            topic_keywords=payload.get("topic_keywords") or [],
-            metadata=payload.get("metadata") or {},
+            entity_keywords=as_string_list(payload.get("entity_keywords")),
+            topic_keywords=as_string_list(payload.get("topic_keywords")),
+            metadata=coerce_json_object(payload.get("metadata")),
             control=None,
         )
 
@@ -85,14 +90,14 @@ class RetrievalRequest:
         *,
         query: str,
         top_k: int = 5,
-        candidate_k: Optional[int] = None,
+        candidate_k: int | None = None,
         strategy: str = "",
-        constraints: Optional[QueryConstraints] = None,
-        query_plan: Optional[QueryPlan] = None,
-        entity_keywords: Optional[Iterable[str]] = None,
-        topic_keywords: Optional[Iterable[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        control: Optional[RequestControl] = None,
+        constraints: QueryConstraints | None = None,
+        query_plan: QueryPlan | None = None,
+        entity_keywords: Iterable[str] | None = None,
+        topic_keywords: Iterable[str] | None = None,
+        metadata: JsonObject | None = None,
+        control: RequestControl | None = None,
     ) -> "RetrievalRequest":
         resolved_constraints = constraints or (
             query_plan.constraints if query_plan else QueryConstraints()
@@ -105,9 +110,9 @@ class RetrievalRequest:
             strategy=resolved_strategy,
             constraints=resolved_constraints,
             query_plan=query_plan,
-            entity_keywords=[str(item) for item in (entity_keywords or []) if str(item).strip()],
-            topic_keywords=[str(item) for item in (topic_keywords or []) if str(item).strip()],
-            metadata=dict(metadata or {}),
+            entity_keywords=as_string_list(list(entity_keywords or [])),
+            topic_keywords=as_string_list(list(topic_keywords or [])),
+            metadata=coerce_json_object(metadata),
             control=control,
         )
 
@@ -120,7 +125,7 @@ class RetrievalRequest:
         return max(1, int(self.candidate_k or self.top_k or 1))
 
     @property
-    def planned_entity_keywords(self) -> List[str]:
+    def planned_entity_keywords(self) -> list[str]:
         if self.entity_keywords:
             return list(self.entity_keywords)
         if not self.query_plan:
@@ -135,17 +140,14 @@ class RetrievalRequest:
         )
 
     @property
-    def planned_topic_keywords(self) -> List[str]:
+    def planned_topic_keywords(self) -> list[str]:
         if self.topic_keywords:
             return list(self.topic_keywords)
         if not self.query_plan:
             return []
         return list(dict.fromkeys(self.query_plan.topic_keywords))
 
-    def copy_with(self, **changes: Any) -> "RetrievalRequest":
-        return replace(self, **changes)
-
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         from .request_control import control_trace_details
 
         payload = {
@@ -157,12 +159,12 @@ class RetrievalRequest:
             "query_plan": self.query_plan.to_dict() if self.query_plan else None,
             "entity_keywords": list(self.entity_keywords),
             "topic_keywords": list(self.topic_keywords),
-            "metadata": dict(self.metadata or {}),
+            "metadata": coerce_json_object(self.metadata),
         }
         control_details = control_trace_details(self.control)
         if control_details:
             payload["control"] = control_details
-        return payload
+        return coerce_json_object(payload)
 
 
 __all__ = ["RetrievalRequest"]

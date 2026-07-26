@@ -247,7 +247,7 @@ class ApiAnswerTests(unittest.TestCase):
         self.assertEqual(dumped["response"]["summary"]["prompt_tokens"], 11)
         self.assertEqual(
             dumped["response"]["grounding"]["retrieval_outcome"]["evidence_documents"][0][
-                "recipe_name"
+                "entity_name"
             ],
             "mapo tofu",
         )

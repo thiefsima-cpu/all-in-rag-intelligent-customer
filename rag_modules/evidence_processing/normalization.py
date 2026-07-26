@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from dataclasses import replace
 
-from ..contracts import EvidenceDocument
+from ..contracts import EvidenceDocument, JsonObject, coerce_float, coerce_json_object
 from .extraction import extract_evidence_units
 from .helpers import (
     document_content,
@@ -13,11 +13,10 @@ from .helpers import (
     infer_evidence_type,
     stable_hash,
 )
-from .models import PageDocumentLike
 
 
-def _matched_terms(metadata: dict) -> List[str]:
-    matched_terms: List[str] = []
+def _matched_terms(metadata: JsonObject) -> list[str]:
+    matched_terms: list[str] = []
     for key in (
         "matched_keyword",
         "matched_terms",
@@ -35,14 +34,14 @@ def _matched_terms(metadata: dict) -> List[str]:
 
 
 def normalize_evidence_document(
-    doc: PageDocumentLike | EvidenceDocument,
-    route_strategy: Optional[str] = None,
+    document: EvidenceDocument,
+    route_strategy: str | None = None,
 ) -> EvidenceDocument:
-    content = document_content(doc)
-    metadata = document_metadata(doc)
-    recipe_ids = metadata.get("recipe_node_ids") or []
+    content = document_content(document)
+    metadata = document_metadata(document)
+    recipe_ids = metadata.get("recipe_node_ids")
     entity_id = str(first_value(metadata, ["entity_id", "node_id", "parent_id"], ""))
-    if recipe_ids:
+    if isinstance(recipe_ids, list) and recipe_ids:
         entity_id = str(recipe_ids[0])
 
     entity_name = str(first_value(metadata, ["entity_name", "recipe_name", "name"], ""))
@@ -50,13 +49,12 @@ def normalize_evidence_document(
     source = str(
         first_value(metadata, ["search_source", "search_method", "search_type"], "unknown")
     )
-    score = float(
+    score = coerce_float(
         first_value(
             metadata,
             ["final_score", "relevance_score", "constraint_score", "score"],
             0.0,
         )
-        or 0.0
     )
     doc_id = str(first_value(metadata, ["doc_id"], ""))
     if not doc_id:
@@ -69,10 +67,8 @@ def normalize_evidence_document(
             "primary": graph_evidence,
             "merged": metadata.get("merged_graph_evidence"),
         }
-    domain_graph_evidence = (
-        metadata.get("domain_graph_evidence") or metadata.get("recipe_graph_evidence") or {}
-    )
-    evidence_units = extract_evidence_units(doc, metadata)
+    domain_graph_evidence = metadata.get("domain_graph_evidence") or {}
+    evidence_units = extract_evidence_units(document, metadata)
 
     constraint_evidence = {
         "score": metadata.get("constraint_score"),
@@ -97,27 +93,27 @@ def normalize_evidence_document(
         retrieval_level=str(metadata.get("retrieval_level") or ""),
         node_type=str(metadata.get("node_type") or metadata.get("entity_type") or ""),
         matched_terms=_matched_terms(metadata),
-        graph_evidence=dict(graph_evidence or {}),
-        domain_graph_evidence=dict(domain_graph_evidence or {}),
-        constraint_evidence=dict(constraint_evidence or {}),
+        graph_evidence=coerce_json_object(graph_evidence),
+        domain_graph_evidence=coerce_json_object(domain_graph_evidence),
+        constraint_evidence=coerce_json_object(constraint_evidence),
         evidence_units=list(evidence_units),
         route_strategy=route_strategy or str(metadata.get("route_strategy") or ""),
-        metadata=dict(metadata or {}),
+        metadata=metadata,
     )
     next_metadata = dict(metadata or {})
     next_metadata.update(evidence.to_metadata())
-    return evidence.copy_with(metadata=next_metadata)
+    return replace(evidence, metadata=next_metadata)
 
 
 def normalize_document_evidence(
-    doc: PageDocumentLike | EvidenceDocument,
-    route_strategy: Optional[str] = None,
+    document: EvidenceDocument,
+    route_strategy: str | None = None,
 ) -> EvidenceDocument:
-    return normalize_evidence_document(doc, route_strategy=route_strategy)
+    return normalize_evidence_document(document, route_strategy=route_strategy)
 
 
-def evidence_from_document(doc: PageDocumentLike | EvidenceDocument) -> EvidenceDocument:
-    return normalize_evidence_document(doc)
+def evidence_from_document(document: EvidenceDocument) -> EvidenceDocument:
+    return normalize_evidence_document(document)
 
 
 __all__ = [

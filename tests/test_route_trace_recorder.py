@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.configuration.testing import build_test_config, semantic_runtime_settings
 from rag_modules.contracts import (
     EvidenceDocument,
     QueryPlan,
     QuerySemanticProfile,
+    QuerySemanticRuntimeSettings,
     RetrievalRequest,
 )
 from rag_modules.routing import RouteTraceRecorder
@@ -14,11 +14,12 @@ from rag_modules.routing.execution_strategies import (
     RouteExecutionOutcome,
     RouteExecutionStageResult,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 class RouteTraceRecorderTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.semantic_settings = semantic_runtime_settings(build_test_config())
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(build_test_config())
 
     def test_record_plan_and_stage_snapshot(self) -> None:
         recorder = RouteTraceRecorder(
@@ -47,7 +48,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             documents=[
                 EvidenceDocument(
                     content="graph evidence",
-                    recipe_name="Fish-Fragrant Pork",
+                    entity_name="Fish-Fragrant Pork",
                     source="graph_rag",
                     search_method="graph_rag",
                 )
@@ -69,7 +70,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             requested_top_k=2,
             semantic_settings=self.semantic_settings,
         )
-        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
+        document = EvidenceDocument(content="doc", entity_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],
             fallbacks=["graph_empty_to_hybrid"],
@@ -97,7 +98,7 @@ class RouteTraceRecorderTests(unittest.TestCase):
             requested_top_k=2,
             semantic_settings=self.semantic_settings,
         )
-        document = EvidenceDocument(content="doc", recipe_name="Mapo Tofu", source="hybrid")
+        document = EvidenceDocument(content="doc", entity_name="Mapo Tofu", source="hybrid")
         outcome = RouteExecutionOutcome(
             documents=[document],
             stages=[

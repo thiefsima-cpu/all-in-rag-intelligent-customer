@@ -102,9 +102,9 @@ def test_build_and_search_order_positive_scores_and_normalize_metadata(monkeypat
     load.assert_called_once_with()
     assert retriever.ready is True
     assert [doc.content for doc in documents] == ["c", "a"]
-    assert [doc.recipe_name for doc in documents] == ["C", "A"]
+    assert [doc.entity_name for doc in documents] == ["C", "A"]
     assert [doc.node_id for doc in documents] == ["c", "a"]
-    assert [doc.recipe_id for doc in documents] == ["c", "a"]
+    assert [doc.entity_id for doc in documents] == ["c", "a"]
     assert [doc.score for doc in documents] == [0.9, 0.2]
     assert documents[0].search_method == "bm25"
     assert documents[0].search_type == "bm25"

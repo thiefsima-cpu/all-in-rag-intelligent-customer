@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import cast
 
 from ...contracts import EvidenceDocument, RetrievalRequest
+from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..ports import Neo4jDriverPort, VectorIndexModulePort
 
@@ -115,7 +116,7 @@ class VectorRetriever:
                     retrieval_level=str(metadata.get("retrieval_level") or "chunk"),
                     doc_id=str(metadata.get("doc_id") or ""),
                     source="vector",
-                    metadata=metadata,
+                    metadata=coerce_json_object(metadata),
                 )
             )
 

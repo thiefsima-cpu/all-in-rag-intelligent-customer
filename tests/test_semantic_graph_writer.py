@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.infra.semantic_graph_writer import SemanticGraphSchemaWriter
 from rag_modules.kernel.documents import TextDocument
+from tests.configuration_test_helpers import build_test_config
 
 
 class _Result(dict):

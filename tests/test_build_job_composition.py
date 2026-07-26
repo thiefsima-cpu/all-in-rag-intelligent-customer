@@ -5,11 +5,11 @@ from typing import cast
 from rag_modules.app.application_protocol import GraphRAGApplication
 from rag_modules.app.composition.build_jobs import compose_build_job_application
 from rag_modules.app.runtime_operations import RuntimeOperationCoordinator
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts.build_jobs import (
     BuildJobRepositoryDiagnostics,
     BuildJobRepositoryPort,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 class _ExternalRepository:

@@ -19,15 +19,15 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     evidence_units=[{"claim": "ingredient X balances ingredient Y"}],
                     content="dish A balances ingredient X and Y",
                 )
             ],
         )
-        return AnswerContext(question=package.question).with_evidence_package(package)
+        return AnswerContext(question=package.question).with_evidence_package(package.to_dict())
 
     def test_direct_prompt_render_exposes_contract_metadata(self) -> None:
         builder = GenerationPromptBuilder(
@@ -101,8 +101,8 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     evidence_units=[
                         {
@@ -134,8 +134,8 @@ class GenerationPromptContractTests(unittest.TestCase):
             items=[
                 AnswerEvidenceItem(
                     citation="Recipe Evidence 1",
-                    recipe_id="recipe-1",
-                    recipe_name="dish A",
+                    entity_id="recipe-1",
+                    entity_name="dish A",
                     confidence=0.92,
                     graph_paths=[oversized_path],
                 )

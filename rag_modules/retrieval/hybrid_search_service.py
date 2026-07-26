@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from ..contracts import EvidenceDocument, RetrievalRequest
 from ..contracts.runtime import HybridRetrievalOutcome
+from ..kernel.json_types import coerce_json_object
 from .adapters import ConstraintRetriever
 from .candidate_generator import CandidateSet, RetrievalCandidateGenerator
 from .candidate_sources import (
@@ -67,11 +69,12 @@ class HybridSearchService:
         effective_constraints = request.effective_constraints
         if request.candidate_k <= 0:
             constrained = bool(effective_constraints and effective_constraints.has_constraints())
-            request = request.copy_with(
+            request = replace(
+                request,
                 candidate_k=self.retrieval_profile.candidates.hybrid_candidate_k(
                     request.top_k,
                     constrained=constrained,
-                )
+                ),
             )
         return request
 
@@ -139,7 +142,9 @@ class HybridSearchService:
             stats.get("bm25", 0),
             len(final_docs),
         )
-        return HybridRetrievalOutcome.from_candidate_set(
+        return HybridRetrievalOutcome(
             documents=final_docs,
-            candidates=candidates,
+            candidate_counts=dict(candidates.stats),
+            degraded_candidates=[coerce_json_object(item) for item in candidates.degraded_details],
+            metadata=coerce_json_object({}),
         )

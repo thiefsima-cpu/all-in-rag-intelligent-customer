@@ -11,7 +11,8 @@ from rag_modules.application.answering.answer_models import (
     QuestionAnswerResponse,
     QuestionAnswerSummary,
 )
-from rag_modules.configuration.testing import build_test_config
+from rag_modules.configuration.env import EnvConfigSource
+from rag_modules.configuration.loader import load_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.interfaces.api.services import GraphRAGServingApiService
 from rag_modules.interfaces.api.services.errors import ApiBackpressureError
@@ -154,7 +155,7 @@ class _PressureTestSystem:
         self.query_tracer.record(
             query=question,
             analysis=None,
-            documents=[EvidenceDocument(content="pressure-doc", recipe_name="pressure")],
+            documents=[EvidenceDocument(content="pressure-doc", entity_name="pressure")],
             latency_ms=latency_ms,
             answer="ok",
         )
@@ -217,15 +218,16 @@ class _SseRunState:
 def _build_tracer(*, queue_size: int, trace_delay_ms: float) -> QueryTracer:
     delegate = _SlowCaptureTraceSink(write_delay_ms=trace_delay_ms)
     sink = AsyncQueryTraceSink(delegate, max_queue_size=queue_size)
-    config = build_test_config(
-        {
+    config = load_config(
+        source=EnvConfigSource(environ={}),
+        overrides={
             "observability": {
                 "enable_query_tracing": True,
                 "query_trace_path": "pressure-trace.jsonl",
                 "query_trace_async_enabled": True,
                 "query_trace_max_queue_size": queue_size,
             }
-        }
+        },
     )
     return QueryTracer(config, sink=sink)
 
@@ -315,7 +317,10 @@ def _build_service(
     )
     return GraphRAGServingApiService(
         system=system,
-        config=build_test_config({"api": api_config}),
+        config=load_config(
+            source=EnvConfigSource(environ={}),
+            overrides={"api": api_config},
+        ),
     )
 
 

@@ -39,8 +39,8 @@ from rag_modules.app.services.runtime_diagnostics_service import RuntimeDiagnost
 from rag_modules.app.services.runtime_shutdown_service import RuntimeShutdownService
 from rag_modules.app.system import AdvancedGraphRAGSystem
 from rag_modules.application.answering.answer_models import QuestionAnswerResult
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.kernel.artifacts import ArtifactManifest
+from tests.configuration_test_helpers import build_test_config
 
 
 class _FakeClosable:

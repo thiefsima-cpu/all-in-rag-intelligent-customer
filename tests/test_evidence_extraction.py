@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from rag_modules.contracts import EvidenceDocument
+from rag_modules.contracts.retrieval_documents import evidence_document_from_text_document
 from rag_modules.evidence_processing.extraction import extract_evidence_units
 from rag_modules.evidence_processing.models import EvidenceUnit
+from rag_modules.evidence_processing.normalization import normalize_evidence_document
 from rag_modules.kernel.documents import TextDocument
 
 
@@ -19,7 +22,7 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
         "recipe_names": ["Mapo tofu"],
         "matched_terms": ["tofu", "tofu"],
         "evidence_units": [
-            explicit,
+            explicit.to_dict(),
             {"claim": "dict claim", "entities": ["tofu", ""], "metadata": {"rank": 1}},
             {"ignored": True},
         ],
@@ -46,7 +49,9 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
         },
     }
 
-    units = extract_evidence_units(TextDocument(content="fallback", metadata=metadata))
+    units = extract_evidence_units(
+        evidence_document_from_text_document(TextDocument(content="fallback", metadata=metadata))
+    )
     claims = [unit["claim"] for unit in units]
 
     assert "explicit claim" in claims
@@ -68,23 +73,63 @@ def test_extracts_direct_graph_payload_and_metadata_recipe_fallbacks() -> None:
         },
     }
 
-    [unit] = extract_evidence_units(TextDocument(content="ignored", metadata=metadata))
+    [unit] = extract_evidence_units(
+        evidence_document_from_text_document(TextDocument(content="ignored", metadata=metadata))
+    )
 
     assert unit["claim"] == "a -[RELATED]-> Broth"
-    assert unit["recipe_id"] == "r2"
+    assert unit["entity_id"] == "r2"
+    assert "recipe_id" not in unit
+    assert "recipe_name" not in unit
     assert unit["source"] == "neo4j"
 
 
 def test_falls_back_to_trimmed_document_claim_and_handles_empty_content() -> None:
     long_content = "x" * 300
     [unit] = extract_evidence_units(
-        TextDocument(
-            content=long_content,
-            metadata={"node_id": "r3", "recipe_name": "Soup", "search_type": "vector"},
+        evidence_document_from_text_document(
+            TextDocument(
+                content=long_content,
+                metadata={"node_id": "r3", "recipe_name": "Soup", "search_type": "vector"},
+            )
         )
     )
 
     assert len(unit["claim"]) == 260
     assert unit["entities"] == ["Soup"]
     assert unit["is_graph_evidence"] is False
-    assert extract_evidence_units(TextDocument(content="", metadata={})) == []
+    assert (
+        extract_evidence_units(
+            evidence_document_from_text_document(TextDocument(content="", metadata={}))
+        )
+        == []
+    )
+
+
+def test_evidence_unit_serializes_canonical_fields_for_recipe_domain() -> None:
+    unit = EvidenceUnit(
+        unit_id="unit-1",
+        evidence_type="text",
+        claim="canonical",
+        entity_id="r1",
+        entity_name="Mapo tofu",
+        domain="recipe",
+    )
+
+    payload = unit.to_dict()
+
+    assert payload["entity_id"] == "r1"
+    assert payload["entity_name"] == "Mapo tofu"
+    assert "recipe_id" not in payload
+    assert "recipe_name" not in payload
+
+
+def test_normalization_ignores_deprecated_recipe_graph_evidence() -> None:
+    evidence = normalize_evidence_document(
+        EvidenceDocument(
+            content="legacy graph payload",
+            metadata={"recipe_graph_evidence": {"legacy": True}},
+        )
+    )
+
+    assert evidence.domain_graph_evidence == {}

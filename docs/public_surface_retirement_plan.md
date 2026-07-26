@@ -53,6 +53,34 @@ it does not imply API version `2.0.0` or package version `1.0.0`.
 - Build/document artifacts: `rag_modules.build_pipeline.document_artifacts.*`
 - Infra adapters: `rag_modules.infra.*`
 
+## Foundation Hard Cutover
+
+`rag_modules.configuration` has the final eight-module layout: `__init__.py`,
+`assembly.py`, `env.py`, `environment_schema.py`, `loader.py`, `models.py`,
+`profiles.py`, and `validation.py`. Its one loader flow is defaults and the
+query-policy overlay, then profile, environment, and explicit overrides, all
+merged as JSON-shaped nested data before validation into `GraphRAGConfig`.
+The former `settings`, `section_loaders`, `env_specs`, `model_sections`,
+`sections`, `errors`, and `testing` paths are hard-retired; their exact imports
+raise `ModuleNotFoundError`.
+
+The contract and kernel cutover hard-retires `rag_modules.contracts.query`,
+`rag_modules.contracts.retrieval`, `rag_modules.contracts._common`,
+`rag_modules.contracts.query_utils`, `rag_modules.contracts.langchain_compat`,
+`rag_modules.contracts.runtime.snapshot_utils`,
+`rag_modules.contracts.build_jobs.executor`, and
+`rag_modules.kernel.artifact_validation`. These exact imports fail instead of
+forwarding. `rag_modules.langchain_document_adapter` is the sole LangChain
+normalization boundary and creates `TextDocument` or `EvidenceDocument` before
+internal processing. Deprecated recipe-domain aliases on `EvidenceDocument`
+(`recipe_id`, `recipe_name`, `recipe_graph_evidence`, and
+`_legacy_recipe_compat`) are removed; callers use entity/domain names instead.
+
+The only retained foundation ports are `BuildJobRepositoryPort` for alternate
+job persistence implementations and `BuildJobRunnerPort` for in-process or
+external-worker execution. They remain in `rag_modules.contracts.build_jobs`;
+no other foundation Protocol is retained.
+
 ## Root Package Exports
 
 `rag_modules.__all__` is a public API contract for external Python callers.

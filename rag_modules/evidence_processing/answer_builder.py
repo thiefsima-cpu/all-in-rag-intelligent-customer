@@ -10,11 +10,11 @@ prompts.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Dict, List, cast
+from typing import Dict, List
 
-from ..contracts import EvidenceDocument, PageDocumentLike, ensure_evidence_documents
+from ..contracts import EvidenceDocument
 from .aggregation import aggregate_evidence
 
 
@@ -66,12 +66,12 @@ def _bounded_dicts(
     return bounded
 
 
-@dataclass(init=False)
+@dataclass
 class AnswerEvidenceItem:
     citation: str
-    entity_id: str
-    entity_name: str
-    confidence: float
+    entity_id: str = ""
+    entity_name: str = ""
+    confidence: float = 0.0
     retrieval_sources: List[str] = field(default_factory=list)
     matched_terms: List[str] = field(default_factory=list)
     constraint_reasons: List[str] = field(default_factory=list)
@@ -80,51 +80,13 @@ class AnswerEvidenceItem:
     document_evidence: List[dict] = field(default_factory=list)
     content: str = ""
 
-    def __init__(
-        self,
-        citation: str,
-        recipe_id: str = "",
-        recipe_name: str = "",
-        confidence: float = 0.0,
-        retrieval_sources: List[str] | None = None,
-        matched_terms: List[str] | None = None,
-        constraint_reasons: List[str] | None = None,
-        graph_paths: List[dict] | None = None,
-        evidence_units: List[dict] | None = None,
-        document_evidence: List[dict] | None = None,
-        content: str = "",
-        *,
-        entity_id: str = "",
-        entity_name: str = "",
-    ) -> None:
-        self.citation = str(citation or "")
-        self.entity_id = str(entity_id or recipe_id or "")
-        self.entity_name = str(entity_name or recipe_name or "")
-        self.confidence = float(confidence or 0.0)
-        self.retrieval_sources = list(retrieval_sources or [])
-        self.matched_terms = list(matched_terms or [])
-        self.constraint_reasons = list(constraint_reasons or [])
-        self.graph_paths = list(graph_paths or [])
-        self.evidence_units = list(evidence_units or [])
-        self.document_evidence = list(document_evidence or [])
-        self.content = str(content or "")
-        self._legacy_recipe_compat = bool(recipe_id or recipe_name)
-
-    @property
-    def recipe_id(self) -> str:
-        return self.entity_id
-
-    @property
-    def recipe_name(self) -> str:
-        return self.entity_name
-
     @classmethod
     def from_dict(cls, payload: Mapping[str, object] | None) -> "AnswerEvidenceItem":
         data = dict(payload or {})
         return cls(
             citation=str(data.get("citation") or ""),
-            entity_id=str(data.get("entity_id") or data.get("recipe_id") or ""),
-            entity_name=str(data.get("entity_name") or data.get("recipe_name") or ""),
+            entity_id=str(data.get("entity_id") or ""),
+            entity_name=str(data.get("entity_name") or ""),
             confidence=_float_value(data.get("confidence")),
             retrieval_sources=_string_list(data.get("retrieval_sources")),
             matched_terms=_string_list(data.get("matched_terms")),
@@ -136,7 +98,7 @@ class AnswerEvidenceItem:
         )
 
     def to_dict(self) -> Dict[str, object]:
-        payload = {
+        return {
             "citation": self.citation,
             "entity_id": self.entity_id,
             "entity_name": self.entity_name,
@@ -149,9 +111,6 @@ class AnswerEvidenceItem:
             "document_evidence": [dict(item) for item in self.document_evidence],
             "content": self.content,
         }
-        if self._legacy_recipe_compat:
-            payload.update({"recipe_id": self.entity_id, "recipe_name": self.entity_name})
-        return payload
 
     def to_summary_dict(
         self,
@@ -237,7 +196,7 @@ class AnswerEvidencePackage:
             if isinstance(item, AnswerEvidenceItem):
                 items.append(item)
             elif isinstance(item, dict):
-                items.append(AnswerEvidenceItem.from_dict(cast(Dict[str, object], item)))
+                items.append(AnswerEvidenceItem.from_dict(item))
         return cls(
             question=str(data.get("question") or ""),
             items=items,
@@ -345,9 +304,9 @@ class AnswerEvidenceBuilder:
     def build_from_documents(
         self,
         question: str,
-        documents: List[PageDocumentLike | EvidenceDocument],
+        documents: Sequence[EvidenceDocument],
     ) -> AnswerEvidencePackage:
-        return self.build(question, ensure_evidence_documents(documents))
+        return self.build(question, list(documents))
 
     def build_from_evidence(
         self,

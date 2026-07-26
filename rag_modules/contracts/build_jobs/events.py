@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
 
+from pydantic import JsonValue
+
+from ...kernel.json_types import JsonObject, coerce_int, coerce_json_object
 from .models import BuildJobId, BuildJobType, WorkerIdentity
 
 BUILD_JOB_EVENT_SCHEMA_VERSION = 1
@@ -58,19 +60,19 @@ class JobCancellationRequested:
 @dataclass(frozen=True, slots=True)
 class JobCancelled:
     message: str = "Build cancelled."
-    result: Mapping[str, Any] | None = None
+    result: JsonObject | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class JobSucceeded:
     message: str = "Knowledge base build completed."
-    result: Mapping[str, Any] | None = None
+    result: JsonObject | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class JobFailed:
     message: str = "Build failed."
-    result: Mapping[str, Any] | None = None
+    result: JsonObject | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +118,7 @@ _PAYLOAD_BY_TYPE: dict[BuildJobEventType, type[BuildJobEventPayload]] = {
 }
 
 
-def event_to_dict(event: BuildJobEvent) -> dict[str, Any]:
+def event_to_dict(event: BuildJobEvent) -> JsonObject:
     return {
         "event_id": event.event_id,
         "job_id": str(event.job_id),
@@ -129,7 +131,7 @@ def event_to_dict(event: BuildJobEvent) -> dict[str, Any]:
     }
 
 
-def event_from_dict(payload: Mapping[str, Any]) -> BuildJobEvent:
+def event_from_dict(payload: Mapping[str, object]) -> BuildJobEvent:
     _reject_unknown_keys(
         payload,
         {
@@ -143,7 +145,7 @@ def event_from_dict(payload: Mapping[str, Any]) -> BuildJobEvent:
             "payload",
         },
     )
-    schema_version = int(payload.get("schema_version", 0))
+    schema_version = coerce_int(payload.get("schema_version"))
     if schema_version != BUILD_JOB_EVENT_SCHEMA_VERSION:
         raise ValueError("unsupported build job event schema version")
     try:
@@ -160,7 +162,7 @@ def event_from_dict(payload: Mapping[str, Any]) -> BuildJobEvent:
     return BuildJobEvent(
         event_id=str(payload["event_id"]),
         job_id=BuildJobId(str(payload["job_id"])),
-        revision=int(payload["revision"]),
+        revision=coerce_int(payload["revision"]),
         event_type=event_type,
         schema_version=schema_version,
         occurred_at=_datetime_from_json(payload["occurred_at"]),
@@ -171,7 +173,7 @@ def event_from_dict(payload: Mapping[str, Any]) -> BuildJobEvent:
 
 def _payload_from_dict(
     event_type: BuildJobEventType,
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
 ) -> BuildJobEventPayload:
     payload_class = _PAYLOAD_BY_TYPE[event_type]
     valid_keys = {field.name for field in fields(payload_class)}
@@ -200,45 +202,58 @@ def _payload_from_dict(
         result = payload.get("result")
         return JobCancelled(
             message=str(payload.get("message") or ""),
-            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
+            result=coerce_json_object(result) if isinstance(result, Mapping) else None,
         )
     if payload_class is JobSucceeded:
         result = payload.get("result")
         return JobSucceeded(
             message=str(payload.get("message") or ""),
-            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
+            result=coerce_json_object(result) if isinstance(result, Mapping) else None,
         )
     if payload_class is JobFailed:
         result = payload.get("result")
         return JobFailed(
             message=str(payload.get("message") or ""),
-            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else None,
+            result=coerce_json_object(result) if isinstance(result, Mapping) else None,
         )
     if payload_class is JobInterrupted:
         return JobInterrupted(message=str(payload.get("message") or ""))
     raise ValueError("unknown build job event payload")
 
 
-def _reject_unknown_keys(payload: Mapping[str, Any], valid_keys: set[str]) -> None:
+def _reject_unknown_keys(payload: Mapping[str, object], valid_keys: set[str]) -> None:
     unknown = set(payload) - valid_keys
     if unknown:
         raise ValueError(f"unknown build job event keys: {', '.join(sorted(unknown))}")
 
 
-def _value_to_json(value: Any) -> Any:
+def _value_to_json(value: object) -> JsonValue:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, StrEnum):
         return value.value
-    if isinstance(value, BuildJobId):
-        return str(value)
-    if is_dataclass(value):
-        return {field.name: _value_to_json(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(
+        value,
+        (
+            JobQueued,
+            JobClaimed,
+            JobStarted,
+            JobProgressRecorded,
+            JobCancellationRequested,
+            JobCancelled,
+            JobSucceeded,
+            JobFailed,
+            JobInterrupted,
+        ),
+    ):
+        return _value_to_json(asdict(value))
     if isinstance(value, Mapping):
         return {str(key): _value_to_json(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [_value_to_json(item) for item in value]
-    return copy.deepcopy(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return copy.deepcopy(value)
+    return str(value)
 
 
 def _datetime_from_json(value: object) -> datetime:

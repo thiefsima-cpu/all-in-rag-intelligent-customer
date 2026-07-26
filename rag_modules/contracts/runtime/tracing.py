@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from ...kernel.json_types import JsonObject, coerce_json_float, coerce_json_int, coerce_json_object
+from ...kernel.json_types import JsonObject, coerce_float, coerce_int, coerce_json_object
 from .. import QuerySemanticRuntimeSettings
 from .errors import RuntimeErrorDetail, ensure_runtime_error_detail
 from .generation import GenerationSnapshot
@@ -129,7 +129,7 @@ class RetrievalTraceSnapshot:
         graph_trace_payload = payload.get("graph_trace")
         raw_evidence = payload.get("evidence")
         return cls(
-            doc_count=coerce_json_int(payload.get("doc_count")),
+            doc_count=coerce_int(payload.get("doc_count")),
             evidence=(
                 [coerce_json_object(item) for item in raw_evidence]
                 if isinstance(raw_evidence, list)
@@ -173,7 +173,7 @@ class AnswerTraceSnapshot:
     def from_dict(cls, data: Mapping[str, object] | None) -> "AnswerTraceSnapshot":
         payload = dict(data or {})
         return cls(
-            chars=coerce_json_int(payload.get("chars")),
+            chars=coerce_int(payload.get("chars")),
             preview=str(payload.get("preview") or ""),
         )
 
@@ -241,10 +241,10 @@ class QueryTraceEvent:
         payload = dict(data or {})
         return cls(
             query_id=str(payload.get("query_id") or ""),
-            timestamp=coerce_json_int(payload.get("timestamp")),
+            timestamp=coerce_int(payload.get("timestamp")),
             query=str(payload.get("query") or ""),
             strategy=(str(payload["strategy"]) if payload.get("strategy") is not None else None),
-            latency_ms=coerce_json_float(payload.get("latency_ms")),
+            latency_ms=coerce_float(payload.get("latency_ms")),
             policy=PolicySnapshot.from_dict(_mapping_or_none(payload.get("policy"))),
             plan=coerce_json_object(payload.get("plan")),
             models=ModelSuiteSnapshot.from_dict(_mapping_or_none(payload.get("models"))),

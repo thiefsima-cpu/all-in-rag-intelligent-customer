@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import ast
-import inspect
 import tomllib
 from pathlib import Path
-from typing import Any, get_type_hints
 
 from rag_modules.contracts.graph import GraphQuery
 from rag_modules.contracts.runtime.analysis import QueryAnalysis
@@ -19,8 +17,15 @@ from rag_modules.kernel.artifacts import (
     DocumentArtifactResult,
     DocumentArtifactSignatures,
     DocumentArtifactStats,
+    vector_artifact_mismatch_reason,
 )
 from rag_modules.kernel.documents import TextDocument
+from rag_modules.kernel.json_types import (
+    as_string_list,
+    bounded_float,
+    coerce_json_value,
+    coerce_str,
+)
 from rag_modules.kernel.retrieval import CandidateSourceDegradationStrategy
 from rag_modules.kernel.routing import RouteStatistics, SearchStrategy
 from rag_modules.retrieval import candidate_generator
@@ -60,6 +65,31 @@ def test_shared_types_have_canonical_module_ownership() -> None:
     assert {value: value.__module__ for value in expected_modules} == expected_modules
 
 
+def test_kernel_owns_shared_primitive_normalization() -> None:
+    assert coerce_str(None) == ""
+    assert as_string_list([" a ", "", 2]) == ["a", "2"]
+    assert bounded_float("2.0", 0.5) == 1.0
+    assert vector_artifact_mismatch_reason.__module__ == "rag_modules.kernel.artifacts"
+
+
+def test_kernel_json_normalization_preserves_set_metadata_as_a_json_list() -> None:
+    assert set(coerce_json_value({"tags": {"fast", "spicy"}})["tags"]) == {"fast", "spicy"}
+
+
+def test_artifact_manifest_payload_detaches_nested_build_metadata() -> None:
+    manifest = ArtifactManifest(build_metadata={"nested": {"labels": ["original"]}})
+
+    payload_metadata = manifest.to_dict()["build_metadata"]
+    assert isinstance(payload_metadata, dict)
+    nested = payload_metadata["nested"]
+    assert isinstance(nested, dict)
+    labels = nested["labels"]
+    assert isinstance(labels, list)
+    labels.append("mutated")
+
+    assert manifest.build_metadata == {"nested": {"labels": ["original"]}}
+
+
 def test_kernel_package_exports_only_canonical_kernel_types() -> None:
     import rag_modules.kernel as kernel
 
@@ -77,13 +107,8 @@ def test_kernel_package_exports_only_canonical_kernel_types() -> None:
     }
 
 
-def test_hybrid_outcome_candidate_set_contract_is_structural_and_typed() -> None:
-    candidates_annotation = get_type_hints(HybridRetrievalOutcome.from_candidate_set)["candidates"]
-
-    assert candidates_annotation is not Any
-    assert getattr(candidates_annotation, "_is_protocol", False)
-    assert isinstance(inspect.getattr_static(candidates_annotation, "stats"), property)
-    assert isinstance(inspect.getattr_static(candidates_annotation, "degraded_details"), property)
+def test_hybrid_outcome_owns_concrete_candidate_data() -> None:
+    assert "from_candidate_set" not in HybridRetrievalOutcome.__dict__
 
 
 def test_canonical_kernel_and_runtime_contract_modules_use_strict_mypy() -> None:

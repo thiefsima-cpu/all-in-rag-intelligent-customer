@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..kernel.artifact_validation import vector_artifact_mismatch_reason
-from ..kernel.artifacts import ArtifactManifest
+from ..kernel.artifacts import ArtifactManifest, vector_artifact_mismatch_reason
 from ..runtime.artifact_ports import RuntimeArtifactAccessPort
 from .ports import VectorIndexModulePort
 from .stats_presenter import ProgressCallback

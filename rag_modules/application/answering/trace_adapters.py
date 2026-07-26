@@ -13,11 +13,6 @@ from ...contracts.runtime import (
     RouteResolution,
     RouteSnapshot,
 )
-from ...contracts.runtime.snapshot_utils import (
-    clone_generation_snapshot,
-    clone_graph_snapshot,
-    clone_route_snapshot,
-)
 from .answer_models import ChunkCallback
 
 
@@ -43,7 +38,7 @@ class QueryRouterWithTraceProtocol(Protocol):
         top_k: int = 5,
         *,
         control: RequestControl | None = None,
-    ) -> tuple[object, object | None]: ...
+    ) -> tuple[object, RouteSnapshot | Mapping[str, object] | None]: ...
 
 
 QueryRouterSource: TypeAlias = QueryRouterProtocol | QueryRouterWithTraceProtocol
@@ -83,7 +78,7 @@ class GenerationTraceServiceProtocol(Protocol):
         answer_context: AnswerContext,
         *,
         control: RequestControl | None = None,
-    ) -> tuple[object, object]: ...
+    ) -> tuple[object, GenerationSnapshot | Mapping[str, object] | None]: ...
 
 
 @runtime_checkable
@@ -96,7 +91,7 @@ class GenerationStreamTraceServiceProtocol(Protocol):
         *,
         chunk_callback: ChunkCallback = None,
         control: RequestControl | None = None,
-    ) -> tuple[object, object]: ...
+    ) -> tuple[object, GenerationSnapshot | Mapping[str, object] | None]: ...
 
 
 GenerationServiceSource: TypeAlias = (
@@ -177,7 +172,7 @@ class QueryRouterTraceAdapter:
                     }
             if not trace_payload:
                 continue
-            snapshot = clone_graph_snapshot(
+            snapshot = GraphRetrievalSnapshot.from_dict(
                 trace_payload,
                 semantic_settings=self.semantic_settings,
             )
@@ -195,20 +190,25 @@ class QueryRouterTraceAdapter:
         self,
         resolution: RouteResolution,
         *,
-        route_trace: object | None = None,
+        route_trace: RouteSnapshot | Mapping[str, object] | None = None,
     ) -> RouteSnapshot:
-        route_trace = route_trace or (
-            resolution.metadata.get("route_trace") if resolution.metadata else None
-        )
+        if not route_trace and resolution.metadata:
+            metadata_route_trace = resolution.metadata.get("route_trace")
+            if isinstance(metadata_route_trace, Mapping):
+                route_trace = metadata_route_trace
         if not self._has_route_trace(route_trace):
             route_trace = resolution.retrieval.route_trace
-        return clone_route_snapshot(
-            route_trace,
-            semantic_settings=self.semantic_settings,
-        )
+        if isinstance(route_trace, RouteSnapshot):
+            return route_trace.copy(semantic_settings=self.semantic_settings)
+        if isinstance(route_trace, Mapping):
+            return RouteSnapshot.from_dict(
+                route_trace,
+                semantic_settings=self.semantic_settings,
+            )
+        return RouteSnapshot()
 
     @staticmethod
-    def _has_route_trace(value: object) -> bool:
+    def _has_route_trace(value: RouteSnapshot | Mapping[str, object] | None) -> bool:
         if isinstance(value, RouteSnapshot):
             return value.has_content()
         return bool(value)
@@ -231,7 +231,7 @@ class GenerationTraceAdapter:
                 answer_context,
                 control=control,
             )
-            return str(answer), clone_generation_snapshot(trace)
+            return str(answer), self._normalize_generation_snapshot(trace)
         answer = cast(
             GenerationServiceProtocol, self.generation_service
         ).generate_answer_from_context(answer_context, control=control)
@@ -250,7 +250,7 @@ class GenerationTraceAdapter:
                 chunk_callback=chunk_callback,
                 control=control,
             )
-            return str(answer), clone_generation_snapshot(trace)
+            return str(answer), self._normalize_generation_snapshot(trace)
 
         chunks: list[str] = []
         generation_service = cast(GenerationServiceProtocol, self.generation_service)
@@ -263,6 +263,16 @@ class GenerationTraceAdapter:
                 chunk_callback(str(chunk_text))
         answer = "".join(chunks).strip() or "Streaming output completed"
         return answer, GenerationSnapshot()
+
+    @staticmethod
+    def _normalize_generation_snapshot(
+        trace: GenerationSnapshot | Mapping[str, object] | None,
+    ) -> GenerationSnapshot:
+        if isinstance(trace, GenerationSnapshot):
+            return trace.copy()
+        if isinstance(trace, Mapping):
+            return GenerationSnapshot.from_dict(trace)
+        return GenerationSnapshot()
 
 
 __all__ = [

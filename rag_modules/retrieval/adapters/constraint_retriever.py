@@ -5,10 +5,11 @@ Constraint-focused retrieval wrapper.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Callable, List, Optional
 
 from ...contracts import EvidenceDocument, RetrievalRequest
-from ...contracts.retrieval import evidence_document_from_page_like
+from ...langchain_document_adapter import to_evidence_document
 from ..evidence import RecipeConstraintMatcher
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,13 @@ class ConstraintRetriever:
         )
         evidence_docs: List[EvidenceDocument] = []
         for doc in docs:
-            evidence: EvidenceDocument = evidence_document_from_page_like(doc)
+            evidence = to_evidence_document(doc)
             metadata = dict(evidence.metadata or {})
             metadata["search_method"] = "constraints"
             metadata["search_type"] = "constraint_recipe"
             evidence_docs.append(
-                evidence.copy_with(
+                replace(
+                    evidence,
                     search_method="constraints",
                     search_type="constraint_recipe",
                     metadata=metadata,

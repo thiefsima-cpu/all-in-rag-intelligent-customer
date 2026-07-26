@@ -75,7 +75,7 @@ def test_search_enriches_neighbors_coerces_metadata_and_limits_candidates() -> N
     [document] = retriever.search(request)
 
     assert document.node_id == "r1"
-    assert document.recipe_name == "Mapo tofu"
+    assert document.entity_name == "Mapo tofu"
     assert document.score == 0.8
     assert all(name in document.content for name in ("Pepper", "Tofu", "Sauce"))
     assert session.calls[0][1]["timeout"] == 2.5

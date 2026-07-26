@@ -272,9 +272,12 @@ class AnswerPipelineService:
                 or self.answer_workflow_copy.unknown_search_type
             )
             score = metadata.get("final_score", metadata.get("relevance_score", doc.score))
-            try:
-                score_text = f"{float(score):.3f}"
-            except (TypeError, ValueError):
+            if isinstance(score, (bool, int, float, str)):
+                try:
+                    score_text = f"{float(score):.3f}"
+                except ValueError:
+                    score_text = str(score)
+            else:
                 score_text = str(score)
             doc_info.append(f"{entity_name}({search_type}, {score_text})")
         summary = self.answer_workflow_copy.document_summary_template.format(

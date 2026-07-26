@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Callable, List
 
 from ..contracts import EvidenceDocument
+from ..kernel.json_types import coerce_float
 
 
 class DualLevelEvidenceService:
@@ -28,7 +30,7 @@ class DualLevelEvidenceService:
             metadata = dict(evidence.metadata or {})
             metadata.update(
                 {
-                    "entity_name": metadata.get("entity_name", evidence.recipe_name),
+                    "entity_name": metadata.get("entity_name", evidence.entity_name),
                     "entity_type": metadata.get("entity_type", "Entity"),
                     "index_keys": metadata.get("index_keys", []),
                     "matched_keyword": metadata.get("matched_keyword", ""),
@@ -37,10 +39,11 @@ class DualLevelEvidenceService:
                 }
             )
             results.append(
-                evidence.copy_with(
+                replace(
+                    evidence,
                     content=content,
                     node_type=str(metadata.get("entity_type") or evidence.node_type or "Entity"),
-                    score=float(metadata.get("relevance_score", evidence.score)),
+                    score=coerce_float(metadata.get("relevance_score", evidence.score)),
                     search_type=str(
                         metadata.get("search_type") or evidence.search_type or "graph_entity"
                     ),
@@ -92,14 +95,15 @@ class DualLevelEvidenceService:
                 }
             )
             results.append(
-                evidence.copy_with(
+                replace(
+                    evidence,
                     content="\n".join(part for part in content_parts if part),
                     node_id=source_entity,
-                    recipe_name=source_name,
+                    entity_name=source_name,
                     node_type=source_kv.entity_type
                     if source_kv
                     else evidence.node_type or "Relation",
-                    score=float(metadata.get("relevance_score", evidence.score or 0.0)),
+                    score=coerce_float(metadata.get("relevance_score", evidence.score)),
                     search_type=str(enriched_metadata["search_type"]),
                     search_method=str(enriched_metadata["search_method"]),
                     retrieval_level="topic",
@@ -119,7 +123,7 @@ class DualLevelEvidenceService:
                     EvidenceDocument(
                         content=f"主题分类: {keyword}\n{entity.value_content}",
                         node_id=str(entity.metadata.get("node_id", "")),
-                        recipe_name=entity.entity_name,
+                        entity_name=entity.entity_name,
                         node_type=entity.entity_type,
                         score=0.85,
                         search_type="topic_category",

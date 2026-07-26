@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import replace
 from typing import Dict, Iterable, List, Optional
 
 from ..contracts import EvidenceDocument
@@ -85,13 +87,14 @@ class ParentDocumentEnricher:
             metadata = dict(doc.metadata or {})
             metadata.setdefault("node_id", doc.node_id or parent.metadata.get("node_id"))
             metadata.setdefault(
-                "recipe_name", doc.recipe_name or parent.metadata.get("recipe_name")
+                "entity_name", doc.entity_name or parent.metadata.get("recipe_name")
             )
             enriched.append(
-                doc.copy_with(
+                replace(
+                    doc,
                     content=self._truncate_parent_content(parent.content or "", max_chars),
                     node_id=doc.node_id or str(parent.metadata.get("node_id") or ""),
-                    recipe_name=doc.recipe_name or str(parent.metadata.get("recipe_name") or ""),
+                    entity_name=doc.entity_name or str(parent.metadata.get("recipe_name") or ""),
                     metadata=metadata,
                 )
             )
@@ -151,11 +154,12 @@ class ParentDocumentEnricher:
             else:
                 content = parent_context
             enriched.append(
-                doc.copy_with(
+                replace(
+                    doc,
                     content=content,
                     node_id=doc.node_id or str(metadata.get("node_id") or ""),
-                    recipe_name=doc.recipe_name or str(metadata.get("recipe_name") or ""),
-                    recipe_id=doc.recipe_id
+                    entity_name=doc.entity_name or str(metadata.get("recipe_name") or ""),
+                    entity_id=doc.entity_id
                     or str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
                     metadata=metadata,
                 )
@@ -163,7 +167,7 @@ class ParentDocumentEnricher:
 
         return self.attach_evidence(enriched, top_n=top_n)
 
-    def _find_parent(self, metadata: Dict[str, object]) -> Optional[TextDocument]:
+    def _find_parent(self, metadata: Mapping[str, object]) -> Optional[TextDocument]:
         for node_id in _iter_metadata_values(metadata.get("recipe_node_ids")):
             parent = self.parent_doc_map.get(str(node_id))
             if parent:
@@ -195,7 +199,7 @@ class ParentDocumentEnricher:
         return content[:max_chars] + "... (truncated parent document)"
 
     @staticmethod
-    def _doc_parent_key(metadata: Dict[str, object]) -> str:
+    def _doc_parent_key(metadata: Mapping[str, object]) -> str:
         return str(
             metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id") or ""
         )
@@ -204,7 +208,7 @@ class ParentDocumentEnricher:
         metadata = doc.metadata or {}
         return str(
             doc.node_id
-            or doc.recipe_id
+            or doc.entity_id
             or metadata.get("node_id")
             or metadata.get("parent_id")
             or metadata.get("recipe_id")

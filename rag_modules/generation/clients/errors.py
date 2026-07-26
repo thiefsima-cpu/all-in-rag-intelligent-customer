@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from ...contracts.runtime.errors import generation_error_detail
+from ...contracts.runtime.errors import (
+    RuntimeErrorDetail,
+)
+from ...contracts.runtime.errors import (
+    generation_error_detail as _generation_error_detail,
+)
 
 
 class GenerationProviderResponseError(RuntimeError):
@@ -19,6 +24,18 @@ class GenerationLatencyBudgetExceeded(TimeoutError):
     failure_code = "generation_latency_budget_exceeded"
 
 
+def generation_error_detail(error: Exception) -> RuntimeErrorDetail:
+    return _generation_error_detail(error, failure_code=_explicit_failure_code(error))
+
+
+def _explicit_failure_code(error: Exception) -> str:
+    if isinstance(error, GenerationProviderResponseError):
+        return error.failure_code
+    if isinstance(error, GenerationLatencyBudgetExceeded):
+        return error.failure_code
+    return ""
+
+
 def generation_failure_code(error: Exception) -> str:
     return generation_error_detail(error).detail
 
@@ -32,6 +49,7 @@ def is_retryable_generation_error(error: Exception) -> bool:
 __all__ = [
     "GenerationLatencyBudgetExceeded",
     "GenerationProviderResponseError",
+    "generation_error_detail",
     "generation_failure_code",
     "is_retryable_generation_error",
 ]

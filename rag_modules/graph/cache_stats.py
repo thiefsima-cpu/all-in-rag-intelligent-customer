@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from ..kernel.json_types import JsonObject, coerce_json_int, coerce_json_object
+from ..kernel.json_types import JsonObject, coerce_int, coerce_json_object
 from ..runtime.artifacts import ArtifactManifestStore
 
 GRAPH_CACHE_STATS_SCHEMA_VERSION = "graph-cache-stats-v1"
@@ -50,7 +50,7 @@ class GraphCacheEntityStats:
             node_id=str(data.get("node_id") or ""),
             labels=label_values,
             category=str(data.get("category") or ""),
-            degree=coerce_json_int(data.get("degree"), 0),
+            degree=coerce_int(data.get("degree"), 0),
             extra={key: value for key, value in data.items() if key not in known_keys},
             present_keys=frozenset(key for key in known_keys if key in data),
         )
@@ -107,14 +107,14 @@ class GraphCacheStats:
             updated_at=str(data.get("updated_at") or _utc_now_iso()),
             graph_signature=str(data.get("graph_signature") or ""),
             domain_name=str(data.get("domain_name") or "recipe"),
-            entity_count=coerce_json_int(data.get("entity_count"), 0),
-            relation_type_count=coerce_json_int(data.get("relation_type_count"), 0),
+            entity_count=coerce_int(data.get("entity_count"), 0),
+            relation_type_count=coerce_int(data.get("relation_type_count"), 0),
             entities=_entity_stats(data.get("entities")),
             relation_frequencies={
-                str(key): coerce_json_int(value, 0)
+                str(key): coerce_int(value, 0)
                 for key, value in coerce_json_object(data.get("relation_frequencies")).items()
             },
-            page_size=max(1, coerce_json_int(data.get("page_size"), 500)),
+            page_size=max(1, coerce_int(data.get("page_size"), 500)),
             source=str(data.get("source") or "unknown"),
         )
 

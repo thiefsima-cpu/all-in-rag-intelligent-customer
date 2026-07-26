@@ -13,7 +13,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from scripts.eval_queries import (
     DEFAULT_CORPUS_PATH,
@@ -33,6 +32,7 @@ from scripts.eval_queries import (
     run_eval,
     score_eval_observation,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 def _valid_strict_eval_payload() -> dict:
@@ -158,7 +158,7 @@ def _eval_observation(
         documents = (
             EvidenceDocument(
                 content="gongbao chicken uses peanuts.",
-                recipe_name="gongbao chicken",
+                entity_name="gongbao chicken",
                 doc_id="doc-1",
                 score=1.0,
                 source="test",
@@ -632,7 +632,7 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 documents=(
                     EvidenceDocument(
                         content="irrelevant content",
-                        recipe_name="wrong dish",
+                        entity_name="wrong dish",
                         doc_id="wrong-doc",
                         score=0.5,
                         source="test",

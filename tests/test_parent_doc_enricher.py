@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from rag_modules.configuration.testing import build_test_config
 from rag_modules.contracts import EvidenceDocument
 from rag_modules.kernel.documents import TextDocument
 from rag_modules.retrieval.parent_doc_enricher import ParentDocumentEnricher
+from tests.configuration_test_helpers import build_test_config
 
 
 def _enricher(*documents: TextDocument) -> ParentDocumentEnricher:
@@ -61,15 +61,15 @@ def test_attach_evidence_fills_parent_identity_without_overwriting_child_values(
     explicit = EvidenceDocument(
         content="chunk",
         node_id="recipe-1",
-        recipe_name="Child recipe",
+        entity_name="Child recipe",
     )
 
     first, second = enricher.attach_evidence([inherited, explicit], top_n=2)
 
     assert first.node_id == "recipe-1"
-    assert first.recipe_name == "Parent recipe"
-    assert first.metadata["recipe_name"] == "Parent recipe"
-    assert second.recipe_name == "Child recipe"
+    assert first.entity_name == "Parent recipe"
+    assert first.metadata["entity_name"] == "Parent recipe"
+    assert second.entity_name == "Child recipe"
 
 
 def test_graph_enrichment_finds_parent_by_recipe_lists_and_preserves_graph_source() -> None:
@@ -116,8 +116,8 @@ def test_graph_evidence_inherits_parent_metadata_and_appends_context() -> None:
     [result] = enricher.enrich_graph_evidence_documents([graph], top_n=0)
 
     assert result.node_id == "recipe-1"
-    assert result.recipe_id == "recipe-id"
-    assert result.recipe_name == "Mapo tofu"
+    assert result.entity_id == "recipe-id"
+    assert result.entity_name == "Mapo tofu"
     assert result.metadata["search_source"] == "graph_path"
     assert "[Graph retrieval evidence]" in result.content
 

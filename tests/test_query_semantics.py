@@ -3,16 +3,15 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from rag_modules.configuration.testing import (
-    build_test_config,
-    planner_runtime_settings,
-    semantic_runtime_settings,
-)
 from rag_modules.contracts import (
     GraphQueryType,
     QueryPlan,
     QueryPlannerMode,
     QuerySemanticProfile,
+)
+from rag_modules.contracts.query_settings import (
+    QueryPlannerRuntimeSettings,
+    QuerySemanticRuntimeSettings,
 )
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding import (
@@ -20,6 +19,7 @@ from rag_modules.query_understanding import (
     infer_query_constraints,
     infer_query_semantic_profile,
 )
+from tests.configuration_test_helpers import build_test_config
 
 
 class _DummyCompletions:
@@ -45,10 +45,10 @@ class _FailingPlannerClient:
 class QuerySemanticsTests(unittest.TestCase):
     def setUp(self) -> None:
         config = build_test_config()
-        self.semantic_settings = semantic_runtime_settings(config)
+        self.semantic_settings = QuerySemanticRuntimeSettings.from_config(config)
         self.planner = QueryPlanner(
             _DummyLLM(),
-            settings=planner_runtime_settings(config),
+            settings=QueryPlannerRuntimeSettings.from_config(config),
             semantic_settings=self.semantic_settings,
         )
 
@@ -83,7 +83,7 @@ class QuerySemanticsTests(unittest.TestCase):
         )
         planner = QueryPlanner(
             _FailingPlannerClient(),
-            settings=planner_runtime_settings(config),
+            settings=QueryPlannerRuntimeSettings.from_config(config),
             semantic_settings=self.semantic_settings,
         )
 
@@ -128,7 +128,7 @@ class QuerySemanticsTests(unittest.TestCase):
                 }
             }
         )
-        settings = semantic_runtime_settings(config)
+        settings = QuerySemanticRuntimeSettings.from_config(config)
 
         score = build_query_semantic_score_breakdown(
             "relationship",

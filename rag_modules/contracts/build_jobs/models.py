@@ -12,7 +12,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Self
+from typing import Self
+
+from ...kernel.json_types import JsonObject, coerce_json_object
 
 BUILD_JOB_LOG_LIMIT = 200
 _BUILD_JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")
@@ -121,30 +123,32 @@ class BuildJobSnapshot:
     message: str = ""
     error: Mapping[str, str] | None = None
     logs: tuple[str, ...] = field(default_factory=tuple)
-    result: Mapping[str, Any] | None = None
+    result: JsonObject | None = None
     retry_of_job_id: BuildJobId | None = None
     idempotency_key_hash: str = ""
     worker: WorkerIdentity | None = None
     lease_token: str = ""
     lease_expires_at: datetime | None = None
 
-    def to_public_dict(self) -> dict[str, Any]:
+    def to_public_dict(self) -> JsonObject:
         """Return the stable, privacy-safe public payload."""
 
-        return {
-            "job_id": str(self.job_id),
-            "request_id": self.request_id,
-            "job_type": self.job_type.value,
-            "status": public_status(self.status).value,
-            "created_at": _iso_or_empty(self.created_at),
-            "started_at": _iso_or_empty(self.started_at),
-            "finished_at": _iso_or_empty(self.finished_at),
-            "message": self.message,
-            "error": build_failed_error(self.request_id) if self.error is not None else None,
-            "logs": [_safe_build_log(item) for item in self.logs[-BUILD_JOB_LOG_LIMIT:]],
-            "result": copy.deepcopy(dict(self.result)) if self.result is not None else None,
-            "retry_of_job_id": str(self.retry_of_job_id or ""),
-        }
+        return coerce_json_object(
+            {
+                "job_id": str(self.job_id),
+                "request_id": self.request_id,
+                "job_type": self.job_type.value,
+                "status": public_status(self.status).value,
+                "created_at": _iso_or_empty(self.created_at),
+                "started_at": _iso_or_empty(self.started_at),
+                "finished_at": _iso_or_empty(self.finished_at),
+                "message": self.message,
+                "error": build_failed_error(self.request_id) if self.error is not None else None,
+                "logs": [_safe_build_log(item) for item in self.logs[-BUILD_JOB_LOG_LIMIT:]],
+                "result": copy.deepcopy(self.result) if self.result is not None else None,
+                "retry_of_job_id": str(self.retry_of_job_id or ""),
+            }
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,13 +207,15 @@ class BuildJobRepositoryWarning:
 class BuildJobRepositoryDiagnostics:
     warnings: tuple[BuildJobRepositoryWarning, ...] = field(default_factory=tuple)
 
-    def to_public_dict(self) -> dict[str, Any]:
+    def to_public_dict(self) -> JsonObject:
         warnings = [warning.to_public_dict() for warning in self.warnings]
-        return {
-            "warning_count": len(warnings),
-            "warning_codes": sorted({warning["code"] for warning in warnings}),
-            "warnings": warnings,
-        }
+        return coerce_json_object(
+            {
+                "warning_count": len(warnings),
+                "warning_codes": sorted({warning["code"] for warning in warnings}),
+                "warnings": warnings,
+            }
+        )
 
 
 def build_failed_error(request_id: str) -> dict[str, str]:
