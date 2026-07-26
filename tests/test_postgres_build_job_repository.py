@@ -6,6 +6,7 @@ import unittest
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -15,14 +16,18 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from rag_modules.app.build_jobs import (
+    BuildJobConcurrentUpdateError,
     BuildJobConflictError,
     BuildJobEvent,
     BuildJobEventListQuery,
     BuildJobEventType,
     BuildJobId,
     BuildJobIdempotencyConflictError,
+    BuildJobLease,
+    BuildJobLeaseLostError,
     BuildJobListQuery,
     BuildJobNotFoundError,
+    BuildJobRepositoryDiagnostics,
     BuildJobRepositoryError,
     BuildJobRepositorySettings,
     BuildJobRepositoryUnavailableError,
@@ -32,6 +37,7 @@ from rag_modules.app.build_jobs import (
     BuildJobType,
     JobQueued,
     JobStarted,
+    JobSucceeded,
     SubmitBuildJob,
     WorkerIdentity,
     event_to_dict,
@@ -42,8 +48,9 @@ from rag_modules.runtime.build_jobs.postgres import (
 )
 from rag_modules.runtime.build_jobs.postgres import repository as repository_module
 from tests.build_job_repository_contract import (
-    BuildJobRepositorySubmissionContractTests,
+    BuildJobRepositoryContractTests,
     MutableClock,
+    submit_and_succeed,
 )
 
 pytest_plugins = ("tests.postgres_build_job_helpers",)
@@ -340,6 +347,36 @@ def _queued_event(snapshot: BuildJobSnapshot, revision: int = 1) -> BuildJobEven
             idempotency_key_hash=snapshot.idempotency_key_hash,
             retry_of_job_id=snapshot.retry_of_job_id,
         ),
+    )
+
+
+def _queued_snapshot(
+    character: str = "a",
+    *,
+    created_at: datetime = NOW,
+    idempotency_key_hash: str = "",
+) -> BuildJobSnapshot:
+    return BuildJobSnapshot(
+        job_id=BuildJobId(character * 32),
+        request_id=f"request-{character}",
+        job_type=BuildJobType.BUILD,
+        status=BuildJobStatus.QUEUED,
+        revision=1,
+        created_at=created_at,
+        idempotency_key_hash=idempotency_key_hash,
+    )
+
+
+def _started_event(snapshot: BuildJobSnapshot, worker: WorkerIdentity) -> BuildJobEvent:
+    return BuildJobEvent(
+        event_id=f"{snapshot.job_id}:{snapshot.revision + 1}",
+        job_id=snapshot.job_id,
+        revision=snapshot.revision + 1,
+        event_type=BuildJobEventType.STARTED,
+        schema_version=1,
+        occurred_at=NOW,
+        request_id=snapshot.request_id,
+        payload=JobStarted(worker),
     )
 
 
@@ -788,7 +825,7 @@ def test_unexpected_schema_verification_failure_is_sanitized(
 
 
 def test_submission_writes_projection_and_event_in_one_transaction_with_adapted_json() -> None:
-    connection = _FakeConnection([_Rows([]), _Rows([]), _Rows([])])
+    connection = _FakeConnection([_Rows([]), _Rows([]), _Rows([]), _Rows([]), _Rows([])])
     repository = _make_repository(_FakePool([connection]))
     command = SubmitBuildJob(
         job_id=BuildJobId("a" * 32),
@@ -803,7 +840,7 @@ def test_submission_writes_projection_and_event_in_one_transaction_with_adapted_
     assert submission.snapshot.job_id == command.job_id
     assert connection.transaction_entries == 1
     assert connection.transaction_outcomes == ["commit"]
-    assert len(connection.calls) == 3
+    assert len(connection.calls) == 5
     assert all("OFFSET" not in statement.upper() for statement, _params in connection.calls)
     projection_parameters = connection.calls[1][1]
     event_parameters = connection.calls[2][1]
@@ -813,6 +850,8 @@ def test_submission_writes_projection_and_event_in_one_transaction_with_adapted_
     assert isinstance(projection_parameters[10], Jsonb)
     assert projection_parameters[11] is None
     assert isinstance(event_parameters[-1], Jsonb)
+    assert "ROW_NUMBER() OVER" in connection.calls[3][0]
+    assert "archived_at <= %(cutoff)s" in connection.calls[4][0]
     assert "raw-idempotency-secret" not in repr(connection.calls)
 
 
@@ -1102,6 +1141,476 @@ def test_database_failure_logs_only_safe_structured_diagnostics(
     assert "INSERT" not in rendered
 
 
+def test_claim_next_locks_oldest_queued_row_and_writes_event_and_projection_atomically() -> None:
+    queued = _queued_snapshot("a")
+    connection = _FakeConnection([_Rows([_snapshot_row(queued)]), _Rows([]), _Rows([])])
+    repository = _make_repository(
+        _FakePool([connection]),
+        settings=BuildJobRepositorySettings(lease_seconds=30),
+    )
+    worker = WorkerIdentity("worker-a", "external_worker")
+
+    lease = repository.claim_next(worker)
+
+    assert lease is not None
+    assert lease.job_id == queued.job_id
+    assert lease.revision == 2
+    assert lease.worker == worker
+    assert lease.lease_token
+    assert lease.lease_expires_at == NOW + timedelta(seconds=30)
+    assert connection.transaction_outcomes == ["commit"]
+    assert len(connection.calls) == 3
+    claim_sql, _claim_params = connection.calls[0]
+    assert "FOR UPDATE SKIP LOCKED" in claim_sql
+    assert "ORDER BY created_at, job_id" in claim_sql
+    assert "status = 'queued'" in claim_sql
+    assert connection.calls[1][0] == repository_module._INSERT_EVENT_SQL
+    assert "UPDATE graph_rag_control_plane.build_jobs" in connection.calls[2][0]
+
+
+def test_claim_next_returns_none_without_writing_when_no_job_is_dispatchable() -> None:
+    connection = _FakeConnection([_Rows([])])
+    repository = _make_repository(_FakePool([connection]))
+
+    assert repository.claim_next(WorkerIdentity("worker-a", "in_process")) is None
+    assert len(connection.calls) == 1
+    assert connection.transaction_outcomes == ["commit"]
+
+
+@pytest.mark.parametrize(
+    "lease_mutation",
+    [
+        lambda lease: replace(lease, revision=lease.revision - 1),
+        lambda lease: replace(lease, worker=WorkerIdentity("wrong-worker", "in_process")),
+        lambda lease: replace(lease, worker=WorkerIdentity("worker-a", "wrong-backend")),
+        lambda lease: replace(lease, lease_token="wrong-token"),
+    ],
+)
+def test_renew_lease_rejects_stale_revision_owner_or_token(lease_mutation) -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    lease = BuildJobLease(
+        job_id=claimed.job_id,
+        revision=claimed.revision,
+        worker=worker,
+        lease_token=claimed.lease_token,
+        lease_expires_at=claimed.lease_expires_at,
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(claimed)])])
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(
+        BuildJobLeaseLostError,
+        match=r"^Build job lease is no longer owned by this worker\.$",
+    ):
+        repository.renew_lease(lease_mutation(lease))
+
+    assert len(connection.calls) == 1
+    assert "FOR UPDATE" in connection.calls[0][0]
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+def test_renew_lease_treats_expiry_equal_to_now_as_lost() -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW,
+    )
+    lease = BuildJobLease(
+        job_id=claimed.job_id,
+        revision=claimed.revision,
+        worker=worker,
+        lease_token=claimed.lease_token,
+        lease_expires_at=NOW,
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(claimed)])])
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(BuildJobLeaseLostError):
+        repository.renew_lease(lease)
+
+    assert len(connection.calls) == 1
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+def test_renew_lease_updates_only_expiry_and_updated_at() -> None:
+    clock = MutableClock(NOW)
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    lease = BuildJobLease(
+        job_id=claimed.job_id,
+        revision=claimed.revision,
+        worker=worker,
+        lease_token=claimed.lease_token,
+        lease_expires_at=claimed.lease_expires_at,
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(claimed)]), _Rows([])])
+    repository = _make_repository(
+        _FakePool([connection]),
+        now=clock.now,
+        settings=BuildJobRepositorySettings(lease_seconds=30),
+    )
+    clock.advance(seconds=5)
+
+    renewed = repository.renew_lease(lease)
+
+    assert renewed == replace(lease, lease_expires_at=NOW + timedelta(seconds=35))
+    update_sql, update_params = connection.calls[1]
+    assert "SET lease_expires_at = %(lease_expires_at)s" in update_sql
+    assert "updated_at = %(updated_at)s" in update_sql
+    assert "revision =" not in update_sql
+    assert update_params == {
+        "job_id": str(claimed.job_id),
+        "lease_expires_at": renewed.lease_expires_at,
+        "updated_at": NOW + timedelta(seconds=5),
+    }
+    assert connection.transaction_outcomes == ["commit"]
+
+
+def test_apply_rejects_stale_revision_before_writing() -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(claimed)])])
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(BuildJobConcurrentUpdateError, match=r"^Expected revision 1, found 2\.$"):
+        repository.apply(
+            _started_event(claimed, worker),
+            expected_revision=1,
+        )
+
+    assert len(connection.calls) == 1
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+@pytest.mark.parametrize(
+    "lease_mutation",
+    [
+        lambda lease: replace(lease, revision=lease.revision - 1),
+        lambda lease: replace(lease, worker=WorkerIdentity("wrong-worker", "in_process")),
+        lambda lease: replace(lease, lease_token="wrong-token"),
+    ],
+)
+def test_apply_rejects_stale_lease_revision_owner_or_token(lease_mutation) -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    lease = BuildJobLease(
+        job_id=claimed.job_id,
+        revision=claimed.revision,
+        worker=worker,
+        lease_token=claimed.lease_token,
+        lease_expires_at=claimed.lease_expires_at,
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(claimed)])])
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(BuildJobLeaseLostError):
+        repository.apply(
+            _started_event(claimed, worker),
+            expected_revision=claimed.revision,
+            lease=lease_mutation(lease),
+        )
+
+    assert len(connection.calls) == 1
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+def test_apply_rolls_back_inserted_event_when_projection_update_fails() -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    claimed = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    lease = BuildJobLease(
+        job_id=claimed.job_id,
+        revision=claimed.revision,
+        worker=worker,
+        lease_token=claimed.lease_token,
+        lease_expires_at=claimed.lease_expires_at,
+    )
+    connection = _FakeConnection(
+        [
+            _Rows([_snapshot_row(claimed)]),
+            _Rows([]),
+            _ConnectionFailure("forced projection update failure"),
+        ]
+    )
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(BuildJobRepositoryUnavailableError):
+        repository.apply(
+            _started_event(claimed, worker),
+            expected_revision=claimed.revision,
+            lease=lease,
+        )
+
+    assert connection.calls[1][0] == repository_module._INSERT_EVENT_SQL
+    assert "UPDATE graph_rag_control_plane.build_jobs" in connection.calls[2][0]
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+def test_terminal_apply_clears_lease_and_runs_retention_in_the_same_transaction() -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    running = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.RUNNING,
+        revision=3,
+        started_at=NOW,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW + timedelta(seconds=30),
+    )
+    lease = BuildJobLease(
+        job_id=running.job_id,
+        revision=running.revision,
+        worker=worker,
+        lease_token=running.lease_token,
+        lease_expires_at=running.lease_expires_at,
+    )
+    event = BuildJobEvent(
+        event_id=f"{running.job_id}:4",
+        job_id=running.job_id,
+        revision=4,
+        event_type=BuildJobEventType.SUCCEEDED,
+        schema_version=1,
+        occurred_at=NOW,
+        request_id=running.request_id,
+        payload=JobSucceeded(result={"message": "Knowledge base build completed."}),
+    )
+    connection = _FakeConnection(
+        [
+            _Rows([_snapshot_row(running)]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+        ]
+    )
+    pool = _FakePool([connection])
+    repository = _make_repository(pool)
+
+    updated = repository.apply(
+        event,
+        expected_revision=running.revision,
+        lease=lease,
+    )
+
+    assert updated.status is BuildJobStatus.SUCCEEDED
+    assert updated.lease_token == ""
+    assert updated.lease_expires_at is None
+    assert len(pool.checkout_timeouts) == 1
+    assert connection.transaction_outcomes == ["commit"]
+    projection_params = connection.calls[2][1]
+    assert isinstance(projection_params, Mapping)
+    assert projection_params["lease_token"] == ""
+    assert projection_params["lease_expires_at"] is None
+    assert "ROW_NUMBER() OVER" in connection.calls[3][0]
+    assert "archived_at <= %(cutoff)s" in connection.calls[4][0]
+
+
+def test_find_dispatchable_is_bounded_and_oldest_first() -> None:
+    first = _queued_snapshot("a", created_at=NOW)
+    second = _queued_snapshot("b", created_at=NOW + timedelta(seconds=1))
+    connection = _FakeConnection([_Rows([(str(first.job_id),), (str(second.job_id),)])])
+    repository = _make_repository(_FakePool([connection]))
+
+    assert repository.find_dispatchable(limit=2) == (first.job_id, second.job_id)
+    sql, params = connection.calls[0]
+    assert "archived_at IS NULL" in sql
+    assert "status = 'queued'" in sql
+    assert "ORDER BY created_at, job_id" in sql
+    assert params == {"limit": 2}
+    assert repository.find_dispatchable(limit=0) == ()
+
+
+def test_recovery_selects_expiry_inclusively_and_persists_interruption_atomically() -> None:
+    worker = WorkerIdentity("worker-a", "in_process")
+    expired = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=worker,
+        lease_token="correct-token",
+        lease_expires_at=NOW,
+    )
+    connection = _FakeConnection(
+        [
+            _Rows([_snapshot_row(expired)]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+            _Rows([]),
+        ]
+    )
+    repository = _make_repository(_FakePool([connection]))
+
+    recovered = repository.recover_expired_leases()
+
+    assert len(recovered) == 1
+    assert recovered[0].status is BuildJobStatus.INTERRUPTED
+    assert recovered[0].revision == 3
+    recovery_sql, recovery_params = connection.calls[0]
+    assert "lease_expires_at <= %(now)s" in recovery_sql
+    assert "FOR UPDATE SKIP LOCKED" in recovery_sql
+    assert recovery_params == {"now": NOW, "limit": 100}
+    assert connection.calls[1][0] == repository_module._INSERT_EVENT_SQL
+    assert "UPDATE graph_rag_control_plane.build_jobs" in connection.calls[2][0]
+    assert connection.transaction_outcomes == ["commit"]
+
+
+@pytest.mark.parametrize(
+    "snapshot_mutation",
+    [
+        lambda snapshot: replace(snapshot, worker=None),
+        lambda snapshot: replace(snapshot, lease_token=""),
+    ],
+)
+def test_recovery_rejects_expired_rows_without_complete_lease_ownership(
+    snapshot_mutation,
+) -> None:
+    expired = replace(
+        _queued_snapshot("a"),
+        status=BuildJobStatus.CLAIMED,
+        revision=2,
+        worker=WorkerIdentity("worker-a", "in_process"),
+        lease_token="correct-token",
+        lease_expires_at=NOW,
+    )
+    connection = _FakeConnection([_Rows([_snapshot_row(snapshot_mutation(expired))])])
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(BuildJobRepositoryUnavailableError):
+        repository.recover_expired_leases()
+
+    assert len(connection.calls) == 1
+    assert connection.transaction_outcomes == ["rollback"]
+
+
+def test_retention_archives_excess_terminal_rows_then_purges_inclusive_cutoff() -> None:
+    connection = _FakeConnection(
+        [
+            _Rows([]),
+            _Rows([("a" * 32,), ("b" * 32,)]),
+            _Rows([]),
+            _Rows([]),
+        ]
+    )
+    repository = _make_repository(
+        _FakePool([connection]),
+        settings=BuildJobRepositorySettings(retention_limit=1, audit_retention_days=90),
+    )
+
+    repository.apply_retention()
+
+    assert connection.transaction_outcomes == ["commit"]
+    archive_sql, archive_params = connection.calls[0]
+    assert "ROW_NUMBER() OVER" in archive_sql
+    assert "COALESCE(finished_at, created_at) DESC, job_id DESC" in archive_sql
+    assert "ranked.retention_rank > %(retention_limit)s" in archive_sql
+    assert archive_params == {"archived_at": NOW, "retention_limit": 1}
+    purge_select_sql, purge_select_params = connection.calls[1]
+    assert "archived_at <= %(cutoff)s" in purge_select_sql
+    assert "FOR UPDATE SKIP LOCKED" in purge_select_sql
+    assert purge_select_params == {"cutoff": NOW - timedelta(days=90), "limit": 100}
+    assert "DELETE FROM graph_rag_control_plane.build_job_events" in connection.calls[2][0]
+    assert "DELETE FROM graph_rag_control_plane.build_jobs" in connection.calls[3][0]
+    assert connection.calls[2][1] == {"expired_job_ids": ["a" * 32, "b" * 32]}
+    assert connection.calls[3][1] == {"expired_job_ids": ["a" * 32, "b" * 32]}
+
+
+def test_diagnostics_is_bounded_and_returns_safe_fixed_warning_on_failure() -> None:
+    connection = _FakeConnection([_ConnectionFailure("dsn=postgresql://secret raw SQL params")])
+    repository = _make_repository(_FakePool([connection]))
+
+    diagnostics = repository.diagnostics()
+
+    assert diagnostics.backend == "postgresql"
+    assert diagnostics.ready is False
+    assert diagnostics.schema_version == "1"
+    assert [warning.code for warning in diagnostics.warnings] == ["BUILD_JOB_POSTGRES_UNAVAILABLE"]
+    assert all("secret" not in repr(warning) for warning in diagnostics.warnings)
+    assert len(connection.calls) == 1
+    assert connection.calls[0] == ("SELECT 1", None)
+
+
+def test_diagnostics_verifies_connectivity_and_schema_without_scanning_jobs() -> None:
+    connection = _FakeConnection([_Rows([(1,)])])
+    repository = _make_repository(_FakePool([connection]))
+    schema_manager = SimpleNamespace(verify=unittest.mock.Mock())
+    repository._schema_manager = schema_manager
+
+    diagnostics = repository.diagnostics()
+
+    assert diagnostics == BuildJobRepositoryDiagnostics(
+        backend="postgresql",
+        ready=True,
+        schema_version="1",
+    )
+    assert connection.calls == [("SELECT 1", None)]
+    schema_manager.verify.assert_called_once_with()
+
+
+def test_diagnostics_schema_failure_never_returns_raw_exception_details() -> None:
+    connection = _FakeConnection([_Rows([(1,)])])
+    repository = _make_repository(_FakePool([connection]))
+    repository._schema_manager = SimpleNamespace(
+        verify=unittest.mock.Mock(
+            side_effect=RuntimeError(
+                "dsn=postgresql://user:secret@host/jobs SQL=SELECT params=('private',)"
+            )
+        )
+    )
+
+    diagnostics = repository.diagnostics()
+
+    assert diagnostics.ready is False
+    assert diagnostics.warnings[0].code == "BUILD_JOB_POSTGRES_UNAVAILABLE"
+    rendered = repr(diagnostics)
+    assert "secret" not in rendered
+    assert "SELECT" not in rendered
+    assert "private" not in rendered
+    assert connection.calls == [("SELECT 1", None)]
+
+
 @pytest.fixture
 def migrated_postgres_dsn(postgres_dsn: str) -> str:
     PostgresBuildJobSchemaManager(postgres_dsn).migrate()
@@ -1151,8 +1660,8 @@ def postgres_contract_repository(
 
 
 @pytest.mark.usefixtures("postgres_contract_repository")
-class PostgresBuildJobRepositorySubmissionContractTests(
-    BuildJobRepositorySubmissionContractTests,
+class PostgresBuildJobRepositoryContractTests(
+    BuildJobRepositoryContractTests,
     unittest.TestCase,
 ):
     _postgres_dsn: str
@@ -1389,3 +1898,271 @@ def test_archived_rows_are_hidden_from_current_reads_but_events_remain_pageable(
     assert first_page.next_cursor
     assert [event.revision for event in second_page.events] == [2]
     assert second_page.next_cursor == ""
+
+
+def _race_two(callable_one, callable_two) -> tuple[object, object]:
+    barrier = threading.Barrier(2)
+
+    def synchronized(callable_item):
+        barrier.wait(timeout=5.0)
+        try:
+            return callable_item()
+        except Exception as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(synchronized, callable_one)
+        second = executor.submit(synchronized, callable_two)
+        return first.result(timeout=10.0), second.result(timeout=10.0)
+
+
+def _revisions(
+    repository: PostgresBuildJobRepository,
+    job_id: BuildJobId,
+) -> tuple[int, ...]:
+    page = repository.list_events(job_id, BuildJobEventListQuery(limit=100))
+    assert page.next_cursor == ""
+    return tuple(event.revision for event in page.events)
+
+
+def test_claim_race_returns_one_effective_lease(
+    repository_factory,
+) -> None:
+    repository = repository_factory()
+    submitted = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("a" * 32),
+            request_id="request-a",
+            job_type=BuildJobType.BUILD,
+        )
+    ).snapshot
+    first_worker = WorkerIdentity("worker-1", "in_process")
+    second_worker = WorkerIdentity("worker-2", "external_worker")
+
+    outcomes = _race_two(
+        lambda: repository.claim_next(first_worker),
+        lambda: repository.claim_next(second_worker),
+    )
+
+    leases = [outcome for outcome in outcomes if isinstance(outcome, BuildJobLease)]
+    assert len(leases) == 1
+    assert sum(outcome is None for outcome in outcomes) == 1
+    assert leases[0].job_id == submitted.job_id
+    assert _revisions(repository, submitted.job_id) == (1, 2)
+
+
+def test_lease_owner_token_revision_and_expiry_boundary_are_enforced(
+    repository_factory,
+) -> None:
+    clock = MutableClock(NOW)
+    repository = repository_factory(
+        clock=clock,
+        settings=BuildJobRepositorySettings(lease_seconds=30),
+    )
+    submitted = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("a" * 32),
+            request_id="request-a",
+            job_type=BuildJobType.BUILD,
+        )
+    ).snapshot
+    worker = WorkerIdentity("worker-1", "in_process")
+    lease = repository.claim_next(worker)
+    assert lease is not None
+
+    invalid_leases = (
+        replace(lease, revision=lease.revision - 1),
+        replace(lease, worker=WorkerIdentity("worker-2", "in_process")),
+        replace(lease, lease_token="wrong-token"),
+    )
+    for invalid in invalid_leases:
+        with pytest.raises(BuildJobLeaseLostError):
+            repository.renew_lease(invalid)
+
+    clock.advance(seconds=30)
+    with pytest.raises(BuildJobLeaseLostError):
+        repository.renew_lease(lease)
+    claimed = repository.get(submitted.job_id)
+    assert claimed is not None
+    assert claimed.revision == 2
+    assert _revisions(repository, submitted.job_id) == (1, 2)
+
+
+def test_competing_applies_at_one_revision_have_one_winner(
+    repository_factory,
+) -> None:
+    repository = repository_factory()
+    submitted = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("a" * 32),
+            request_id="request-a",
+            job_type=BuildJobType.BUILD,
+        )
+    ).snapshot
+    worker = WorkerIdentity("worker-1", "in_process")
+    lease = repository.claim_next(worker)
+    claimed = repository.get(submitted.job_id)
+    assert lease is not None
+    assert claimed is not None
+    event = _started_event(claimed, worker)
+
+    outcomes = _race_two(
+        lambda: repository.apply(
+            event,
+            expected_revision=claimed.revision,
+            lease=lease,
+        ),
+        lambda: repository.apply(
+            event,
+            expected_revision=claimed.revision,
+            lease=lease,
+        ),
+    )
+
+    assert len([outcome for outcome in outcomes if isinstance(outcome, BuildJobSnapshot)]) == 1
+    errors = [outcome for outcome in outcomes if isinstance(outcome, BuildJobConcurrentUpdateError)]
+    assert len(errors) == 1
+    assert _revisions(repository, submitted.job_id) == (1, 2, 3)
+
+
+def test_projection_failure_rolls_back_the_inserted_event(
+    migrated_postgres_dsn: str,
+    repository_factory,
+) -> None:
+    repository = repository_factory()
+    submitted = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("a" * 32),
+            request_id="request-a",
+            job_type=BuildJobType.BUILD,
+        )
+    ).snapshot
+    worker = WorkerIdentity("worker-1", "in_process")
+    lease = repository.claim_next(worker)
+    claimed = repository.get(submitted.job_id)
+    assert lease is not None
+    assert claimed is not None
+    with psycopg.connect(migrated_postgres_dsn, autocommit=True) as connection:
+        connection.execute(
+            """
+            CREATE FUNCTION graph_rag_control_plane.reject_projection_update()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'forced projection update failure';
+            END;
+            $$
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER reject_projection_update
+            BEFORE UPDATE ON graph_rag_control_plane.build_jobs
+            FOR EACH ROW
+            EXECUTE FUNCTION graph_rag_control_plane.reject_projection_update()
+            """
+        )
+    try:
+        with pytest.raises(BuildJobRepositoryUnavailableError):
+            repository.apply(
+                _started_event(claimed, worker),
+                expected_revision=claimed.revision,
+                lease=lease,
+            )
+        restored = repository.get(submitted.job_id)
+        assert restored is not None
+        assert restored.revision == claimed.revision
+        assert _revisions(repository, submitted.job_id) == (1, 2)
+    finally:
+        with psycopg.connect(migrated_postgres_dsn, autocommit=True) as connection:
+            connection.execute(
+                """
+                DROP TRIGGER IF EXISTS reject_projection_update
+                ON graph_rag_control_plane.build_jobs
+                """
+            )
+            connection.execute(
+                """
+                DROP FUNCTION IF EXISTS
+                graph_rag_control_plane.reject_projection_update()
+                """
+            )
+
+
+def test_recovery_race_interrupts_an_expired_lease_once(
+    repository_factory,
+) -> None:
+    clock = MutableClock(NOW)
+    repository = repository_factory(
+        clock=clock,
+        settings=BuildJobRepositorySettings(lease_seconds=30),
+    )
+    submitted = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("a" * 32),
+            request_id="request-a",
+            job_type=BuildJobType.BUILD,
+        )
+    ).snapshot
+    lease = repository.claim_next(WorkerIdentity("worker-1", "in_process"))
+    assert lease is not None
+    clock.advance(seconds=30)
+
+    outcomes = _race_two(
+        repository.recover_expired_leases,
+        repository.recover_expired_leases,
+    )
+
+    assert all(isinstance(outcome, tuple) for outcome in outcomes)
+    recovered = [snapshot for outcome in outcomes for snapshot in outcome]
+    assert [snapshot.job_id for snapshot in recovered] == [submitted.job_id]
+    restored = repository.get(submitted.job_id)
+    assert restored is not None
+    assert restored.status is BuildJobStatus.INTERRUPTED
+    assert _revisions(repository, submitted.job_id) == (1, 2, 3)
+
+
+def test_retention_archives_only_excess_terminal_jobs_and_purges_at_cutoff(
+    repository_factory,
+) -> None:
+    clock = MutableClock(NOW)
+    repository = repository_factory(
+        clock=clock,
+        settings=BuildJobRepositorySettings(
+            retention_limit=1,
+            audit_retention_days=90,
+            list_max_limit=100,
+        ),
+    )
+    oldest = submit_and_succeed(
+        repository,
+        "a" * 32,
+        clock=clock,
+        key="purge-key",
+    )
+    clock.advance(seconds=1)
+    newest = submit_and_succeed(
+        repository,
+        "b" * 32,
+        clock=clock,
+        key="keep-key",
+    )
+
+    assert repository.get(oldest.job_id) is None
+    assert repository.get(newest.job_id) == newest
+    assert _revisions(repository, oldest.job_id) == (1, 2, 3, 4)
+    clock.advance(seconds=90 * 86400)
+
+    repository.apply_retention()
+
+    with pytest.raises(BuildJobNotFoundError):
+        repository.list_events(oldest.job_id, BuildJobEventListQuery())
+    assert repository.get(newest.job_id) == newest
+    recreated = repository.submit(
+        SubmitBuildJob(
+            job_id=BuildJobId("c" * 32),
+            request_id="request-c",
+            job_type=BuildJobType.BUILD,
+            idempotency_key="purge-key",
+        )
+    )
+    assert recreated.disposition is BuildJobSubmissionDisposition.CREATED

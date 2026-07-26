@@ -6,7 +6,8 @@ import logging
 import secrets
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from dataclasses import replace
+from datetime import datetime, timedelta
 from typing import Never
 
 import psycopg
@@ -14,6 +15,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from rag_modules.contracts.build_jobs import (
+    BuildJobConcurrentUpdateError,
     BuildJobConflictError,
     BuildJobEvent,
     BuildJobEventListQuery,
@@ -21,6 +23,7 @@ from rag_modules.contracts.build_jobs import (
     BuildJobId,
     BuildJobIdempotencyConflictError,
     BuildJobLease,
+    BuildJobLeaseLostError,
     BuildJobListQuery,
     BuildJobNotFoundError,
     BuildJobPage,
@@ -28,6 +31,7 @@ from rag_modules.contracts.build_jobs import (
     BuildJobRepositoryError,
     BuildJobRepositorySettings,
     BuildJobRepositoryUnavailableError,
+    BuildJobRepositoryWarning,
     BuildJobSnapshot,
     BuildJobStatus,
     BuildJobSubmission,
@@ -47,7 +51,12 @@ from rag_modules.runtime.build_jobs.file_repository_codecs import (
     encode_event_cursor,
 )
 from rag_modules.runtime.build_jobs.file_repository_events import (
+    TERMINAL_STATUSES,
+    build_lease,
+    claimed_event,
     hash_idempotency_key,
+    interrupted_event,
+    lease_expires_at,
     new_queued_event,
     validate_idempotency_key,
 )
@@ -147,9 +156,101 @@ INSERT INTO graph_rag_control_plane.build_job_events (
     schema_version, occurred_at, request_id, payload
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 """
+_SELECT_CLAIM_SQL = f"""
+SELECT {_SNAPSHOT_COLUMNS}
+FROM graph_rag_control_plane.build_jobs
+WHERE archived_at IS NULL AND status = 'queued'
+ORDER BY created_at, job_id
+FOR UPDATE SKIP LOCKED
+LIMIT 1
+"""
+_SELECT_JOB_FOR_UPDATE_SQL = f"""
+SELECT {_SNAPSHOT_COLUMNS}
+FROM graph_rag_control_plane.build_jobs
+WHERE job_id = %(job_id)s AND archived_at IS NULL
+FOR UPDATE
+"""
+_UPDATE_SNAPSHOT_SQL = """
+UPDATE graph_rag_control_plane.build_jobs
+SET status = %(status)s,
+    revision = %(revision)s,
+    started_at = %(started_at)s,
+    finished_at = %(finished_at)s,
+    message = %(message)s,
+    error = %(error)s,
+    logs = %(logs)s,
+    result = %(result)s,
+    worker_id = %(worker_id)s,
+    runner_backend = %(runner_backend)s,
+    lease_token = %(lease_token)s,
+    lease_expires_at = %(lease_expires_at)s,
+    updated_at = %(updated_at)s
+WHERE job_id = %(job_id)s
+"""
+_RENEW_LEASE_SQL = """
+UPDATE graph_rag_control_plane.build_jobs
+SET lease_expires_at = %(lease_expires_at)s,
+    updated_at = %(updated_at)s
+WHERE job_id = %(job_id)s
+"""
+_FIND_DISPATCHABLE_SQL = """
+SELECT job_id
+FROM graph_rag_control_plane.build_jobs
+WHERE archived_at IS NULL AND status = 'queued'
+ORDER BY created_at, job_id
+LIMIT %(limit)s
+"""
+_SELECT_EXPIRED_LEASES_SQL = f"""
+SELECT {_SNAPSHOT_COLUMNS}
+FROM graph_rag_control_plane.build_jobs
+WHERE archived_at IS NULL
+  AND status IN ('claimed', 'running', 'cancel_requested')
+  AND lease_expires_at <= %(now)s
+ORDER BY lease_expires_at, job_id
+FOR UPDATE SKIP LOCKED
+LIMIT %(limit)s
+"""
+_ARCHIVE_EXCESS_TERMINAL_SQL = """
+WITH ranked AS (
+    SELECT
+        job_id,
+        ROW_NUMBER() OVER (
+            ORDER BY COALESCE(finished_at, created_at) DESC, job_id DESC
+        ) AS retention_rank
+    FROM graph_rag_control_plane.build_jobs
+    WHERE archived_at IS NULL
+      AND status IN ('succeeded', 'failed', 'cancelled', 'interrupted')
+)
+UPDATE graph_rag_control_plane.build_jobs AS jobs
+SET archived_at = %(archived_at)s,
+    updated_at = %(archived_at)s
+FROM ranked
+WHERE jobs.job_id = ranked.job_id
+  AND jobs.archived_at IS NULL
+  AND ranked.retention_rank > %(retention_limit)s
+"""
+_SELECT_EXPIRED_ARCHIVE_SQL = """
+SELECT job_id
+FROM graph_rag_control_plane.build_jobs
+WHERE archived_at <= %(cutoff)s
+ORDER BY archived_at, job_id
+FOR UPDATE SKIP LOCKED
+LIMIT %(limit)s
+"""
+_DELETE_EXPIRED_EVENTS_SQL = """
+DELETE FROM graph_rag_control_plane.build_job_events
+WHERE job_id = ANY(%(expired_job_ids)s)
+"""
+_DELETE_EXPIRED_JOBS_SQL = """
+DELETE FROM graph_rag_control_plane.build_jobs
+WHERE job_id = ANY(%(expired_job_ids)s)
+"""
 
 _IDEMPOTENCY_CONSTRAINT = "build_jobs_idempotency_uq"
 _ACTIVE_CONSTRAINT = "build_jobs_one_active_uq"
+_BATCH_SIZE = 100
+_SCHEMA_VERSION = "1"
+_LEASE_LOST_MESSAGE = "Build job lease is no longer owned by this worker."
 _Now = Callable[[], datetime]
 
 
@@ -236,7 +337,8 @@ class PostgresBuildJobRepository:
             self._close_after_failed_start(worker_references=None)
             self._raise_unavailable("open", error)
         try:
-            PostgresBuildJobSchemaManager(dsn).verify()
+            self._schema_manager = PostgresBuildJobSchemaManager(dsn)
+            self._schema_manager.verify()
         except BuildJobRepositoryError:
             self._close_after_failed_start(
                 worker_references=_capture_pool_worker_references(self._pool)
@@ -271,6 +373,7 @@ class PostgresBuildJobRepository:
                         ),
                     )
                     connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
+                    self._apply_retention(connection, now=event.occurred_at)
             return BuildJobSubmission(BuildJobSubmissionDisposition.CREATED, snapshot)
         except psycopg.errors.UniqueViolation as error:
             return self._resolve_submit_unique_violation(error, command, key_hash)
@@ -362,12 +465,66 @@ class PostgresBuildJobRepository:
         return BuildJobEventPage(events=selected, next_cursor=next_cursor)
 
     def claim_next(self, worker: WorkerIdentity) -> BuildJobLease | None:
-        del worker
-        raise NotImplementedError("PostgreSQL build job claiming is implemented in Task 6.")
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                with connection.transaction():
+                    row = connection.execute(_SELECT_CLAIM_SQL).fetchone()
+                    if row is None:
+                        return None
+                    snapshot = self._snapshot_from_row(row)
+                    now = self._now()
+                    token = secrets.token_urlsafe(32)
+                    expires_at = lease_expires_at(now, self.settings)
+                    event = claimed_event(
+                        snapshot,
+                        worker=worker,
+                        lease_token=token,
+                        lease_expires_at=expires_at,
+                        occurred_at=now,
+                    )
+                    claimed = reduce_build_job(snapshot, event)
+                    connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
+                    self._update_snapshot(connection, claimed, updated_at=now)
+                    return build_lease(
+                        claimed,
+                        worker=worker,
+                        lease_token=token,
+                        lease_expires_at=expires_at,
+                    )
+        except psycopg.Error as error:
+            self._raise_unavailable("claim", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("claim", error)
 
     def renew_lease(self, lease: BuildJobLease) -> BuildJobLease:
-        del lease
-        raise NotImplementedError("PostgreSQL build job lease renewal is implemented in Task 6.")
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                with connection.transaction():
+                    row = connection.execute(
+                        _SELECT_JOB_FOR_UPDATE_SQL,
+                        {"job_id": str(lease.job_id)},
+                    ).fetchone()
+                    snapshot = self._snapshot_from_row(row) if row is not None else None
+                    now = self._now()
+                    if snapshot is None or not self._lease_is_current(snapshot, lease, now=now):
+                        raise BuildJobLeaseLostError(_LEASE_LOST_MESSAGE)
+                    renewed = replace(
+                        lease,
+                        lease_expires_at=lease_expires_at(now, self.settings),
+                    )
+                    connection.execute(
+                        _RENEW_LEASE_SQL,
+                        {
+                            "job_id": str(lease.job_id),
+                            "lease_expires_at": renewed.lease_expires_at,
+                            "updated_at": now,
+                        },
+                    )
+                    return renewed
+        except psycopg.Error as error:
+            self._raise_unavailable("renew_lease", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("renew_lease", error)
 
     def apply(
         self,
@@ -376,23 +533,116 @@ class PostgresBuildJobRepository:
         expected_revision: int,
         lease: BuildJobLease | None = None,
     ) -> BuildJobSnapshot:
-        del event, expected_revision, lease
-        raise NotImplementedError(
-            "PostgreSQL build job event application is implemented in Task 6."
-        )
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                with connection.transaction():
+                    row = connection.execute(
+                        _SELECT_JOB_FOR_UPDATE_SQL,
+                        {"job_id": str(event.job_id)},
+                    ).fetchone()
+                    if row is None:
+                        raise BuildJobNotFoundError(event.job_id)
+                    snapshot = self._snapshot_from_row(row)
+                    if snapshot.revision != expected_revision:
+                        raise BuildJobConcurrentUpdateError(
+                            f"Expected revision {expected_revision}, found {snapshot.revision}."
+                        )
+                    now = self._now()
+                    if lease is not None and not self._lease_is_current(
+                        snapshot,
+                        lease,
+                        now=now,
+                    ):
+                        raise BuildJobLeaseLostError(_LEASE_LOST_MESSAGE)
+                    updated = reduce_build_job(snapshot, event)
+                    connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
+                    self._update_snapshot(connection, updated, updated_at=event.occurred_at)
+                    if updated.status in TERMINAL_STATUSES:
+                        self._apply_retention(connection, now=now)
+                    return updated
+        except psycopg.Error as error:
+            self._raise_unavailable("apply", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("apply", error)
 
     def find_dispatchable(self, *, limit: int) -> tuple[BuildJobId, ...]:
-        del limit
-        raise NotImplementedError("PostgreSQL dispatch lookup is implemented in Task 6.")
+        bounded_limit = max(0, int(limit))
+        if bounded_limit == 0:
+            return ()
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                with connection.transaction():
+                    rows = connection.execute(
+                        _FIND_DISPATCHABLE_SQL,
+                        {"limit": bounded_limit},
+                    ).fetchall()
+                    return tuple(self._job_id_from_row(row) for row in rows)
+        except psycopg.Error as error:
+            self._raise_unavailable("find_dispatchable", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("find_dispatchable", error)
 
     def recover_expired_leases(self) -> tuple[BuildJobSnapshot, ...]:
-        raise NotImplementedError("PostgreSQL lease recovery is implemented in Task 6.")
+        recovered: list[BuildJobSnapshot] = []
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                while True:
+                    with connection.transaction():
+                        now = self._now()
+                        rows = connection.execute(
+                            _SELECT_EXPIRED_LEASES_SQL,
+                            {"now": now, "limit": _BATCH_SIZE},
+                        ).fetchall()
+                        snapshots = tuple(self._snapshot_from_row(row) for row in rows)
+                        for snapshot in snapshots:
+                            self._validate_recoverable_snapshot(snapshot, now=now)
+                            event = interrupted_event(snapshot, occurred_at=now)
+                            updated = reduce_build_job(snapshot, event)
+                            connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
+                            self._update_snapshot(connection, updated, updated_at=now)
+                            recovered.append(updated)
+                        self._apply_retention(connection, now=now)
+                    if len(snapshots) < _BATCH_SIZE:
+                        return tuple(recovered)
+        except psycopg.Error as error:
+            self._raise_unavailable("recover_expired_leases", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("recover_expired_leases", error)
 
     def apply_retention(self) -> None:
-        raise NotImplementedError("PostgreSQL retention is implemented in Task 6.")
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                with connection.transaction():
+                    self._apply_retention(connection, now=self._now())
+        except psycopg.Error as error:
+            self._raise_unavailable("apply_retention", error)
+        except _PersistedDataError as error:
+            self._raise_unavailable("apply_retention", error)
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
-        raise NotImplementedError("PostgreSQL diagnostics are implemented in Task 6.")
+        try:
+            with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
+                connection.execute("SELECT 1").fetchone()
+            self._schema_manager.verify()
+        except Exception:
+            return BuildJobRepositoryDiagnostics(
+                backend=_BACKEND,
+                ready=False,
+                schema_version=_SCHEMA_VERSION,
+                warnings=(
+                    BuildJobRepositoryWarning(
+                        code="BUILD_JOB_POSTGRES_UNAVAILABLE",
+                        component="repository",
+                        identifier=_BACKEND,
+                        detected_at=self._now().isoformat(),
+                    ),
+                ),
+            )
+        return BuildJobRepositoryDiagnostics(
+            backend=_BACKEND,
+            ready=True,
+            schema_version=_SCHEMA_VERSION,
+        )
 
     def close(self) -> None:
         with self._close_lock:
@@ -479,6 +729,115 @@ class PostgresBuildJobRepository:
     def _bounded_limit(self, requested_limit: int | None) -> int:
         resolved_limit = requested_limit or self.settings.list_default_limit
         return max(1, min(int(resolved_limit), self.settings.list_max_limit))
+
+    @staticmethod
+    def _lease_is_current(
+        snapshot: BuildJobSnapshot,
+        lease: BuildJobLease,
+        *,
+        now: datetime,
+    ) -> bool:
+        if (
+            snapshot.job_id != lease.job_id
+            or snapshot.revision != lease.revision
+            or snapshot.worker != lease.worker
+            or snapshot.status in TERMINAL_STATUSES
+            or snapshot.lease_expires_at is None
+            or snapshot.lease_expires_at != lease.lease_expires_at
+            or snapshot.lease_expires_at <= now
+        ):
+            return False
+        return secrets.compare_digest(snapshot.lease_token, lease.lease_token)
+
+    @staticmethod
+    def _validate_recoverable_snapshot(
+        snapshot: BuildJobSnapshot,
+        *,
+        now: datetime,
+    ) -> None:
+        worker = snapshot.worker
+        if (
+            snapshot.status
+            not in {
+                BuildJobStatus.CLAIMED,
+                BuildJobStatus.RUNNING,
+                BuildJobStatus.CANCEL_REQUESTED,
+            }
+            or worker is None
+            or not worker.worker_id
+            or not worker.runner_backend
+            or not snapshot.lease_token
+            or snapshot.lease_expires_at is None
+            or snapshot.lease_expires_at > now
+        ):
+            raise _PersistedDataError
+
+    @staticmethod
+    def _update_snapshot(
+        connection: psycopg.Connection[tuple[object, ...]],
+        snapshot: BuildJobSnapshot,
+        *,
+        updated_at: datetime,
+    ) -> None:
+        worker = snapshot.worker
+        connection.execute(
+            _UPDATE_SNAPSHOT_SQL,
+            {
+                "job_id": str(snapshot.job_id),
+                "status": snapshot.status.value,
+                "revision": snapshot.revision,
+                "started_at": snapshot.started_at,
+                "finished_at": snapshot.finished_at,
+                "message": snapshot.message,
+                "error": Jsonb(dict(snapshot.error)) if snapshot.error is not None else None,
+                "logs": Jsonb(list(snapshot.logs)),
+                "result": Jsonb(dict(snapshot.result)) if snapshot.result is not None else None,
+                "worker_id": worker.worker_id if worker is not None else None,
+                "runner_backend": worker.runner_backend if worker is not None else None,
+                "lease_token": snapshot.lease_token,
+                "lease_expires_at": snapshot.lease_expires_at,
+                "updated_at": updated_at,
+            },
+        )
+
+    def _apply_retention(
+        self,
+        connection: psycopg.Connection[tuple[object, ...]],
+        *,
+        now: datetime,
+    ) -> None:
+        connection.execute(
+            _ARCHIVE_EXCESS_TERMINAL_SQL,
+            {
+                "archived_at": now,
+                "retention_limit": max(0, int(self.settings.retention_limit)),
+            },
+        )
+        cutoff = now - timedelta(days=int(self.settings.audit_retention_days))
+        while True:
+            rows = connection.execute(
+                _SELECT_EXPIRED_ARCHIVE_SQL,
+                {"cutoff": cutoff, "limit": _BATCH_SIZE},
+            ).fetchall()
+            expired_job_ids = [str(self._job_id_from_row(row)) for row in rows]
+            if not expired_job_ids:
+                return
+            parameters = {"expired_job_ids": expired_job_ids}
+            connection.execute(_DELETE_EXPIRED_EVENTS_SQL, parameters)
+            connection.execute(_DELETE_EXPIRED_JOBS_SQL, parameters)
+            if len(expired_job_ids) < _BATCH_SIZE:
+                return
+
+    @staticmethod
+    def _job_id_from_row(row: Sequence[object]) -> BuildJobId:
+        try:
+            if len(row) != 1:
+                raise _PersistedDataError
+            return BuildJobId(_required_string(row[0]))
+        except _PersistedDataError:
+            raise
+        except (TypeError, ValueError):
+            raise _PersistedDataError from None
 
     @staticmethod
     def _snapshot_from_row(row: Sequence[object]) -> BuildJobSnapshot:

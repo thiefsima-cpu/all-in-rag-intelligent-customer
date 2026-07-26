@@ -308,3 +308,136 @@ def test_migration_enforces_constraints_and_installs_keyset_indexes(
         "build_jobs_status_list_idx",
         "build_job_events_list_idx",
     } <= index_names
+
+
+def _plan_index_names(value: object) -> set[str]:
+    if isinstance(value, dict):
+        names = {name} if isinstance((name := value.get("Index Name")), str) else set()
+        for nested in value.values():
+            names.update(_plan_index_names(nested))
+        return names
+    if isinstance(value, list):
+        names: set[str] = set()
+        for nested in value:
+            names.update(_plan_index_names(nested))
+        return names
+    return set()
+
+
+def test_migration_indexes_are_compatible_with_control_plane_queries(
+    postgres_dsn: str,
+) -> None:
+    PostgresBuildJobSchemaManager(postgres_dsn).migrate()
+    cases: tuple[tuple[str, str, tuple[object, ...]], ...] = (
+        (
+            "build_jobs_idempotency_uq",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE idempotency_key_hash = %s
+            """,
+            ("a" * 64,),
+        ),
+        (
+            "build_jobs_one_active_uq",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL
+              AND status IN ('queued', 'claimed', 'running', 'cancel_requested')
+            """,
+            (),
+        ),
+        (
+            "build_jobs_list_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL
+            ORDER BY created_at DESC, job_id DESC
+            LIMIT 10
+            """,
+            (),
+        ),
+        (
+            "build_jobs_status_list_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL AND status = %s
+            ORDER BY created_at DESC, job_id DESC
+            LIMIT 10
+            """,
+            ("failed",),
+        ),
+        (
+            "build_jobs_claim_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL AND status = 'queued'
+            ORDER BY created_at, job_id
+            LIMIT 1
+            """,
+            (),
+        ),
+        (
+            "build_jobs_lease_expiry_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL
+              AND status IN ('claimed', 'running', 'cancel_requested')
+              AND lease_expires_at <= now()
+            ORDER BY lease_expires_at, job_id
+            LIMIT 100
+            """,
+            (),
+        ),
+        (
+            "build_jobs_terminal_retention_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NULL
+              AND status IN ('succeeded', 'failed', 'cancelled', 'interrupted')
+            ORDER BY finished_at DESC, job_id DESC
+            LIMIT 100
+            """,
+            (),
+        ),
+        (
+            "build_jobs_archive_purge_idx",
+            """
+            SELECT job_id
+            FROM graph_rag_control_plane.build_jobs
+            WHERE archived_at IS NOT NULL AND archived_at <= now()
+            ORDER BY archived_at, job_id
+            LIMIT 100
+            """,
+            (),
+        ),
+        (
+            "build_job_events_list_idx",
+            """
+            SELECT event_id
+            FROM graph_rag_control_plane.build_job_events
+            ORDER BY occurred_at DESC, event_id DESC
+            LIMIT 100
+            """,
+            (),
+        ),
+    )
+
+    with psycopg.connect(postgres_dsn) as connection:
+        connection.execute("SET LOCAL enable_seqscan = off")
+        for expected_index, query, parameters in cases:
+            row = connection.execute(
+                f"EXPLAIN (FORMAT JSON) {query}",
+                parameters,
+            ).fetchone()
+            assert row is not None
+            assert expected_index in _plan_index_names(row[0]), (
+                expected_index,
+                row[0],
+            )
