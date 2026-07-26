@@ -12,6 +12,7 @@ from .errors import (
     BuildJobLeaseLostError,
     BuildJobNotFoundError,
     BuildJobRepositoryError,
+    BuildJobRepositoryUnavailableError,
 )
 from .events import (
     BUILD_JOB_EVENT_SCHEMA_VERSION,
@@ -29,9 +30,12 @@ from .events import (
     JobSucceeded,
     event_from_dict,
     event_to_dict,
+    public_build_job_event,
 )
 from .models import (
     BUILD_JOB_LOG_LIMIT,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobId,
     BuildJobLease,
     BuildJobListQuery,
@@ -60,6 +64,8 @@ __all__ = [
     "BuildJobDispatchError",
     "BuildJobError",
     "BuildJobEvent",
+    "BuildJobEventListQuery",
+    "BuildJobEventPage",
     "BuildJobEventPayload",
     "BuildJobEventType",
     "BuildJobId",
@@ -72,6 +78,7 @@ __all__ = [
     "BuildJobPage",
     "BuildJobRepositoryDiagnostics",
     "BuildJobRepositoryError",
+    "BuildJobRepositoryUnavailableError",
     "BuildJobRepositoryPort",
     "BuildJobRepositorySettings",
     "BuildJobRepositoryWarning",
@@ -95,6 +102,7 @@ __all__ = [
     "build_failed_error",
     "event_from_dict",
     "event_to_dict",
+    "public_build_job_event",
     "public_status",
     "reduce_build_job",
 ]

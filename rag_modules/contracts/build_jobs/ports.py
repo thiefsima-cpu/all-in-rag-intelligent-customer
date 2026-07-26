@@ -6,6 +6,8 @@ from typing import Protocol
 
 from .events import BuildJobEvent
 from .models import (
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobId,
     BuildJobLease,
     BuildJobListQuery,
@@ -28,6 +30,12 @@ class BuildJobRepositoryPort(Protocol):
 
     def list_page(self, query: BuildJobListQuery) -> BuildJobPage: ...
 
+    def list_events(
+        self,
+        job_id: BuildJobId,
+        query: BuildJobEventListQuery,
+    ) -> BuildJobEventPage: ...
+
     def claim_next(self, worker: WorkerIdentity) -> BuildJobLease | None: ...
 
     def renew_lease(self, lease: BuildJobLease) -> BuildJobLease: ...
@@ -47,6 +55,8 @@ class BuildJobRepositoryPort(Protocol):
     def apply_retention(self) -> None: ...
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics: ...
+
+    def close(self) -> None: ...
 
 
 class BuildJobRunnerPort(Protocol):

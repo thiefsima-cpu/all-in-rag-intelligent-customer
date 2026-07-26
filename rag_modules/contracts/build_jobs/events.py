@@ -131,6 +131,77 @@ def event_to_dict(event: BuildJobEvent) -> JsonObject:
     }
 
 
+def public_build_job_event(event: BuildJobEvent) -> JsonObject:
+    """Return the explicit, privacy-safe public projection of an audit event."""
+
+    payload = event.payload
+    if isinstance(payload, JobQueued):
+        public_payload: JsonObject = {
+            "job_type": payload.job_type.value,
+            "retry_of_job_id": str(payload.retry_of_job_id or ""),
+        }
+    elif isinstance(payload, JobClaimed):
+        public_payload = {
+            "worker": {
+                "worker_id": payload.worker.worker_id,
+                "runner_backend": payload.worker.runner_backend,
+            },
+            "lease_expires_at": payload.lease_expires_at.isoformat(),
+        }
+    elif isinstance(payload, JobStarted):
+        public_payload = {
+            "worker": {
+                "worker_id": payload.worker.worker_id,
+                "runner_backend": payload.worker.runner_backend,
+            }
+        }
+    elif isinstance(payload, JobProgressRecorded):
+        public_payload = {"message": "Build progress updated."}
+    elif isinstance(payload, JobCancellationRequested):
+        public_payload = {"message": "Build cancellation requested."}
+    elif isinstance(payload, JobCancelled):
+        public_payload = {
+            "message": "Build cancelled.",
+            "result": _public_terminal_result(payload.result, "Build cancelled."),
+        }
+    elif isinstance(payload, JobSucceeded):
+        public_payload = {
+            "message": "Knowledge base build completed.",
+            "result": _public_terminal_result(
+                payload.result,
+                "Knowledge base build completed.",
+            ),
+        }
+    elif isinstance(payload, JobFailed):
+        public_payload = {
+            "message": "Build failed.",
+            "result": _public_terminal_result(payload.result, "Build failed."),
+        }
+    elif isinstance(payload, JobInterrupted):
+        public_payload = {"message": "Build interrupted by service restart."}
+    else:
+        raise ValueError("unknown build job event payload")
+
+    return coerce_json_object(
+        {
+            "event_id": event.event_id,
+            "job_id": str(event.job_id),
+            "revision": event.revision,
+            "event_type": event.event_type.value,
+            "schema_version": event.schema_version,
+            "occurred_at": event.occurred_at.isoformat(),
+            "request_id": event.request_id,
+            "payload": public_payload,
+        }
+    )
+
+
+def _public_terminal_result(result: JsonObject | None, message: str) -> JsonObject | None:
+    if result is None:
+        return None
+    return {"message": message}
+
+
 def event_from_dict(payload: Mapping[str, object]) -> BuildJobEvent:
     _reject_unknown_keys(
         payload,
@@ -289,4 +360,5 @@ __all__ = [
     "JobSucceeded",
     "event_from_dict",
     "event_to_dict",
+    "public_build_job_event",
 ]

@@ -12,9 +12,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from ...kernel.json_types import JsonObject, coerce_json_object
+
+if TYPE_CHECKING:
+    from .events import BuildJobEvent
 
 BUILD_JOB_LOG_LIMIT = 200
 _BUILD_JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")
@@ -171,6 +174,18 @@ class BuildJobPage:
 
 
 @dataclass(frozen=True, slots=True)
+class BuildJobEventListQuery:
+    limit: int | None = None
+    cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BuildJobEventPage:
+    events: tuple[BuildJobEvent, ...]
+    next_cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class BuildJobLease:
     job_id: BuildJobId
     revision: int
@@ -185,6 +200,7 @@ class BuildJobRepositorySettings:
     list_default_limit: int = 50
     list_max_limit: int = 100
     lease_seconds: float = 30.0
+    audit_retention_days: int = 90
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,12 +221,18 @@ class BuildJobRepositoryWarning:
 
 @dataclass(frozen=True, slots=True)
 class BuildJobRepositoryDiagnostics:
+    backend: str = "unknown"
+    ready: bool = True
+    schema_version: str = ""
     warnings: tuple[BuildJobRepositoryWarning, ...] = field(default_factory=tuple)
 
     def to_public_dict(self) -> JsonObject:
         warnings = [warning.to_public_dict() for warning in self.warnings]
         return coerce_json_object(
             {
+                "backend": self.backend,
+                "ready": self.ready,
+                "schema_version": self.schema_version,
                 "warning_count": len(warnings),
                 "warning_codes": sorted({warning["code"] for warning in warnings}),
                 "warnings": warnings,
@@ -259,6 +281,8 @@ def _safe_progress_log(value: object) -> str:
 __all__ = [
     "BUILD_JOB_LOG_LIMIT",
     "BuildJobId",
+    "BuildJobEventListQuery",
+    "BuildJobEventPage",
     "BuildJobLease",
     "BuildJobListQuery",
     "BuildJobPage",

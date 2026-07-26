@@ -16,6 +16,8 @@ from rag_modules.contracts.build_jobs import (
     BuildJobConflictError,
     BuildJobDispatchError,
     BuildJobEvent,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobEventType,
     BuildJobId,
     BuildJobListQuery,
@@ -125,6 +127,21 @@ class BuildJobApplicationService:
             )
         )
 
+    def list_events(
+        self,
+        job_id: BuildJobId,
+        *,
+        limit: int | None = None,
+        cursor: str = "",
+    ) -> BuildJobEventPage:
+        return self._repository.list_events(
+            job_id,
+            BuildJobEventListQuery(
+                limit=limit or self._repository.list_default_limit,
+                cursor=cursor,
+            ),
+        )
+
     def cancel(self, job_id: BuildJobId) -> BuildJobSnapshot:
         last_conflict: BuildJobConcurrentUpdateError | None = None
         for _attempt in range(3):
@@ -162,6 +179,7 @@ class BuildJobApplicationService:
 
     def shutdown(self) -> None:
         self._runner.shutdown()
+        self._repository.close()
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return self._repository.diagnostics()
