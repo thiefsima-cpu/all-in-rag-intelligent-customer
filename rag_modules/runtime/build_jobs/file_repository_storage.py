@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +38,7 @@ if TYPE_CHECKING:
 
 def ensure_directories(repository: FileBuildJobRepository) -> None:
     os.makedirs(repository.jobs_dir, exist_ok=True)
+    os.makedirs(repository.archive_dir, exist_ok=True)
     os.makedirs(repository.idempotency_dir, exist_ok=True)
     os.makedirs(repository.leases_dir, exist_ok=True)
 
@@ -81,6 +84,14 @@ def job_path(repository: FileBuildJobRepository, job_id: BuildJobId) -> str:
     return os.path.join(repository.jobs_dir, f"{job_id}.json")
 
 
+def archived_job_path(repository: FileBuildJobRepository, job_id: BuildJobId) -> str:
+    return os.path.join(repository.archive_dir, f"{job_id}.json")
+
+
+def archived_at_path(repository: FileBuildJobRepository, job_id: BuildJobId) -> str:
+    return os.path.join(repository.archive_dir, f"{job_id}.archived-at")
+
+
 def idempotency_path(repository: FileBuildJobRepository, key_hash: str) -> str:
     return os.path.join(repository.idempotency_dir, f"{key_hash}.json")
 
@@ -93,7 +104,22 @@ def load_envelope(
     repository: FileBuildJobRepository,
     job_id: BuildJobId,
 ) -> BuildJobEnvelope | None:
-    path = job_path(repository, job_id)
+    return _load_envelope(repository, job_id, job_path(repository, job_id), "job")
+
+
+def load_archived_envelope(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> BuildJobEnvelope | None:
+    return _load_envelope(repository, job_id, archived_job_path(repository, job_id), "archive")
+
+
+def _load_envelope(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+    path: str,
+    component: str,
+) -> BuildJobEnvelope | None:
     if not os.path.exists(path):
         return None
     try:
@@ -106,8 +132,19 @@ def load_envelope(
             raise ValueError("build job envelope file name does not match job id")
         return envelope
     except (OSError, TypeError, ValueError):
-        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "job", str(job_id))
+        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", component, str(job_id))
         return None
+
+
+def load_any_envelope(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> BuildJobEnvelope | None:
+    active_path = job_path(repository, job_id)
+    active = load_envelope(repository, job_id)
+    if active is not None or os.path.exists(active_path):
+        return active
+    return load_archived_envelope(repository, job_id)
 
 
 def require_envelope(
@@ -136,6 +173,22 @@ def load_all_envelopes(repository: FileBuildJobRepository) -> list[BuildJobEnvel
     return envelopes
 
 
+def load_all_archived_envelopes(repository: FileBuildJobRepository) -> list[BuildJobEnvelope]:
+    if not os.path.isdir(repository.archive_dir):
+        return []
+    envelopes: list[BuildJobEnvelope] = []
+    for path in Path(repository.archive_dir).glob("*.json"):
+        try:
+            job_id = BuildJobId(path.stem)
+        except ValueError:
+            record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", path.stem)
+            continue
+        envelope = load_archived_envelope(repository, job_id)
+        if envelope is not None:
+            envelopes.append(envelope)
+    return envelopes
+
+
 def load_all_snapshots(repository: FileBuildJobRepository) -> list[BuildJobSnapshot]:
     return [envelope.snapshot for envelope in load_all_envelopes(repository)]
 
@@ -145,6 +198,70 @@ def write_envelope(
     envelope: BuildJobEnvelope,
 ) -> None:
     write_json_atomic(job_path(repository, envelope.snapshot.job_id), envelope_to_dict(envelope))
+
+
+def archive_envelope(repository: FileBuildJobRepository, job_id: BuildJobId) -> None:
+    source_path = job_path(repository, job_id)
+    if not os.path.exists(source_path):
+        return
+    os.replace(source_path, archived_job_path(repository, job_id))
+    _write_text_atomic(archived_at_path(repository, job_id), repository._now().isoformat())
+
+
+def load_archived_at(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+) -> datetime | None:
+    path = archived_at_path(repository, job_id)
+    if not os.path.exists(path):
+        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", str(job_id))
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            archived_at = datetime_from_json(file.read())
+        if archived_at.tzinfo is None:
+            raise ValueError
+        return archived_at
+    except (OSError, TypeError, ValueError):
+        record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", str(job_id))
+        return None
+
+
+def recover_missing_archived_at(repository: FileBuildJobRepository, job_id: BuildJobId) -> None:
+    path = archived_at_path(repository, job_id)
+    if not os.path.exists(path):
+        _write_text_atomic(path, repository._now().isoformat())
+
+
+def remove_archived_envelope(repository: FileBuildJobRepository, job_id: BuildJobId) -> None:
+    for path in (archived_job_path(repository, job_id), archived_at_path(repository, job_id)):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+
+def _write_text_atomic(path: str, value: str) -> None:
+    parent_dir = os.path.dirname(path) or "."
+    os.makedirs(parent_dir, exist_ok=True)
+    temporary_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=parent_dir,
+            prefix=f".{os.path.basename(path)}.",
+            suffix=".tmp",
+            delete=False,
+        ) as file:
+            temporary_path = file.name
+            file.write(value)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            os.remove(temporary_path)
 
 
 def write_lease_record(
@@ -270,16 +387,25 @@ def record_warning(
 
 __all__ = [
     "active_snapshot",
+    "archive_envelope",
+    "archived_at_path",
+    "archived_job_path",
     "ensure_directories",
     "ensure_v3_repository_or_empty",
     "idempotency_path",
     "job_path",
+    "load_all_archived_envelopes",
     "load_all_lease_records",
     "load_all_envelopes",
     "load_all_snapshots",
+    "load_any_envelope",
+    "load_archived_at",
+    "load_archived_envelope",
     "load_envelope",
     "load_lease_record",
     "record_warning",
+    "recover_missing_archived_at",
+    "remove_archived_envelope",
     "remove_lease_record",
     "require_envelope",
     "store_lock",

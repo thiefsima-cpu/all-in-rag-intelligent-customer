@@ -115,7 +115,7 @@ def _succeed(
 
 
 class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
-    def test_retention_prunes_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
+    def test_retention_archives_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             clock = MutableClock()
@@ -151,9 +151,10 @@ class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
-            self.assertEqual(len(idempotency_payloads), 2)
-            self.assertNotIn(
-                str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
+            self.assertEqual(len(idempotency_payloads), 3)
+            self.assertIn(str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads})
+            self.assertTrue(
+                (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists()
             )
 
     def test_repository_requires_explicit_migration_for_legacy_jobs(self) -> None:

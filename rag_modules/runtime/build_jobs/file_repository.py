@@ -9,6 +9,8 @@ from datetime import datetime
 
 from rag_modules.contracts.build_jobs import (
     BuildJobEvent,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobId,
     BuildJobLease,
     BuildJobListQuery,
@@ -48,6 +50,7 @@ class FileBuildJobRepository:
         self.settings = settings or BuildJobRepositorySettings()
         self.repository_dir = self._repository_dir_for_path(self.path)
         self.jobs_dir = os.path.join(self.repository_dir, "jobs")
+        self.archive_dir = os.path.join(self.repository_dir, "archive")
         self.idempotency_dir = os.path.join(self.repository_dir, "idempotency")
         self.leases_dir = os.path.join(self.repository_dir, "leases")
         self.metadata_path = os.path.join(self.repository_dir, "metadata.json")
@@ -77,6 +80,13 @@ class FileBuildJobRepository:
     def list_page(self, query: BuildJobListQuery) -> BuildJobPage:
         return operations.list_page(self, query)
 
+    def list_events(
+        self,
+        job_id: BuildJobId,
+        query: BuildJobEventListQuery,
+    ) -> BuildJobEventPage:
+        return operations.list_events(self, job_id, query)
+
     def claim_next(self, worker: WorkerIdentity) -> BuildJobLease | None:
         return operations.claim_next(self, worker)
 
@@ -103,6 +113,9 @@ class FileBuildJobRepository:
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return operations.diagnostics(self)
+
+    def close(self) -> None:
+        return None
 
 
 __all__ = [

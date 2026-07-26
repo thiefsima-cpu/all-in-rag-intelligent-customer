@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import secrets
 from dataclasses import replace
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from rag_modules.contracts.build_jobs import (
     BuildJobConcurrentUpdateError,
     BuildJobConflictError,
     BuildJobEvent,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobId,
     BuildJobIdempotencyConflictError,
     BuildJobLease,
     BuildJobLeaseLostError,
     BuildJobListQuery,
+    BuildJobNotFoundError,
     BuildJobPage,
     BuildJobRepositoryDiagnostics,
     BuildJobSnapshot,
@@ -41,7 +44,7 @@ from .file_repository_events import (
     new_queued_event,
     validate_idempotency_key,
 )
-from .serialization import BuildJobEnvelope
+from .serialization import BUILD_JOB_ENVELOPE_SCHEMA_VERSION, BuildJobEnvelope
 
 if TYPE_CHECKING:
     from .file_repository import FileBuildJobRepository
@@ -111,6 +114,26 @@ def list_page(
         return BuildJobPage(jobs=tuple(selected), next_cursor=next_cursor)
 
 
+def list_events(
+    repository: FileBuildJobRepository,
+    job_id: BuildJobId,
+    query: BuildJobEventListQuery,
+) -> BuildJobEventPage:
+    with storage.store_lock(repository):
+        envelope = storage.load_any_envelope(repository, job_id)
+        if envelope is None:
+            raise BuildJobNotFoundError(job_id)
+        after_revision = codecs.decode_event_cursor(query.cursor)
+        limit = query.limit or repository.settings.list_default_limit
+        bounded_limit = max(1, min(int(limit), repository.settings.list_max_limit))
+        events = [event for event in envelope.events if event.revision > after_revision]
+        selected = events[:bounded_limit]
+        next_cursor = ""
+        if len(events) > bounded_limit:
+            next_cursor = codecs.encode_event_cursor(selected[-1].revision)
+        return BuildJobEventPage(events=tuple(selected), next_cursor=next_cursor)
+
+
 def claim_next(
     repository: FileBuildJobRepository,
     worker: WorkerIdentity,
@@ -153,6 +176,7 @@ def renew_lease(
             or record is None
             or record.lease_token != lease.lease_token
             or envelope.snapshot.status in TERMINAL_STATUSES
+            or record.lease_expires_at <= repository._now()
         ):
             raise BuildJobLeaseLostError("Build job lease is no longer owned by this worker.")
         renewed = replace(
@@ -260,18 +284,28 @@ def apply_retention(repository: FileBuildJobRepository) -> None:
         reverse=True,
     )
     for snapshot in terminal[max(0, repository.settings.retention_limit) :]:
-        try:
-            os.remove(storage.job_path(repository, snapshot.job_id))
-        except FileNotFoundError:
-            pass
+        storage.archive_envelope(repository, snapshot.job_id)
         storage.remove_lease_record(repository, snapshot.job_id)
-        idempotency.remove_idempotency_indexes_for_job(repository, snapshot.job_id)
+    purge_before = repository._now() - timedelta(days=repository.settings.audit_retention_days)
+    for envelope in storage.load_all_archived_envelopes(repository):
+        storage.recover_missing_archived_at(repository, envelope.snapshot.job_id)
+        archived_at = storage.load_archived_at(repository, envelope.snapshot.job_id)
+        if archived_at is None or archived_at > purge_before:
+            continue
+        storage.remove_archived_envelope(repository, envelope.snapshot.job_id)
+        storage.remove_lease_record(repository, envelope.snapshot.job_id)
+        idempotency.remove_idempotency_indexes_for_job(repository, envelope.snapshot.job_id)
 
 
 def diagnostics(repository: FileBuildJobRepository) -> BuildJobRepositoryDiagnostics:
     with storage.store_lock(repository):
         diagnostics_scans.scan_for_corruption(repository)
-        return BuildJobRepositoryDiagnostics(warnings=tuple(repository._warnings))
+        return BuildJobRepositoryDiagnostics(
+            backend="file",
+            ready=True,
+            schema_version=str(BUILD_JOB_ENVELOPE_SCHEMA_VERSION),
+            warnings=tuple(repository._warnings),
+        )
 
 
 __all__ = [
@@ -281,6 +315,7 @@ __all__ = [
     "diagnostics",
     "find_dispatchable",
     "get",
+    "list_events",
     "list_page",
     "recover_expired_leases",
     "submit",

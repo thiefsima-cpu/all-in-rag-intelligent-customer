@@ -24,19 +24,9 @@ from rag_modules.app.build_jobs import (
     WorkerIdentity,
 )
 from rag_modules.runtime.build_jobs import FileBuildJobRepository
+from tests.build_job_repository_contract import BuildJobRepositoryContractTests, MutableClock
 
 NOW = datetime(2026, 7, 6, tzinfo=timezone.utc)
-
-
-class MutableClock:
-    def __init__(self, current: datetime = NOW) -> None:
-        self.current = current
-
-    def now(self) -> datetime:
-        return self.current
-
-    def advance(self, *, seconds: float) -> None:
-        self.current += timedelta(seconds=seconds)
 
 
 def _repository(root: Path, clock: MutableClock | None = None) -> FileBuildJobRepository:
@@ -109,6 +99,19 @@ def _succeed(
         expected_revision=started.revision,
         lease=replace(lease, revision=started.revision),
     )
+
+
+class FileBuildJobRepositoryContractTests(BuildJobRepositoryContractTests, unittest.TestCase):
+    def make_repository(
+        self,
+        clock: MutableClock,
+        settings: BuildJobRepositorySettings,
+    ) -> FileBuildJobRepository:
+        return FileBuildJobRepository(
+            str(self.root / "build_jobs.json"),
+            now=clock.now,
+            settings=settings,
+        )
 
 
 class BuildJobRepositorySubmissionTests(unittest.TestCase):
@@ -276,7 +279,7 @@ class BuildJobRepositoryListingTests(unittest.TestCase):
 
 
 class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
-    def test_retention_removes_oldest_terminal_jobs_but_never_nonterminal_jobs(self) -> None:
+    def test_retention_archives_oldest_terminal_jobs_but_never_nonterminal_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             clock = MutableClock()
@@ -307,9 +310,54 @@ class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
-            self.assertNotIn(
-                str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
+            self.assertIn(str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads})
+            self.assertTrue(
+                (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists()
             )
+            self.assertEqual(
+                (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.archived-at").read_text(
+                    encoding="utf-8"
+                ),
+                (NOW + timedelta(seconds=1)).isoformat(),
+            )
+
+    def test_diagnostics_identifies_the_file_backend_and_close_is_a_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = _repository(Path(temp_dir))
+
+            repository.close()
+
+            diagnostics = repository.diagnostics()
+            self.assertEqual(diagnostics.backend, "file")
+            self.assertTrue(diagnostics.ready)
+            self.assertEqual(diagnostics.schema_version, "3")
+
+    def test_retention_recovers_missing_archive_timestamp_without_early_purge(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            clock = MutableClock()
+            repository = FileBuildJobRepository(
+                str(root / "build_jobs.json"),
+                now=clock.now,
+                settings=BuildJobRepositorySettings(retention_limit=1),
+            )
+            oldest = _submit(repository, "9" * 32, key="key-9")
+            _succeed(repository, oldest, clock=clock)
+            clock.advance(seconds=1)
+            newest = _submit(repository, "a" * 32, key="key-a")
+            _succeed(repository, newest, clock=clock)
+            timestamp_path = root / "build_jobs.d" / "archive" / f"{oldest.job_id}.archived-at"
+            timestamp_path.unlink()
+            warnings = repository.diagnostics().warnings
+            self.assertEqual(len(warnings), 1)
+            self.assertEqual(warnings[0].code, "BUILD_JOB_STORE_CORRUPT_RECORD")
+
+            clock.advance(seconds=1)
+            repository.apply_retention()
+
+            self.assertEqual(timestamp_path.read_text(encoding="utf-8"), clock.now().isoformat())
+            self.assertFalse((root / "build_jobs.d" / "jobs" / f"{oldest.job_id}.json").exists())
+            self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
 
     def test_malformed_envelope_is_reported_without_leaking_file_contents(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -324,6 +372,19 @@ class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
             self.assertEqual(len(diagnostics.warnings), 1)
             self.assertEqual(diagnostics.warnings[0].code, "BUILD_JOB_STORE_CORRUPT_RECORD")
             self.assertNotIn("secret-token", json.dumps(diagnostics.to_public_dict()))
+
+    def test_malformed_archive_timestamp_is_reported_without_leaking_file_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repository = _repository(root)
+            archive_timestamp = root / "build_jobs.d" / "archive" / f"{'8' * 32}.archived-at"
+            archive_timestamp.write_text("secret-archive-timestamp", encoding="utf-8")
+
+            diagnostics = repository.diagnostics()
+
+            self.assertEqual(len(diagnostics.warnings), 1)
+            self.assertEqual(diagnostics.warnings[0].code, "BUILD_JOB_STORE_CORRUPT_RECORD")
+            self.assertNotIn("secret-archive-timestamp", json.dumps(diagnostics.to_public_dict()))
 
 
 if __name__ == "__main__":
