@@ -71,7 +71,9 @@ def _event(
     )
 
 
-def submit_and_succeed(repository, job_id: str, *, clock: MutableClock, key: str = "") -> BuildJobSnapshot:
+def submit_and_succeed(
+    repository, job_id: str, *, clock: MutableClock, key: str = ""
+) -> BuildJobSnapshot:
     snapshot = submit_build_job(repository, job_id, key=key)
     worker = WorkerIdentity("worker-1", "in_process")
     lease = repository.claim_next(worker)
@@ -95,17 +97,8 @@ def submit_and_succeed(repository, job_id: str, *, clock: MutableClock, key: str
     )
 
 
-class BuildJobRepositoryContractTests:
-    """Mixin for repository adapters; subclasses provide ``make_repository``."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self._temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self._temporary_directory.name)
-
-    def tearDown(self) -> None:
-        self._temporary_directory.cleanup()
-        super().tearDown()
+class BuildJobRepositorySubmissionContractTests:
+    """Submission-only contract usable before an adapter implements worker operations."""
 
     def make_repository(self, clock: MutableClock, settings: BuildJobRepositorySettings):
         raise NotImplementedError
@@ -125,6 +118,22 @@ class BuildJobRepositoryContractTests:
 
         self.assertEqual(replayed.disposition, BuildJobSubmissionDisposition.REPLAYED)
         self.assertEqual(replayed.snapshot.job_id, created.job_id)
+
+
+class BuildJobRepositoryContractTests(BuildJobRepositorySubmissionContractTests):
+    """Complete repository contract; subclasses provide ``make_repository``."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self._temporary_directory.name)
+
+    def tearDown(self) -> None:
+        self._temporary_directory.cleanup()
+        super().tearDown()
+
+    def make_repository(self, clock: MutableClock, settings: BuildJobRepositorySettings):
+        raise NotImplementedError
 
     def test_renew_lease_rejects_an_expired_lease(self) -> None:
         clock = MutableClock()
@@ -150,7 +159,9 @@ class BuildJobRepositoryContractTests:
             clock.advance(seconds=1)
 
         first_page = repository.list_page(BuildJobListQuery(limit=50))
-        second_page = repository.list_page(BuildJobListQuery(limit=50, cursor=first_page.next_cursor))
+        second_page = repository.list_page(
+            BuildJobListQuery(limit=50, cursor=first_page.next_cursor)
+        )
 
         self.assertEqual([snapshot.job_id for snapshot in first_page.jobs], ["3" * 32, "2" * 32])
         self.assertTrue(first_page.next_cursor)

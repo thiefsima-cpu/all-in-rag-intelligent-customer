@@ -1,5 +1,10 @@
-"""PostgreSQL build-job control-plane schema management."""
+"""PostgreSQL build-job control-plane repository and schema management."""
 
+from .repository import PostgresBuildJobRepository
 from .schema import BuildJobPostgresSchemaStatus, PostgresBuildJobSchemaManager
 
-__all__ = ["BuildJobPostgresSchemaStatus", "PostgresBuildJobSchemaManager"]
+__all__ = [
+    "BuildJobPostgresSchemaStatus",
+    "PostgresBuildJobRepository",
+    "PostgresBuildJobSchemaManager",
+]
