@@ -124,6 +124,13 @@ class ConfigurationProfilesTests(unittest.TestCase):
         self.assertTrue(config.api.openapi_public)
         self.assertTrue(config.observability.prometheus_public)
 
+    def test_repository_backend_is_postgresql_in_base_and_file_in_dev(self) -> None:
+        base = load_config(source=EnvConfigSource(environ={}))
+        dev = load_config(source=EnvConfigSource(environ={}), profile="dev")
+
+        self.assertEqual(base.api.build_job_repository_backend, "postgresql")
+        self.assertEqual(dev.api.build_job_repository_backend, "file")
+
     def test_missing_named_profile_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(FileNotFoundError):

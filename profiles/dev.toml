@@ -11,6 +11,7 @@ docs_enabled = true
 openapi_enabled = true
 docs_public = true
 openapi_public = true
+build_job_repository_backend = "file"
 
 [retrieval]
 top_k = 4
