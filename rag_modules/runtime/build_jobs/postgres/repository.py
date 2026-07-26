@@ -674,23 +674,26 @@ def _sqlstate_class(error: object) -> str:
 def _capture_pool_worker_references(
     pool: object,
 ) -> tuple[threading.Thread, ...] | None:
-    workers = getattr(pool, "_workers", _MISSING_POOL_WORKER_STATE)
-    scheduler = getattr(pool, "_sched_runner", _MISSING_POOL_WORKER_STATE)
-    if workers is _MISSING_POOL_WORKER_STATE or scheduler is _MISSING_POOL_WORKER_STATE:
-        return None
-    if not isinstance(workers, list):
-        return None
+    try:
+        workers = getattr(pool, "_workers", _MISSING_POOL_WORKER_STATE)
+        scheduler = getattr(pool, "_sched_runner", _MISSING_POOL_WORKER_STATE)
+        if workers is _MISSING_POOL_WORKER_STATE or scheduler is _MISSING_POOL_WORKER_STATE:
+            return None
+        if not isinstance(workers, list):
+            return None
 
-    references: list[threading.Thread] = []
-    for worker in workers:
-        if not isinstance(worker, threading.Thread):
-            return None
-        references.append(worker)
-    if scheduler is not None:
-        if not isinstance(scheduler, threading.Thread):
-            return None
-        references.append(scheduler)
-    return tuple(references)
+        references: list[threading.Thread] = []
+        for worker in workers:
+            if not isinstance(worker, threading.Thread):
+                return None
+            references.append(worker)
+        if scheduler is not None:
+            if not isinstance(scheduler, threading.Thread):
+                return None
+            references.append(scheduler)
+        return tuple(references)
+    except Exception:
+        return None
 
 
 def _pool_workers_are_stopped(
@@ -700,7 +703,7 @@ def _pool_workers_are_stopped(
         return False
     try:
         return all(not worker.is_alive() for worker in worker_references)
-    except RuntimeError:
+    except Exception:
         return False
 
 

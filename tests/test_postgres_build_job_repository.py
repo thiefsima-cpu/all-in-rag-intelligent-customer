@@ -177,6 +177,33 @@ class _HungConnectionFailurePool(_LoggingFailurePool):
         self._failure_logged.set()
 
 
+class _ExplodingWorkerList(list[threading.Thread]):
+    def __iter__(self) -> Iterator[threading.Thread]:
+        raise OSError("worker iteration is unavailable")
+
+
+class _PrivateWorkerStateFailurePool(_LoggingFailurePool):
+    def __init__(self) -> None:
+        self.worker_state_failure: str | None = None
+        super().__init__(fail_open=False)
+
+    def __getattribute__(self, name: str):
+        failure = object.__getattribute__(self, "worker_state_failure")
+        if name == "_sched_runner" and failure == "scheduler_access":
+            raise OSError("scheduler state is unavailable")
+        return super().__getattribute__(name)
+
+    def fail_worker_state_capture(self, failure: str) -> None:
+        self.worker_state_failure = failure
+        if failure == "worker_iteration":
+            self._workers = _ExplodingWorkerList()
+
+
+class _IsAliveFailureThread(threading.Thread):
+    def is_alive(self) -> bool:
+        raise OSError("worker liveness is unavailable")
+
+
 class _NamedUniqueViolation(psycopg.errors.UniqueViolation):
     def __init__(self, constraint_name: str) -> None:
         super().__init__("raw-unique-violation-secret")
@@ -214,6 +241,32 @@ def _make_repository(
             pool_min_size=1,
             pool_max_size=4,
             pool_timeout_seconds=2.5,
+        )
+
+
+def _make_logging_repository(
+    pool: _LoggingFailurePool,
+) -> PostgresBuildJobRepository:
+    def build_pool(**kwargs):
+        pool.name = str(kwargs.get("name") or "")
+        return pool
+
+    schema_manager = SimpleNamespace(verify=lambda: None)
+    with (
+        patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+        patch.object(
+            repository_module,
+            "PostgresBuildJobSchemaManager",
+            return_value=schema_manager,
+        ),
+    ):
+        return PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            pool_min_size=1,
+            pool_max_size=2,
+            pool_timeout_seconds=1.0,
         )
 
 
@@ -583,6 +636,42 @@ def test_two_repositories_concurrently_close_and_log_with_one_process_filter(
     assert all("dsn-secret" not in repr(record.__dict__) for record in dependency_records)
 
 
+@pytest.mark.parametrize("failure", ["scheduler_access", "worker_iteration"])
+def test_close_still_closes_and_retains_protection_when_worker_capture_fails(
+    failure: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _PrivateWorkerStateFailurePool()
+    repository = _make_logging_repository(pool)
+    pool.fail_worker_state_capture(failure)
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+
+    repository.close()
+
+    assert pool.close_calls == 1
+    pool.emit_connection_failure(f"{failure}-raw-secret")
+    record = caplog.records[-1]
+    assert record.getMessage() == "Build job PostgreSQL pool connection failed."
+    assert f"{failure}-raw-secret" not in repr(record.__dict__)
+
+
+def test_close_retains_protection_when_worker_liveness_check_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _LoggingFailurePool(fail_open=False)
+    pool._workers = [_IsAliveFailureThread()]
+    repository = _make_logging_repository(pool)
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+
+    repository.close()
+
+    assert pool.close_calls == 1
+    pool.emit_connection_failure("is-alive-raw-secret")
+    record = caplog.records[-1]
+    assert record.getMessage() == "Build job PostgreSQL pool connection failed."
+    assert "is-alive-raw-secret" not in repr(record.__dict__)
+
+
 def test_schema_verification_failure_closes_the_open_pool() -> None:
     pool = _FakePool()
     schema_manager = SimpleNamespace(
@@ -612,6 +701,50 @@ def test_schema_verification_failure_closes_the_open_pool() -> None:
         )
 
     assert pool.close_calls == 1
+
+
+def test_schema_verification_failure_is_not_masked_by_worker_capture_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = _PrivateWorkerStateFailurePool()
+    pool.fail_worker_state_capture("scheduler_access")
+    schema_manager = SimpleNamespace(
+        verify=unittest.mock.Mock(
+            side_effect=BuildJobRepositoryError("Build job PostgreSQL schema is not ready.")
+        )
+    )
+
+    def build_pool(**kwargs):
+        pool.name = str(kwargs.get("name") or "")
+        return pool
+
+    caplog.set_level(logging.WARNING, logger="psycopg.pool")
+    with (
+        patch.object(repository_module, "ConnectionPool", side_effect=build_pool),
+        patch.object(
+            repository_module,
+            "PostgresBuildJobSchemaManager",
+            return_value=schema_manager,
+        ),
+        pytest.raises(
+            BuildJobRepositoryError,
+            match=r"^Build job PostgreSQL schema is not ready\.$",
+        ),
+    ):
+        PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            pool_min_size=1,
+            pool_max_size=2,
+            pool_timeout_seconds=1.0,
+        )
+
+    assert pool.close_calls == 1
+    pool.emit_connection_failure("schema-close-raw-secret")
+    record = caplog.records[-1]
+    assert record.getMessage() == "Build job PostgreSQL pool connection failed."
+    assert "schema-close-raw-secret" not in repr(record.__dict__)
 
 
 def test_unexpected_schema_verification_failure_is_sanitized(
