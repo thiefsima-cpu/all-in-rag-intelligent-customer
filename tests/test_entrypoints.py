@@ -115,6 +115,60 @@ class EntrypointTests(unittest.TestCase):
             "scripts.build_job_db:main",
         )
 
+    def test_build_job_database_help_exposes_operator_commands(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.build_job_db", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("status", completed.stdout)
+        self.assertIn("migrate", completed.stdout)
+        self.assertIn("import-file", completed.stdout)
+
+        import_help = subprocess.run(
+            [sys.executable, "-m", "scripts.build_job_db", "import-file", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(import_help.returncode, 0, import_help.stderr)
+        self.assertIn("--source", import_help.stdout)
+        self.assertIn("--dry-run", import_help.stdout)
+        self.assertIn("--json", import_help.stdout)
+
+    def test_build_job_operator_workflow_is_documented(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        release_process = (ROOT / "docs" / "release_process.md").read_text(encoding="utf-8")
+        architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+        composition = (ROOT / "docs" / "app_composition_maintenance_guide.md").read_text(
+            encoding="utf-8"
+        )
+        combined = "\n".join((readme, release_process, architecture, composition)).lower()
+
+        for command in (
+            "graph-rag-build-job-db status",
+            "graph-rag-build-job-db migrate",
+            "graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --dry-run",
+        ):
+            self.assertIn(command, readme)
+            self.assertIn(command, release_process)
+
+        for required_contract in (
+            "runtime startup never migrates or imports",
+            "stop the build api and every build worker before switching the backend",
+            "no automatic fallback",
+            "90-day audit retention",
+            "development-only",
+            "exit code `0`",
+            "exit code `1`",
+        ):
+            self.assertIn(required_contract, combined)
+
     def test_integration_gate_module_help_exposes_command_arguments(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "scripts.integration_gate", "--help"],

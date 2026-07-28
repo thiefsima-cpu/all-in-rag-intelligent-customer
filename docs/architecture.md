@@ -355,8 +355,8 @@ stateDiagram-v2
 - `rag_modules/interfaces/api/services/build.py` 是薄 HTTP-facing 边界。它解析 request IDs，将 typed
   build-job exceptions 映射为 API errors，并将 use cases 委托给 `BuildJobApplicationService`。
 - `rag_modules/app/assembly.py` 暴露 `assemble_build_job_application` 和 `compose_build_job_worker`；
-  `rag_modules/app/composition/build_jobs.py` 是唯一的生产 composition point，负责选择 V3 file repository、
-  migrator、`BuildJobExecutor`、in-process runner 或 external-worker queue/worker runner。
+  `rag_modules/app/composition/build_jobs.py` 是唯一的生产 composition point，负责选择 PostgreSQL 或 V3 file
+  repository、`BuildJobExecutor`、in-process runner 或 external-worker queue/worker runner。
 - `rag_modules/contracts/build_jobs/` 负责稳定的 build-job domain models、versioned events、reducer、
   repository/runner ports、安全 public projection 和 runtime-hook executor contract。
 - `rag_modules/app/build_jobs/service.py` 负责应用 use cases：submit/replay、list/read、cancel、retry、
@@ -371,3 +371,24 @@ stateDiagram-v2
   schema sync、manifest transitions 和 build statistics。
 - 旧的 `rag_modules/interfaces/api/build_job_store.py` 和 `rag_modules/interfaces/api/build_jobs/` facades 已退役。
   不要把它们作为 import aliases 重新引入；请根据职责选择 contract、app 或 runtime build-job package。
+
+### Build-job persistence and schema lifecycle
+
+`profiles/base.toml` selects the built-in PostgreSQL repository for production. The Build API and
+worker build separate repository instances backed by the same database and transactionally store
+the current projection plus append-only events. `profiles/dev.toml` explicitly selects the
+development-only V3 file adapter, which scans active/archive directories. An explicitly injected
+`repository_factory` remains authoritative for tests and integrations.
+
+PostgreSQL selection validates the secret DSN, connectivity, and packaged migration checksums at
+composition time. Any failure aborts startup with no automatic fallback. Runtime startup never
+migrates or imports. `PostgresBuildJobSchemaManager` owns read-only status checks and advisory-lock
+migrations; `V3BuildJobImporter` owns explicit validated dry-run/execute import. Operators invoke
+both through `graph-rag-build-job-db`, never through the API/worker lifecycle.
+
+Normal job lists exclude archived projections. Once `API_BUILD_JOB_RETENTION_LIMIT` is exceeded,
+older terminal jobs are marked archived while their events and idempotency ownership remain.
+`API_BUILD_JOB_AUDIT_RETENTION_DAYS` supplies 90-day audit retention by default; only after that
+cutoff does a retention pass purge events and projections. Both PostgreSQL and file adapters expose
+the same port-level behavior, although the file adapter is intended only for bounded development
+data.

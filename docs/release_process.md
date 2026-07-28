@@ -84,6 +84,102 @@ manifest or ZIP after such a change. The release-evidence capture receipt and
 the final version-named manifest use evidence schema v2, so a pre-v2 live
 report or evidence bundle cannot establish release eligibility.
 
+## PostgreSQL Build-job Control Plane
+
+The production baseline uses PostgreSQL 16+ for the Build API and external workers. The file
+backend is development-only and scans V3 directories; it remains the explicit default in
+`profiles/dev.toml` and the Compose `api` profile. When PostgreSQL is selected, missing DSN,
+connectivity, pool, or schema compatibility fails closed with no automatic fallback. Runtime
+startup never migrates or imports, so a rollout must use the one-shot CLI before starting the new
+API or workers.
+
+### Configuration
+
+Store `BUILD_JOB_POSTGRES_DSN` in the deployment secret manager and do not print it in logs,
+scripts, tickets, or release evidence. Configure:
+
+- `API_BUILD_JOB_REPOSITORY_BACKEND=postgresql`;
+- `BUILD_JOB_POSTGRES_DSN` for the dedicated PostgreSQL database;
+- `API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE` (default `1`),
+  `API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE` (default `10`), and
+  `API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS` (default `5`);
+- `API_BUILD_JOB_RETENTION_LIMIT` (default `100`) for operationally visible terminal jobs; and
+- `API_BUILD_JOB_AUDIT_RETENTION_DAYS` (default `90`) for 90-day audit retention before physical
+  purge.
+
+Operational retention archives excess terminal jobs while preserving their events and
+idempotency ownership. A later retention pass physically purges archived events and jobs only
+after audit expiry. Size backups for the complete audit window, not only the visible job limit.
+
+### One-shot commands and output contracts
+
+Run these commands from the candidate application image/environment so packaged migrations match
+the code being deployed:
+
+```powershell
+graph-rag-build-job-db status --json
+graph-rag-build-job-db migrate --json
+graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --dry-run --json
+graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --json
+```
+
+`status` is read-only. `status` and `migrate` JSON reports
+`current_version`, `required_version`, `pending_versions`, and `ready`; ready/success returns exit
+code `0`, while not-ready or failure returns exit code `1`. `import-file` JSON reports
+`scanned_jobs`, `scanned_events`, `imported_jobs`, `skipped_jobs`, `conflicts`, and `dry_run`;
+success returns exit code `0`, and corruption, destination conflict, or database failure returns
+exit code `1`. Errors are intentionally stable and omit DSNs, SQL, source payloads, and raw
+exceptions. Always save the JSON report as release evidence, but never capture the process
+environment.
+
+For local integration, `docker compose --profile postgres up -d build-job-postgres` starts only the
+optional persistent database. Invoke the same explicit one-shot command from the application
+image, for example:
+
+```powershell
+docker compose run --rm --no-deps build-api graph-rag-build-job-db status --json
+docker compose run --rm --no-deps build-api graph-rag-build-job-db migrate --json
+```
+
+Do not add migration/import commands to API or worker startup, a container entrypoint, or a
+restart policy.
+
+### Initial file-to-PostgreSQL cutover
+
+1. Provision PostgreSQL 16+ with durable storage, monitoring, backups, and a least-privilege
+   runtime identity. Verify restore procedures before cutover.
+2. Deploy the candidate application image to an operator environment with the secret DSN. Run
+   `graph-rag-build-job-db status`; on a new database it may return exit code `1` as not ready.
+3. Run `graph-rag-build-job-db migrate`, then rerun `status` and require `ready=true`.
+4. Back up PostgreSQL and the complete source V3 directory (`build_jobs.json` plus its sibling
+   `build_jobs.d`). Retain the earlier `build_jobs.v2.backup` when present.
+5. Run
+   `graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --dry-run` and
+   resolve every validation or destination conflict. A dry-run never writes.
+6. Stop the Build API and every build worker before switching the backend. This freezes file
+   history; run the dry-run again, then execute the same command without `--dry-run`.
+7. Set the backend, DSN, pool, operational-retention, and audit-retention variables on both Build
+   API and every worker. Never configure one process to use files while another uses PostgreSQL.
+8. Start workers and the Build API. Require readiness, PostgreSQL diagnostics with `ready=true`,
+   and bounded repository/claim/error/archive/purge metrics before accepting traffic.
+9. Retain the source V3 directory, import reports, and pre-cutover database backup for the full
+   rollback window. Do not delete file history merely because cutover succeeded.
+
+### Upgrade, backup, and rollback order
+
+For every application release containing a packaged migration: drain submissions; stop the Build
+API and every worker; take and verify a database backup; deploy the new one-shot CLI; run `status`,
+then `migrate`, then `status` again; start workers/API; and verify diagnostics and metrics. Never
+run old application processes against a newly upgraded schema unless that version combination was
+explicitly certified.
+
+If schema migration fails, leave API/workers stopped, preserve the failure JSON, restore the
+pre-upgrade database backup when the migration transaction did not leave a certified state, and
+redeploy the prior application version. For backend rollback, stop the Build API and every build
+worker before switching the backend to `file`, restore the retained V3 directory, reconcile or
+explicitly abandon jobs accepted only in PostgreSQL, and then start the prior processes. A backend
+switch never copies data automatically, and startup has no automatic fallback.
+
 ## Coverage Policy
 
 The full suite writes `coverage.json` and then runs

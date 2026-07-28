@@ -118,6 +118,114 @@ class DockerApiBuildContextTests(unittest.TestCase):
         self.assertEqual("standalone", environment["MILVUS_HOST"])
         self.assertEqual("/app/storage/indexes", environment["INDEX_CACHE_DIR"])
 
+    def test_postgres_profile_exposes_persistent_build_job_database(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        postgres = compose["services"]["build-job-postgres"]
+
+        self.assertEqual("postgres:16.14-alpine", postgres["image"])
+        self.assertEqual(["postgres"], postgres["profiles"])
+        self.assertEqual("graph_rag", postgres["environment"]["POSTGRES_DB"])
+        self.assertEqual("graph_rag", postgres["environment"]["POSTGRES_USER"])
+        self.assertEqual(
+            "${BUILD_JOB_POSTGRES_PASSWORD:-graph-rag-local}",
+            postgres["environment"]["POSTGRES_PASSWORD"],
+        )
+        self.assertEqual(
+            ["CMD-SHELL", "pg_isready -U graph_rag -d graph_rag"],
+            postgres["healthcheck"]["test"],
+        )
+        self.assertEqual(20, postgres["healthcheck"]["retries"])
+        self.assertIn(
+            "${DOCKER_VOLUME_DIRECTORY:-.}/volumes/build-job-postgres:/var/lib/postgresql/data",
+            postgres["volumes"],
+        )
+        self.assertEqual(["5432:5432"], postgres["ports"])
+
+    def test_build_api_and_worker_forward_explicit_postgres_configuration(self) -> None:
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+
+        for service_name in ("build-api", "build-worker"):
+            with self.subTest(service_name=service_name):
+                service = compose["services"][service_name]
+                environment = service["environment"]
+                self.assertEqual(
+                    "${API_BUILD_JOB_REPOSITORY_BACKEND:-file}",
+                    environment["API_BUILD_JOB_REPOSITORY_BACKEND"],
+                )
+                self.assertEqual(
+                    "${BUILD_JOB_POSTGRES_DSN:-postgresql://graph_rag:graph-rag-local@build-job-postgres:5432/graph_rag}",
+                    environment["BUILD_JOB_POSTGRES_DSN"],
+                )
+                self.assertEqual(
+                    "${API_BUILD_JOB_RETENTION_LIMIT:-100}",
+                    environment["API_BUILD_JOB_RETENTION_LIMIT"],
+                )
+                self.assertEqual(
+                    "${API_BUILD_JOB_AUDIT_RETENTION_DAYS:-90}",
+                    environment["API_BUILD_JOB_AUDIT_RETENTION_DAYS"],
+                )
+                self.assertEqual(
+                    "${API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE:-1}",
+                    environment["API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE"],
+                )
+                self.assertEqual(
+                    "${API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE:-10}",
+                    environment["API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE"],
+                )
+                self.assertEqual(
+                    "${API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS:-5}",
+                    environment["API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS"],
+                )
+                self.assertNotIn("build-job-postgres", service.get("depends_on", {}))
+
+    def test_postgres_build_job_environment_is_documented_with_secret_placeholders(self) -> None:
+        env = dotenv_values(ROOT / ".env.example")
+
+        self.assertEqual("file", env["API_BUILD_JOB_REPOSITORY_BACKEND"])
+        self.assertEqual("90", env["API_BUILD_JOB_AUDIT_RETENTION_DAYS"])
+        self.assertEqual("1", env["API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE"])
+        self.assertEqual("10", env["API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE"])
+        self.assertEqual("5", env["API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS"])
+        self.assertEqual("replace_with_a_strong_password", env["BUILD_JOB_POSTGRES_PASSWORD"])
+        self.assertIn("replace_with_a_strong_password", env["BUILD_JOB_POSTGRES_DSN"])
+        self.assertNotIn("graph-rag-local", env["BUILD_JOB_POSTGRES_DSN"])
+
+    def test_ci_runs_guarded_postgres_contract_after_explicit_migration(self) -> None:
+        workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text("utf-8"))
+        quality_gate = workflow["jobs"]["quality-gates"]
+        postgres = quality_gate["services"]["build-job-postgres"]
+
+        self.assertEqual("postgres:16.14-alpine", postgres["image"])
+        self.assertIn("pg_isready", postgres["options"])
+
+        steps = quality_gate["steps"]
+        migrate_index = next(
+            index for index, step in enumerate(steps) if step["name"] == "Migrate build-job schema"
+        )
+        test_index = next(
+            index
+            for index, step in enumerate(steps)
+            if step["name"] == "PostgreSQL build-job contracts"
+        )
+        self.assertLess(migrate_index, test_index)
+        self.assertEqual(
+            "postgresql://graph_rag:graph_rag_test@localhost:5432/graph_rag_test",
+            steps[migrate_index]["env"]["BUILD_JOB_POSTGRES_DSN"],
+        )
+        self.assertEqual("graph-rag-build-job-db migrate --json", steps[migrate_index]["run"])
+        guarded_step = steps[test_index]
+        self.assertEqual("1", guarded_step["env"]["BUILD_JOB_TEST_ALLOW_RESET"])
+        self.assertEqual(
+            "postgresql://graph_rag:graph_rag_test@localhost:5432/graph_rag_test",
+            guarded_step["env"]["BUILD_JOB_TEST_POSTGRES_DSN"],
+        )
+        for test_module in (
+            "tests/test_postgres_build_job_schema.py",
+            "tests/test_postgres_build_job_repository.py",
+            "tests/test_build_job_file_import.py",
+        ):
+            self.assertIn(test_module, guarded_step["run"])
+
     def test_api_profile_bootstraps_artifacts_before_serving(self) -> None:
         compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
         services = compose["services"]
