@@ -287,6 +287,7 @@ class ApiPublicSurfaceTests(unittest.TestCase):
                 "/runtime/build/initialize": client.post("/runtime/build/initialize"),
                 "/jobs": client.get("/jobs"),
                 f"/jobs/{'0' * 32}": client.get(f"/jobs/{'0' * 32}"),
+                f"/jobs/{'0' * 32}/events": client.get(f"/jobs/{'0' * 32}/events"),
                 f"/jobs/{'0' * 32}/cancel": client.post(f"/jobs/{'0' * 32}/cancel"),
                 f"/jobs/{'0' * 32}/retry": client.post(f"/jobs/{'0' * 32}/retry"),
                 "/jobs/build": client.post("/jobs/build"),
@@ -304,6 +305,8 @@ class ApiPublicSurfaceTests(unittest.TestCase):
                 templated_path = "/jobs/{job_id}/cancel"
             elif path.endswith("/retry"):
                 templated_path = "/jobs/{job_id}/retry"
+            elif path.endswith("/events"):
+                templated_path = "/jobs/{job_id}/events"
             elif path.startswith("/jobs/"):
                 templated_path = "/jobs/{job_id}"
             else:
@@ -312,6 +315,7 @@ class ApiPublicSurfaceTests(unittest.TestCase):
 
         self.assertIn("/v1/health", schema["paths"])
         self.assertIn("/v1/jobs", schema["paths"])
+        self.assertIn("/v1/jobs/{job_id}/events", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/cancel", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/retry", schema["paths"])
         self.assertIn("/v1/jobs/build", schema["paths"])

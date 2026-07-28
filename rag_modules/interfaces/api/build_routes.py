@@ -6,6 +6,7 @@ from fastapi import FastAPI, Header, Path, Query
 
 from .build_models import (
     ArtifactRegistryResponseModel,
+    BuildJobAuditEventListResponseModel,
     BuildJobListResponseModel,
     BuildJobResponseModel,
 )
@@ -13,6 +14,7 @@ from .operational_routes import register_build_operational_routes
 from .request_context import current_request_id
 from .response_builder import (
     build_artifact_registry_response,
+    build_build_job_event_list_response,
     build_build_job_list_response,
     build_build_job_response,
 )
@@ -54,6 +56,25 @@ def _register_build_read_routes(
         job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
     ) -> BuildJobResponseModel:
         return build_build_job_response(api_service.get_build_job(job_id))
+
+    @app.get(
+        f"{API_PREFIX}/jobs/{{job_id}}/events",
+        response_model=BuildJobAuditEventListResponseModel,
+        summary="List build job audit events",
+        description="Returns the privacy-safe audit history for a build job.",
+        responses={
+            400: {"description": "Build job event cursor is invalid."},
+            404: {"description": "Build job was not found."},
+            503: {"description": "Build job store is unavailable."},
+        },
+    )
+    def list_build_job_events(
+        job_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
+        limit: int | None = Query(default=None, ge=1),
+        cursor: str = Query(default=""),
+    ) -> BuildJobAuditEventListResponseModel:
+        page = api_service.list_build_job_events(job_id, limit=limit, cursor=cursor)
+        return build_build_job_event_list_response(page.events, next_cursor=page.next_cursor)
 
 
 def _register_build_control_routes(

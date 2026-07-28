@@ -9,7 +9,9 @@ from ....app.application_protocol import GraphRAGApplication
 from ....app.build_jobs import (
     BuildJobApplicationService,
     BuildJobId,
+    BuildJobRepositoryUnavailableError,
     BuildJobSnapshot,
+    public_build_job_event,
 )
 from ....app.build_jobs import (
     BuildJobConflictError as AppBuildJobConflictError,
@@ -25,12 +27,23 @@ from ....runtime.artifacts.registry import ArtifactRegistry, ArtifactRegistrySna
 from ..error_models import ErrorCode
 from ..request_context import normalize_or_generate_request_id
 from .base import _BaseGraphRAGApiService
-from .errors import BuildJobConflictError, BuildJobNotFoundError, InvalidApiRequestError
+from .errors import (
+    BuildJobBackendUnavailableError,
+    BuildJobConflictError,
+    BuildJobNotFoundError,
+    InvalidApiRequestError,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class BuildJobListPage:
     jobs: list[JsonObject]
+    next_cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BuildJobAuditEventPage:
+    events: list[JsonObject]
     next_cursor: str = ""
 
 
@@ -130,6 +143,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             ) from None
         except AppBuildJobConflictError as exc:
             raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
         return _public_job(snapshot)
 
     def list_build_jobs(self, *, limit: int | None = None, cursor: str = "") -> BuildJobListPage:
@@ -140,6 +155,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
                 "Invalid build job cursor.",
                 details={"field": "cursor", "reason": "invalid_cursor"},
             ) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
         return BuildJobListPage(
             jobs=[_public_job(snapshot) for snapshot in page.jobs],
             next_cursor=page.next_cursor,
@@ -150,6 +167,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             return _public_job(self._build_jobs.get(BuildJobId(str(job_id))))
         except AppBuildJobNotFoundError:
             raise BuildJobNotFoundError(str(job_id)) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
 
     def cancel_build_job(self, job_id: str) -> JsonObject:
         try:
@@ -158,6 +177,8 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             raise BuildJobNotFoundError(str(job_id)) from None
         except AppBuildJobConflictError as exc:
             raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
 
     def retry_build_job(self, job_id: str, *, request_id: str = "") -> JsonObject:
         try:
@@ -172,6 +193,35 @@ class GraphRAGBuildApiService(_BaseGraphRAGApiService):
             raise BuildJobNotFoundError(str(job_id)) from None
         except AppBuildJobConflictError as exc:
             raise BuildJobConflictError(str(exc), job=exc.snapshot.to_public_dict()) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
+
+    def list_build_job_events(
+        self,
+        job_id: str,
+        *,
+        limit: int | None = None,
+        cursor: str = "",
+    ) -> BuildJobAuditEventPage:
+        try:
+            page = self._build_jobs.list_events(
+                BuildJobId(str(job_id)),
+                limit=limit,
+                cursor=cursor,
+            )
+        except AppBuildJobNotFoundError:
+            raise BuildJobNotFoundError(str(job_id)) from None
+        except ValueError:
+            raise InvalidApiRequestError(
+                "Invalid build job cursor.",
+                details={"field": "cursor", "reason": "invalid_cursor"},
+            ) from None
+        except BuildJobRepositoryUnavailableError:
+            raise BuildJobBackendUnavailableError() from None
+        return BuildJobAuditEventPage(
+            events=[public_build_job_event(event) for event in page.events],
+            next_cursor=page.next_cursor,
+        )
 
     def artifact_registry_snapshot(self) -> ArtifactRegistrySnapshot:
         return self._artifact_registry.snapshot()
@@ -204,4 +254,4 @@ def _public_job(snapshot: BuildJobSnapshot) -> JsonObject:
     return snapshot.to_public_dict()
 
 
-__all__ = ["BuildJobListPage", "GraphRAGBuildApiService"]
+__all__ = ["BuildJobAuditEventPage", "BuildJobListPage", "GraphRAGBuildApiService"]

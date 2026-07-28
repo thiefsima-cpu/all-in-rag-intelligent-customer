@@ -2,9 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import datetime, timezone
 
 import tests.api_app_helpers as h
-from rag_modules.contracts.build_jobs import BuildJobRepositoryDiagnostics
+from rag_modules.contracts.build_jobs import (
+    BuildJobEvent,
+    BuildJobEventPage,
+    BuildJobEventType,
+    BuildJobId,
+    BuildJobNotFoundError,
+    BuildJobRepositoryDiagnostics,
+    BuildJobRepositoryError,
+    BuildJobRepositoryUnavailableError,
+    BuildJobType,
+    JobClaimed,
+    JobQueued,
+    WorkerIdentity,
+)
 from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner
 
 json = h.json
@@ -54,6 +68,45 @@ class _LifespanBuildJobs:
         return BuildJobRepositoryDiagnostics(backend="file", schema_version="3")
 
 
+class _AuditBuildJobs(_LifespanBuildJobs):
+    def __init__(
+        self,
+        events: tuple[BuildJobEvent, ...] = (),
+        *,
+        next_cursor: str = "",
+        exception: Exception | None = None,
+    ) -> None:
+        super().__init__()
+        self.events = events
+        self.next_cursor = next_cursor
+        self.exception = exception
+        self.queries: list[object] = []
+
+    def list_events(self, job_id, *, limit=None, cursor="") -> BuildJobEventPage:
+        self.queries.append((job_id, limit, cursor))
+        if self.exception is not None:
+            raise self.exception
+        return BuildJobEventPage(events=self.events, next_cursor=self.next_cursor)
+
+
+def _audit_event(
+    *,
+    revision: int,
+    event_type: BuildJobEventType,
+    payload: object,
+) -> BuildJobEvent:
+    return BuildJobEvent(
+        event_id=f"{revision:032x}",
+        job_id=BuildJobId("a" * 32),
+        revision=revision,
+        event_type=event_type,
+        schema_version=1,
+        occurred_at=datetime(2026, 7, 26, tzinfo=timezone.utc),
+        request_id="audit-request",
+        payload=payload,
+    )
+
+
 class ApiBuildTests(unittest.TestCase):
     """Build API job, runtime, idempotency, and diagnostics behavior."""
 
@@ -68,6 +121,93 @@ class ApiBuildTests(unittest.TestCase):
                 self.assertFalse((Path(temp_dir) / "storage" / "indexes").exists())
             finally:
                 os.chdir(previous_cwd)
+
+    def test_build_job_audit_events_are_paginated_and_strictly_redacted(self) -> None:
+        worker = WorkerIdentity(worker_id="worker-1", runner_backend="external_worker")
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=1,
+                    event_type=BuildJobEventType.QUEUED,
+                    payload=JobQueued(
+                        job_type=BuildJobType.BUILD,
+                        idempotency_key_hash="private-idempotency-hash",
+                    ),
+                ),
+                _audit_event(
+                    revision=2,
+                    event_type=BuildJobEventType.CLAIMED,
+                    payload=JobClaimed(
+                        worker=worker,
+                        lease_token="private-lease-token",
+                        lease_expires_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
+                    ),
+                ),
+            ),
+            next_cursor="opaque-next-cursor",
+        )
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=jobs,
+        )
+
+        with _client(app) as client:
+            response = client.get(
+                f"/v1/jobs/{'a' * 32}/events",
+                params={"limit": 2, "cursor": "opaque-input-cursor"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([event["revision"] for event in payload["events"]], [1, 2])
+        self.assertEqual(payload["next_cursor"], "opaque-next-cursor")
+        self.assertEqual(jobs.queries, [(BuildJobId("a" * 32), 2, "opaque-input-cursor")])
+        serialized = json.dumps(payload)
+        self.assertNotIn("private-idempotency-hash", serialized)
+        self.assertNotIn("private-lease-token", serialized)
+        self.assertNotIn("idempotency_key_hash", serialized)
+        self.assertNotIn("lease_token", serialized)
+
+    def test_build_job_audit_events_map_cursor_missing_and_unavailable_errors(self) -> None:
+        cases = (
+            (ValueError("invalid cursor"), 400, "INVALID_REQUEST"),
+            (BuildJobNotFoundError(BuildJobId("a" * 32)), 404, "NOT_FOUND"),
+            (
+                BuildJobRepositoryUnavailableError("postgres://private-dsn"),
+                503,
+                "SERVICE_UNAVAILABLE",
+            ),
+        )
+        for exception, status, code in cases:
+            with self.subTest(code=code):
+                app = create_build_api_app(
+                    system=_FakeApiSystem(),
+                    build_job_application=_AuditBuildJobs(exception=exception),
+                )
+                with _client(app) as client:
+                    response = client.get(f"/v1/jobs/{'a' * 32}/events", params={"cursor": "bad"})
+
+                payload = _assert_error_response(response, status_code=status, code=code)
+                self.assertNotIn("postgres://private-dsn", json.dumps(payload))
+
+    def test_build_job_audit_events_do_not_treat_generic_repository_errors_as_unavailable(
+        self,
+    ) -> None:
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=_AuditBuildJobs(
+                exception=BuildJobRepositoryError("generic repository error"),
+            ),
+        )
+
+        with TestClient(
+            app,
+            headers={"Authorization": f"Bearer {_API_TOKEN}"},
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        self.assertEqual(response.status_code, 500)
 
     def test_build_lifespan_shuts_down_after_startup_failure_and_once_on_success(self) -> None:
         failing_jobs = _LifespanBuildJobs(RuntimeError("startup failed"))

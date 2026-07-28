@@ -35,6 +35,10 @@ class BuildJobConflictError(RuntimeError):
         self.job = dict(job)
 
 
+class BuildJobBackendUnavailableError(RuntimeError):
+    """Raised when the build-job store cannot safely serve an HTTP request."""
+
+
 class InvalidApiRequestError(ValueError):
     """Raised when an API request has invalid non-body parameters."""
 
@@ -53,6 +57,7 @@ class ApiBackpressureError(RuntimeError):
 __all__ = [
     "ApiBackpressureError",
     "AnswerFailedError",
+    "BuildJobBackendUnavailableError",
     "BuildJobConflictError",
     "BuildJobNotFoundError",
     "InvalidApiRequestError",
