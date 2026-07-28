@@ -75,17 +75,43 @@ class _AuditBuildJobs(_LifespanBuildJobs):
         *,
         next_cursor: str = "",
         exception: Exception | None = None,
+        exceptions: dict[str, Exception] | None = None,
     ) -> None:
         super().__init__()
         self.events = events
         self.next_cursor = next_cursor
         self.exception = exception
+        self.exceptions = dict(exceptions or {})
         self.queries: list[object] = []
+
+    def _raise_for(self, operation: str) -> None:
+        exception = self.exceptions.get(operation, self.exception)
+        if exception is not None:
+            raise exception
+
+    def submit(self, **_kwargs):
+        self._raise_for("submit")
+        raise AssertionError("submit result was unexpectedly required")
+
+    def list_page(self, **_kwargs):
+        self._raise_for("list")
+        raise AssertionError("list result was unexpectedly required")
+
+    def get(self, _job_id):
+        self._raise_for("get")
+        raise AssertionError("get result was unexpectedly required")
+
+    def cancel(self, _job_id):
+        self._raise_for("cancel")
+        raise AssertionError("cancel result was unexpectedly required")
+
+    def retry(self, _job_id, **_kwargs):
+        self._raise_for("retry")
+        raise AssertionError("retry result was unexpectedly required")
 
     def list_events(self, job_id, *, limit=None, cursor="") -> BuildJobEventPage:
         self.queries.append((job_id, limit, cursor))
-        if self.exception is not None:
-            raise self.exception
+        self._raise_for("events")
         return BuildJobEventPage(events=self.events, next_cursor=self.next_cursor)
 
 
@@ -189,6 +215,60 @@ class ApiBuildTests(unittest.TestCase):
 
                 payload = _assert_error_response(response, status_code=status, code=code)
                 self.assertNotIn("postgres://private-dsn", json.dumps(payload))
+
+    def test_archived_build_job_audit_events_remain_available_after_current_job_lookup_hides_it(
+        self,
+    ) -> None:
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=1,
+                    event_type=BuildJobEventType.QUEUED,
+                    payload=JobQueued(job_type=BuildJobType.BUILD),
+                ),
+            ),
+            exceptions={"get": BuildJobNotFoundError(BuildJobId("a" * 32))},
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), build_job_application=jobs)
+
+        with _client(app) as client:
+            current_job = client.get(f"/v1/jobs/{'a' * 32}")
+            audit_events = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        _assert_error_response(current_job, status_code=404, code="NOT_FOUND")
+        self.assertEqual(audit_events.status_code, 200)
+        self.assertEqual(audit_events.json()["events"][0]["revision"], 1)
+
+    def test_build_job_repository_unavailable_is_sanitized_for_every_request_operation(
+        self,
+    ) -> None:
+        secret = "postgres://private-build-job-dsn"
+        job_id = "a" * 32
+        cases = (
+            ("submit", "post", "/v1/jobs/build"),
+            ("list", "get", "/v1/jobs"),
+            ("get", "get", f"/v1/jobs/{job_id}"),
+            ("cancel", "post", f"/v1/jobs/{job_id}/cancel"),
+            ("retry", "post", f"/v1/jobs/{job_id}/retry"),
+            ("events", "get", f"/v1/jobs/{job_id}/events"),
+        )
+        for operation, method, path in cases:
+            with self.subTest(operation=operation):
+                app = create_build_api_app(
+                    system=_FakeApiSystem(),
+                    build_job_application=_AuditBuildJobs(
+                        exceptions={operation: BuildJobRepositoryUnavailableError(secret)},
+                    ),
+                )
+                with _client(app) as client:
+                    response = getattr(client, method)(path)
+
+                payload = _assert_error_response(
+                    response,
+                    status_code=503,
+                    code="SERVICE_UNAVAILABLE",
+                )
+                self.assertNotIn(secret, json.dumps(payload))
 
     def test_build_job_audit_events_do_not_treat_generic_repository_errors_as_unavailable(
         self,

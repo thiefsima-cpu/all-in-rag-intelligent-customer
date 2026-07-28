@@ -10,6 +10,7 @@ from .build_models import (
     BuildJobListResponseModel,
     BuildJobResponseModel,
 )
+from .error_models import ErrorResponseModel
 from .operational_routes import register_build_operational_routes
 from .request_context import current_request_id
 from .response_builder import (
@@ -63,9 +64,18 @@ def _register_build_read_routes(
         summary="List build job audit events",
         description="Returns the privacy-safe audit history for a build job.",
         responses={
-            400: {"description": "Build job event cursor is invalid."},
-            404: {"description": "Build job was not found."},
-            503: {"description": "Build job store is unavailable."},
+            400: {
+                "model": ErrorResponseModel,
+                "description": "Build job event cursor is invalid.",
+            },
+            404: {
+                "model": ErrorResponseModel,
+                "description": "Build job was not found.",
+            },
+            503: {
+                "model": ErrorResponseModel,
+                "description": "Build job store is unavailable.",
+            },
         },
     )
     def list_build_job_events(

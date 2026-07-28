@@ -319,3 +319,25 @@ class ApiPublicSurfaceTests(unittest.TestCase):
         self.assertIn("/v1/jobs/{job_id}/cancel", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/retry", schema["paths"])
         self.assertIn("/v1/jobs/build", schema["paths"])
+
+    def test_build_job_audit_openapi_uses_common_errors_and_requires_credentials(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        operation = schema["paths"]["/v1/jobs/{job_id}/events"]["get"]
+        self.assertNotEqual(operation.get("security"), [])
+        for status in ("400", "404", "503"):
+            response_schema = operation["responses"][status]["content"]["application/json"][
+                "schema"
+            ]
+            self.assertEqual(response_schema["$ref"], "#/components/schemas/ErrorResponseModel")

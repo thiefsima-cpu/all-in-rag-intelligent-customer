@@ -34,3 +34,13 @@ Completed Task 9 from the approved PostgreSQL build-job control-plane plan.
 
 No live PostgreSQL service was required. The API tests use an injected fake build-job application,
 and verify the unavailable-domain error contract without exposing its supplied secret.
+
+## Fix Round 1
+
+- Added explicit `ErrorResponseModel` response metadata for the audit route's 400, 404, and 503
+  OpenAPI entries while retaining the operation-specific descriptions.
+- Added regression coverage that verifies all three response schemas reference the stable error
+  model and that the operation remains protected by the global security requirement.
+- Extended audit tests to cover archived history availability when the current-job lookup is hidden,
+  and parameterized unavailable backend coverage across submit, list, get, cancel, retry, and
+  events. Each response is fixed `503 SERVICE_UNAVAILABLE` and excludes the injected secret.
