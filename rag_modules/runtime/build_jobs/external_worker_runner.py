@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 from rag_modules.contracts.build_jobs import BuildJobId, BuildJobRepositoryPort
 
@@ -53,6 +54,7 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
         heartbeat_trigger: threading.Event | None = None,
         poll_trigger: threading.Event | None = None,
         lease_recorder: BuildLeaseRecorder | None = None,
+        repository_close: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(
             repository=repository,
@@ -68,6 +70,8 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
         self._poll_interval_seconds = max(0.1, float(poll_interval_seconds or 1.0))
         self._poll_trigger = poll_trigger
         self._poll_thread: threading.Thread | None = None
+        self._repository_close = repository_close or (lambda: None)
+        self._repository_closed = False
 
     @property
     def poll_interval_seconds(self) -> float:
@@ -94,10 +98,20 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
     def shutdown(self) -> None:
         if self._poll_trigger is not None:
             self._poll_trigger.set()
-        super().shutdown()
-        poll_thread = self._poll_thread
-        if poll_thread is not None:
-            poll_thread.join(timeout=1.0)
+        try:
+            super().shutdown()
+        finally:
+            poll_thread = self._poll_thread
+            if poll_thread is not None:
+                poll_thread.join(timeout=1.0)
+            self._close_repository_once()
+
+    def _close_repository_once(self) -> None:
+        with self._lock:
+            if self._repository_closed:
+                return
+            self._repository_closed = True
+        self._repository_close()
 
     def _poll_loop(self) -> None:
         while not self._shutdown.is_set():

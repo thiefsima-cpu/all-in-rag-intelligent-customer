@@ -11,6 +11,7 @@ from .file_repository import (
 )
 from .in_process_runner import BuildLeaseRecorder, InProcessBuildJobRunner
 from .migration import BuildJobStoreMigrator
+from .postgres import PostgresBuildJobRepository
 from .serialization import (
     BUILD_JOB_ENVELOPE_SCHEMA_VERSION,
     BuildJobEnvelope,
@@ -29,6 +30,7 @@ __all__ = [
     "ExternalBuildJobWorkerRunner",
     "FileBuildJobRepository",
     "InProcessBuildJobRunner",
+    "PostgresBuildJobRepository",
     "envelope_from_dict",
     "envelope_to_dict",
     "hash_idempotency_key",

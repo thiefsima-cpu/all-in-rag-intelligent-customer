@@ -5,6 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from rag_modules.app.assembly import assemble_build_job_application, compose_build_job_worker
 from rag_modules.app.build_jobs import BuildJobStatus
@@ -103,6 +104,23 @@ def _wait_for_status(application, job_id, expected_status: BuildJobStatus):
 
 
 class BuildJobExternalWorkerTests(unittest.TestCase):
+    def test_worker_shutdown_closes_its_repository_exactly_once(self) -> None:
+        repository = Mock()
+        runner = ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda _snapshot, _progress, _cancellation_check: None,
+            cancelled_result=lambda: {},
+            failed_result=lambda: {},
+            max_workers=1,
+            worker_id="worker-a",
+            repository_close=repository.close,
+        )
+
+        runner.shutdown()
+        runner.shutdown()
+
+        repository.close.assert_called_once_with()
+
     def test_external_worker_backend_enqueues_without_running_in_api_process(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(

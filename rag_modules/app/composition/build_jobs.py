@@ -16,6 +16,7 @@ from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
     BuildJobApplicationService,
     BuildJobExecutor,
+    BuildJobRepositoryError,
     BuildJobRepositoryPort,
     BuildJobRepositorySettings,
     BuildJobRunnerPort,
@@ -92,12 +93,14 @@ class _ExternalBuildJobWorkerRunnerFactory(Protocol):
         heartbeat_seconds: float,
         poll_interval_seconds: float,
         lease_recorder: _BuildLeaseRecorder | None = None,
+        repository_close: Callable[[], None] | None = None,
     ) -> BuildJobWorkerRunnerPort: ...
 
 
 class _RuntimeBuildJobsModule(Protocol):
     BuildJobStoreMigrator: _BuildJobStoreMigratorFactory
     FileBuildJobRepository: _FileBuildJobRepositoryFactory
+    PostgresBuildJobRepository: Callable[..., BuildJobRepositoryPort]
     InProcessBuildJobRunner: _InProcessBuildJobRunnerFactory
     ExternalBuildJobQueueRunner: _ExternalBuildJobQueueRunnerFactory
     ExternalBuildJobWorkerRunner: _ExternalBuildJobWorkerRunnerFactory
@@ -171,6 +174,7 @@ def compose_build_job_worker(
             event=event,
             active_delta=active_delta,
         ),
+        repository_close=repository.close,
     )
 
 
@@ -183,17 +187,45 @@ def _compose_repository(
     if repository_factory is not None:
         return repository_factory(config)
     api_settings = config.api
+    if api_settings.build_job_repository_backend == "file":
+        return _compose_file_repository(runtime_build_jobs=runtime_build_jobs, config=config)
+    if api_settings.build_job_repository_backend == "postgresql":
+        dsn = config.storage.build_job_postgres_dsn
+        if not dsn.strip():
+            raise BuildJobRepositoryError("Build job PostgreSQL DSN is required.")
+        return runtime_build_jobs.PostgresBuildJobRepository(
+            dsn,
+            now=_utc_now,
+            settings=_repository_settings(config),
+            pool_min_size=int(api_settings.build_job_postgres_pool_min_size),
+            pool_max_size=int(api_settings.build_job_postgres_pool_max_size),
+            pool_timeout_seconds=float(api_settings.build_job_postgres_pool_timeout_seconds),
+        )
+    raise ValueError("Unsupported build job repository backend.")
+
+
+def _compose_file_repository(
+    *,
+    runtime_build_jobs: _RuntimeBuildJobsModule,
+    config: GraphRAGConfig,
+) -> BuildJobRepositoryPort:
     store_path = default_build_job_store_path(config)
     runtime_build_jobs.BuildJobStoreMigrator(store_path, now=_utc_now).migrate()
     return runtime_build_jobs.FileBuildJobRepository(
         store_path,
         now=_utc_now,
-        settings=BuildJobRepositorySettings(
-            retention_limit=int(api_settings.build_job_retention_limit),
-            list_default_limit=int(api_settings.build_job_list_default_limit),
-            list_max_limit=int(api_settings.build_job_list_max_limit),
-            lease_seconds=float(api_settings.build_job_lease_seconds),
-        ),
+        settings=_repository_settings(config),
+    )
+
+
+def _repository_settings(config: GraphRAGConfig) -> BuildJobRepositorySettings:
+    api_settings = config.api
+    return BuildJobRepositorySettings(
+        retention_limit=int(api_settings.build_job_retention_limit),
+        list_default_limit=int(api_settings.build_job_list_default_limit),
+        list_max_limit=int(api_settings.build_job_list_max_limit),
+        lease_seconds=float(api_settings.build_job_lease_seconds),
+        audit_retention_days=int(api_settings.build_job_audit_retention_days),
     )
 
 
