@@ -47,6 +47,7 @@ from rag_modules.runtime.build_jobs.postgres import (
     PostgresBuildJobSchemaManager,
 )
 from rag_modules.runtime.build_jobs.postgres import repository as repository_module
+from rag_modules.runtime.build_jobs.postgres.repository import PostgresBuildJobObservers
 from tests.build_job_repository_contract import (
     BuildJobRepositoryContractTests,
     MutableClock,
@@ -60,8 +61,9 @@ _Now = Callable[[], datetime]
 
 
 class _Rows:
-    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+    def __init__(self, rows: list[tuple[object, ...]], *, rowcount: int = 0) -> None:
         self._rows = rows
+        self.rowcount = rowcount
 
     def fetchone(self) -> tuple[object, ...] | None:
         return self._rows[0] if self._rows else None
@@ -1555,6 +1557,105 @@ def test_retention_archives_excess_terminal_rows_then_purges_inclusive_cutoff() 
     assert "DELETE FROM graph_rag_control_plane.build_jobs" in connection.calls[3][0]
     assert connection.calls[2][1] == {"expired_job_ids": ["a" * 32, "b" * 32]}
     assert connection.calls[3][1] == {"expired_job_ids": ["a" * 32, "b" * 32]}
+
+
+def test_repository_observers_classify_operations_errors_and_retention_without_identifiers() -> (
+    None
+):
+    recorded_operations: list[tuple[str, str, str, float]] = []
+    recorded_claims: list[tuple[str, str]] = []
+    recorded_errors: list[tuple[str, str]] = []
+    recorded_retention: list[tuple[str, str, int]] = []
+    observers = PostgresBuildJobObservers(
+        operation=lambda backend, operation, outcome, duration: recorded_operations.append(
+            (backend, operation, outcome, duration)
+        ),
+        claim=lambda backend, outcome: recorded_claims.append((backend, outcome)),
+        error=lambda backend, category: recorded_errors.append((backend, category)),
+        retention=lambda backend, action, count: recorded_retention.append(
+            (backend, action, count)
+        ),
+    )
+    empty_claim = _FakeConnection([_Rows([])])
+    repository = _make_repository(_FakePool([empty_claim]), settings=BuildJobRepositorySettings())
+    repository._observers = observers
+
+    assert repository.claim_next(WorkerIdentity("worker-a", "external_worker")) is None
+
+    retention_connection = _FakeConnection(
+        [_Rows([], rowcount=2), _Rows([("a" * 32,)]), _Rows([]), _Rows([])]
+    )
+    repository._pool = _FakePool([retention_connection])
+    repository.apply_retention()
+
+    unavailable_connection = _FakeConnection([_ConnectionFailure("dsn=postgresql://secret")])
+    repository._pool = _FakePool([unavailable_connection])
+    with pytest.raises(BuildJobRepositoryUnavailableError):
+        repository.get(BuildJobId("a" * 32))
+
+    assert [
+        (backend, operation, outcome) for backend, operation, outcome, _ in recorded_operations
+    ] == [
+        ("postgresql", "claim", "empty"),
+        ("postgresql", "apply_retention", "success"),
+        ("postgresql", "get", "error"),
+    ]
+    assert recorded_claims == [("postgresql", "empty")]
+    assert recorded_errors == [("postgresql", "connection")]
+    assert recorded_retention == [("postgresql", "archived", 2), ("postgresql", "purged", 1)]
+
+
+def test_observer_failure_does_not_change_repository_behavior() -> None:
+    observers = PostgresBuildJobObservers(
+        operation=lambda *_: (_ for _ in ()).throw(RuntimeError("metric failure")),
+        claim=lambda *_: (_ for _ in ()).throw(RuntimeError("metric failure")),
+        error=lambda *_: (_ for _ in ()).throw(RuntimeError("metric failure")),
+        retention=lambda *_: (_ for _ in ()).throw(RuntimeError("metric failure")),
+    )
+    repository = _make_repository(_FakePool([_FakeConnection([_Rows([])])]))
+    repository._observers = observers
+
+    assert repository.claim_next(WorkerIdentity("worker-a", "external_worker")) is None
+
+
+def test_constructor_schema_failure_observes_only_fixed_categories() -> None:
+    pool = _FakePool()
+    operations: list[tuple[str, str, str, float]] = []
+    errors: list[tuple[str, str]] = []
+    observers = PostgresBuildJobObservers(
+        operation=lambda backend, operation, outcome, duration: operations.append(
+            (backend, operation, outcome, duration)
+        ),
+        claim=lambda *_: None,
+        error=lambda backend, category: errors.append((backend, category)),
+        retention=lambda *_: None,
+    )
+    schema_manager = SimpleNamespace(
+        verify=unittest.mock.Mock(
+            side_effect=BuildJobRepositoryError("schema dsn=postgresql://secret SQL=private")
+        )
+    )
+
+    with (
+        patch.object(repository_module, "ConnectionPool", return_value=pool),
+        patch.object(
+            repository_module,
+            "PostgresBuildJobSchemaManager",
+            return_value=schema_manager,
+        ),
+        pytest.raises(BuildJobRepositoryError),
+    ):
+        PostgresBuildJobRepository(
+            "postgresql://user:dsn-secret@unit-test.invalid/jobs",
+            now=lambda: NOW,
+            settings=BuildJobRepositorySettings(),
+            observers=observers,
+        )
+
+    assert [(backend, operation, outcome) for backend, operation, outcome, _ in operations] == [
+        ("postgresql", "initialize", "error")
+    ]
+    assert errors == [("postgresql", "domain")]
 
 
 def test_diagnostics_is_bounded_and_returns_safe_fixed_warning_on_failure() -> None:

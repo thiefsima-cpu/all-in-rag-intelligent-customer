@@ -11,7 +11,8 @@ from typing import Protocol, cast
 from ...configuration.models import GraphRAGConfig
 from ...contracts.build_jobs import JobProgressRecorded, JobSucceeded
 from ...kernel.json_types import JsonObject, coerce_json_object
-from ...telemetry import get_runtime_telemetry
+from ...runtime.build_jobs.postgres.repository import PostgresBuildJobObservers
+from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
 from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
     BuildJobApplicationService,
@@ -115,13 +116,14 @@ def compose_build_job_application(
 ) -> BuildJobApplicationService:
     api_settings = config.api
     runtime_build_jobs = _runtime_build_jobs_module()
+    telemetry = get_runtime_telemetry(config)
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
         repository_factory=repository_factory,
+        telemetry=telemetry,
     )
     try:
-        telemetry = get_runtime_telemetry(config)
         runner = _compose_api_runner(
             runtime_build_jobs=runtime_build_jobs,
             backend=str(api_settings.build_job_runner_backend),
@@ -153,13 +155,14 @@ def compose_build_job_worker(
 
     api_settings = config.api
     runtime_build_jobs = _runtime_build_jobs_module()
+    telemetry = get_runtime_telemetry(config)
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
         repository_factory=repository_factory,
+        telemetry=telemetry,
     )
     try:
-        telemetry = get_runtime_telemetry(config)
         executor = _compose_executor(system=system, coordinator=coordinator)
         return runtime_build_jobs.ExternalBuildJobWorkerRunner(
             repository=repository,
@@ -191,6 +194,7 @@ def _compose_repository(
     runtime_build_jobs: _RuntimeBuildJobsModule,
     config: GraphRAGConfig,
     repository_factory: BuildJobRepositoryFactory | None,
+    telemetry: RuntimeTelemetry | None = None,
 ) -> BuildJobRepositoryPort:
     if repository_factory is not None:
         return repository_factory(config)
@@ -208,6 +212,7 @@ def _compose_repository(
             pool_min_size=int(api_settings.build_job_postgres_pool_min_size),
             pool_max_size=int(api_settings.build_job_postgres_pool_max_size),
             pool_timeout_seconds=float(api_settings.build_job_postgres_pool_timeout_seconds),
+            observers=_postgres_build_job_observers(telemetry),
         )
     raise ValueError("Unsupported build job repository backend.")
 
@@ -223,6 +228,36 @@ def _compose_file_repository(
         store_path,
         now=_utc_now,
         settings=_repository_settings(config),
+    )
+
+
+def _postgres_build_job_observers(
+    telemetry: RuntimeTelemetry | None,
+) -> PostgresBuildJobObservers | None:
+    if telemetry is None:
+        return None
+    return PostgresBuildJobObservers(
+        operation=lambda backend, operation, outcome, duration_seconds: (
+            telemetry.record_build_job_repository_operation(
+                backend=backend,
+                operation=operation,
+                outcome=outcome,
+                duration_seconds=duration_seconds,
+            )
+        ),
+        claim=lambda backend, outcome: telemetry.record_build_job_claim(
+            backend=backend,
+            outcome=outcome,
+        ),
+        error=lambda backend, category: telemetry.record_build_job_repository_error(
+            backend=backend,
+            category=category,
+        ),
+        retention=lambda backend, action, count: telemetry.record_build_job_retention(
+            backend=backend,
+            action=action,
+            count=count,
+        ),
     )
 
 

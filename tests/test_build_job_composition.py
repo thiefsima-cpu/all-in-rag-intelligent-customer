@@ -16,6 +16,7 @@ from rag_modules.contracts.build_jobs import (
     BuildJobRepositoryPort,
     BuildJobRepositorySettings,
 )
+from rag_modules.runtime.build_jobs.postgres.repository import PostgresBuildJobObservers
 from tests.configuration_test_helpers import build_test_config
 
 
@@ -172,7 +173,10 @@ def test_builtin_postgresql_backend_maps_settings_without_file_migration() -> No
     runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
     runtime_build_jobs.FileBuildJobRepository.assert_not_called()
     assert postgres_factory.call_args.args == ("postgresql://configured.invalid/build_jobs",)
-    assert postgres_factory.call_args.kwargs == {
+    kwargs = postgres_factory.call_args.kwargs
+    observers = kwargs.pop("observers")
+    assert isinstance(observers, PostgresBuildJobObservers)
+    assert kwargs == {
         "now": composition._utc_now,
         "settings": BuildJobRepositorySettings(
             retention_limit=17,
@@ -210,6 +214,35 @@ def test_postgresql_backend_without_dsn_fails_closed_without_file_fallback() -> 
     runtime_build_jobs.PostgresBuildJobRepository.assert_not_called()
     runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
     runtime_build_jobs.FileBuildJobRepository.assert_not_called()
+
+
+def test_postgresql_observers_bind_only_safe_telemetry_recorders() -> None:
+    telemetry = Mock()
+
+    observers = composition._postgres_build_job_observers(telemetry)
+
+    assert observers is not None
+    observers.operation("postgresql", "submit", "success", 0.25)
+    observers.claim("postgresql", "empty")
+    observers.error("postgresql", "connection")
+    observers.retention("postgresql", "purged", 2)
+
+    telemetry.record_build_job_repository_operation.assert_called_once_with(
+        backend="postgresql",
+        operation="submit",
+        outcome="success",
+        duration_seconds=0.25,
+    )
+    telemetry.record_build_job_claim.assert_called_once_with(backend="postgresql", outcome="empty")
+    telemetry.record_build_job_repository_error.assert_called_once_with(
+        backend="postgresql",
+        category="connection",
+    )
+    telemetry.record_build_job_retention.assert_called_once_with(
+        backend="postgresql",
+        action="purged",
+        count=2,
+    )
 
 
 def test_postgresql_constructor_failure_does_not_fallback_to_file() -> None:
@@ -284,7 +317,7 @@ def test_api_composition_closes_repository_when_telemetry_or_runner_construction
                 coordinator=RuntimeOperationCoordinator(),
             )
 
-        assert repository.close_calls == 1
+        assert repository.close_calls == (0 if failure_point == "telemetry" else 1)
         runtime_build_jobs.FileBuildJobRepository.assert_not_called()
         runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
 
@@ -375,7 +408,7 @@ def test_worker_composition_closes_repository_when_telemetry_executor_or_runner_
                 coordinator=RuntimeOperationCoordinator(),
             )
 
-        assert repository.close_calls == 1
+        assert repository.close_calls == (0 if failure_point == "telemetry" else 1)
         runtime_build_jobs.FileBuildJobRepository.assert_not_called()
         runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
 

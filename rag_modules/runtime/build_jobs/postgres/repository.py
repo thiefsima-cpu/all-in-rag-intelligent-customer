@@ -6,9 +6,11 @@ import logging
 import secrets
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import Never
+from functools import wraps
+from time import perf_counter
+from typing import Concatenate, Never, ParamSpec, TypeVar
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -252,6 +254,74 @@ _BATCH_SIZE = 100
 _SCHEMA_VERSION = "1"
 _LEASE_LOST_MESSAGE = "Build job lease is no longer owned by this worker."
 _Now = Callable[[], datetime]
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True, slots=True)
+class PostgresBuildJobObservers:
+    """Narrow, best-effort repository instrumentation callbacks."""
+
+    operation: Callable[[str, str, str, float], None]
+    claim: Callable[[str, str], None]
+    error: Callable[[str, str], None]
+    retention: Callable[[str, str, int], None]
+
+
+def _noop_operation(_backend: str, _operation: str, _outcome: str, _duration: float) -> None:
+    return None
+
+
+def _noop_claim(_backend: str, _outcome: str) -> None:
+    return None
+
+
+def _noop_error(_backend: str, _category: str) -> None:
+    return None
+
+
+def _noop_retention(_backend: str, _action: str, _count: int) -> None:
+    return None
+
+
+_NOOP_OBSERVERS = PostgresBuildJobObservers(
+    operation=_noop_operation,
+    claim=_noop_claim,
+    error=_noop_error,
+    retention=_noop_retention,
+)
+
+
+def _observe_repository_operation(
+    operation: str,
+) -> Callable[
+    [Callable[Concatenate["PostgresBuildJobRepository", _P], _T]],
+    Callable[Concatenate["PostgresBuildJobRepository", _P], _T],
+]:
+    def decorate(
+        method: Callable[Concatenate["PostgresBuildJobRepository", _P], _T],
+    ) -> Callable[Concatenate["PostgresBuildJobRepository", _P], _T]:
+        @wraps(method)
+        def observed(
+            self: PostgresBuildJobRepository, /, *args: _P.args, **kwargs: _P.kwargs
+        ) -> _T:
+            started = perf_counter()
+            outcome = "success"
+            try:
+                result = method(self, *args, **kwargs)
+                outcome = self._operation_outcome(operation, result)
+                return result
+            except BaseException as error:
+                outcome = "error"
+                if not isinstance(error, BuildJobRepositoryUnavailableError):
+                    self._record_error(_error_category(error))
+                raise
+            finally:
+                self._record_operation(operation, outcome, perf_counter() - started)
+
+        return observed
+
+    return decorate
 
 
 class _PersistedDataError(RuntimeError):
@@ -315,7 +385,10 @@ class PostgresBuildJobRepository:
         pool_min_size: int = 1,
         pool_max_size: int = 10,
         pool_timeout_seconds: float = 5.0,
+        observers: PostgresBuildJobObservers | None = None,
     ) -> None:
+        initialization_started = perf_counter()
+        self._observers = observers or _NOOP_OBSERVERS
         self._now = now
         self.settings = settings or BuildJobRepositorySettings()
         self._pool_timeout_seconds = float(pool_timeout_seconds)
@@ -335,6 +408,7 @@ class PostgresBuildJobRepository:
             self._pool.open(wait=True, timeout=self._pool_timeout_seconds)
         except psycopg.Error as error:
             self._close_after_failed_start(worker_references=None)
+            self._record_operation("initialize", "error", perf_counter() - initialization_started)
             self._raise_unavailable("open", error)
         try:
             self._schema_manager = PostgresBuildJobSchemaManager(dsn)
@@ -343,17 +417,22 @@ class PostgresBuildJobRepository:
             self._close_after_failed_start(
                 worker_references=_capture_pool_worker_references(self._pool)
             )
+            self._record_error("domain")
+            self._record_operation("initialize", "error", perf_counter() - initialization_started)
             raise
         except Exception as error:
             self._close_after_failed_start(
                 worker_references=_capture_pool_worker_references(self._pool)
             )
+            self._record_operation("initialize", "error", perf_counter() - initialization_started)
             self._raise_unavailable("verify_schema", error)
+        self._record_operation("initialize", "success", perf_counter() - initialization_started)
 
     @property
     def list_default_limit(self) -> int:
         return self.settings.list_default_limit
 
+    @_observe_repository_operation("submit")
     def submit(self, command: SubmitBuildJob) -> BuildJobSubmission:
         key_hash = hash_idempotency_key(validate_idempotency_key(command.idempotency_key))
         try:
@@ -382,6 +461,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("submit", error)
 
+    @_observe_repository_operation("get")
     def get(self, job_id: BuildJobId) -> BuildJobSnapshot | None:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
@@ -396,6 +476,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("get", error)
 
+    @_observe_repository_operation("list")
     def list_page(self, query: BuildJobListQuery) -> BuildJobPage:
         decoded_cursor = decode_cursor(query.cursor)
         cursor_created_at, cursor_job_id = decoded_cursor or (None, None)
@@ -426,6 +507,7 @@ class PostgresBuildJobRepository:
             next_cursor = encode_cursor(last.created_at.isoformat(), str(last.job_id))
         return BuildJobPage(jobs=selected, next_cursor=next_cursor)
 
+    @_observe_repository_operation("list_events")
     def list_events(
         self,
         job_id: BuildJobId,
@@ -464,6 +546,7 @@ class PostgresBuildJobRepository:
             next_cursor = encode_event_cursor(selected[-1].revision)
         return BuildJobEventPage(events=selected, next_cursor=next_cursor)
 
+    @_observe_repository_operation("claim")
     def claim_next(self, worker: WorkerIdentity) -> BuildJobLease | None:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
@@ -496,6 +579,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("claim", error)
 
+    @_observe_repository_operation("renew_lease")
     def renew_lease(self, lease: BuildJobLease) -> BuildJobLease:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
@@ -526,6 +610,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("renew_lease", error)
 
+    @_observe_repository_operation("apply")
     def apply(
         self,
         event: BuildJobEvent,
@@ -565,6 +650,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("apply", error)
 
+    @_observe_repository_operation("find_dispatchable")
     def find_dispatchable(self, *, limit: int) -> tuple[BuildJobId, ...]:
         bounded_limit = max(0, int(limit))
         if bounded_limit == 0:
@@ -582,6 +668,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("find_dispatchable", error)
 
+    @_observe_repository_operation("recover_expired_leases")
     def recover_expired_leases(self) -> tuple[BuildJobSnapshot, ...]:
         recovered: list[BuildJobSnapshot] = []
         try:
@@ -609,6 +696,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("recover_expired_leases", error)
 
+    @_observe_repository_operation("apply_retention")
     def apply_retention(self) -> None:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
@@ -619,6 +707,7 @@ class PostgresBuildJobRepository:
         except _PersistedDataError as error:
             self._raise_unavailable("apply_retention", error)
 
+    @_observe_repository_operation("diagnostics")
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
@@ -644,6 +733,7 @@ class PostgresBuildJobRepository:
             schema_version=_SCHEMA_VERSION,
         )
 
+    @_observe_repository_operation("close")
     def close(self) -> None:
         with self._close_lock:
             if self._closed:
@@ -806,13 +896,14 @@ class PostgresBuildJobRepository:
         *,
         now: datetime,
     ) -> None:
-        connection.execute(
+        archive_result = connection.execute(
             _ARCHIVE_EXCESS_TERMINAL_SQL,
             {
                 "archived_at": now,
                 "retention_limit": max(0, int(self.settings.retention_limit)),
             },
         )
+        self._record_retention("archived", _affected_row_count(archive_result))
         cutoff = now - timedelta(days=int(self.settings.audit_retention_days))
         while True:
             rows = connection.execute(
@@ -825,6 +916,7 @@ class PostgresBuildJobRepository:
             parameters = {"expired_job_ids": expired_job_ids}
             connection.execute(_DELETE_EXPIRED_EVENTS_SQL, parameters)
             connection.execute(_DELETE_EXPIRED_JOBS_SQL, parameters)
+            self._record_retention("purged", len(expired_job_ids))
             if len(expired_job_ids) < _BATCH_SIZE:
                 return
 
@@ -1006,8 +1098,41 @@ class PostgresBuildJobRepository:
         if _pool_workers_are_stopped(worker_references):
             _POOL_LOG_SANITIZER.unregister(self._pool_name)
 
-    @staticmethod
-    def _raise_unavailable(operation: str, error: object) -> Never:
+    def _operation_outcome(self, operation: str, result: object) -> str:
+        if operation == "claim":
+            outcome = "empty" if result is None else "claimed"
+            self._record_claim(outcome)
+            return outcome
+        if operation == "diagnostics":
+            return "ready" if getattr(result, "ready", False) else "not_ready"
+        return "success"
+
+    def _record_operation(self, operation: str, outcome: str, duration: float) -> None:
+        try:
+            self._observers.operation(_BACKEND, operation, outcome, max(0.0, duration))
+        except Exception:
+            return None
+
+    def _record_claim(self, outcome: str) -> None:
+        try:
+            self._observers.claim(_BACKEND, outcome)
+        except Exception:
+            return None
+
+    def _record_error(self, category: str) -> None:
+        try:
+            self._observers.error(_BACKEND, category)
+        except Exception:
+            return None
+
+    def _record_retention(self, action: str, count: int) -> None:
+        try:
+            self._observers.retention(_BACKEND, action, max(0, int(count)))
+        except Exception:
+            return None
+
+    def _raise_unavailable(self, operation: str, error: object) -> Never:
+        self._record_error(_error_category(error))
         _LOGGER.error(
             _DATABASE_FAILURE_MESSAGE,
             extra={
@@ -1028,6 +1153,23 @@ def _required_string(value: object) -> str:
 def _sqlstate_class(error: object) -> str:
     sqlstate = getattr(error, "sqlstate", None)
     return sqlstate[:2] if isinstance(sqlstate, str) and len(sqlstate) >= 2 else "XX"
+
+
+def _error_category(error: object) -> str:
+    if isinstance(error, psycopg.OperationalError):
+        return "connection"
+    if isinstance(error, _PersistedDataError):
+        return "data"
+    if isinstance(error, BuildJobRepositoryError):
+        return "domain"
+    return "unknown"
+
+
+def _affected_row_count(result: object) -> int:
+    try:
+        return max(0, int(getattr(result, "rowcount", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _capture_pool_worker_references(
@@ -1119,4 +1261,4 @@ def _worker_from_values(worker_id: object, runner_backend: object) -> WorkerIden
     return WorkerIdentity(worker_id, runner_backend)
 
 
-__all__ = ["PostgresBuildJobRepository"]
+__all__ = ["PostgresBuildJobObservers", "PostgresBuildJobRepository"]
