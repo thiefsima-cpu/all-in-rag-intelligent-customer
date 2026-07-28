@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 import tomllib
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from dotenv import dotenv_values
@@ -153,7 +156,7 @@ class DockerApiBuildContextTests(unittest.TestCase):
                     environment["API_BUILD_JOB_REPOSITORY_BACKEND"],
                 )
                 self.assertEqual(
-                    "${BUILD_JOB_POSTGRES_DSN:-postgresql://graph_rag:graph-rag-local@build-job-postgres:5432/graph_rag}",
+                    "${BUILD_JOB_POSTGRES_DOCKER_DSN:-postgresql://graph_rag:graph-rag-local@build-job-postgres:5432/graph_rag}",
                     environment["BUILD_JOB_POSTGRES_DSN"],
                 )
                 self.assertEqual(
@@ -189,6 +192,51 @@ class DockerApiBuildContextTests(unittest.TestCase):
         self.assertEqual("replace_with_a_strong_password", env["BUILD_JOB_POSTGRES_PASSWORD"])
         self.assertIn("replace_with_a_strong_password", env["BUILD_JOB_POSTGRES_DSN"])
         self.assertNotIn("graph-rag-local", env["BUILD_JOB_POSTGRES_DSN"])
+        self.assertIn("replace_with_a_strong_password", env["BUILD_JOB_POSTGRES_DOCKER_DSN"])
+        self.assertEqual(
+            "build-job-postgres",
+            urlsplit(env["BUILD_JOB_POSTGRES_DOCKER_DSN"]).hostname,
+        )
+
+    def test_env_example_resolves_container_postgres_dsn_for_build_processes(self) -> None:
+        completed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                str(ROOT / ".env.example"),
+                "--profile",
+                "api",
+                "--profile",
+                "postgres",
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        compose = json.loads(completed.stdout)
+        host_dsn = dotenv_values(ROOT / ".env.example")["BUILD_JOB_POSTGRES_DSN"]
+        self.assertEqual("localhost", urlsplit(host_dsn).hostname)
+
+        services = compose["services"]
+        for service_name in ("build-api", "build-worker"):
+            with self.subTest(service_name=service_name):
+                container_dsn = services[service_name]["environment"]["BUILD_JOB_POSTGRES_DSN"]
+                self.assertEqual("build-job-postgres", urlsplit(container_dsn).hostname)
+
+        release_process = (ROOT / "docs" / "release_process.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "docker compose run --rm --no-deps build-api graph-rag-build-job-db migrate --json",
+            release_process,
+        )
+        one_shot_dsn = services["build-api"]["environment"]["BUILD_JOB_POSTGRES_DSN"]
+        self.assertEqual("build-job-postgres", urlsplit(one_shot_dsn).hostname)
 
     def test_ci_runs_guarded_postgres_contract_after_explicit_migration(self) -> None:
         workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text("utf-8"))

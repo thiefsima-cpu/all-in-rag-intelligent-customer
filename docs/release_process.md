@@ -95,11 +95,15 @@ API or workers.
 
 ### Configuration
 
-Store `BUILD_JOB_POSTGRES_DSN` in the deployment secret manager and do not print it in logs,
-scripts, tickets, or release evidence. Configure:
+Store PostgreSQL DSNs in the deployment secret manager and do not print them in logs, scripts,
+tickets, or release evidence. Configure:
 
 - `API_BUILD_JOB_REPOSITORY_BACKEND=postgresql`;
-- `BUILD_JOB_POSTGRES_DSN` for the dedicated PostgreSQL database;
+- `BUILD_JOB_POSTGRES_DSN` for host-side operator commands (the local published port uses
+  `localhost`);
+- `BUILD_JOB_POSTGRES_DOCKER_DSN` for Compose API, worker, and one-shot containers, using
+  `build-job-postgres` as the hostname; Compose maps it to the process-level
+  `BUILD_JOB_POSTGRES_DSN`;
 - `API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE` (default `1`),
   `API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE` (default `10`), and
   `API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS` (default `5`);
@@ -139,7 +143,12 @@ image, for example:
 ```powershell
 docker compose run --rm --no-deps build-api graph-rag-build-job-db status --json
 docker compose run --rm --no-deps build-api graph-rag-build-job-db migrate --json
+docker compose run --rm --no-deps build-api graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --dry-run --json
+docker compose run --rm --no-deps build-api graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --json
 ```
+
+These one-shot commands intentionally reuse the Build API image and its container-network DSN.
+Never pass the host-side `localhost` DSN into a Compose container.
 
 Do not add migration/import commands to API or worker startup, a container entrypoint, or a
 restart policy.

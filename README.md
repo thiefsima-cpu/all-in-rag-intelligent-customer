@@ -205,7 +205,10 @@ fail-closed: a missing DSN, unreachable database, or incompatible schema stops B
 startup with no automatic fallback to files. Runtime startup never migrates or imports.
 
 Configure production with `API_BUILD_JOB_REPOSITORY_BACKEND=postgresql` and a secret-managed
-`BUILD_JOB_POSTGRES_DSN`. Pool controls are
+`BUILD_JOB_POSTGRES_DSN`. Host-side CLI commands use that DSN (the local template points it to
+`localhost`). Compose reads `BUILD_JOB_POSTGRES_DOCKER_DSN` and maps it to
+`BUILD_JOB_POSTGRES_DSN` inside Build API, worker, and one-shot CLI containers; its host must be
+`build-job-postgres`, not `localhost`. Pool controls are
 `API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE`, `API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE`, and
 `API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS`. `API_BUILD_JOB_RETENTION_LIMIT` controls the number
 of terminal jobs kept operationally visible. Excess terminal jobs are archived, not immediately
@@ -219,10 +222,10 @@ docker compose --profile postgres up -d build-job-postgres
 ```
 
 The service uses a persistent `volumes/build-job-postgres` bind mount and the safe local-only
-password default `graph-rag-local`. Override both `BUILD_JOB_POSTGRES_PASSWORD` and
-`BUILD_JOB_POSTGRES_DSN` outside local development. The `api` profile does not depend on this
-service and remains file-backed unless `API_BUILD_JOB_REPOSITORY_BACKEND=postgresql` is explicitly
-set.
+password default `graph-rag-local`. Override `BUILD_JOB_POSTGRES_PASSWORD`, the host-side
+`BUILD_JOB_POSTGRES_DSN`, and the container-network `BUILD_JOB_POSTGRES_DOCKER_DSN` outside local
+development. The `api` profile does not depend on this service and remains file-backed unless
+`API_BUILD_JOB_REPOSITORY_BACKEND=postgresql` is explicitly set.
 
 Database changes and file imports are explicit operator actions:
 
