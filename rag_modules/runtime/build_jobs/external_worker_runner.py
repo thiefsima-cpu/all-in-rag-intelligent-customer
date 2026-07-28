@@ -99,11 +99,13 @@ class ExternalBuildJobWorkerRunner(InProcessBuildJobRunner):
         if self._poll_trigger is not None:
             self._poll_trigger.set()
         try:
-            super().shutdown()
+            try:
+                super().shutdown()
+            finally:
+                poll_thread = self._poll_thread
+                if poll_thread is not None:
+                    poll_thread.join(timeout=1.0)
         finally:
-            poll_thread = self._poll_thread
-            if poll_thread is not None:
-                poll_thread.join(timeout=1.0)
             self._close_repository_once()
 
     def _close_repository_once(self) -> None:

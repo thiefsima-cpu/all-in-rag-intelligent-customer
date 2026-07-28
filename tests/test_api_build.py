@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import tests.api_app_helpers as h
+from rag_modules.contracts.build_jobs import BuildJobRepositoryDiagnostics
 from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner
 
 json = h.json
@@ -26,6 +27,25 @@ _FailingBuildApiSystem = h._FailingBuildApiSystem
 _FailOnceBuildApiSystem = h._FailOnceBuildApiSystem
 
 
+class _LifespanBuildJobs:
+    def __init__(self, startup_exception: Exception | None = None) -> None:
+        self.startup_exception = startup_exception
+        self.startup_calls = 0
+        self.shutdown_calls = 0
+
+    def startup(self) -> tuple[object, ...]:
+        self.startup_calls += 1
+        if self.startup_exception is not None:
+            raise self.startup_exception
+        return ()
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+    def diagnostics(self) -> BuildJobRepositoryDiagnostics:
+        return BuildJobRepositoryDiagnostics(backend="file", schema_version="3")
+
+
 class ApiBuildTests(unittest.TestCase):
     """Build API job, runtime, idempotency, and diagnostics behavior."""
 
@@ -40,6 +60,28 @@ class ApiBuildTests(unittest.TestCase):
                 self.assertFalse((Path(temp_dir) / "storage" / "indexes").exists())
             finally:
                 os.chdir(previous_cwd)
+
+    def test_build_lifespan_shuts_down_after_startup_failure_and_once_on_success(self) -> None:
+        failing_jobs = _LifespanBuildJobs(RuntimeError("startup failed"))
+        failing_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=failing_jobs,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "startup failed"):
+            with TestClient(failing_app):
+                pass
+
+        successful_jobs = _LifespanBuildJobs()
+        successful_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=successful_jobs,
+        )
+        with TestClient(successful_app):
+            pass
+
+        self.assertEqual(failing_jobs.shutdown_calls, 1)
+        self.assertEqual(successful_jobs.shutdown_calls, 1)
 
     def test_build_readiness_requires_initialized_build_runtime(self) -> None:
         system = _FakeApiSystem()

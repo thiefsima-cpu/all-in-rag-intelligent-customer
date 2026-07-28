@@ -105,9 +105,9 @@ def create_serving_api_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        api_service.startup(auto_initialize_serving=auto_initialize_serving)
-        app.state.api_service = api_service
         try:
+            api_service.startup(auto_initialize_serving=auto_initialize_serving)
+            app.state.api_service = api_service
             yield
         finally:
             api_service.shutdown()
@@ -168,9 +168,9 @@ def create_build_api_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        api_service.startup(auto_initialize_build=auto_initialize_build)
-        app.state.api_service = api_service
         try:
+            api_service.startup(auto_initialize_build=auto_initialize_build)
+            app.state.api_service = api_service
             yield
         finally:
             api_service.shutdown()

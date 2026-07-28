@@ -178,8 +178,10 @@ class BuildJobApplicationService:
         return recovered
 
     def shutdown(self) -> None:
-        self._runner.shutdown()
-        self._repository.close()
+        try:
+            self._runner.shutdown()
+        finally:
+            self._repository.close()
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return self._repository.diagnostics()

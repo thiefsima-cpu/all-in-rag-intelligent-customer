@@ -22,8 +22,17 @@ from tests.configuration_test_helpers import build_test_config
 class _ExternalRepository:
     list_default_limit = 25
 
+    def __init__(self, *, close_exception: Exception | None = None) -> None:
+        self.close_calls = 0
+        self.close_exception = close_exception
+
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return BuildJobRepositoryDiagnostics()
+
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.close_exception is not None:
+            raise self.close_exception
 
 
 class _NoopRunner:
@@ -229,3 +238,167 @@ def test_postgresql_constructor_failure_does_not_fallback_to_file() -> None:
 
     runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
     runtime_build_jobs.FileBuildJobRepository.assert_not_called()
+
+
+def test_api_composition_closes_repository_when_telemetry_or_runner_construction_fails() -> None:
+    config = build_test_config().with_overrides(
+        {
+            "api": {
+                "build_job_repository_backend": "postgresql",
+                "build_job_runner_backend": "external_worker",
+            },
+            "storage": {"build_job_postgres_dsn": "postgresql://configured.invalid/build_jobs"},
+        }
+    )
+    for failure_point in ("telemetry", "runner"):
+        repository = _ExternalRepository(
+            close_exception=RuntimeError("close failed") if failure_point == "runner" else None
+        )
+        runtime_build_jobs = SimpleNamespace(
+            PostgresBuildJobRepository=Mock(return_value=repository),
+            BuildJobStoreMigrator=Mock(),
+            FileBuildJobRepository=Mock(),
+            ExternalBuildJobQueueRunner=Mock(side_effect=RuntimeError("runner failed")),
+        )
+        telemetry = Mock()
+
+        with (
+            patch.object(
+                composition, "_runtime_build_jobs_module", return_value=runtime_build_jobs
+            ),
+            patch.object(
+                composition,
+                "get_runtime_telemetry",
+                side_effect=RuntimeError("telemetry failed")
+                if failure_point == "telemetry"
+                else lambda _: telemetry,
+            ),
+            pytest.raises(
+                RuntimeError,
+                match="telemetry failed" if failure_point == "telemetry" else "runner failed",
+            ),
+        ):
+            compose_build_job_application(
+                system=cast(GraphRAGApplication, object()),
+                config=config,
+                coordinator=RuntimeOperationCoordinator(),
+            )
+
+        assert repository.close_calls == 1
+        runtime_build_jobs.FileBuildJobRepository.assert_not_called()
+        runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
+
+
+def test_api_composition_closes_repository_when_service_construction_fails() -> None:
+    config = build_test_config().with_overrides(
+        {
+            "api": {
+                "build_job_repository_backend": "postgresql",
+                "build_job_runner_backend": "external_worker",
+            },
+            "storage": {"build_job_postgres_dsn": "postgresql://configured.invalid/build_jobs"},
+        }
+    )
+    repository = _ExternalRepository()
+    runtime_build_jobs = SimpleNamespace(
+        PostgresBuildJobRepository=Mock(return_value=repository),
+        BuildJobStoreMigrator=Mock(),
+        FileBuildJobRepository=Mock(),
+        ExternalBuildJobQueueRunner=_NoopRunner,
+    )
+
+    with (
+        patch.object(composition, "_runtime_build_jobs_module", return_value=runtime_build_jobs),
+        patch.object(
+            composition, "BuildJobApplicationService", side_effect=RuntimeError("service failed")
+        ),
+        pytest.raises(RuntimeError, match="service failed"),
+    ):
+        compose_build_job_application(
+            system=cast(GraphRAGApplication, object()),
+            config=config,
+            coordinator=RuntimeOperationCoordinator(),
+        )
+
+    assert repository.close_calls == 1
+    runtime_build_jobs.FileBuildJobRepository.assert_not_called()
+    runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
+
+
+def test_worker_composition_closes_repository_when_telemetry_executor_or_runner_fails() -> None:
+    config = build_test_config().with_overrides(
+        {
+            "api": {"build_job_repository_backend": "postgresql"},
+            "storage": {"build_job_postgres_dsn": "postgresql://configured.invalid/build_jobs"},
+        }
+    )
+    for failure_point in ("telemetry", "executor", "runner"):
+        repository = _ExternalRepository()
+        runtime_build_jobs = SimpleNamespace(
+            PostgresBuildJobRepository=Mock(return_value=repository),
+            BuildJobStoreMigrator=Mock(),
+            FileBuildJobRepository=Mock(),
+            ExternalBuildJobWorkerRunner=Mock(side_effect=RuntimeError("runner failed")),
+        )
+        telemetry = Mock()
+
+        with (
+            patch.object(
+                composition, "_runtime_build_jobs_module", return_value=runtime_build_jobs
+            ),
+            patch.object(
+                composition,
+                "get_runtime_telemetry",
+                side_effect=RuntimeError("telemetry failed")
+                if failure_point == "telemetry"
+                else lambda _: telemetry,
+            ),
+            patch.object(
+                composition,
+                "_compose_executor",
+                side_effect=RuntimeError("executor failed")
+                if failure_point == "executor"
+                else lambda **_: Mock(),
+            ),
+            pytest.raises(
+                RuntimeError,
+                match={
+                    "telemetry": "telemetry failed",
+                    "executor": "executor failed",
+                    "runner": "runner failed",
+                }[failure_point],
+            ),
+        ):
+            composition.compose_build_job_worker(
+                system=cast(GraphRAGApplication, object()),
+                config=config,
+                coordinator=RuntimeOperationCoordinator(),
+            )
+
+        assert repository.close_calls == 1
+        runtime_build_jobs.FileBuildJobRepository.assert_not_called()
+        runtime_build_jobs.BuildJobStoreMigrator.assert_not_called()
+
+
+def test_unsupported_backend_defensive_branch_is_bypassed_by_factory() -> None:
+    config = SimpleNamespace(
+        api=SimpleNamespace(build_job_repository_backend="unsupported"),
+        storage=SimpleNamespace(build_job_postgres_dsn=""),
+    )
+    repository = _ExternalRepository()
+
+    with pytest.raises(ValueError, match=r"^Unsupported build job repository backend\.$"):
+        composition._compose_repository(
+            runtime_build_jobs=SimpleNamespace(),
+            config=cast(object, config),
+            repository_factory=None,
+        )
+
+    assert (
+        composition._compose_repository(
+            runtime_build_jobs=SimpleNamespace(),
+            config=cast(object, config),
+            repository_factory=lambda _: cast(BuildJobRepositoryPort, repository),
+        )
+        is repository
+    )

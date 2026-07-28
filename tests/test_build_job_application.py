@@ -135,6 +135,7 @@ class RecordingRunner:
     def __init__(self, calls: list[tuple]) -> None:
         self.calls = calls
         self.fail_schedule = False
+        self.shutdown_exception: Exception | None = None
 
     def start(self) -> None:
         self.calls.append(("runner.start",))
@@ -149,6 +150,8 @@ class RecordingRunner:
 
     def shutdown(self) -> None:
         self.calls.append(("runner.shutdown",))
+        if self.shutdown_exception is not None:
+            raise self.shutdown_exception
 
 
 def _service(
@@ -197,6 +200,18 @@ class BuildJobApplicationServiceTests(unittest.TestCase):
                 ("repository.close",),
             ],
         )
+
+    def test_shutdown_closes_repository_when_runner_shutdown_fails(self) -> None:
+        calls: list[tuple] = []
+        repository = RecordingRepository(calls)
+        runner = RecordingRunner(calls)
+        runner.shutdown_exception = RuntimeError("runner shutdown failed")
+        service = _service(repository, runner)
+
+        with self.assertRaisesRegex(RuntimeError, "runner shutdown failed"):
+            service.shutdown()
+
+        self.assertEqual(calls, [("runner.shutdown",), ("repository.close",)])
 
     def test_submit_persists_before_scheduling(self) -> None:
         calls: list[tuple] = []

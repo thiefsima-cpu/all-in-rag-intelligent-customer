@@ -120,21 +120,25 @@ def compose_build_job_application(
         config=config,
         repository_factory=repository_factory,
     )
-    telemetry = get_runtime_telemetry(config)
-    runner = _compose_api_runner(
-        runtime_build_jobs=runtime_build_jobs,
-        backend=str(api_settings.build_job_runner_backend),
-        repository=repository,
-        executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
-        max_workers=int(api_settings.build_job_runner_max_workers),
-        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
-        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
-            backend=backend,
-            event=event,
-            active_delta=active_delta,
-        ),
-    )
-    return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+    try:
+        telemetry = get_runtime_telemetry(config)
+        runner = _compose_api_runner(
+            runtime_build_jobs=runtime_build_jobs,
+            backend=str(api_settings.build_job_runner_backend),
+            repository=repository,
+            executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
+            max_workers=int(api_settings.build_job_runner_max_workers),
+            heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+            lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+                backend=backend,
+                event=event,
+                active_delta=active_delta,
+            ),
+        )
+        return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+    except BaseException:
+        _close_repository_after_failed_composition(repository)
+        raise
 
 
 def compose_build_job_worker(
@@ -154,28 +158,32 @@ def compose_build_job_worker(
         config=config,
         repository_factory=repository_factory,
     )
-    telemetry = get_runtime_telemetry(config)
-    executor = _compose_executor(system=system, coordinator=coordinator)
-    return runtime_build_jobs.ExternalBuildJobWorkerRunner(
-        repository=repository,
-        execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
-            snapshot,
-            progress=progress,
-            cancellation_check=cancellation_check,
-        ),
-        cancelled_result=executor.cancelled_result,
-        failed_result=executor.failed_result,
-        max_workers=int(api_settings.build_job_runner_max_workers),
-        worker_id=worker_id,
-        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
-        poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
-        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
-            backend=backend,
-            event=event,
-            active_delta=active_delta,
-        ),
-        repository_close=repository.close,
-    )
+    try:
+        telemetry = get_runtime_telemetry(config)
+        executor = _compose_executor(system=system, coordinator=coordinator)
+        return runtime_build_jobs.ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
+                snapshot,
+                progress=progress,
+                cancellation_check=cancellation_check,
+            ),
+            cancelled_result=executor.cancelled_result,
+            failed_result=executor.failed_result,
+            max_workers=int(api_settings.build_job_runner_max_workers),
+            worker_id=worker_id,
+            heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+            poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
+            lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+                backend=backend,
+                event=event,
+                active_delta=active_delta,
+            ),
+            repository_close=repository.close,
+        )
+    except BaseException:
+        _close_repository_after_failed_composition(repository)
+        raise
 
 
 def _compose_repository(
@@ -227,6 +235,13 @@ def _repository_settings(config: GraphRAGConfig) -> BuildJobRepositorySettings:
         lease_seconds=float(api_settings.build_job_lease_seconds),
         audit_retention_days=int(api_settings.build_job_audit_retention_days),
     )
+
+
+def _close_repository_after_failed_composition(repository: BuildJobRepositoryPort) -> None:
+    try:
+        repository.close()
+    except BaseException:
+        return None
 
 
 def _compose_api_runner(
