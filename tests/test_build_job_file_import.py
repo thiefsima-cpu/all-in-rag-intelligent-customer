@@ -22,6 +22,7 @@ from rag_modules.runtime.build_jobs.postgres import (
     PostgresBuildJobSchemaManager,
     V3BuildJobImporter,
 )
+from rag_modules.runtime.build_jobs.postgres import importer as postgres_importer
 from scripts import build_job_db
 from tests.build_job_repository_contract import (
     MutableClock,
@@ -161,6 +162,19 @@ def _event_revisions(dsn: str, job_id: BuildJobId) -> tuple[int, ...]:
             (str(job_id),),
         ).fetchall()
     return tuple(int(row[0]) for row in rows)
+
+
+def _assert_invalid_before_checkout(source_path: Path) -> None:
+    pool = Mock()
+    repository = SimpleNamespace(_pool=pool, _pool_timeout_seconds=1.0)
+
+    with pytest.raises(
+        BuildJobRepositoryError,
+        match=r"^Build job V3 import source is invalid\.$",
+    ):
+        V3BuildJobImporter(repository).run(source_path, dry_run=True)
+
+    pool.connection.assert_not_called()
 
 
 def test_dry_run_uses_a_read_only_rollback_transaction(tmp_path: Path) -> None:
@@ -318,28 +332,157 @@ def test_idempotency_owner_conflict_is_detected_before_any_import(
     assert _database_counts(postgres_dsn) == before
 
 
-def test_idempotency_index_created_at_mismatch_fails_before_database_checkout(
+def test_idempotency_index_timestamp_is_independent_of_snapshot_and_migration_time(
     tmp_path: Path,
 ) -> None:
-    source_path = _create_v3_source(tmp_path)
+    source_path = tmp_path / "build_jobs.json"
+    clock = MutableClock(NOW)
+
+    def advancing_now() -> datetime:
+        current = clock.now()
+        clock.advance(seconds=1)
+        return current
+
+    repository = FileBuildJobRepository(
+        str(source_path),
+        now=advancing_now,
+        settings=BuildJobRepositorySettings(retention_limit=0),
+    )
+    submit_build_job(repository, str(ACTIVE_JOB_ID), key=ACTIVE_KEY)
     job_payload = json.loads(
         (tmp_path / "build_jobs.d" / "jobs" / f"{ACTIVE_JOB_ID}.json").read_text(encoding="utf-8")
     )
     key_hash = job_payload["snapshot"]["idempotency_key_hash"]
     index_path = tmp_path / "build_jobs.d" / "idempotency" / f"{key_hash}.json"
     index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    assert index_payload["created_at"] != job_payload["snapshot"]["created_at"]
     index_payload["created_at"] = "2000-01-01T00:00:00+00:00"
     index_path.write_text(json.dumps(index_payload), encoding="utf-8")
-    pool = Mock()
-    repository = SimpleNamespace(_pool=pool, _pool_timeout_seconds=1.0)
+    connection = _ReadOnlyConnection()
 
-    with pytest.raises(
-        BuildJobRepositoryError,
-        match=r"^Build job V3 import source is invalid\.$",
-    ):
-        V3BuildJobImporter(repository).run(source_path, dry_run=True)
+    report = V3BuildJobImporter(
+        SimpleNamespace(_pool=_ReadOnlyPool(connection), _pool_timeout_seconds=1.0)
+    ).run(source_path, dry_run=True)
 
-    pool.connection.assert_not_called()
+    assert report.scanned_jobs == 1
+    assert report.imported_jobs == 1
+
+
+def test_duplicate_event_id_across_source_jobs_fails_before_database_checkout(
+    tmp_path: Path,
+) -> None:
+    source_path = _create_v3_source(tmp_path)
+    archived_path = tmp_path / "build_jobs.d" / "archive" / f"{ARCHIVED_JOB_ID}.json"
+    active_path = tmp_path / "build_jobs.d" / "jobs" / f"{ACTIVE_JOB_ID}.json"
+    archived_payload = json.loads(archived_path.read_text(encoding="utf-8"))
+    active_payload = json.loads(active_path.read_text(encoding="utf-8"))
+    active_payload["events"][0]["event_id"] = archived_payload["events"][0]["event_id"]
+    active_path.write_text(json.dumps(active_payload), encoding="utf-8")
+
+    _assert_invalid_before_checkout(source_path)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["created_at", "started_at", "finished_at", "lease_expires_at"],
+)
+def test_naive_snapshot_or_baseline_datetime_fails_before_database_checkout(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    source_path = _create_v3_source(tmp_path)
+    archive_path = tmp_path / "build_jobs.d" / "archive" / f"{ARCHIVED_JOB_ID}.json"
+    payload = json.loads(archive_path.read_text(encoding="utf-8"))
+    payload["baseline"] = dict(payload["snapshot"])
+    payload["events"] = []
+    payload["snapshot"][field] = "2026-07-26T12:00:00"
+    payload["baseline"][field] = "2026-07-26T12:00:00"
+    archive_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    _assert_invalid_before_checkout(source_path)
+
+
+@pytest.mark.parametrize("target", ["event", "claimed_payload", "archive", "idempotency"])
+def test_naive_event_and_auxiliary_datetimes_fail_before_database_checkout(
+    tmp_path: Path,
+    target: str,
+) -> None:
+    source_path = _create_v3_source(tmp_path)
+    archive_path = tmp_path / "build_jobs.d" / "archive" / f"{ARCHIVED_JOB_ID}.json"
+    archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
+    if target == "event":
+        archive_payload["events"][0]["occurred_at"] = "2026-07-26T12:00:00"
+        archive_path.write_text(json.dumps(archive_payload), encoding="utf-8")
+    elif target == "claimed_payload":
+        archive_payload["events"][1]["payload"]["lease_expires_at"] = "2026-07-26T12:00:00"
+        archive_path.write_text(json.dumps(archive_payload), encoding="utf-8")
+    elif target == "archive":
+        (tmp_path / "build_jobs.d" / "archive" / f"{ARCHIVED_JOB_ID}.archived-at").write_text(
+            "2026-07-26T12:00:00",
+            encoding="utf-8",
+        )
+    else:
+        key_hash = archive_payload["snapshot"]["idempotency_key_hash"]
+        index_path = tmp_path / "build_jobs.d" / "idempotency" / f"{key_hash}.json"
+        index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+        index_payload["created_at"] = "2026-07-26T12:00:00"
+        index_path.write_text(json.dumps(index_payload), encoding="utf-8")
+
+    _assert_invalid_before_checkout(source_path)
+
+
+@pytest.mark.parametrize("case", ["baseline_zero", "no_events", "uppercase_stem"])
+def test_noncanonical_layout_or_invalid_revisions_fail_before_database_checkout(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    source_path = _create_v3_source(tmp_path)
+    active_path = tmp_path / "build_jobs.d" / "jobs" / f"{ACTIVE_JOB_ID}.json"
+    payload = json.loads(active_path.read_text(encoding="utf-8"))
+    if case == "baseline_zero":
+        payload["baseline"] = dict(payload["snapshot"])
+        payload["baseline"]["revision"] = 0
+        payload["events"] = []
+        active_path.write_text(json.dumps(payload), encoding="utf-8")
+    elif case == "no_events":
+        payload["events"] = []
+        active_path.write_text(json.dumps(payload), encoding="utf-8")
+    else:
+        active_path.rename(active_path.with_name(f"{str(ACTIVE_JOB_ID).upper()}.json"))
+
+    _assert_invalid_before_checkout(source_path)
+
+
+class _UniqueViolationConnection:
+    def __init__(self, *, on_event: bool) -> None:
+        self._on_event = on_event
+
+    def execute(self, query: object, _params: object = None) -> None:
+        statement = str(query)
+        if ("build_job_events" in statement) is self._on_event:
+            raise psycopg.errors.UniqueViolation
+        return None
+
+
+@pytest.mark.parametrize("on_event", [False, True])
+def test_insert_unique_violation_uses_contextual_safe_conflict(
+    tmp_path: Path,
+    on_event: bool,
+) -> None:
+    source = postgres_importer._discover_source(_create_v3_source(tmp_path))[0]
+    expected = (
+        rf"^Build job import conflict for job {source.snapshot.job_id} at revision "
+        rf"{source.envelope.events[0].revision}\.$"
+        if on_event
+        else rf"^Build job import conflict for job {source.snapshot.job_id}\.$"
+    )
+
+    with pytest.raises(BuildJobRepositoryError, match=expected):
+        V3BuildJobImporter._insert_missing(
+            _UniqueViolationConnection(on_event=on_event),
+            (source,),
+            frozenset({source.snapshot.job_id}),
+        )
 
 
 @pytest.mark.parametrize(

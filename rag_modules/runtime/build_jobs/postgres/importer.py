@@ -19,6 +19,7 @@ from rag_modules.contracts.build_jobs import (
     BuildJobSnapshot,
     BuildJobStatus,
     BuildJobType,
+    JobClaimed,
 )
 from rag_modules.runtime.build_jobs.file_repository_codecs import datetime_from_json
 from rag_modules.runtime.build_jobs.file_repository_events import TERMINAL_STATUSES
@@ -271,13 +272,16 @@ class V3BuildJobImporter:
                         updated_at=updated_at,
                     ),
                 )
-                for event in source.envelope.events:
+            except psycopg.errors.UniqueViolation:
+                _raise_job_conflict(source.snapshot.job_id)
+            for event in source.envelope.events:
+                try:
                     connection.execute(
                         postgres_repository._INSERT_EVENT_SQL,
                         PostgresBuildJobRepository._event_values(event),
                     )
-            except psycopg.errors.UniqueViolation:
-                _raise_job_conflict(source.snapshot.job_id)
+                except psycopg.errors.UniqueViolation:
+                    _raise_event_conflict(source.snapshot.job_id, event.revision)
 
 
 def _discover_source(source_path: Path) -> tuple[_SourceJob, ...]:
@@ -305,6 +309,7 @@ def _discover_source(source_path: Path) -> tuple[_SourceJob, ...]:
         ):
             raise ValueError
         _validate_idempotency_indexes(idempotency_dir, source_jobs)
+        _validate_global_event_ids(source_jobs)
         return tuple(sorted(source_jobs, key=lambda source: str(source.snapshot.job_id)))
     except BuildJobRepositoryError:
         raise
@@ -345,8 +350,17 @@ def _load_envelope_directory(path: Path, *, archived: bool) -> tuple[_SourceJob,
     source_jobs: list[_SourceJob] = []
     for envelope_path in json_paths:
         job_id = BuildJobId(envelope_path.stem)
-        envelope = envelope_from_dict(_read_json_object(envelope_path))
-        if envelope.snapshot.job_id != job_id:
+        payload = _read_json_object(envelope_path)
+        _validate_raw_envelope(payload)
+        envelope = envelope_from_dict(payload)
+        raw_snapshot = payload["snapshot"]
+        if not isinstance(raw_snapshot, Mapping):
+            raise ValueError
+        if (
+            envelope_path.stem != str(job_id)
+            or envelope.snapshot.job_id != job_id
+            or raw_snapshot.get("job_id") != str(job_id)
+        ):
             raise ValueError
         archived_at = None
         if archived:
@@ -355,9 +369,9 @@ def _load_envelope_directory(path: Path, *, archived: bool) -> tuple[_SourceJob,
             archived_at = datetime_from_json(
                 sidecars[envelope_path.stem].read_text(encoding="utf-8")
             )
-            if archived_at.tzinfo is None:
-                raise ValueError
+            _require_aware_datetime(archived_at)
         _validate_snapshot_key_hash(envelope.snapshot)
+        _validate_envelope(envelope)
         source_jobs.append(_SourceJob(envelope=envelope, archived_at=archived_at))
     return tuple(source_jobs)
 
@@ -391,9 +405,7 @@ def _validate_idempotency_indexes(
         key_hash = str(payload["key_hash"])
         if _HASH_PATTERN.fullmatch(key_hash) is None or key_hash in indexes:
             raise ValueError
-        created_at = datetime_from_json(payload["created_at"])
-        if created_at.tzinfo is None:
-            raise ValueError
+        _require_aware_datetime(datetime_from_json(payload["created_at"]))
         indexes[key_hash] = payload
 
     if set(indexes) != set(jobs_by_hash):
@@ -403,9 +415,67 @@ def _validate_idempotency_indexes(
         if (
             BuildJobId(str(payload["job_id"])) != source.snapshot.job_id
             or BuildJobType(str(payload["job_type"])) is not source.snapshot.job_type
-            or datetime_from_json(payload["created_at"]) != source.snapshot.created_at
         ):
             raise ValueError
+
+
+def _validate_global_event_ids(source_jobs: Sequence[_SourceJob]) -> None:
+    event_ids: set[str] = set()
+    for source in source_jobs:
+        for event in source.envelope.events:
+            if event.event_id in event_ids:
+                raise ValueError
+            event_ids.add(event.event_id)
+
+
+def _validate_raw_envelope(payload: Mapping[str, object]) -> None:
+    _require_positive_revision(payload.get("revision"))
+    raw_snapshot = payload.get("snapshot")
+    if not isinstance(raw_snapshot, Mapping):
+        raise ValueError
+    _require_positive_revision(raw_snapshot.get("revision"))
+    raw_baseline = payload.get("baseline")
+    if raw_baseline is not None:
+        if not isinstance(raw_baseline, Mapping):
+            raise ValueError
+        _require_positive_revision(raw_baseline.get("revision"))
+    raw_events = payload.get("events")
+    if not isinstance(raw_events, list):
+        raise ValueError
+    for raw_event in raw_events:
+        if not isinstance(raw_event, Mapping):
+            raise ValueError
+        _require_positive_revision(raw_event.get("revision"))
+
+
+def _validate_envelope(envelope: BuildJobEnvelope) -> None:
+    _require_positive_revision(envelope.revision)
+    _validate_snapshot_datetimes(envelope.snapshot)
+    if envelope.baseline is not None:
+        _validate_snapshot_datetimes(envelope.baseline)
+    for event in envelope.events:
+        _require_positive_revision(event.revision)
+        _require_aware_datetime(event.occurred_at)
+        if isinstance(event.payload, JobClaimed):
+            _require_aware_datetime(event.payload.lease_expires_at)
+
+
+def _validate_snapshot_datetimes(snapshot: BuildJobSnapshot) -> None:
+    _require_positive_revision(snapshot.revision)
+    _require_aware_datetime(snapshot.created_at)
+    for value in (snapshot.started_at, snapshot.finished_at, snapshot.lease_expires_at):
+        if value is not None:
+            _require_aware_datetime(value)
+
+
+def _require_positive_revision(value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError
+
+
+def _require_aware_datetime(value: datetime) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError
 
 
 def _read_json_object(path: Path) -> Mapping[str, object]:
