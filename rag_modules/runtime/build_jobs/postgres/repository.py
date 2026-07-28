@@ -313,6 +313,8 @@ def _observe_repository_operation(
                 return result
             except BaseException as error:
                 outcome = "error"
+                if operation == "claim":
+                    self._record_claim("error")
                 if not isinstance(error, BuildJobRepositoryUnavailableError):
                     self._record_error(_error_category(error))
                 raise
@@ -326,6 +328,12 @@ def _observe_repository_operation(
 
 class _PersistedDataError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class _RetentionCounts:
+    archived: int = 0
+    purged: int = 0
 
 
 class _PoolConnectionLogSanitizer(logging.Filter):
@@ -435,6 +443,7 @@ class PostgresBuildJobRepository:
     @_observe_repository_operation("submit")
     def submit(self, command: SubmitBuildJob) -> BuildJobSubmission:
         key_hash = hash_idempotency_key(validate_idempotency_key(command.idempotency_key))
+        retention = _RetentionCounts()
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
                 with connection.transaction():
@@ -452,7 +461,8 @@ class PostgresBuildJobRepository:
                         ),
                     )
                     connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
-                    self._apply_retention(connection, now=event.occurred_at)
+                    retention = self._apply_retention(connection, now=event.occurred_at)
+            self._record_retention_counts(retention)
             return BuildJobSubmission(BuildJobSubmissionDisposition.CREATED, snapshot)
         except psycopg.errors.UniqueViolation as error:
             return self._resolve_submit_unique_violation(error, command, key_hash)
@@ -618,6 +628,7 @@ class PostgresBuildJobRepository:
         expected_revision: int,
         lease: BuildJobLease | None = None,
     ) -> BuildJobSnapshot:
+        retention = _RetentionCounts()
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
                 with connection.transaction():
@@ -643,8 +654,9 @@ class PostgresBuildJobRepository:
                     connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
                     self._update_snapshot(connection, updated, updated_at=event.occurred_at)
                     if updated.status in TERMINAL_STATUSES:
-                        self._apply_retention(connection, now=now)
-                    return updated
+                        retention = self._apply_retention(connection, now=now)
+            self._record_retention_counts(retention)
+            return updated
         except psycopg.Error as error:
             self._raise_unavailable("apply", error)
         except _PersistedDataError as error:
@@ -674,6 +686,7 @@ class PostgresBuildJobRepository:
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
                 while True:
+                    retention = _RetentionCounts()
                     with connection.transaction():
                         now = self._now()
                         rows = connection.execute(
@@ -688,7 +701,8 @@ class PostgresBuildJobRepository:
                             connection.execute(_INSERT_EVENT_SQL, self._event_values(event))
                             self._update_snapshot(connection, updated, updated_at=now)
                             recovered.append(updated)
-                        self._apply_retention(connection, now=now)
+                        retention = self._apply_retention(connection, now=now)
+                    self._record_retention_counts(retention)
                     if len(snapshots) < _BATCH_SIZE:
                         return tuple(recovered)
         except psycopg.Error as error:
@@ -698,10 +712,12 @@ class PostgresBuildJobRepository:
 
     @_observe_repository_operation("apply_retention")
     def apply_retention(self) -> None:
+        retention = _RetentionCounts()
         try:
             with self._pool.connection(timeout=self._pool_timeout_seconds) as connection:
                 with connection.transaction():
-                    self._apply_retention(connection, now=self._now())
+                    retention = self._apply_retention(connection, now=self._now())
+            self._record_retention_counts(retention)
         except psycopg.Error as error:
             self._raise_unavailable("apply_retention", error)
         except _PersistedDataError as error:
@@ -895,7 +911,7 @@ class PostgresBuildJobRepository:
         connection: psycopg.Connection[tuple[object, ...]],
         *,
         now: datetime,
-    ) -> None:
+    ) -> _RetentionCounts:
         archive_result = connection.execute(
             _ARCHIVE_EXCESS_TERMINAL_SQL,
             {
@@ -903,7 +919,8 @@ class PostgresBuildJobRepository:
                 "retention_limit": max(0, int(self.settings.retention_limit)),
             },
         )
-        self._record_retention("archived", _affected_row_count(archive_result))
+        archived = _affected_row_count(archive_result)
+        purged = 0
         cutoff = now - timedelta(days=int(self.settings.audit_retention_days))
         while True:
             rows = connection.execute(
@@ -912,13 +929,13 @@ class PostgresBuildJobRepository:
             ).fetchall()
             expired_job_ids = [str(self._job_id_from_row(row)) for row in rows]
             if not expired_job_ids:
-                return
+                return _RetentionCounts(archived=archived, purged=purged)
             parameters = {"expired_job_ids": expired_job_ids}
             connection.execute(_DELETE_EXPIRED_EVENTS_SQL, parameters)
             connection.execute(_DELETE_EXPIRED_JOBS_SQL, parameters)
-            self._record_retention("purged", len(expired_job_ids))
+            purged += len(expired_job_ids)
             if len(expired_job_ids) < _BATCH_SIZE:
-                return
+                return _RetentionCounts(archived=archived, purged=purged)
 
     @staticmethod
     def _job_id_from_row(row: Sequence[object]) -> BuildJobId:
@@ -1130,6 +1147,12 @@ class PostgresBuildJobRepository:
             self._observers.retention(_BACKEND, action, max(0, int(count)))
         except Exception:
             return None
+
+    def _record_retention_counts(self, counts: _RetentionCounts) -> None:
+        if counts.archived:
+            self._record_retention("archived", counts.archived)
+        if counts.purged:
+            self._record_retention("purged", counts.purged)
 
     def _raise_unavailable(self, operation: str, error: object) -> Never:
         self._record_error(_error_category(error))

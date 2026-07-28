@@ -5,7 +5,7 @@ import threading
 import unittest
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -103,6 +103,19 @@ class _FakeConnection:
         if isinstance(response, BaseException):
             raise response
         return response
+
+
+class _CommitFailureTransaction(_FakeTransaction):
+    def __exit__(self, exc_type, _exc, _traceback) -> bool:
+        self._connection.transaction_outcomes.append("rollback")
+        if exc_type is None:
+            raise _ConnectionFailure("commit failed")
+        return False
+
+
+class _CommitFailureConnection(_FakeConnection):
+    def transaction(self) -> _FakeTransaction:
+        return _CommitFailureTransaction(self)
 
 
 class _PoolConnection(AbstractContextManager[_FakeConnection]):
@@ -1616,6 +1629,94 @@ def test_observer_failure_does_not_change_repository_behavior() -> None:
     repository._observers = observers
 
     assert repository.claim_next(WorkerIdentity("worker-a", "external_worker")) is None
+
+
+@pytest.mark.parametrize(
+    ("category", "responses", "patch_claimed_event", "expected_exception"),
+    [
+        (
+            "connection",
+            [_ConnectionFailure("connection secret")],
+            False,
+            BuildJobRepositoryUnavailableError,
+        ),
+        (
+            "data",
+            [_Rows([("malformed",)])],
+            False,
+            BuildJobRepositoryUnavailableError,
+        ),
+        (
+            "domain",
+            [_Rows([_snapshot_row(_queued_snapshot())])],
+            True,
+            BuildJobRepositoryError,
+        ),
+    ],
+)
+def test_claim_failure_records_claim_error_and_one_repository_category(
+    category: str,
+    responses: list[_Rows | BaseException],
+    patch_claimed_event: bool,
+    expected_exception: type[Exception],
+) -> None:
+    operations: list[tuple[str, str, str, float]] = []
+    claims: list[tuple[str, str]] = []
+    errors: list[tuple[str, str]] = []
+    observers = PostgresBuildJobObservers(
+        operation=lambda backend, operation, outcome, duration: operations.append(
+            (backend, operation, outcome, duration)
+        ),
+        claim=lambda backend, outcome: claims.append((backend, outcome)),
+        error=lambda backend, error_category: errors.append((backend, error_category)),
+        retention=lambda *_: None,
+    )
+    repository = _make_repository(_FakePool([_FakeConnection(responses)]))
+    repository._observers = observers
+
+    claim_patch = (
+        patch.object(
+            repository_module,
+            "claimed_event",
+            side_effect=BuildJobRepositoryError("domain failure"),
+        )
+        if patch_claimed_event
+        else nullcontext()
+    )
+    with claim_patch, pytest.raises(expected_exception):
+        repository.claim_next(WorkerIdentity("worker-a", "external_worker"))
+
+    assert [(backend, operation, outcome) for backend, operation, outcome, _ in operations] == [
+        ("postgresql", "claim", "error")
+    ]
+    assert claims == [("postgresql", "error")]
+    assert errors == [("postgresql", category)]
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        [_Rows([], rowcount=2), _Rows([])],
+        [_Rows([], rowcount=2), _Rows([("a" * 32,)]), _Rows([]), _ConnectionFailure("purge")],
+    ],
+)
+def test_retention_metrics_are_not_emitted_for_rolled_back_transactions(
+    responses: list[_Rows | BaseException],
+) -> None:
+    retained: list[tuple[str, str, int]] = []
+    observers = PostgresBuildJobObservers(
+        operation=lambda *_: None,
+        claim=lambda *_: None,
+        error=lambda *_: None,
+        retention=lambda backend, action, count: retained.append((backend, action, count)),
+    )
+    repository = _make_repository(_FakePool([_CommitFailureConnection(responses)]))
+    repository._observers = observers
+
+    with pytest.raises(BuildJobRepositoryUnavailableError):
+        repository.apply_retention()
+
+    assert retained == []
 
 
 def test_constructor_schema_failure_observes_only_fixed_categories() -> None:
