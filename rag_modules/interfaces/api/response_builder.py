@@ -9,6 +9,7 @@ from typing import Any
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ...kernel.artifacts import ArtifactManifest, artifact_health
+from ...kernel.json_types import JsonObject
 from ...runtime.artifacts.registry import ArtifactRegistrySnapshot
 from .answer_models import (
     AnswerPayloadModel,
@@ -101,7 +102,7 @@ def build_build_job_list_response(
 
 
 def build_build_job_event_list_response(
-    event_payloads: list[dict[str, Any]],
+    event_payloads: list[JsonObject],
     *,
     next_cursor: str = "",
 ) -> BuildJobAuditEventListResponseModel:
