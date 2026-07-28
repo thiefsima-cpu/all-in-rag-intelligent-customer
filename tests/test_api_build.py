@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import tests.api_app_helpers as h
@@ -28,8 +29,13 @@ _FailOnceBuildApiSystem = h._FailOnceBuildApiSystem
 
 
 class _LifespanBuildJobs:
-    def __init__(self, startup_exception: Exception | None = None) -> None:
+    def __init__(
+        self,
+        startup_exception: Exception | None = None,
+        shutdown_exception: Exception | None = None,
+    ) -> None:
         self.startup_exception = startup_exception
+        self.shutdown_exception = shutdown_exception
         self.startup_calls = 0
         self.shutdown_calls = 0
 
@@ -41,6 +47,8 @@ class _LifespanBuildJobs:
 
     def shutdown(self) -> None:
         self.shutdown_calls += 1
+        if self.shutdown_exception is not None:
+            raise self.shutdown_exception
 
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return BuildJobRepositoryDiagnostics(backend="file", schema_version="3")
@@ -82,6 +90,72 @@ class ApiBuildTests(unittest.TestCase):
 
         self.assertEqual(failing_jobs.shutdown_calls, 1)
         self.assertEqual(successful_jobs.shutdown_calls, 1)
+
+    def test_build_lifespan_preserves_startup_and_yield_failures_over_shutdown_failure(
+        self,
+    ) -> None:
+        startup_jobs = _LifespanBuildJobs(
+            RuntimeError("startup failed"),
+            RuntimeError("shutdown failed"),
+        )
+        startup_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=startup_jobs,
+        )
+        with self.assertRaisesRegex(RuntimeError, "startup failed"):
+            with TestClient(startup_app):
+                pass
+
+        state_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        state_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=state_jobs,
+        )
+
+        def reject_api_service_state(_self: object, name: str, value: object) -> None:
+            if name == "api_service":
+                raise ValueError("state failed")
+            object.__setattr__(_self, name, value)
+
+        async def fail_during_state_assignment() -> None:
+            async with state_app.router.lifespan_context(state_app):
+                pass
+
+        with (
+            h.patch.object(type(state_app.state), "__setattr__", new=reject_api_service_state),
+            self.assertRaisesRegex(ValueError, "state failed"),
+        ):
+            asyncio.run(fail_during_state_assignment())
+
+        yield_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        yield_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=yield_jobs,
+        )
+
+        async def fail_during_yield() -> None:
+            async with yield_app.router.lifespan_context(yield_app):
+                raise ValueError("yield failed")
+
+        with self.assertRaisesRegex(ValueError, "yield failed"):
+            asyncio.run(fail_during_yield())
+
+        self.assertEqual(startup_jobs.shutdown_calls, 1)
+        self.assertEqual(state_jobs.shutdown_calls, 1)
+        self.assertEqual(yield_jobs.shutdown_calls, 1)
+
+    def test_build_lifespan_propagates_shutdown_failure_after_normal_exit(self) -> None:
+        build_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=build_jobs,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "shutdown failed"):
+            with TestClient(app):
+                pass
+
+        self.assertEqual(build_jobs.shutdown_calls, 1)
 
     def test_build_readiness_requires_initialized_build_runtime(self) -> None:
         system = _FakeApiSystem()

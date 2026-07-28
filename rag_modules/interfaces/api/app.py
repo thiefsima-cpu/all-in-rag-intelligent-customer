@@ -109,7 +109,13 @@ def create_serving_api_app(
             api_service.startup(auto_initialize_serving=auto_initialize_serving)
             app.state.api_service = api_service
             yield
-        finally:
+        except BaseException:
+            try:
+                api_service.shutdown()
+            except BaseException:
+                pass
+            raise
+        else:
             api_service.shutdown()
 
     app = FastAPI(
@@ -172,7 +178,13 @@ def create_build_api_app(
             api_service.startup(auto_initialize_build=auto_initialize_build)
             app.state.api_service = api_service
             yield
-        finally:
+        except BaseException:
+            try:
+                api_service.shutdown()
+            except BaseException:
+                pass
+            raise
+        else:
             api_service.shutdown()
 
     app = FastAPI(
