@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from rag_modules.contracts import EvidenceDocument, RetrievalRequest
+from rag_modules.contracts import (
+    EvidenceDocument,
+    RequestCancelled,
+    RequestControl,
+    RetrievalRequest,
+)
 from rag_modules.contracts.query_constraints import QueryConstraints
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.kernel.documents import TextDocument
@@ -104,8 +109,10 @@ class HybridRetrievalServiceTests(unittest.TestCase):
         request = RetrievalRequest.from_inputs(query="mapo tofu", top_k=3, candidate_k=3)
 
         outcome = self.service.hybrid_evidence_search(request)
+        documents = self.service.hybrid_search(request)
 
         self.assertEqual([doc.entity_name for doc in outcome.documents], ["hybrid"])
+        self.assertEqual([doc.entity_name for doc in documents], ["hybrid"])
         self.assertEqual(self.search_service.calls[-1][0], "hybrid_evidence_search")
         with self.assertRaises(AttributeError):
             _ = self.service.executor
@@ -148,6 +155,12 @@ class HybridRetrievalServiceTests(unittest.TestCase):
         )
         self.service.close()
 
+        self.assertEqual(self.service.bm25, "bm25")
+        self.assertEqual(self.service.bm25_corpus_docs, [])
+        self.assertTrue(self.service.graph_indexed)
+        self.assertEqual(self.service.recipe_matcher, "matcher")
+        self.assertEqual(self.service.vector_retriever, "vector")
+        self.assertEqual(self.service.dual_level_service, "dual")
         self.assertEqual(self.service.extract_query_keywords("tofu"), (["tofu"], ["topic::tofu"]))
         self.assertEqual(parent_docs, [chunk])
         self.assertEqual(parent_evidence, [evidence])
@@ -160,6 +173,19 @@ class HybridRetrievalServiceTests(unittest.TestCase):
                 "close",
             ],
         )
+
+    def test_parent_evidence_enrichment_honors_request_cancellation(self) -> None:
+        control = RequestControl.for_timeout(5.0, scope="hybrid-parent-enrichment")
+        control.cancel("client_disconnect")
+        request = RetrievalRequest.from_inputs(query="tofu", control=control)
+
+        with self.assertRaises(RequestCancelled):
+            self.service.enrich_to_parent_evidence_documents(
+                request,
+                [EvidenceDocument(content="evidence")],
+            )
+
+        self.assertEqual(self.runtime.calls, [])
 
 
 if __name__ == "__main__":

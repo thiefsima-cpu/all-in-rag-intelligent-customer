@@ -9,7 +9,14 @@ from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.graph.rag_retrieval import GraphRAGRetrieval
 from rag_modules.graph.retrieval_components import GraphRetrievalComponents
 from rag_modules.retrieval import HybridRetrievalService
-from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
+from rag_modules.retrieval.hybrid_components import (
+    DefaultHybridRetrievalComponentFactory,
+    HybridRetrievalComponents,
+)
+from rag_modules.retrieval.hybrid_runtime import HybridRetrievalRuntime
+from rag_modules.retrieval.hybrid_search_service import HybridSearchService
+from rag_modules.retrieval.keyword_service import QueryKeywordExtractor
+from rag_modules.retrieval.runtime_profile import RetrievalRuntimeProfile
 from tests.configuration_test_helpers import build_test_config
 
 
@@ -211,6 +218,30 @@ class _FakeGraphFactory:
 
 
 class RetrievalFacadeFactoryTests(unittest.TestCase):
+    def test_default_hybrid_factory_builds_direct_service_collaborators(self) -> None:
+        config = build_test_config()
+        retrieval_profile = RetrievalRuntimeProfile.from_config(config)
+        adapter_factory = SimpleNamespace(name="adapter-factory")
+
+        components = DefaultHybridRetrievalComponentFactory().build(
+            config=config,
+            milvus_module=SimpleNamespace(),
+            data_module=SimpleNamespace(),
+            llm_client=SimpleNamespace(),
+            neo4j_manager=None,
+            retrieval_profile=retrieval_profile,
+            database=config.storage.neo4j_database,
+            rrf_k=71,
+            adapter_factory=adapter_factory,
+        )
+
+        self.assertIsInstance(components.runtime, HybridRetrievalRuntime)
+        self.assertIsInstance(components.search_service, HybridSearchService)
+        self.assertIsInstance(components.keyword_extractor, QueryKeywordExtractor)
+        self.assertIs(components.search_service.runtime, components.runtime)
+        self.assertIs(components.runtime.adapter_factory, adapter_factory)
+        self.assertEqual(components.search_service.fusion_ranker.rrf_k, 71)
+
     def test_hybrid_retrieval_uses_component_factory_seam(self) -> None:
         factory = _FakeHybridFactory()
         adapter_factory = SimpleNamespace(name="adapter-factory")
