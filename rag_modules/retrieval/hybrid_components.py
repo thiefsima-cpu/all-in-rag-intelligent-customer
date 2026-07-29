@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Optional
 
 from ..configuration.models import GraphRAGConfig
 from ..graph_index import GraphIndexingModule
-from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever, tokenize_chinese
+from .adapters import BM25Retriever, ConstraintRetriever, GraphKVRetriever
 from .cache import RetrievalCacheStore
 from .candidate_sources import DefaultHybridCandidateSourceFactory
 from .fusion import FusionRanker
 from .hybrid_driver_service import HybridDriverService
-from .hybrid_executor import HybridRetrievalExecutor
 from .hybrid_index_service import HybridIndexService
 from .hybrid_parent_document_service import HybridParentDocumentService
 from .hybrid_runtime import HybridRetrievalRuntime
@@ -31,38 +30,11 @@ from .runtime_profile import RetrievalRuntimeProfile
 
 @dataclass
 class HybridRetrievalComponents:
-    """Concrete collaborators used by the hybrid retrieval facade."""
+    """Collaborators used directly by the hybrid retrieval service."""
 
-    graph_indexing: GraphIndexingModule
-    fusion_ranker: FusionRanker
-    cache_store: RetrievalCacheStore
-    parent_enricher: ParentDocumentEnricher
-    bm25_retriever: BM25Retriever
-    graph_kv_retriever: GraphKVRetriever
     keyword_extractor: QueryKeywordExtractor
-    index_service: HybridIndexService
     runtime: HybridRetrievalRuntime
-    constraint_retriever: ConstraintRetriever
     search_service: HybridSearchService
-    executor: HybridRetrievalExecutor
-
-
-class HybridRetrievalComponentFactory(Protocol):
-    """Assembly boundary for hybrid retrieval collaborators."""
-
-    def build(
-        self,
-        *,
-        config: GraphRAGConfig,
-        milvus_module: VectorIndexModulePort,
-        data_module: GraphDataModulePort,
-        llm_client: object,
-        neo4j_manager: Neo4jManagerPort | None,
-        retrieval_profile: RetrievalRuntimeProfile,
-        database: str,
-        rrf_k: int,
-        adapter_factory: Optional[HybridRuntimeAdapterFactory] = None,
-    ) -> HybridRetrievalComponents: ...
 
 
 class DefaultHybridRetrievalComponentFactory:
@@ -75,19 +47,16 @@ class DefaultHybridRetrievalComponentFactory:
     ) -> None:
         self._circuit_state_recorder = circuit_state_recorder
 
-    def _build_search_stack(
+    def _build_search_service(
         self,
         *,
         config: GraphRAGConfig,
         retrieval_profile: RetrievalRuntimeProfile,
         runtime: HybridRetrievalRuntime,
         fusion_ranker: FusionRanker,
-        keyword_extractor: QueryKeywordExtractor,
-        cache_store: RetrievalCacheStore,
-        bm25_retriever: BM25Retriever,
-    ) -> tuple[ConstraintRetriever, HybridSearchService, HybridRetrievalExecutor]:
+    ) -> HybridSearchService:
         constraint_retriever = ConstraintRetriever(runtime.get_recipe_matcher)
-        search_service = HybridSearchService(
+        return HybridSearchService(
             config=config,
             retrieval_profile=retrieval_profile,
             runtime=runtime,
@@ -96,14 +65,6 @@ class DefaultHybridRetrievalComponentFactory:
             candidate_source_factory=DefaultHybridCandidateSourceFactory(),
             circuit_state_recorder=self._circuit_state_recorder,
         )
-        executor = HybridRetrievalExecutor(
-            runtime=runtime,
-            search_service=search_service,
-            keyword_extractor=keyword_extractor,
-            cache_store=cache_store,
-            bm25_tokenizer=tokenize_chinese,
-        )
-        return constraint_retriever, search_service, executor
 
     def build(
         self,
@@ -156,26 +117,14 @@ class DefaultHybridRetrievalComponentFactory:
             driver_service=driver_service,
             parent_document_service=parent_document_service,
         )
-        constraint_retriever, search_service, executor = self._build_search_stack(
+        search_service = self._build_search_service(
             config=config,
             retrieval_profile=retrieval_profile,
             runtime=runtime,
             fusion_ranker=fusion_ranker,
-            keyword_extractor=keyword_extractor,
-            cache_store=cache_store,
-            bm25_retriever=bm25_retriever,
         )
         return HybridRetrievalComponents(
-            graph_indexing=graph_indexing,
-            fusion_ranker=fusion_ranker,
-            cache_store=cache_store,
-            parent_enricher=parent_enricher,
-            bm25_retriever=bm25_retriever,
-            graph_kv_retriever=graph_kv_retriever,
             keyword_extractor=keyword_extractor,
-            index_service=index_service,
             runtime=runtime,
-            constraint_retriever=constraint_retriever,
             search_service=search_service,
-            executor=executor,
         )
