@@ -44,7 +44,7 @@ class RoutingPublicSurfaceBoundaryTests(unittest.TestCase):
 
     def test_online_runtime_does_not_use_dual_shape_retrieval_signatures(self) -> None:
         files = [
-            RAG_MODULES_DIR / "retrieval" / "hybrid_executor.py",
+            RAG_MODULES_DIR / "retrieval" / "hybrid_service.py",
             RAG_MODULES_DIR / "retrieval" / "hybrid_search_service.py",
             RAG_MODULES_DIR / "graph" / "rag_retrieval.py",
             RAG_MODULES_DIR / "graph" / "retrieval_runtime.py",

@@ -13,7 +13,7 @@ from rag_modules.retrieval.hybrid_components import HybridRetrievalComponents
 from tests.configuration_test_helpers import build_test_config
 
 
-class _FakeHybridExecutor:
+class _FakeHybridRuntime:
     def __init__(self) -> None:
         self.driver = "driver"
         self.bm25 = "bm25"
@@ -23,6 +23,14 @@ class _FakeHybridExecutor:
         self.recipe_matcher = "matcher"
         self.vector_retriever = "vector"
         self.dual_level_service = "dual"
+
+    @staticmethod
+    def close():
+        return None
+
+
+class _FakeHybridSearchService:
+    def __init__(self) -> None:
         self.calls = []
 
     def hybrid_evidence_search(self, request):
@@ -32,36 +40,26 @@ class _FakeHybridExecutor:
             candidate_counts={"vector": 1},
         )
 
-    @staticmethod
-    def extract_query_keywords(query):
-        return [query], [f"topic::{query}"]
 
+class _FakeKeywordExtractor:
     @staticmethod
-    def close():
-        return None
+    def extract(query):
+        return [query], [f"topic::{query}"]
 
 
 class _FakeHybridFactory:
     def __init__(self) -> None:
         self.calls = []
-        self.executor = _FakeHybridExecutor()
-        self.runtime = SimpleNamespace(name="hybrid-runtime")
+        self.runtime = _FakeHybridRuntime()
+        self.search_service = _FakeHybridSearchService()
+        self.keyword_extractor = _FakeKeywordExtractor()
 
     def build(self, **kwargs):
         self.calls.append(dict(kwargs))
         return HybridRetrievalComponents(
-            graph_indexing=SimpleNamespace(),
-            fusion_ranker=SimpleNamespace(rrf_k=kwargs["rrf_k"]),
-            cache_store=SimpleNamespace(path=lambda: "cache.json", signature=lambda chunks: "sig"),
-            parent_enricher=SimpleNamespace(),
-            bm25_retriever=SimpleNamespace(),
-            graph_kv_retriever=SimpleNamespace(),
-            keyword_extractor=SimpleNamespace(),
-            index_service=SimpleNamespace(),
+            keyword_extractor=self.keyword_extractor,
             runtime=self.runtime,
-            constraint_retriever=SimpleNamespace(),
-            search_service=SimpleNamespace(),
-            executor=self.executor,
+            search_service=self.search_service,
         )
 
 
@@ -245,10 +243,12 @@ class RetrievalFacadeFactoryTests(unittest.TestCase):
             module.extract_query_keywords("mapo tofu"),
             (["mapo tofu"], ["topic::mapo tofu"]),
         )
-        self.assertIs(module.components.executor, factory.executor)
+        with self.assertRaises(AttributeError):
+            _ = module.executor
         with self.assertRaises(AttributeError):
             _ = module.runtime
         self.assertIs(module.components.runtime, factory.runtime)
+        self.assertIs(module.components.search_service, factory.search_service)
         self.assertEqual(factory.calls[0]["database"], "recipes")
         self.assertEqual(factory.calls[0]["rrf_k"], 88)
         self.assertIs(factory.calls[0]["adapter_factory"], adapter_factory)
