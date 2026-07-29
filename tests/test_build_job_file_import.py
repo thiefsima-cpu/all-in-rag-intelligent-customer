@@ -357,6 +357,25 @@ def test_destination_mismatch_fails_closed_without_partial_writes(
     assert _database_counts(postgres_dsn) == before
 
 
+def test_malformed_destination_event_is_reported_as_revision_conflict() -> None:
+    malformed_row = (
+        f"{ACTIVE_JOB_ID}:1",
+        str(ACTIVE_JOB_ID),
+        1,
+        "queued",
+        1,
+        NOW,
+        "request-active",
+        {"destination": "mismatch"},
+    )
+
+    with pytest.raises(
+        BuildJobRepositoryError,
+        match=rf"^Build job import conflict for job {ACTIVE_JOB_ID} at revision 1\.$",
+    ):
+        postgres_importer._destination_events_from_rows(ACTIVE_JOB_ID, (malformed_row,))
+
+
 def test_idempotency_owner_conflict_is_detected_before_any_import(
     tmp_path: Path,
     postgres_dsn: str,

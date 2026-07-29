@@ -22,9 +22,7 @@ if TYPE_CHECKING:
 BUILD_JOB_LOG_LIMIT = 200
 _BUILD_JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")
 _PUBLIC_BUILD_JOB_REPOSITORY_BACKENDS = frozenset({"file", "postgresql", "unknown"})
-_PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN = re.compile(
-    r"(?:\d+|build-jobs-v\d+)\Z"
-)
+_PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN = re.compile(r"(?:\d+|build-jobs-v\d+)\Z")
 
 _SAFE_BUILD_LOGS = frozenset(
     {

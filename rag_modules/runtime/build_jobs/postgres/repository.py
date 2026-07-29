@@ -101,8 +101,9 @@ SELECT {_SNAPSHOT_COLUMNS}
 FROM graph_rag_control_plane.build_jobs
 WHERE archived_at IS NULL
   AND (
-      %(cursor_created_at)s IS NULL
-      OR (created_at, job_id) < (%(cursor_created_at)s, %(cursor_job_id)s)
+      %(cursor_created_at)s::timestamptz IS NULL
+      OR (created_at, job_id) <
+         (%(cursor_created_at)s::timestamptz, %(cursor_job_id)s::text)
   )
 ORDER BY created_at DESC, job_id DESC
 LIMIT %(fetch_limit)s
@@ -113,8 +114,9 @@ FROM graph_rag_control_plane.build_jobs
 WHERE archived_at IS NULL
   AND status = %(status)s
   AND (
-      %(cursor_created_at)s IS NULL
-      OR (created_at, job_id) < (%(cursor_created_at)s, %(cursor_job_id)s)
+      %(cursor_created_at)s::timestamptz IS NULL
+      OR (created_at, job_id) <
+         (%(cursor_created_at)s::timestamptz, %(cursor_job_id)s::text)
   )
 ORDER BY created_at DESC, job_id DESC
 LIMIT %(fetch_limit)s
@@ -251,7 +253,7 @@ WHERE job_id = ANY(%(expired_job_ids)s)
 _IDEMPOTENCY_CONSTRAINT = "build_jobs_idempotency_uq"
 _ACTIVE_CONSTRAINT = "build_jobs_one_active_uq"
 _BATCH_SIZE = 100
-_SCHEMA_VERSION = "2"
+_SCHEMA_VERSION = "3"
 _LEASE_LOST_MESSAGE = "Build job lease is no longer owned by this worker."
 _Now = Callable[[], datetime]
 _P = ParamSpec("_P")

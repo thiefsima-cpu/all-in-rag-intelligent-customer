@@ -311,10 +311,10 @@ class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
-            self.assertIn(str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads})
-            self.assertTrue(
-                (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists()
+            self.assertIn(
+                str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
             )
+            self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
             self.assertEqual(
                 (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.archived-at").read_text(
                     encoding="utf-8"
@@ -360,7 +360,9 @@ class BuildJobRepositoryRetentionDiagnosticsTests(unittest.TestCase):
             self.assertFalse((root / "build_jobs.d" / "jobs" / f"{oldest.job_id}.json").exists())
             self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
 
-    def test_idempotency_rejects_a_corrupt_archived_job_without_leaking_storage_details(self) -> None:
+    def test_idempotency_rejects_a_corrupt_archived_job_without_leaking_storage_details(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             clock = MutableClock()

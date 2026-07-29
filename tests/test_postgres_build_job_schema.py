@@ -69,6 +69,7 @@ def test_packaged_migrations_are_discovered_with_sha256_checksums() -> None:
     assert [(migration.version, migration.name) for migration in manager._migrations] == [
         (1, "build_job_control_plane"),
         (2, "imported_baseline_audit"),
+        (3, "null_safe_imported_baseline_revision"),
     ]
     assert all(
         migration.checksum == hashlib.sha256(migration.sql.encode("utf-8")).hexdigest()
@@ -100,8 +101,8 @@ def test_status_reports_version_zero_without_executing_ddl() -> None:
 
     assert status == BuildJobPostgresSchemaStatus(
         current_version=0,
-        required_version=2,
-        pending_versions=(1, 2),
+        required_version=3,
+        pending_versions=(1, 2, 3),
         ready=False,
     )
     assert connection.statements
@@ -284,7 +285,7 @@ def test_status_on_empty_database_does_not_create_schema(postgres_dsn: str) -> N
     status = PostgresBuildJobSchemaManager(postgres_dsn).status()
 
     assert status.current_version == 0
-    assert status.pending_versions == (1, 2)
+    assert status.pending_versions == (1, 2, 3)
     with psycopg.connect(postgres_dsn) as connection:
         row = connection.execute(
             "SELECT to_regnamespace(%s) IS NOT NULL",
@@ -300,8 +301,8 @@ def test_migrate_is_repeatable_and_verify_succeeds(postgres_dsn: str) -> None:
     second = manager.migrate()
 
     assert first.ready
-    assert first.current_version == 2
-    assert second.current_version == 2
+    assert first.current_version == 3
+    assert second.current_version == 3
     assert second.pending_versions == ()
     assert manager.verify() == second
 
@@ -332,7 +333,7 @@ def test_concurrent_migrations_serialize_and_record_one_ledger_row(
         row = connection.execute(
             "SELECT count(*) FROM graph_rag_control_plane.schema_migrations"
         ).fetchone()
-    assert row == (2,)
+    assert row == (3,)
 
 
 def test_migration_enforces_constraints_and_installs_keyset_indexes(

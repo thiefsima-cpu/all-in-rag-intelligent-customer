@@ -50,8 +50,14 @@ class BuildJobDispatchError(BuildJobError):
 
 
 __all__ = [
-    "BuildJobConcurrentUpdateError", "BuildJobConflictError", "BuildJobDispatchError",
-    "BuildJobError", "BuildJobIdempotencyConflictError", "BuildJobInvalidTransitionError",
-    "BuildJobLeaseLostError", "BuildJobNotFoundError", "BuildJobRepositoryError",
+    "BuildJobConcurrentUpdateError",
+    "BuildJobConflictError",
+    "BuildJobDispatchError",
+    "BuildJobError",
+    "BuildJobIdempotencyConflictError",
+    "BuildJobInvalidTransitionError",
+    "BuildJobLeaseLostError",
+    "BuildJobNotFoundError",
+    "BuildJobRepositoryError",
     "BuildJobRepositoryUnavailableError",
 ]

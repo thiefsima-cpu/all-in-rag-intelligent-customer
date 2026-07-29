@@ -64,7 +64,6 @@ APPROVED_FOUNDATION_PROTOCOLS = {
     )
 }
 APPROVED_FOUNDATION_SHORT_MODULES = {
-    Path("rag_modules/contracts/build_jobs/errors.py"): "build-job domain errors",
     Path("rag_modules/contracts/graph.py"): "graph query DTOs",
     Path("rag_modules/contracts/runtime/policy.py"): "runtime policy DTOs",
     Path("rag_modules/kernel/documents.py"): "document normalization primitives",

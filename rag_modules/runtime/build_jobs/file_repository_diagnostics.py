@@ -29,7 +29,9 @@ def _scan_envelopes(repository: FileBuildJobRepository, directory: str, componen
         try:
             job_id = BuildJobId(path.stem)
         except ValueError:
-            storage.record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", component, path.stem)
+            storage.record_warning(
+                repository, "BUILD_JOB_STORE_CORRUPT_RECORD", component, path.stem
+            )
             continue
         if component == "job":
             storage.load_envelope(repository, job_id)
@@ -45,7 +47,9 @@ def _scan_archive_timestamps(repository: FileBuildJobRepository) -> None:
         try:
             job_id = BuildJobId(path.name.removesuffix(".archived-at"))
         except ValueError:
-            storage.record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", path.name)
+            storage.record_warning(
+                repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", path.name
+            )
             continue
         storage.load_archived_at(repository, job_id)
 

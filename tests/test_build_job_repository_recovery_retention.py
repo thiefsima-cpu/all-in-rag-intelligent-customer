@@ -202,10 +202,10 @@ class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
                 for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
             self.assertEqual(len(idempotency_payloads), 3)
-            self.assertIn(str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads})
-            self.assertTrue(
-                (root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists()
+            self.assertIn(
+                str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
             )
+            self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
 
     def test_repository_requires_explicit_migration_for_legacy_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

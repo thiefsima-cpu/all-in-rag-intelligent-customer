@@ -49,9 +49,7 @@ class BuildJobDomainTests(unittest.TestCase):
     def test_build_job_repository_port_includes_audit_and_close(self) -> None:
         from rag_modules.app.build_jobs import BuildJobRepositoryPort
 
-        methods = {
-            name for name, value in vars(BuildJobRepositoryPort).items() if callable(value)
-        }
+        methods = {name for name, value in vars(BuildJobRepositoryPort).items() if callable(value)}
 
         self.assertTrue({"list_events", "close"} <= methods)
 

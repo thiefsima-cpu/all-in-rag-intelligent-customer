@@ -1018,6 +1018,9 @@ def test_list_queries_use_opaque_keysets_and_separate_static_status_sql() -> Non
     assert "status =" not in unfiltered_sql
     assert "status = %(status)s" in filtered_sql
     assert "OR %(status)" not in filtered_sql
+    for statement in (unfiltered_sql, filtered_sql):
+        assert "%(cursor_created_at)s::timestamptz IS NULL" in statement
+        assert "(%(cursor_created_at)s::timestamptz, %(cursor_job_id)s::text)" in statement
     assert isinstance(unfiltered_params, Mapping)
     assert unfiltered_params == {
         "cursor_created_at": None,
@@ -1802,7 +1805,7 @@ def test_diagnostics_is_bounded_and_returns_safe_fixed_warning_on_failure() -> N
 
     assert diagnostics.backend == "postgresql"
     assert diagnostics.ready is False
-    assert diagnostics.schema_version == "2"
+    assert diagnostics.schema_version == "3"
     assert [warning.code for warning in diagnostics.warnings] == ["BUILD_JOB_POSTGRES_UNAVAILABLE"]
     assert all("secret" not in repr(warning) for warning in diagnostics.warnings)
     assert len(connection.calls) == 1
@@ -1820,7 +1823,7 @@ def test_diagnostics_verifies_connectivity_and_schema_without_scanning_jobs() ->
     assert diagnostics == BuildJobRepositoryDiagnostics(
         backend="postgresql",
         ready=True,
-        schema_version="2",
+        schema_version="3",
     )
     assert connection.calls == [("SELECT 1", None)]
     schema_manager.verify.assert_called_once_with()

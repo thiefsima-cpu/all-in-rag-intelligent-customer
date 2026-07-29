@@ -190,9 +190,7 @@ class V3BuildJobImporter:
                 select_events_sql,
                 (str(snapshot.job_id),),
             ).fetchall()
-            destination_events = tuple(
-                PostgresBuildJobRepository._event_from_row(event_row) for event_row in event_rows
-            )
+            destination_events = _destination_events_from_rows(snapshot.job_id, event_rows)
 
             if job_row is None:
                 V3BuildJobImporter._validate_event_id_ownership(
@@ -541,6 +539,33 @@ def _import_source_schema_version_from_row(row: Sequence[object]) -> int | None:
 
 def _import_source_schema_version(source: _SourceJob) -> int | None:
     return _V2_SOURCE_SCHEMA_VERSION if source.envelope.baseline is not None else None
+
+
+def _destination_events_from_rows(
+    job_id: BuildJobId,
+    rows: Sequence[Sequence[object]],
+) -> tuple[BuildJobEvent, ...]:
+    events: list[BuildJobEvent] = []
+    for row in rows:
+        try:
+            events.append(PostgresBuildJobRepository._event_from_row(row))
+        except postgres_repository._PersistedDataError:
+            _raise_destination_event_conflict(job_id, row)
+    return tuple(events)
+
+
+def _raise_destination_event_conflict(
+    job_id: BuildJobId,
+    row: Sequence[object],
+) -> None:
+    if len(row) != 8:
+        _raise_job_conflict(job_id)
+        return
+    revision = row[2]
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        _raise_job_conflict(job_id)
+        return
+    _raise_event_conflict(job_id, revision)
 
 
 def _audit_events_for_source(source: _SourceJob) -> tuple[BuildJobEvent, ...]:
