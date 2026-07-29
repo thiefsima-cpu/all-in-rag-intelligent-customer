@@ -1,4 +1,22 @@
 services:
+  build-job-postgres:
+    image: postgres:16.14-alpine
+    environment:
+      POSTGRES_DB: graph_rag
+      POSTGRES_USER: graph_rag
+      POSTGRES_PASSWORD: ${BUILD_JOB_POSTGRES_PASSWORD:-graph-rag-local}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph_rag -d graph_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/build-job-postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles:
+      - postgres
+
   etcd:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5
@@ -126,6 +144,13 @@ services:
       GRAPH_RAG_PROFILE: dev
       API_AUTH_ENABLED: "false"
       API_BUILD_JOB_RUNNER_BACKEND: external_worker
+      API_BUILD_JOB_REPOSITORY_BACKEND: ${API_BUILD_JOB_REPOSITORY_BACKEND:-file}
+      API_BUILD_JOB_RETENTION_LIMIT: ${API_BUILD_JOB_RETENTION_LIMIT:-100}
+      API_BUILD_JOB_AUDIT_RETENTION_DAYS: ${API_BUILD_JOB_AUDIT_RETENTION_DAYS:-90}
+      API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE: ${API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE:-1}
+      API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE: ${API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE:-10}
+      API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS: ${API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS:-5}
+      BUILD_JOB_POSTGRES_DSN: ${BUILD_JOB_POSTGRES_DOCKER_DSN:-postgresql://graph_rag:graph-rag-local@build-job-postgres:5432/graph_rag}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
@@ -172,6 +197,13 @@ services:
       GRAPH_RAG_PROFILE: dev
       API_AUTH_ENABLED: "false"
       API_BUILD_JOB_RUNNER_BACKEND: external_worker
+      API_BUILD_JOB_REPOSITORY_BACKEND: ${API_BUILD_JOB_REPOSITORY_BACKEND:-file}
+      API_BUILD_JOB_RETENTION_LIMIT: ${API_BUILD_JOB_RETENTION_LIMIT:-100}
+      API_BUILD_JOB_AUDIT_RETENTION_DAYS: ${API_BUILD_JOB_AUDIT_RETENTION_DAYS:-90}
+      API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE: ${API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE:-1}
+      API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE: ${API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE:-10}
+      API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS: ${API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS:-5}
+      BUILD_JOB_POSTGRES_DSN: ${BUILD_JOB_POSTGRES_DOCKER_DSN:-postgresql://graph_rag:graph-rag-local@build-job-postgres:5432/graph_rag}
       API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS: ${API_BUILD_JOB_WORKER_POLL_INTERVAL_SECONDS:-1}
       BUILD_JOB_WORKER_ID: ${BUILD_JOB_WORKER_ID:-docker-build-worker}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}

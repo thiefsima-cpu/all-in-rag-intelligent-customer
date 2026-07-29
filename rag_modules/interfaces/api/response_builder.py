@@ -9,6 +9,7 @@ from typing import Any
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ...kernel.artifacts import ArtifactManifest, artifact_health
+from ...kernel.json_types import JsonObject
 from ...runtime.artifacts.registry import ArtifactRegistrySnapshot
 from .answer_models import (
     AnswerPayloadModel,
@@ -19,6 +20,7 @@ from .answer_models import (
 )
 from .build_models import (
     ArtifactRegistryResponseModel,
+    BuildJobAuditEventListResponseModel,
     BuildJobListResponseModel,
     BuildJobResponseModel,
 )
@@ -99,6 +101,17 @@ def build_build_job_list_response(
     )
 
 
+def build_build_job_event_list_response(
+    event_payloads: list[JsonObject],
+    *,
+    next_cursor: str = "",
+) -> BuildJobAuditEventListResponseModel:
+    safe = sanitize_public_error_fields(list(event_payloads or []), code=ErrorCode.BUILD_FAILED)
+    return BuildJobAuditEventListResponseModel.model_validate(
+        {"events": safe, "next_cursor": str(next_cursor or "")}
+    )
+
+
 def build_artifact_registry_response(
     snapshot: ArtifactRegistrySnapshot,
 ) -> ArtifactRegistryResponseModel:
@@ -140,6 +153,7 @@ __all__ = [
     "build_answer_response",
     "build_artifact_registry_response",
     "build_build_job_list_response",
+    "build_build_job_event_list_response",
     "build_build_job_response",
     "build_diagnostics_response",
     "build_json_response",

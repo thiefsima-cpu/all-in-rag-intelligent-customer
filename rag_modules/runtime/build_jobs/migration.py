@@ -134,9 +134,11 @@ class BuildJobStoreMigrator:
 
     def _write_staging(self, snapshots: list[BuildJobSnapshot]) -> None:
         jobs_dir = os.path.join(self.staging_dir, "jobs")
+        archive_dir = os.path.join(self.staging_dir, "archive")
         idempotency_dir = os.path.join(self.staging_dir, "idempotency")
         leases_dir = os.path.join(self.staging_dir, "leases")
         os.makedirs(jobs_dir, exist_ok=True)
+        os.makedirs(archive_dir, exist_ok=True)
         os.makedirs(idempotency_dir, exist_ok=True)
         os.makedirs(leases_dir, exist_ok=True)
         write_json_atomic(

@@ -16,17 +16,42 @@ if TYPE_CHECKING:
 
 
 def scan_for_corruption(repository: FileBuildJobRepository) -> None:
-    if not os.path.isdir(repository.jobs_dir):
-        idempotency.scan_idempotency_for_corruption(repository)
+    _scan_envelopes(repository, repository.jobs_dir, "job")
+    _scan_envelopes(repository, repository.archive_dir, "archive")
+    _scan_archive_timestamps(repository)
+    idempotency.scan_idempotency_for_corruption(repository)
+
+
+def _scan_envelopes(repository: FileBuildJobRepository, directory: str, component: str) -> None:
+    if not os.path.isdir(directory):
         return
-    for path in Path(repository.jobs_dir).glob("*.json"):
+    for path in Path(directory).glob("*.json"):
         try:
             job_id = BuildJobId(path.stem)
         except ValueError:
-            storage.record_warning(repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "job", path.stem)
+            storage.record_warning(
+                repository, "BUILD_JOB_STORE_CORRUPT_RECORD", component, path.stem
+            )
             continue
-        storage.load_envelope(repository, job_id)
-    idempotency.scan_idempotency_for_corruption(repository)
+        if component == "job":
+            storage.load_envelope(repository, job_id)
+        else:
+            storage.load_archived_envelope(repository, job_id)
+            storage.load_archived_at(repository, job_id)
+
+
+def _scan_archive_timestamps(repository: FileBuildJobRepository) -> None:
+    if not os.path.isdir(repository.archive_dir):
+        return
+    for path in Path(repository.archive_dir).glob("*.archived-at"):
+        try:
+            job_id = BuildJobId(path.name.removesuffix(".archived-at"))
+        except ValueError:
+            storage.record_warning(
+                repository, "BUILD_JOB_STORE_CORRUPT_RECORD", "archive", path.name
+            )
+            continue
+        storage.load_archived_at(repository, job_id)
 
 
 __all__ = ["scan_for_corruption"]

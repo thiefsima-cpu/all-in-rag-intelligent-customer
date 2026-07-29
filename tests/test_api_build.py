@@ -1,8 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 import os
+from datetime import datetime, timezone
 
 import tests.api_app_helpers as h
+from rag_modules.contracts.build_jobs import (
+    BuildJobEvent,
+    BuildJobEventPage,
+    BuildJobEventType,
+    BuildJobId,
+    BuildJobNotFoundError,
+    BuildJobRepositoryDiagnostics,
+    BuildJobRepositoryError,
+    BuildJobRepositoryUnavailableError,
+    BuildJobType,
+    JobBaselineImported,
+    JobClaimed,
+    JobQueued,
+    WorkerIdentity,
+)
 from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner
 
 json = h.json
@@ -26,6 +43,97 @@ _FailingBuildApiSystem = h._FailingBuildApiSystem
 _FailOnceBuildApiSystem = h._FailOnceBuildApiSystem
 
 
+class _LifespanBuildJobs:
+    def __init__(
+        self,
+        startup_exception: Exception | None = None,
+        shutdown_exception: Exception | None = None,
+    ) -> None:
+        self.startup_exception = startup_exception
+        self.shutdown_exception = shutdown_exception
+        self.startup_calls = 0
+        self.shutdown_calls = 0
+
+    def startup(self) -> tuple[object, ...]:
+        self.startup_calls += 1
+        if self.startup_exception is not None:
+            raise self.startup_exception
+        return ()
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+        if self.shutdown_exception is not None:
+            raise self.shutdown_exception
+
+    def diagnostics(self) -> BuildJobRepositoryDiagnostics:
+        return BuildJobRepositoryDiagnostics(backend="file", schema_version="3")
+
+
+class _AuditBuildJobs(_LifespanBuildJobs):
+    def __init__(
+        self,
+        events: tuple[BuildJobEvent, ...] = (),
+        *,
+        next_cursor: str = "",
+        exception: Exception | None = None,
+        exceptions: dict[str, Exception] | None = None,
+    ) -> None:
+        super().__init__()
+        self.events = events
+        self.next_cursor = next_cursor
+        self.exception = exception
+        self.exceptions = dict(exceptions or {})
+        self.queries: list[object] = []
+
+    def _raise_for(self, operation: str) -> None:
+        exception = self.exceptions.get(operation, self.exception)
+        if exception is not None:
+            raise exception
+
+    def submit(self, **_kwargs):
+        self._raise_for("submit")
+        raise AssertionError("submit result was unexpectedly required")
+
+    def list_page(self, **_kwargs):
+        self._raise_for("list")
+        raise AssertionError("list result was unexpectedly required")
+
+    def get(self, _job_id):
+        self._raise_for("get")
+        raise AssertionError("get result was unexpectedly required")
+
+    def cancel(self, _job_id):
+        self._raise_for("cancel")
+        raise AssertionError("cancel result was unexpectedly required")
+
+    def retry(self, _job_id, **_kwargs):
+        self._raise_for("retry")
+        raise AssertionError("retry result was unexpectedly required")
+
+    def list_events(self, job_id, *, limit=None, cursor="") -> BuildJobEventPage:
+        self.queries.append((job_id, limit, cursor))
+        self._raise_for("events")
+        return BuildJobEventPage(events=self.events, next_cursor=self.next_cursor)
+
+
+def _audit_event(
+    *,
+    revision: int,
+    event_type: BuildJobEventType,
+    payload: object,
+) -> BuildJobEvent:
+    return BuildJobEvent(
+        event_id=f"{revision:032x}",
+        job_id=BuildJobId("a" * 32),
+        revision=revision,
+        event_type=event_type,
+        schema_version=1,
+        occurred_at=datetime(2026, 7, 26, tzinfo=timezone.utc),
+        request_id="audit-request",
+        payload=payload,
+    )
+
+
 class ApiBuildTests(unittest.TestCase):
     """Build API job, runtime, idempotency, and diagnostics behavior."""
 
@@ -40,6 +148,265 @@ class ApiBuildTests(unittest.TestCase):
                 self.assertFalse((Path(temp_dir) / "storage" / "indexes").exists())
             finally:
                 os.chdir(previous_cwd)
+
+    def test_build_job_audit_events_are_paginated_and_strictly_redacted(self) -> None:
+        worker = WorkerIdentity(worker_id="worker-1", runner_backend="external_worker")
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=1,
+                    event_type=BuildJobEventType.QUEUED,
+                    payload=JobQueued(
+                        job_type=BuildJobType.BUILD,
+                        idempotency_key_hash="private-idempotency-hash",
+                    ),
+                ),
+                _audit_event(
+                    revision=2,
+                    event_type=BuildJobEventType.CLAIMED,
+                    payload=JobClaimed(
+                        worker=worker,
+                        lease_token="private-lease-token",
+                        lease_expires_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
+                    ),
+                ),
+            ),
+            next_cursor="opaque-next-cursor",
+        )
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=jobs,
+        )
+
+        with _client(app) as client:
+            response = client.get(
+                f"/v1/jobs/{'a' * 32}/events",
+                params={"limit": 2, "cursor": "opaque-input-cursor"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([event["revision"] for event in payload["events"]], [1, 2])
+        self.assertEqual(payload["next_cursor"], "opaque-next-cursor")
+        self.assertEqual(jobs.queries, [(BuildJobId("a" * 32), 2, "opaque-input-cursor")])
+        serialized = json.dumps(payload)
+        self.assertNotIn("private-idempotency-hash", serialized)
+        self.assertNotIn("private-lease-token", serialized)
+        self.assertNotIn("idempotency_key_hash", serialized)
+        self.assertNotIn("lease_token", serialized)
+
+    def test_imported_v2_baseline_audit_event_is_publicly_queryable(self) -> None:
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=0,
+                    event_type=BuildJobEventType.BASELINE_IMPORTED,
+                    payload=JobBaselineImported(source_schema_version=2),
+                ),
+            )
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), build_job_application=jobs)
+
+        with _client(app) as client:
+            response = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["events"][0],
+            {
+                "event_id": "00000000000000000000000000000000",
+                "job_id": "a" * 32,
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": "2026-07-26T00:00:00+00:00",
+                "request_id": "audit-request",
+                "payload": {"source_schema_version": 2},
+            },
+        )
+
+    def test_build_job_audit_events_map_cursor_missing_and_unavailable_errors(self) -> None:
+        cases = (
+            (ValueError("invalid cursor"), 400, "INVALID_REQUEST"),
+            (BuildJobNotFoundError(BuildJobId("a" * 32)), 404, "NOT_FOUND"),
+            (
+                BuildJobRepositoryUnavailableError("postgres://private-dsn"),
+                503,
+                "SERVICE_UNAVAILABLE",
+            ),
+        )
+        for exception, status, code in cases:
+            with self.subTest(code=code):
+                app = create_build_api_app(
+                    system=_FakeApiSystem(),
+                    build_job_application=_AuditBuildJobs(exception=exception),
+                )
+                with _client(app) as client:
+                    response = client.get(f"/v1/jobs/{'a' * 32}/events", params={"cursor": "bad"})
+
+                payload = _assert_error_response(response, status_code=status, code=code)
+                self.assertNotIn("postgres://private-dsn", json.dumps(payload))
+
+    def test_archived_build_job_audit_events_remain_available_after_current_job_lookup_hides_it(
+        self,
+    ) -> None:
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=1,
+                    event_type=BuildJobEventType.QUEUED,
+                    payload=JobQueued(job_type=BuildJobType.BUILD),
+                ),
+            ),
+            exceptions={"get": BuildJobNotFoundError(BuildJobId("a" * 32))},
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), build_job_application=jobs)
+
+        with _client(app) as client:
+            current_job = client.get(f"/v1/jobs/{'a' * 32}")
+            audit_events = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        _assert_error_response(current_job, status_code=404, code="NOT_FOUND")
+        self.assertEqual(audit_events.status_code, 200)
+        self.assertEqual(audit_events.json()["events"][0]["revision"], 1)
+
+    def test_build_job_repository_unavailable_is_sanitized_for_every_request_operation(
+        self,
+    ) -> None:
+        secret = "postgres://private-build-job-dsn"
+        job_id = "a" * 32
+        cases = (
+            ("submit", "post", "/v1/jobs/build"),
+            ("list", "get", "/v1/jobs"),
+            ("get", "get", f"/v1/jobs/{job_id}"),
+            ("cancel", "post", f"/v1/jobs/{job_id}/cancel"),
+            ("retry", "post", f"/v1/jobs/{job_id}/retry"),
+            ("events", "get", f"/v1/jobs/{job_id}/events"),
+        )
+        for operation, method, path in cases:
+            with self.subTest(operation=operation):
+                app = create_build_api_app(
+                    system=_FakeApiSystem(),
+                    build_job_application=_AuditBuildJobs(
+                        exceptions={operation: BuildJobRepositoryUnavailableError(secret)},
+                    ),
+                )
+                with _client(app) as client:
+                    response = getattr(client, method)(path)
+
+                payload = _assert_error_response(
+                    response,
+                    status_code=503,
+                    code="SERVICE_UNAVAILABLE",
+                )
+                self.assertNotIn(secret, json.dumps(payload))
+
+    def test_build_job_audit_events_do_not_treat_generic_repository_errors_as_unavailable(
+        self,
+    ) -> None:
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=_AuditBuildJobs(
+                exception=BuildJobRepositoryError("generic repository error"),
+            ),
+        )
+
+        with TestClient(
+            app,
+            headers={"Authorization": f"Bearer {_API_TOKEN}"},
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        self.assertEqual(response.status_code, 500)
+
+    def test_build_lifespan_shuts_down_after_startup_failure_and_once_on_success(self) -> None:
+        failing_jobs = _LifespanBuildJobs(RuntimeError("startup failed"))
+        failing_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=failing_jobs,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "startup failed"):
+            with TestClient(failing_app):
+                pass
+
+        successful_jobs = _LifespanBuildJobs()
+        successful_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=successful_jobs,
+        )
+        with TestClient(successful_app):
+            pass
+
+        self.assertEqual(failing_jobs.shutdown_calls, 1)
+        self.assertEqual(successful_jobs.shutdown_calls, 1)
+
+    def test_build_lifespan_preserves_startup_and_yield_failures_over_shutdown_failure(
+        self,
+    ) -> None:
+        startup_jobs = _LifespanBuildJobs(
+            RuntimeError("startup failed"),
+            RuntimeError("shutdown failed"),
+        )
+        startup_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=startup_jobs,
+        )
+        with self.assertRaisesRegex(RuntimeError, "startup failed"):
+            with TestClient(startup_app):
+                pass
+
+        state_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        state_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=state_jobs,
+        )
+
+        def reject_api_service_state(_self: object, name: str, value: object) -> None:
+            if name == "api_service":
+                raise ValueError("state failed")
+            object.__setattr__(_self, name, value)
+
+        async def fail_during_state_assignment() -> None:
+            async with state_app.router.lifespan_context(state_app):
+                pass
+
+        with (
+            h.patch.object(type(state_app.state), "__setattr__", new=reject_api_service_state),
+            self.assertRaisesRegex(ValueError, "state failed"),
+        ):
+            asyncio.run(fail_during_state_assignment())
+
+        yield_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        yield_app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=yield_jobs,
+        )
+
+        async def fail_during_yield() -> None:
+            async with yield_app.router.lifespan_context(yield_app):
+                raise ValueError("yield failed")
+
+        with self.assertRaisesRegex(ValueError, "yield failed"):
+            asyncio.run(fail_during_yield())
+
+        self.assertEqual(startup_jobs.shutdown_calls, 1)
+        self.assertEqual(state_jobs.shutdown_calls, 1)
+        self.assertEqual(yield_jobs.shutdown_calls, 1)
+
+    def test_build_lifespan_propagates_shutdown_failure_after_normal_exit(self) -> None:
+        build_jobs = _LifespanBuildJobs(shutdown_exception=RuntimeError("shutdown failed"))
+        app = create_build_api_app(
+            system=_FakeApiSystem(),
+            build_job_application=build_jobs,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "shutdown failed"):
+            with TestClient(app):
+                pass
+
+        self.assertEqual(build_jobs.shutdown_calls, 1)
 
     def test_build_readiness_requires_initialized_build_runtime(self) -> None:
         system = _FakeApiSystem()

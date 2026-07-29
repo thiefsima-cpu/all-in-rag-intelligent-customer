@@ -5,11 +5,13 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from rag_modules.app.assembly import assemble_build_job_application, compose_build_job_worker
 from rag_modules.app.build_jobs import BuildJobStatus
 from rag_modules.app.runtime_operations import resolve_runtime_operation_coordinator
 from rag_modules.runtime.build_jobs import ExternalBuildJobQueueRunner, ExternalBuildJobWorkerRunner
+from rag_modules.runtime.build_jobs import external_worker_runner as worker_runner_module
 from tests.configuration_test_helpers import build_test_config
 
 
@@ -103,6 +105,94 @@ def _wait_for_status(application, job_id, expected_status: BuildJobStatus):
 
 
 class BuildJobExternalWorkerTests(unittest.TestCase):
+    def test_worker_shutdown_closes_its_repository_exactly_once(self) -> None:
+        repository = Mock()
+        runner = ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda _snapshot, _progress, _cancellation_check: None,
+            cancelled_result=lambda: {},
+            failed_result=lambda: {},
+            max_workers=1,
+            worker_id="worker-a",
+            repository_close=repository.close,
+        )
+
+        runner.shutdown()
+        runner.shutdown()
+
+        repository.close.assert_called_once_with()
+
+    def test_worker_shutdown_closes_repository_after_start_failure(self) -> None:
+        repository = Mock()
+        runner = ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda _snapshot, _progress, _cancellation_check: None,
+            cancelled_result=lambda: {},
+            failed_result=lambda: {},
+            max_workers=1,
+            worker_id="worker-a",
+            repository_close=repository.close,
+        )
+
+        with patch.object(
+            worker_runner_module.threading.Thread, "start", side_effect=RuntimeError("start failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "start failed"):
+                runner.start()
+
+        with self.assertRaisesRegex(RuntimeError, "cannot join thread before it is started"):
+            runner.shutdown()
+        with self.assertRaisesRegex(RuntimeError, "cannot join thread before it is started"):
+            runner.shutdown()
+
+        repository.close.assert_called_once_with()
+
+    def test_worker_shutdown_closes_repository_when_poll_join_fails(self) -> None:
+        repository = Mock()
+        poll_thread = Mock()
+        poll_thread.join.side_effect = RuntimeError("join failed")
+        runner = ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda _snapshot, _progress, _cancellation_check: None,
+            cancelled_result=lambda: {},
+            failed_result=lambda: {},
+            max_workers=1,
+            worker_id="worker-a",
+            repository_close=repository.close,
+        )
+        runner._poll_thread = poll_thread
+
+        with self.assertRaisesRegex(RuntimeError, "join failed"):
+            runner.shutdown()
+        with self.assertRaisesRegex(RuntimeError, "join failed"):
+            runner.shutdown()
+
+        repository.close.assert_called_once_with()
+
+    def test_worker_shutdown_closes_repository_when_runner_shutdown_fails(self) -> None:
+        repository = Mock()
+        runner = ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda _snapshot, _progress, _cancellation_check: None,
+            cancelled_result=lambda: {},
+            failed_result=lambda: {},
+            max_workers=1,
+            worker_id="worker-a",
+            repository_close=repository.close,
+        )
+
+        with patch.object(
+            worker_runner_module.InProcessBuildJobRunner,
+            "shutdown",
+            side_effect=RuntimeError("runner shutdown failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "runner shutdown failed"):
+                runner.shutdown()
+            with self.assertRaisesRegex(RuntimeError, "runner shutdown failed"):
+                runner.shutdown()
+
+        repository.close.assert_called_once_with()
+
     def test_external_worker_backend_enqueues_without_running_in_api_process(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = build_test_config(

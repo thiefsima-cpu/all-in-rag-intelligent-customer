@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timezone
 
 from rag_modules.app.build_jobs import (
     BuildJobEvent,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobEventType,
     BuildJobId,
     BuildJobInvalidTransitionError,
+    BuildJobRepositoryDiagnostics,
+    BuildJobRepositoryError,
+    BuildJobRepositorySettings,
+    BuildJobRepositoryUnavailableError,
     BuildJobSnapshot,
     BuildJobStatus,
     BuildJobType,
@@ -16,6 +23,8 @@ from rag_modules.app.build_jobs import (
     JobQueued,
     JobStarted,
     WorkerIdentity,
+    event_from_dict,
+    public_build_job_event,
     reduce_build_job,
 )
 
@@ -37,6 +46,161 @@ def _event(event_type, payload, *, revision: int) -> BuildJobEvent:
 
 
 class BuildJobDomainTests(unittest.TestCase):
+    def test_build_job_repository_port_includes_audit_and_close(self) -> None:
+        from rag_modules.app.build_jobs import BuildJobRepositoryPort
+
+        methods = {name for name, value in vars(BuildJobRepositoryPort).items() if callable(value)}
+
+        self.assertTrue({"list_events", "close"} <= methods)
+
+    def test_audit_contract_dtos_are_public_and_default_to_safe_values(self) -> None:
+        self.assertEqual(
+            BuildJobEventListQuery(),
+            BuildJobEventListQuery(limit=None, cursor=""),
+        )
+        self.assertEqual(BuildJobEventPage(events=()).next_cursor, "")
+        self.assertEqual(BuildJobRepositorySettings().audit_retention_days, 90)
+
+    def test_repository_diagnostics_publish_backend_readiness_and_schema_version(self) -> None:
+        public = BuildJobRepositoryDiagnostics(
+            backend="postgresql",
+            ready=False,
+            schema_version="build-jobs-v1",
+        ).to_public_dict()
+
+        self.assertEqual(
+            public,
+            {
+                "backend": "postgresql",
+                "ready": False,
+                "schema_version": "build-jobs-v1",
+                "warning_count": 0,
+                "warning_codes": [],
+                "warnings": [],
+            },
+        )
+
+    def test_repository_diagnostics_redacts_unrecognized_backend_and_schema_values(self) -> None:
+        public = BuildJobRepositoryDiagnostics(
+            backend="postgresql://user:private-password@db.example/build_jobs",
+            schema_version="SELECT * FROM build_jobs WHERE token = 'private-token'",
+        ).to_public_dict()
+
+        self.assertEqual(public["backend"], "unknown")
+        self.assertEqual(public["schema_version"], "")
+        self.assertNotIn("private-password", json.dumps(public))
+        self.assertNotIn("private-token", json.dumps(public))
+
+    def test_repository_unavailable_error_is_a_public_repository_error(self) -> None:
+        self.assertTrue(issubclass(BuildJobRepositoryUnavailableError, BuildJobRepositoryError))
+
+    def test_public_claim_event_omits_lease_token(self) -> None:
+        event = BuildJobEvent(
+            event_id=f"{'a' * 32}:2",
+            job_id=BuildJobId("a" * 32),
+            revision=2,
+            event_type=BuildJobEventType.CLAIMED,
+            schema_version=1,
+            occurred_at=NOW,
+            request_id="request-a",
+            payload=JobClaimed(
+                worker=WorkerIdentity("worker-1", "external_worker"),
+                lease_token="private-lease-token",
+                lease_expires_at=NOW,
+            ),
+        )
+        public = public_build_job_event(event)
+
+        self.assertEqual(
+            public["payload"],
+            {
+                "worker": {"worker_id": "worker-1", "runner_backend": "external_worker"},
+                "lease_expires_at": NOW.isoformat(),
+            },
+        )
+        self.assertNotIn("private-lease-token", json.dumps(public))
+
+    def test_imported_v2_baseline_event_has_a_privacy_safe_public_projection(self) -> None:
+        event = event_from_dict(
+            {
+                "event_id": f"{JOB_ID}:baseline:0",
+                "job_id": str(JOB_ID),
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": NOW.isoformat(),
+                "request_id": "request-1",
+                "payload": {"source_schema_version": 2},
+            }
+        )
+
+        self.assertEqual(
+            public_build_job_event(event),
+            {
+                "event_id": f"{JOB_ID}:baseline:0",
+                "job_id": str(JOB_ID),
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": NOW.isoformat(),
+                "request_id": "request-1",
+                "payload": {"source_schema_version": 2},
+            },
+        )
+
+    def test_imported_baseline_rejects_unsupported_or_malformed_source_schema(self) -> None:
+        cases = (
+            ("unsupported", {"source_schema_version": 999}),
+            ("missing", {}),
+            ("wrong type", {"source_schema_version": "2"}),
+        )
+
+        for label, imported_payload in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^unsupported imported baseline source schema version$",
+                ):
+                    event_from_dict(
+                        {
+                            "event_id": f"{JOB_ID}:baseline:0",
+                            "job_id": str(JOB_ID),
+                            "revision": 0,
+                            "event_type": "baseline_imported",
+                            "schema_version": 1,
+                            "occurred_at": NOW.isoformat(),
+                            "request_id": "request-1",
+                            "payload": imported_payload,
+                        }
+                    )
+
+    def test_public_failed_event_redacts_terminal_result_details(self) -> None:
+        event = BuildJobEvent(
+            event_id=f"{'a' * 32}:4",
+            job_id=BuildJobId("a" * 32),
+            revision=4,
+            event_type=BuildJobEventType.FAILED,
+            schema_version=1,
+            occurred_at=NOW,
+            request_id="request-a",
+            payload=JobFailed(
+                message="private backend failure",
+                result={
+                    "database_url": "postgres://private-db-secret",
+                    "nested": {"token": "private-token"},
+                },
+            ),
+        )
+
+        public = public_build_job_event(event)
+
+        self.assertEqual(
+            public["payload"],
+            {"message": "Build failed.", "result": {"message": "Build failed."}},
+        )
+        self.assertNotIn("private-db-secret", json.dumps(public))
+        self.assertNotIn("private-token", json.dumps(public))
+
     def test_reducer_creates_queued_snapshot_and_hides_internal_statuses(self) -> None:
         queued = reduce_build_job(
             None,

@@ -103,9 +103,33 @@ class BuildJobListResponseModel(BaseModel):
     next_cursor: str = ""
 
 
+class BuildJobAuditEventModel(BaseModel):
+    """Strict public representation of one build-job audit event."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    job_id: str
+    revision: int
+    event_type: str
+    schema_version: int
+    occurred_at: str
+    request_id: str
+    payload: JsonObject = Field(default_factory=dict)
+
+
+class BuildJobAuditEventListResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    events: list[BuildJobAuditEventModel] = Field(default_factory=list)
+    next_cursor: str = ""
+
+
 __all__ = [
     "ArtifactManifestResponseModel",
     "ArtifactRegistryResponseModel",
+    "BuildJobAuditEventListResponseModel",
+    "BuildJobAuditEventModel",
     "BuildJobFailureModel",
     "BuildJobListResponseModel",
     "BuildJobPayloadModel",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import tests.api_app_helpers as h
 
 json = h.json
@@ -17,6 +19,7 @@ _client = h._client
 _assert_error_response = h._assert_error_response
 _FakeApiSystem = h._FakeApiSystem
 _PublicManifestErrorSystem = h._PublicManifestErrorSystem
+patch = h.patch
 
 
 class ApiPublicSurfaceTests(unittest.TestCase):
@@ -31,6 +34,76 @@ class ApiPublicSurfaceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
         self.assertFalse(response.json()["system_ready"])
+
+    def test_serving_lifespan_preserves_startup_state_and_yield_failures_over_shutdown_failure(
+        self,
+    ) -> None:
+        startup_app = create_serving_api_app(system=_FakeApiSystem())
+        with (
+            patch(
+                "rag_modules.interfaces.api.app.GraphRAGServingApiService.startup",
+                side_effect=RuntimeError("startup failed"),
+            ),
+            patch(
+                "rag_modules.interfaces.api.app.GraphRAGServingApiService.shutdown",
+                side_effect=RuntimeError("shutdown failed"),
+            ) as shutdown,
+            self.assertRaisesRegex(RuntimeError, "startup failed"),
+        ):
+            with TestClient(startup_app):
+                pass
+        shutdown.assert_called_once_with()
+
+        state_app = create_serving_api_app(system=_FakeApiSystem())
+
+        def reject_api_service_state(_self: object, name: str, value: object) -> None:
+            if name == "api_service":
+                raise ValueError("state failed")
+            object.__setattr__(_self, name, value)
+
+        async def fail_during_state_assignment() -> None:
+            async with state_app.router.lifespan_context(state_app):
+                pass
+
+        with (
+            patch.object(type(state_app.state), "__setattr__", new=reject_api_service_state),
+            patch(
+                "rag_modules.interfaces.api.app.GraphRAGServingApiService.shutdown",
+                side_effect=RuntimeError("shutdown failed"),
+            ) as shutdown,
+            self.assertRaisesRegex(ValueError, "state failed"),
+        ):
+            asyncio.run(fail_during_state_assignment())
+        shutdown.assert_called_once_with()
+
+        yield_app = create_serving_api_app(system=_FakeApiSystem())
+
+        async def fail_during_yield() -> None:
+            async with yield_app.router.lifespan_context(yield_app):
+                raise ValueError("yield failed")
+
+        with (
+            patch(
+                "rag_modules.interfaces.api.app.GraphRAGServingApiService.shutdown",
+                side_effect=RuntimeError("shutdown failed"),
+            ) as shutdown,
+            self.assertRaisesRegex(ValueError, "yield failed"),
+        ):
+            asyncio.run(fail_during_yield())
+        shutdown.assert_called_once_with()
+
+    def test_serving_lifespan_propagates_shutdown_failure_after_normal_exit(self) -> None:
+        app = create_serving_api_app(system=_FakeApiSystem())
+        with (
+            patch(
+                "rag_modules.interfaces.api.app.GraphRAGServingApiService.shutdown",
+                side_effect=RuntimeError("shutdown failed"),
+            ) as shutdown,
+            self.assertRaisesRegex(RuntimeError, "shutdown failed"),
+        ):
+            with TestClient(app):
+                pass
+        shutdown.assert_called_once_with()
 
     def test_owned_serving_api_fails_startup_when_model_api_key_is_missing(self) -> None:
         config = build_test_config({"models": {"api_key": ""}})
@@ -214,6 +287,7 @@ class ApiPublicSurfaceTests(unittest.TestCase):
                 "/runtime/build/initialize": client.post("/runtime/build/initialize"),
                 "/jobs": client.get("/jobs"),
                 f"/jobs/{'0' * 32}": client.get(f"/jobs/{'0' * 32}"),
+                f"/jobs/{'0' * 32}/events": client.get(f"/jobs/{'0' * 32}/events"),
                 f"/jobs/{'0' * 32}/cancel": client.post(f"/jobs/{'0' * 32}/cancel"),
                 f"/jobs/{'0' * 32}/retry": client.post(f"/jobs/{'0' * 32}/retry"),
                 "/jobs/build": client.post("/jobs/build"),
@@ -231,6 +305,8 @@ class ApiPublicSurfaceTests(unittest.TestCase):
                 templated_path = "/jobs/{job_id}/cancel"
             elif path.endswith("/retry"):
                 templated_path = "/jobs/{job_id}/retry"
+            elif path.endswith("/events"):
+                templated_path = "/jobs/{job_id}/events"
             elif path.startswith("/jobs/"):
                 templated_path = "/jobs/{job_id}"
             else:
@@ -239,6 +315,29 @@ class ApiPublicSurfaceTests(unittest.TestCase):
 
         self.assertIn("/v1/health", schema["paths"])
         self.assertIn("/v1/jobs", schema["paths"])
+        self.assertIn("/v1/jobs/{job_id}/events", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/cancel", schema["paths"])
         self.assertIn("/v1/jobs/{job_id}/retry", schema["paths"])
         self.assertIn("/v1/jobs/build", schema["paths"])
+
+    def test_build_job_audit_openapi_uses_common_errors_and_requires_credentials(self) -> None:
+        config = build_test_config(
+            {
+                "api": {
+                    "access_token": _API_TOKEN,
+                    "openapi_enabled": True,
+                }
+            }
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), config=config)
+
+        with _client(app) as client:
+            schema = client.get("/openapi.json").json()
+
+        operation = schema["paths"]["/v1/jobs/{job_id}/events"]["get"]
+        self.assertNotEqual(operation.get("security"), [])
+        for status in ("400", "404", "503"):
+            response_schema = operation["responses"][status]["content"]["application/json"][
+                "schema"
+            ]
+            self.assertEqual(response_schema["$ref"], "#/components/schemas/ErrorResponseModel")

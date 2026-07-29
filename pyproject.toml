@@ -28,6 +28,7 @@ dependencies = [
   "opentelemetry-sdk==1.43.0",
   "opentelemetry-exporter-otlp-proto-http==1.43.0",
   "prometheus-client==0.25.0",
+  "psycopg[binary,pool]==3.3.4",
 ]
 keywords = ["graphrag", "fastapi", "milvus", "neo4j"]
 classifiers = [
@@ -57,6 +58,7 @@ dev = [
 graph-rag-api = "main:main"
 graph-rag-build-api = "main_build_service:main"
 graph-rag-build-worker = "main_build_worker:main"
+graph-rag-build-job-db = "scripts.build_job_db:main"
 graph-rag-pressure = "scripts.pressure.cli:main"
 graph-rag-release-gate = "scripts.release_gate:main"
 graph-rag-local-gate = "scripts.local_gate:main"
@@ -81,6 +83,7 @@ namespaces = true
 ]
 "rag_modules.domains.customer_service" = ["evaluation.json"]
 "rag_modules.domains.recipe" = ["evaluation.json"]
+"rag_modules.runtime.build_jobs.postgres" = ["migrations/*.sql"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

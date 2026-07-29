@@ -17,6 +17,7 @@ BUILD_JOB_EVENT_SCHEMA_VERSION = 1
 
 
 class BuildJobEventType(StrEnum):
+    BASELINE_IMPORTED = "baseline_imported"
     QUEUED = "queued"
     CLAIMED = "claimed"
     STARTED = "started"
@@ -26,6 +27,11 @@ class BuildJobEventType(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
+
+
+@dataclass(frozen=True, slots=True)
+class JobBaselineImported:
+    source_schema_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +87,8 @@ class JobInterrupted:
 
 
 BuildJobEventPayload = (
-    JobQueued
+    JobBaselineImported
+    | JobQueued
     | JobClaimed
     | JobStarted
     | JobProgressRecorded
@@ -106,6 +113,7 @@ class BuildJobEvent:
 
 
 _PAYLOAD_BY_TYPE: dict[BuildJobEventType, type[BuildJobEventPayload]] = {
+    BuildJobEventType.BASELINE_IMPORTED: JobBaselineImported,
     BuildJobEventType.QUEUED: JobQueued,
     BuildJobEventType.CLAIMED: JobClaimed,
     BuildJobEventType.STARTED: JobStarted,
@@ -129,6 +137,81 @@ def event_to_dict(event: BuildJobEvent) -> JsonObject:
         "request_id": event.request_id,
         "payload": _value_to_json(event.payload),
     }
+
+
+def public_build_job_event(event: BuildJobEvent) -> JsonObject:
+    """Return the explicit, privacy-safe public projection of an audit event."""
+
+    payload = event.payload
+    if isinstance(payload, JobBaselineImported):
+        public_payload: JsonObject = {
+            "source_schema_version": payload.source_schema_version,
+        }
+    elif isinstance(payload, JobQueued):
+        public_payload = {
+            "job_type": payload.job_type.value,
+            "retry_of_job_id": str(payload.retry_of_job_id or ""),
+        }
+    elif isinstance(payload, JobClaimed):
+        public_payload = {
+            "worker": {
+                "worker_id": payload.worker.worker_id,
+                "runner_backend": payload.worker.runner_backend,
+            },
+            "lease_expires_at": payload.lease_expires_at.isoformat(),
+        }
+    elif isinstance(payload, JobStarted):
+        public_payload = {
+            "worker": {
+                "worker_id": payload.worker.worker_id,
+                "runner_backend": payload.worker.runner_backend,
+            }
+        }
+    elif isinstance(payload, JobProgressRecorded):
+        public_payload = {"message": "Build progress updated."}
+    elif isinstance(payload, JobCancellationRequested):
+        public_payload = {"message": "Build cancellation requested."}
+    elif isinstance(payload, JobCancelled):
+        public_payload = {
+            "message": "Build cancelled.",
+            "result": _public_terminal_result(payload.result, "Build cancelled."),
+        }
+    elif isinstance(payload, JobSucceeded):
+        public_payload = {
+            "message": "Knowledge base build completed.",
+            "result": _public_terminal_result(
+                payload.result,
+                "Knowledge base build completed.",
+            ),
+        }
+    elif isinstance(payload, JobFailed):
+        public_payload = {
+            "message": "Build failed.",
+            "result": _public_terminal_result(payload.result, "Build failed."),
+        }
+    elif isinstance(payload, JobInterrupted):
+        public_payload = {"message": "Build interrupted by service restart."}
+    else:
+        raise ValueError("unknown build job event payload")
+
+    return coerce_json_object(
+        {
+            "event_id": event.event_id,
+            "job_id": str(event.job_id),
+            "revision": event.revision,
+            "event_type": event.event_type.value,
+            "schema_version": event.schema_version,
+            "occurred_at": event.occurred_at.isoformat(),
+            "request_id": event.request_id,
+            "payload": public_payload,
+        }
+    )
+
+
+def _public_terminal_result(result: JsonObject | None, message: str) -> JsonObject | None:
+    if result is None:
+        return None
+    return {"message": message}
 
 
 def event_from_dict(payload: Mapping[str, object]) -> BuildJobEvent:
@@ -179,6 +262,15 @@ def _payload_from_dict(
     valid_keys = {field.name for field in fields(payload_class)}
     _reject_unknown_keys(payload, valid_keys)
 
+    if payload_class is JobBaselineImported:
+        source_schema_version = payload.get("source_schema_version")
+        if (
+            not isinstance(source_schema_version, int)
+            or isinstance(source_schema_version, bool)
+            or source_schema_version != 2
+        ):
+            raise ValueError("unsupported imported baseline source schema version")
+        return JobBaselineImported(source_schema_version=source_schema_version)
     if payload_class is JobQueued:
         retry_of_job_id = payload.get("retry_of_job_id")
         return JobQueued(
@@ -236,6 +328,7 @@ def _value_to_json(value: object) -> JsonValue:
         value,
         (
             JobQueued,
+            JobBaselineImported,
             JobClaimed,
             JobStarted,
             JobProgressRecorded,
@@ -278,6 +371,7 @@ __all__ = [
     "BuildJobEvent",
     "BuildJobEventPayload",
     "BuildJobEventType",
+    "JobBaselineImported",
     "JobCancellationRequested",
     "JobCancelled",
     "JobClaimed",
@@ -289,4 +383,5 @@ __all__ = [
     "JobSucceeded",
     "event_from_dict",
     "event_to_dict",
+    "public_build_job_event",
 ]

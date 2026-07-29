@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from rag_modules.app.build_jobs import (
     BuildJobEvent,
@@ -23,6 +26,7 @@ from rag_modules.app.build_jobs import (
     WorkerIdentity,
 )
 from rag_modules.runtime.build_jobs import BuildJobStoreMigrator, FileBuildJobRepository
+from rag_modules.runtime.build_jobs import file_repository_storage as storage
 
 NOW = datetime(2026, 6, 29, tzinfo=timezone.utc)
 
@@ -115,7 +119,53 @@ def _succeed(
 
 
 class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
-    def test_retention_prunes_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
+    def test_public_retention_calls_serialize_the_filesystem_mutation_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = _repository(Path(temp_dir), MutableClock())
+            first_entered = threading.Event()
+            release_first = threading.Event()
+            second_started = threading.Event()
+            state_lock = threading.Lock()
+            active_calls = 0
+            maximum_active_calls = 0
+
+            def observed_load_all_snapshots(
+                _repository: FileBuildJobRepository,
+            ) -> list[BuildJobSnapshot]:
+                nonlocal active_calls, maximum_active_calls
+                with state_lock:
+                    active_calls += 1
+                    maximum_active_calls = max(maximum_active_calls, active_calls)
+                    first_entered.set()
+                release_first.wait(timeout=2.0)
+                with state_lock:
+                    active_calls -= 1
+                return []
+
+            def second_retention_call() -> None:
+                second_started.set()
+                repository.apply_retention()
+
+            with (
+                patch.object(
+                    storage,
+                    "load_all_snapshots",
+                    side_effect=observed_load_all_snapshots,
+                ),
+                ThreadPoolExecutor(max_workers=2) as executor,
+            ):
+                first = executor.submit(repository.apply_retention)
+                self.assertTrue(first_entered.wait(timeout=2.0))
+                second = executor.submit(second_retention_call)
+                self.assertTrue(second_started.wait(timeout=2.0))
+                threading.Event().wait(0.2)
+                release_first.set()
+                first.result(timeout=2.0)
+                second.result(timeout=2.0)
+
+            self.assertEqual(maximum_active_calls, 1)
+
+    def test_retention_archives_old_terminal_jobs_and_preserves_active_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             clock = MutableClock()
@@ -151,10 +201,11 @@ class BuildJobRepositoryRecoveryRetentionTests(unittest.TestCase):
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in (root / "build_jobs.d" / "idempotency").glob("*.json")
             ]
-            self.assertEqual(len(idempotency_payloads), 2)
-            self.assertNotIn(
+            self.assertEqual(len(idempotency_payloads), 3)
+            self.assertIn(
                 str(oldest.job_id), {payload["job_id"] for payload in idempotency_payloads}
             )
+            self.assertTrue((root / "build_jobs.d" / "archive" / f"{oldest.job_id}.json").exists())
 
     def test_repository_requires_explicit_migration_for_legacy_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

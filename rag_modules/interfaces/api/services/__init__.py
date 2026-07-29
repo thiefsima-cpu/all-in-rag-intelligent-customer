@@ -4,6 +4,7 @@ from .build import GraphRAGBuildApiService
 from .errors import (
     AnswerFailedError,
     ApiBackpressureError,
+    BuildJobBackendUnavailableError,
     BuildJobConflictError,
     BuildJobNotFoundError,
     InvalidApiRequestError,
@@ -14,6 +15,7 @@ from .serving import GraphRAGServingApiService
 __all__ = [
     "ApiBackpressureError",
     "AnswerFailedError",
+    "BuildJobBackendUnavailableError",
     "BuildJobConflictError",
     "BuildJobNotFoundError",
     "GraphRAGBuildApiService",

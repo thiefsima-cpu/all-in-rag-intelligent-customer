@@ -12,6 +12,7 @@ openapi_public = false
 max_request_body_bytes = 16384
 serving_hot_refresh_enabled = true
 serving_hot_refresh_interval_seconds = 2.0
+build_job_repository_backend = "postgresql"
 
 [models]
 llm_input_cost_per_million_tokens = 0.0

@@ -8,7 +8,7 @@ PRODUCTION_ROOT = ROOT / "rag_modules"
 MAX_PRODUCTION_PROTOCOLS = 152
 MAX_PRODUCTION_MODULES_UNDER_60_LINES = 64
 MAX_PRODUCTION_ANY_NAME_NODES = 174
-MAX_PRODUCTION_PYTHON_FILES = 379
+MAX_PRODUCTION_PYTHON_FILES = 383
 SCOPED_ROOTS = (
     ROOT / "rag_modules" / "app",
     ROOT / "rag_modules" / "application",
@@ -64,7 +64,6 @@ APPROVED_FOUNDATION_PROTOCOLS = {
     )
 }
 APPROVED_FOUNDATION_SHORT_MODULES = {
-    Path("rag_modules/contracts/build_jobs/errors.py"): "build-job domain errors",
     Path("rag_modules/contracts/graph.py"): "graph query DTOs",
     Path("rag_modules/contracts/runtime/policy.py"): "runtime policy DTOs",
     Path("rag_modules/kernel/documents.py"): "document normalization primitives",

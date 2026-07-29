@@ -170,6 +170,20 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertEqual(config.api.build_job_lease_seconds, 30.0)
         self.assertEqual(config.api.build_job_heartbeat_seconds, 10.0)
 
+    def test_production_build_job_repository_defaults_to_postgresql(self) -> None:
+        config = load_config(source=EnvConfigSource(environ={}))
+
+        self.assertEqual(config.api.build_job_repository_backend, "postgresql")
+        self.assertEqual(config.api.build_job_audit_retention_days, 90)
+        self.assertEqual(config.api.build_job_postgres_pool_min_size, 1)
+        self.assertEqual(config.api.build_job_postgres_pool_max_size, 10)
+        self.assertEqual(config.api.build_job_postgres_pool_timeout_seconds, 5.0)
+
+    def test_test_config_always_uses_file_build_job_repository(self) -> None:
+        config = build_test_config({"api": {"build_job_repository_backend": "postgresql"}})
+
+        self.assertEqual(config.api.build_job_repository_backend, "file")
+
     def test_dimension_mismatch_reports_both_field_paths(self) -> None:
         with self.assertRaises(ConfigurationError) as context:
             GraphRAGConfig.from_dict(

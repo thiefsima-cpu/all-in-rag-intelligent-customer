@@ -12,12 +12,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from ...kernel.json_types import JsonObject, coerce_json_object
 
+if TYPE_CHECKING:
+    from .events import BuildJobEvent
+
 BUILD_JOB_LOG_LIMIT = 200
 _BUILD_JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")
+_PUBLIC_BUILD_JOB_REPOSITORY_BACKENDS = frozenset({"file", "postgresql", "unknown"})
+_PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN = re.compile(r"(?:\d+|build-jobs-v\d+)\Z")
 
 _SAFE_BUILD_LOGS = frozenset(
     {
@@ -171,6 +176,18 @@ class BuildJobPage:
 
 
 @dataclass(frozen=True, slots=True)
+class BuildJobEventListQuery:
+    limit: int | None = None
+    cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BuildJobEventPage:
+    events: tuple[BuildJobEvent, ...]
+    next_cursor: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class BuildJobLease:
     job_id: BuildJobId
     revision: int
@@ -185,6 +202,7 @@ class BuildJobRepositorySettings:
     list_default_limit: int = 50
     list_max_limit: int = 100
     lease_seconds: float = 30.0
+    audit_retention_days: int = 90
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,12 +223,18 @@ class BuildJobRepositoryWarning:
 
 @dataclass(frozen=True, slots=True)
 class BuildJobRepositoryDiagnostics:
+    backend: str = "unknown"
+    ready: bool = True
+    schema_version: str = ""
     warnings: tuple[BuildJobRepositoryWarning, ...] = field(default_factory=tuple)
 
     def to_public_dict(self) -> JsonObject:
         warnings = [warning.to_public_dict() for warning in self.warnings]
         return coerce_json_object(
             {
+                "backend": _public_repository_backend(self.backend),
+                "ready": self.ready,
+                "schema_version": _public_repository_schema_version(self.schema_version),
                 "warning_count": len(warnings),
                 "warning_codes": sorted({warning["code"] for warning in warnings}),
                 "warnings": warnings,
@@ -228,6 +252,18 @@ def build_failed_error(request_id: str) -> dict[str, str]:
 
 def _iso_or_empty(value: datetime | None) -> str:
     return value.isoformat() if value is not None else ""
+
+
+def _public_repository_backend(value: object) -> str:
+    backend = str(value or "").strip().lower()
+    return backend if backend in _PUBLIC_BUILD_JOB_REPOSITORY_BACKENDS else "unknown"
+
+
+def _public_repository_schema_version(value: object) -> str:
+    schema_version = str(value or "").strip()
+    if _PUBLIC_BUILD_JOB_REPOSITORY_SCHEMA_VERSION_PATTERN.fullmatch(schema_version) is None:
+        return ""
+    return schema_version
 
 
 def _safe_build_log(value: object) -> str:
@@ -259,6 +295,8 @@ def _safe_progress_log(value: object) -> str:
 __all__ = [
     "BUILD_JOB_LOG_LIMIT",
     "BuildJobId",
+    "BuildJobEventListQuery",
+    "BuildJobEventPage",
     "BuildJobLease",
     "BuildJobListQuery",
     "BuildJobPage",

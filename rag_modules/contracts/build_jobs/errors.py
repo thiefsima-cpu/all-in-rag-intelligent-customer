@@ -41,6 +41,10 @@ class BuildJobRepositoryError(BuildJobError):
     pass
 
 
+class BuildJobRepositoryUnavailableError(BuildJobRepositoryError):
+    pass
+
+
 class BuildJobDispatchError(BuildJobError):
     pass
 
@@ -55,4 +59,5 @@ __all__ = [
     "BuildJobLeaseLostError",
     "BuildJobNotFoundError",
     "BuildJobRepositoryError",
+    "BuildJobRepositoryUnavailableError",
 ]

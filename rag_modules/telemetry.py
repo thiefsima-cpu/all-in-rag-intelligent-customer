@@ -181,6 +181,31 @@ class RuntimeTelemetry:
             ("backend", "event"),
             registry=self.registry,
         )
+        self.build_job_repository_operation = Histogram(
+            "graphrag_build_job_repository_operation_seconds",
+            "Build-job repository operation duration.",
+            ("backend", "operation", "outcome"),
+            buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5),
+            registry=self.registry,
+        )
+        self.build_job_claim = Counter(
+            "graphrag_build_job_claim_total",
+            "Build-job claim attempts by outcome.",
+            ("backend", "outcome"),
+            registry=self.registry,
+        )
+        self.build_job_repository_errors = Counter(
+            "graphrag_build_job_repository_errors_total",
+            "Build-job repository failures by safe category.",
+            ("backend", "category"),
+            registry=self.registry,
+        )
+        self.build_job_retention = Counter(
+            "graphrag_build_job_retention_total",
+            "Build-job retention records archived or purged.",
+            ("backend", "action"),
+            registry=self.registry,
+        )
 
     @staticmethod
     def _build_tracer_provider(identity: TelemetryIdentity) -> TracerProvider:
@@ -373,6 +398,49 @@ class RuntimeTelemetry:
         if active_delta:
             self.build_leases_active.labels(backend=normalized_backend).inc(active_delta)
 
+    def record_build_job_repository_operation(
+        self,
+        *,
+        backend: str,
+        operation: str,
+        outcome: str,
+        duration_seconds: float,
+    ) -> None:
+        if not self.identity.prometheus_enabled:
+            return
+        self.build_job_repository_operation.labels(
+            backend=_build_job_metric_label(backend, _BUILD_JOB_BACKENDS),
+            operation=_build_job_metric_label(operation, _BUILD_JOB_OPERATIONS),
+            outcome=_build_job_metric_label(outcome, _BUILD_JOB_OPERATION_OUTCOMES),
+        ).observe(max(0.0, float(duration_seconds)))
+
+    def record_build_job_claim(self, *, backend: str, outcome: str) -> None:
+        if not self.identity.prometheus_enabled:
+            return
+        self.build_job_claim.labels(
+            backend=_build_job_metric_label(backend, _BUILD_JOB_BACKENDS),
+            outcome=_build_job_metric_label(outcome, _BUILD_JOB_CLAIM_OUTCOMES),
+        ).inc()
+
+    def record_build_job_repository_error(self, *, backend: str, category: str) -> None:
+        if not self.identity.prometheus_enabled:
+            return
+        self.build_job_repository_errors.labels(
+            backend=_build_job_metric_label(backend, _BUILD_JOB_BACKENDS),
+            category=_build_job_metric_label(category, _BUILD_JOB_ERROR_CATEGORIES),
+        ).inc()
+
+    def record_build_job_retention(self, *, backend: str, action: str, count: int) -> None:
+        if not self.identity.prometheus_enabled:
+            return
+        increment = max(0, int(count))
+        if not increment:
+            return
+        self.build_job_retention.labels(
+            backend=_build_job_metric_label(backend, _BUILD_JOB_BACKENDS),
+            action=_build_job_metric_label(action, _BUILD_JOB_RETENTION_ACTIONS),
+        ).inc(increment)
+
     @staticmethod
     def enrich_answer_span(span: Span, result) -> None:
         generation = getattr(result, "generation_trace", None)
@@ -460,6 +528,37 @@ def _metric_label(value: object, *, default: str) -> str:
     if not all(character.isalnum() or character in {"_", "."} for character in text):
         return default
     return text
+
+
+_BUILD_JOB_BACKENDS = frozenset({"file", "postgresql"})
+_BUILD_JOB_OPERATIONS = frozenset(
+    {
+        "initialize",
+        "submit",
+        "get",
+        "list",
+        "list_events",
+        "claim",
+        "renew_lease",
+        "apply",
+        "find_dispatchable",
+        "recover_expired_leases",
+        "apply_retention",
+        "diagnostics",
+        "close",
+    }
+)
+_BUILD_JOB_OPERATION_OUTCOMES = frozenset(
+    {"success", "claimed", "empty", "ready", "not_ready", "error"}
+)
+_BUILD_JOB_CLAIM_OUTCOMES = frozenset({"claimed", "empty", "error"})
+_BUILD_JOB_ERROR_CATEGORIES = frozenset({"connection", "data", "domain", "unknown"})
+_BUILD_JOB_RETENTION_ACTIONS = frozenset({"archived", "purged"})
+
+
+def _build_job_metric_label(value: object, allowed: frozenset[str]) -> str:
+    normalized = _metric_label(value, default="unknown")
+    return normalized if normalized in allowed else "unknown"
 
 
 def _degradation_reason(error: Mapping[object, object]) -> str:

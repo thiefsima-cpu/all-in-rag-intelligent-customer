@@ -16,6 +16,7 @@ from .request_context import current_request_id
 from .services import (
     AnswerFailedError,
     ApiBackpressureError,
+    BuildJobBackendUnavailableError,
     BuildJobConflictError,
     BuildJobNotFoundError,
     InvalidApiRequestError,
@@ -48,6 +49,16 @@ def register_api_error_handlers(app: FastAPI) -> None:
     async def build_job_not_found(_: Request, __: BuildJobNotFoundError) -> JSONResponse:
         return build_error_response(
             ErrorCode.NOT_FOUND,
+            request_id=current_request_id(),
+        )
+
+    @app.exception_handler(BuildJobBackendUnavailableError)
+    async def build_job_backend_unavailable(
+        _: Request,
+        __: BuildJobBackendUnavailableError,
+    ) -> JSONResponse:
+        return build_error_response(
+            ErrorCode.SERVICE_UNAVAILABLE,
             request_id=current_request_id(),
         )
 

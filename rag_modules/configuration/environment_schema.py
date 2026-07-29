@@ -59,6 +59,23 @@ _API_ENV_FIELD_SPECS = _specs(
     ("API_BUILD_JOB_LIST_MAX_LIMIT", ("api", "build_job_list_max_limit"), "int"),
     ("API_BUILD_JOB_LEASE_SECONDS", ("api", "build_job_lease_seconds"), "float"),
     ("API_BUILD_JOB_HEARTBEAT_SECONDS", ("api", "build_job_heartbeat_seconds"), "float"),
+    ("API_BUILD_JOB_REPOSITORY_BACKEND", ("api", "build_job_repository_backend"), "str"),
+    ("API_BUILD_JOB_AUDIT_RETENTION_DAYS", ("api", "build_job_audit_retention_days"), "int"),
+    (
+        "API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE",
+        ("api", "build_job_postgres_pool_min_size"),
+        "int",
+    ),
+    (
+        "API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE",
+        ("api", "build_job_postgres_pool_max_size"),
+        "int",
+    ),
+    (
+        "API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS",
+        ("api", "build_job_postgres_pool_timeout_seconds"),
+        "float",
+    ),
     ("SERVING_HOT_REFRESH_ENABLED", ("api", "serving_hot_refresh_enabled"), "bool"),
     (
         "SERVING_HOT_REFRESH_INTERVAL_SECONDS",
@@ -591,6 +608,7 @@ _STORAGE_ENV_FIELD_SPECS = _specs(
     ("MILVUS_BLUE_GREEN_ENABLED", ("storage", "milvus_blue_green_enabled"), "bool"),
     ("MILVUS_COLLECTION_ALIAS_SUFFIX", ("storage", "milvus_collection_alias_suffix"), "str"),
     ("BUILD_JOB_STORE_PATH", ("storage", "build_job_store_path"), "str"),
+    ("BUILD_JOB_POSTGRES_DSN", ("storage", "build_job_postgres_dsn"), "str"),
     ("NEO4J_MAX_CONNECTION_POOL_SIZE", ("storage", "neo4j_max_connection_pool_size"), "int"),
     (
         "NEO4J_CONNECTION_ACQUISITION_TIMEOUT_SECONDS",

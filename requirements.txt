@@ -108,6 +108,12 @@ protobuf==6.33.6
     #   googleapis-common-protos
     #   opentelemetry-proto
     #   pymilvus
+psycopg==3.3.4
+    # via graph-rag-c9 (pyproject.toml)
+psycopg-binary==3.3.4
+    # via psycopg
+psycopg-pool==3.3.1
+    # via psycopg
 pydantic==2.13.4
     # via
     #   fastapi
@@ -162,6 +168,8 @@ typing-extensions==4.15.0
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
+    #   psycopg
+    #   psycopg-pool
     #   pydantic
     #   pydantic-core
     #   starlette
@@ -171,7 +179,9 @@ typing-inspection==0.4.2
     #   fastapi
     #   pydantic
 tzdata==2026.2
-    # via pandas
+    # via
+    #   pandas
+    #   psycopg
 ujson==5.13.0
     # via
     #   graph-rag-c9 (pyproject.toml)

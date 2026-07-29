@@ -9,6 +9,8 @@ from rag_modules.app.build_jobs import (
     BuildJobConflictError,
     BuildJobDispatchError,
     BuildJobEvent,
+    BuildJobEventListQuery,
+    BuildJobEventPage,
     BuildJobEventType,
     BuildJobId,
     BuildJobLease,
@@ -21,6 +23,7 @@ from rag_modules.app.build_jobs import (
     BuildJobSubmission,
     BuildJobSubmissionDisposition,
     BuildJobType,
+    JobQueued,
     SubmitBuildJob,
     WorkerIdentity,
     reduce_build_job,
@@ -57,6 +60,7 @@ class RecordingRepository:
         self.submit_exception: Exception | None = None
         self.concurrent_failures = 0
         self.recovered: tuple[BuildJobSnapshot, ...] = ()
+        self.events: tuple[BuildJobEvent, ...] = ()
 
     def submit(self, command: SubmitBuildJob) -> BuildJobSubmission:
         self.calls.append(("repository.submit", command.job_id))
@@ -79,6 +83,14 @@ class RecordingRepository:
     def list_page(self, query: BuildJobListQuery) -> BuildJobPage:
         self.calls.append(("repository.list_page", query.limit, query.cursor, query.status))
         return BuildJobPage(jobs=tuple(self.snapshots.values()))
+
+    def list_events(
+        self,
+        job_id: BuildJobId,
+        query: BuildJobEventListQuery,
+    ) -> BuildJobEventPage:
+        self.calls.append(("repository.list_events", job_id, query.limit, query.cursor))
+        return BuildJobEventPage(events=self.events)
 
     def claim_next(self, worker: WorkerIdentity) -> BuildJobLease | None:
         raise NotImplementedError
@@ -115,11 +127,15 @@ class RecordingRepository:
     def diagnostics(self) -> BuildJobRepositoryDiagnostics:
         return BuildJobRepositoryDiagnostics()
 
+    def close(self) -> None:
+        self.calls.append(("repository.close",))
+
 
 class RecordingRunner:
     def __init__(self, calls: list[tuple]) -> None:
         self.calls = calls
         self.fail_schedule = False
+        self.shutdown_exception: Exception | None = None
 
     def start(self) -> None:
         self.calls.append(("runner.start",))
@@ -134,6 +150,8 @@ class RecordingRunner:
 
     def shutdown(self) -> None:
         self.calls.append(("runner.shutdown",))
+        if self.shutdown_exception is not None:
+            raise self.shutdown_exception
 
 
 def _service(
@@ -153,6 +171,48 @@ def _service(
 
 
 class BuildJobApplicationServiceTests(unittest.TestCase):
+    def test_list_events_delegates_audit_query_and_shutdown_closes_repository(self) -> None:
+        calls: list[tuple] = []
+        repository = RecordingRepository(calls)
+        repository.events = (
+            BuildJobEvent(
+                event_id=f"{'1' * 32}:1",
+                job_id=BuildJobId("1" * 32),
+                revision=1,
+                event_type=BuildJobEventType.QUEUED,
+                schema_version=1,
+                occurred_at=NOW,
+                request_id="request-1",
+                payload=JobQueued(job_type=BuildJobType.BUILD),
+            ),
+        )
+        service = _service(repository, RecordingRunner(calls))
+
+        page = service.list_events(BuildJobId("1" * 32), limit=10, cursor="opaque-cursor")
+        service.shutdown()
+
+        self.assertEqual(page.events, repository.events)
+        self.assertEqual(
+            calls,
+            [
+                ("repository.list_events", BuildJobId("1" * 32), 10, "opaque-cursor"),
+                ("runner.shutdown",),
+                ("repository.close",),
+            ],
+        )
+
+    def test_shutdown_closes_repository_when_runner_shutdown_fails(self) -> None:
+        calls: list[tuple] = []
+        repository = RecordingRepository(calls)
+        runner = RecordingRunner(calls)
+        runner.shutdown_exception = RuntimeError("runner shutdown failed")
+        service = _service(repository, runner)
+
+        with self.assertRaisesRegex(RuntimeError, "runner shutdown failed"):
+            service.shutdown()
+
+        self.assertEqual(calls, [("runner.shutdown",), ("repository.close",)])
+
     def test_submit_persists_before_scheduling(self) -> None:
         calls: list[tuple] = []
         repository = RecordingRepository(calls)
@@ -311,7 +371,10 @@ class BuildJobApplicationServiceTests(unittest.TestCase):
             calls[:2],
             [("repository.recover_expired_leases",), ("runner.start",)],
         )
-        self.assertEqual(calls[-2:], [("repository.list_page", 50, "", None), ("runner.shutdown",)])
+        self.assertEqual(
+            calls[-3:],
+            [("repository.list_page", 50, "", None), ("runner.shutdown",), ("repository.close",)],
+        )
         with self.assertRaises(BuildJobNotFoundError):
             service.get(BuildJobId("0" * 32))
 

@@ -53,6 +53,11 @@ class ApiSettings(ConfigSection):
     build_job_retention_limit: int = Field(default=100, ge=1)
     build_job_list_default_limit: int = Field(default=50, ge=1)
     build_job_list_max_limit: int = Field(default=100, ge=1)
+    build_job_repository_backend: Literal["file", "postgresql"] = "file"
+    build_job_audit_retention_days: int = Field(default=90, ge=1)
+    build_job_postgres_pool_min_size: int = Field(default=1, ge=1)
+    build_job_postgres_pool_max_size: int = Field(default=10, ge=1)
+    build_job_postgres_pool_timeout_seconds: float = Field(default=5.0, gt=0.0)
     serving_hot_refresh_enabled: bool = True
     serving_hot_refresh_interval_seconds: float = Field(default=2.0, ge=0.1)
 
@@ -71,6 +76,11 @@ class ApiSettings(ConfigSection):
             raise ValueError(
                 "api.stream_executor_max_outstanding must be greater than or equal to "
                 "api.stream_executor_max_workers."
+            )
+        if self.build_job_postgres_pool_min_size > self.build_job_postgres_pool_max_size:
+            raise ValueError(
+                "api.build_job_postgres_pool_min_size must be less than or equal to "
+                "api.build_job_postgres_pool_max_size."
             )
         return self
 
@@ -333,6 +343,7 @@ class StorageSettings(ConfigSection):
     milvus_blue_green_enabled: bool = True
     milvus_collection_alias_suffix: str = "__active"
     build_job_store_path: str = ""
+    build_job_postgres_dsn: str = Field(default="", repr=False)
     neo4j_max_connection_pool_size: int = Field(default=50, ge=1)
     neo4j_connection_acquisition_timeout_seconds: float = 30.0
     neo4j_max_connection_lifetime_seconds: float = 3600.0
@@ -475,6 +486,7 @@ class GraphRAGConfig(BaseModel):
             payload["profile_hash"] = self.profile_hash
         _redact_secret(payload, "models", "api_key")
         _redact_secret(payload, "storage", "neo4j_password")
+        _redact_secret(payload, "storage", "build_job_postgres_dsn")
         _redact_secret(payload, "api", "access_token")
         _redact_secret(payload, "observability", "query_trace_fingerprint_salt")
         return payload

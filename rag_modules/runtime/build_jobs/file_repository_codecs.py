@@ -35,6 +35,30 @@ def decode_cursor(cursor: str) -> tuple[str, str] | None:
         raise ValueError("invalid build job cursor") from None
 
 
+def encode_event_cursor(revision: int) -> str:
+    payload = json.dumps({"revision": int(revision)}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+
+def decode_event_cursor(cursor: str) -> int:
+    if not cursor:
+        return 0
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        payload = json.loads(raw)
+        if (
+            not isinstance(payload, Mapping)
+            or set(payload) != {"revision"}
+            or isinstance(payload["revision"], bool)
+            or not isinstance(payload["revision"], int)
+            or payload["revision"] < 0
+        ):
+            raise ValueError
+        return payload["revision"]
+    except (KeyError, OSError, TypeError, ValueError):
+        raise ValueError("invalid build job event cursor") from None
+
+
 def datetime_from_json(value: object) -> datetime:
     text = str(value or "")
     if text.endswith("Z"):
@@ -42,4 +66,10 @@ def datetime_from_json(value: object) -> datetime:
     return datetime.fromisoformat(text)
 
 
-__all__ = ["datetime_from_json", "decode_cursor", "encode_cursor"]
+__all__ = [
+    "datetime_from_json",
+    "decode_cursor",
+    "decode_event_cursor",
+    "encode_cursor",
+    "encode_event_cursor",
+]

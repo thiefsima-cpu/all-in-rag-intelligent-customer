@@ -27,6 +27,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "MILVUS_PORT": "20000",
                     "MILVUS_BLUE_GREEN_ENABLED": "false",
                     "MILVUS_COLLECTION_ALIAS_SUFFIX": "__serving",
+                    "BUILD_JOB_POSTGRES_DSN": "postgresql://user:secret@db.example/build_jobs",
                 }
             )
         )
@@ -40,6 +41,10 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.storage.milvus_port, 20000)
         self.assertFalse(config.storage.milvus_blue_green_enabled)
         self.assertEqual(config.storage.milvus_collection_alias_suffix, "__serving")
+        self.assertEqual(
+            config.storage.build_job_postgres_dsn,
+            "postgresql://user:secret@db.example/build_jobs",
+        )
 
     def test_model_settings_respect_environment_overrides(self) -> None:
         config = load_config(
@@ -195,6 +200,11 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "API_BUILD_JOB_LIST_MAX_LIMIT": "8",
                     "API_BUILD_JOB_LEASE_SECONDS": "45.5",
                     "API_BUILD_JOB_HEARTBEAT_SECONDS": "7.25",
+                    "API_BUILD_JOB_REPOSITORY_BACKEND": "postgresql",
+                    "API_BUILD_JOB_AUDIT_RETENTION_DAYS": "45",
+                    "API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE": "2",
+                    "API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE": "7",
+                    "API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS": "8.5",
                 }
             )
         )
@@ -219,6 +229,11 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(config.api.build_job_list_max_limit, 8)
         self.assertEqual(config.api.build_job_lease_seconds, 45.5)
         self.assertEqual(config.api.build_job_heartbeat_seconds, 7.25)
+        self.assertEqual(config.api.build_job_repository_backend, "postgresql")
+        self.assertEqual(config.api.build_job_audit_retention_days, 45)
+        self.assertEqual(config.api.build_job_postgres_pool_min_size, 2)
+        self.assertEqual(config.api.build_job_postgres_pool_max_size, 7)
+        self.assertEqual(config.api.build_job_postgres_pool_timeout_seconds, 8.5)
 
     def test_api_settings_default_answer_concurrency_limit_is_nonzero(self) -> None:
         config = load_config(source=EnvConfigSource(environ={}))
@@ -281,6 +296,24 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
             "api.build_job_lease_seconds",
         )
 
+    def test_api_settings_reject_postgres_pool_minimum_above_maximum(self) -> None:
+        with self.assertRaises(ConfigurationError) as context:
+            load_config(
+                source=EnvConfigSource(
+                    environ={
+                        "API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE": "3",
+                        "API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE": "2",
+                    }
+                )
+            )
+
+        self.assertConfigErrorMentions(
+            context.exception,
+            "api.build_job_postgres_pool_min_size",
+            "less than or equal to",
+            "api.build_job_postgres_pool_max_size",
+        )
+
     def test_nested_config_serialization_masks_all_credentials(self) -> None:
         config = load_config(
             source=EnvConfigSource(
@@ -289,6 +322,7 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
                     "NEO4J_PASSWORD": "graph-secret",
                     "API_ACCESS_TOKEN": "api-secret-value",
                     "QUERY_TRACE_FINGERPRINT_SALT": "trace-secret",
+                    "BUILD_JOB_POSTGRES_DSN": "postgresql://user:secret@db.example/build_jobs",
                 }
             )
         )
@@ -299,6 +333,8 @@ class ConfigurationSectionLoaderTests(unittest.TestCase):
         self.assertEqual(payload["storage"]["neo4j_password"], "***")
         self.assertEqual(payload["api"]["access_token"], "***")
         self.assertEqual(payload["observability"]["query_trace_fingerprint_salt"], "***")
+        self.assertEqual(payload["storage"]["build_job_postgres_dsn"], "***")
+        self.assertNotIn("postgresql://user:secret@db.example/build_jobs", repr(config))
 
     def test_invalid_environment_int_reports_variable_and_field_path(self) -> None:
         with self.assertRaises(ConfigurationError) as context:

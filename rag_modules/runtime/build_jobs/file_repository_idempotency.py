@@ -8,7 +8,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rag_modules.contracts.build_jobs import BuildJobId, BuildJobSnapshot, BuildJobType, JobQueued
+from rag_modules.contracts.build_jobs import (
+    BuildJobId,
+    BuildJobRepositoryError,
+    BuildJobSnapshot,
+    BuildJobType,
+    JobQueued,
+)
 from rag_modules.runtime.artifacts import write_json_atomic
 
 from . import file_repository_storage as storage
@@ -66,7 +72,10 @@ def find_idempotent_job(
     indexed = find_indexed_idempotent_job(repository, key_hash)
     if indexed is not None:
         return indexed
-    for envelope in storage.load_all_envelopes(repository):
+    for envelope in [
+        *storage.load_all_envelopes(repository),
+        *storage.load_all_archived_envelopes(repository),
+    ]:
         queued = envelope.events[0].payload if envelope.events else None
         if isinstance(queued, JobQueued) and queued.idempotency_key_hash == key_hash:
             write_idempotency_index(repository, key_hash, envelope.snapshot)
@@ -89,8 +98,10 @@ def find_indexed_idempotent_job(
         if str(payload.get("key_hash") or "") != key_hash:
             return None
         job_id = BuildJobId(str(payload.get("job_id") or ""))
-        envelope = storage.load_envelope(repository, job_id)
+        envelope = storage.load_any_envelope(repository, job_id)
         if envelope is None:
+            if storage.envelope_record_exists(repository, job_id):
+                raise BuildJobRepositoryError("Build job idempotency record is unavailable.")
             return None
         queued = envelope.events[0].payload if envelope.events else None
         if not isinstance(queued, JobQueued) or queued.idempotency_key_hash != key_hash:

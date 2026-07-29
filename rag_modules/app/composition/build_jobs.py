@@ -11,11 +11,13 @@ from typing import Protocol, cast
 from ...configuration.models import GraphRAGConfig
 from ...contracts.build_jobs import JobProgressRecorded, JobSucceeded
 from ...kernel.json_types import JsonObject, coerce_json_object
-from ...telemetry import get_runtime_telemetry
+from ...runtime.build_jobs.postgres.repository import PostgresBuildJobObservers
+from ...telemetry import RuntimeTelemetry, get_runtime_telemetry
 from ..application_protocol import GraphRAGApplication
 from ..build_jobs import (
     BuildJobApplicationService,
     BuildJobExecutor,
+    BuildJobRepositoryError,
     BuildJobRepositoryPort,
     BuildJobRepositorySettings,
     BuildJobRunnerPort,
@@ -92,12 +94,14 @@ class _ExternalBuildJobWorkerRunnerFactory(Protocol):
         heartbeat_seconds: float,
         poll_interval_seconds: float,
         lease_recorder: _BuildLeaseRecorder | None = None,
+        repository_close: Callable[[], None] | None = None,
     ) -> BuildJobWorkerRunnerPort: ...
 
 
 class _RuntimeBuildJobsModule(Protocol):
     BuildJobStoreMigrator: _BuildJobStoreMigratorFactory
     FileBuildJobRepository: _FileBuildJobRepositoryFactory
+    PostgresBuildJobRepository: Callable[..., BuildJobRepositoryPort]
     InProcessBuildJobRunner: _InProcessBuildJobRunnerFactory
     ExternalBuildJobQueueRunner: _ExternalBuildJobQueueRunnerFactory
     ExternalBuildJobWorkerRunner: _ExternalBuildJobWorkerRunnerFactory
@@ -112,26 +116,31 @@ def compose_build_job_application(
 ) -> BuildJobApplicationService:
     api_settings = config.api
     runtime_build_jobs = _runtime_build_jobs_module()
+    telemetry = get_runtime_telemetry(config)
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
         repository_factory=repository_factory,
+        telemetry=telemetry,
     )
-    telemetry = get_runtime_telemetry(config)
-    runner = _compose_api_runner(
-        runtime_build_jobs=runtime_build_jobs,
-        backend=str(api_settings.build_job_runner_backend),
-        repository=repository,
-        executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
-        max_workers=int(api_settings.build_job_runner_max_workers),
-        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
-        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
-            backend=backend,
-            event=event,
-            active_delta=active_delta,
-        ),
-    )
-    return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+    try:
+        runner = _compose_api_runner(
+            runtime_build_jobs=runtime_build_jobs,
+            backend=str(api_settings.build_job_runner_backend),
+            repository=repository,
+            executor_factory=lambda: _compose_executor(system=system, coordinator=coordinator),
+            max_workers=int(api_settings.build_job_runner_max_workers),
+            heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+            lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+                backend=backend,
+                event=event,
+                active_delta=active_delta,
+            ),
+        )
+        return BuildJobApplicationService(repository=repository, runner=runner, now=_utc_now)
+    except BaseException:
+        _close_repository_after_failed_composition(repository)
+        raise
 
 
 def compose_build_job_worker(
@@ -146,32 +155,38 @@ def compose_build_job_worker(
 
     api_settings = config.api
     runtime_build_jobs = _runtime_build_jobs_module()
+    telemetry = get_runtime_telemetry(config)
     repository = _compose_repository(
         runtime_build_jobs=runtime_build_jobs,
         config=config,
         repository_factory=repository_factory,
+        telemetry=telemetry,
     )
-    telemetry = get_runtime_telemetry(config)
-    executor = _compose_executor(system=system, coordinator=coordinator)
-    return runtime_build_jobs.ExternalBuildJobWorkerRunner(
-        repository=repository,
-        execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
-            snapshot,
-            progress=progress,
-            cancellation_check=cancellation_check,
-        ),
-        cancelled_result=executor.cancelled_result,
-        failed_result=executor.failed_result,
-        max_workers=int(api_settings.build_job_runner_max_workers),
-        worker_id=worker_id,
-        heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
-        poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
-        lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
-            backend=backend,
-            event=event,
-            active_delta=active_delta,
-        ),
-    )
+    try:
+        executor = _compose_executor(system=system, coordinator=coordinator)
+        return runtime_build_jobs.ExternalBuildJobWorkerRunner(
+            repository=repository,
+            execute_build=lambda snapshot, progress, cancellation_check: executor.execute(
+                snapshot,
+                progress=progress,
+                cancellation_check=cancellation_check,
+            ),
+            cancelled_result=executor.cancelled_result,
+            failed_result=executor.failed_result,
+            max_workers=int(api_settings.build_job_runner_max_workers),
+            worker_id=worker_id,
+            heartbeat_seconds=float(api_settings.build_job_heartbeat_seconds),
+            poll_interval_seconds=float(api_settings.build_job_worker_poll_interval_seconds),
+            lease_recorder=lambda backend, event, active_delta: telemetry.record_build_lease_event(
+                backend=backend,
+                event=event,
+                active_delta=active_delta,
+            ),
+            repository_close=repository.close,
+        )
+    except BaseException:
+        _close_repository_after_failed_composition(repository)
+        raise
 
 
 def _compose_repository(
@@ -179,22 +194,89 @@ def _compose_repository(
     runtime_build_jobs: _RuntimeBuildJobsModule,
     config: GraphRAGConfig,
     repository_factory: BuildJobRepositoryFactory | None,
+    telemetry: RuntimeTelemetry | None = None,
 ) -> BuildJobRepositoryPort:
     if repository_factory is not None:
         return repository_factory(config)
     api_settings = config.api
+    if api_settings.build_job_repository_backend == "file":
+        return _compose_file_repository(runtime_build_jobs=runtime_build_jobs, config=config)
+    if api_settings.build_job_repository_backend == "postgresql":
+        dsn = config.storage.build_job_postgres_dsn
+        if not dsn.strip():
+            raise BuildJobRepositoryError("Build job PostgreSQL DSN is required.")
+        return runtime_build_jobs.PostgresBuildJobRepository(
+            dsn,
+            now=_utc_now,
+            settings=_repository_settings(config),
+            pool_min_size=int(api_settings.build_job_postgres_pool_min_size),
+            pool_max_size=int(api_settings.build_job_postgres_pool_max_size),
+            pool_timeout_seconds=float(api_settings.build_job_postgres_pool_timeout_seconds),
+            observers=_postgres_build_job_observers(telemetry),
+        )
+    raise ValueError("Unsupported build job repository backend.")
+
+
+def _compose_file_repository(
+    *,
+    runtime_build_jobs: _RuntimeBuildJobsModule,
+    config: GraphRAGConfig,
+) -> BuildJobRepositoryPort:
     store_path = default_build_job_store_path(config)
     runtime_build_jobs.BuildJobStoreMigrator(store_path, now=_utc_now).migrate()
     return runtime_build_jobs.FileBuildJobRepository(
         store_path,
         now=_utc_now,
-        settings=BuildJobRepositorySettings(
-            retention_limit=int(api_settings.build_job_retention_limit),
-            list_default_limit=int(api_settings.build_job_list_default_limit),
-            list_max_limit=int(api_settings.build_job_list_max_limit),
-            lease_seconds=float(api_settings.build_job_lease_seconds),
+        settings=_repository_settings(config),
+    )
+
+
+def _postgres_build_job_observers(
+    telemetry: RuntimeTelemetry | None,
+) -> PostgresBuildJobObservers | None:
+    if telemetry is None:
+        return None
+    return PostgresBuildJobObservers(
+        operation=lambda backend, operation, outcome, duration_seconds: (
+            telemetry.record_build_job_repository_operation(
+                backend=backend,
+                operation=operation,
+                outcome=outcome,
+                duration_seconds=duration_seconds,
+            )
+        ),
+        claim=lambda backend, outcome: telemetry.record_build_job_claim(
+            backend=backend,
+            outcome=outcome,
+        ),
+        error=lambda backend, category: telemetry.record_build_job_repository_error(
+            backend=backend,
+            category=category,
+        ),
+        retention=lambda backend, action, count: telemetry.record_build_job_retention(
+            backend=backend,
+            action=action,
+            count=count,
         ),
     )
+
+
+def _repository_settings(config: GraphRAGConfig) -> BuildJobRepositorySettings:
+    api_settings = config.api
+    return BuildJobRepositorySettings(
+        retention_limit=int(api_settings.build_job_retention_limit),
+        list_default_limit=int(api_settings.build_job_list_default_limit),
+        list_max_limit=int(api_settings.build_job_list_max_limit),
+        lease_seconds=float(api_settings.build_job_lease_seconds),
+        audit_retention_days=int(api_settings.build_job_audit_retention_days),
+    )
+
+
+def _close_repository_after_failed_composition(repository: BuildJobRepositoryPort) -> None:
+    try:
+        repository.close()
+    except BaseException:
+        return None
 
 
 def _compose_api_runner(

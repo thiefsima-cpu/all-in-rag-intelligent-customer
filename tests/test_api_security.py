@@ -8,6 +8,7 @@ json = h.json
 unittest = h.unittest
 TestClient = h.TestClient
 build_test_config = h.build_test_config
+create_build_api_app = h.create_build_api_app
 create_serving_api_app = h.create_serving_api_app
 MAX_QUESTION_CHARS = h.MAX_QUESTION_CHARS
 ErrorCode = h.ErrorCode
@@ -272,6 +273,14 @@ class ApiSecurityTests(unittest.TestCase):
             "Bearer",
         )
         self.assertEqual(api_key_response.status_code, 200)
+
+    def test_build_job_audit_route_requires_api_credentials(self) -> None:
+        app = create_build_api_app(system=_FakeApiSystem())
+
+        with TestClient(app) as client:
+            response = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        _assert_error_response(response, status_code=401, code="UNAUTHORIZED")
 
     def test_authentication_fails_closed_when_token_is_not_configured(self) -> None:
         config = build_test_config({"api": {"auth_enabled": True, "access_token": ""}})

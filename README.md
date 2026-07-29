@@ -51,6 +51,7 @@ Copy-Item .env.example .env
 ```powershell
 graph-rag-api
 graph-rag-build-api
+graph-rag-build-job-db
 graph-rag-release-gate
 graph-rag-integration-gate
 graph-rag-live-quality-gate
@@ -195,6 +196,60 @@ Invoke-RestMethod http://localhost:8001/v1/jobs/$($job.job.job_id)
 
 ### 构建任务控制与历史
 
+#### Build-job repository operations
+
+The base production profile selects the PostgreSQL build-job repository. `profiles/dev.toml`, the
+Compose `api` profile, and ordinary tests select the development-only file repository; that adapter
+scans its V3 directories and is not a production scaling option. PostgreSQL selection is
+fail-closed: a missing DSN, unreachable database, or incompatible schema stops Build API/worker
+startup with no automatic fallback to files. Runtime startup never migrates or imports.
+
+Configure production with `API_BUILD_JOB_REPOSITORY_BACKEND=postgresql` and a secret-managed
+`BUILD_JOB_POSTGRES_DSN`. Host-side CLI commands use that DSN (the local template points it to
+`localhost`). Compose reads `BUILD_JOB_POSTGRES_DOCKER_DSN` and maps it to
+`BUILD_JOB_POSTGRES_DSN` inside Build API, worker, and one-shot CLI containers; its host must be
+`build-job-postgres`, not `localhost`. Pool controls are
+`API_BUILD_JOB_POSTGRES_POOL_MIN_SIZE`, `API_BUILD_JOB_POSTGRES_POOL_MAX_SIZE`, and
+`API_BUILD_JOB_POSTGRES_POOL_TIMEOUT_SECONDS`. `API_BUILD_JOB_RETENTION_LIMIT` controls the number
+of terminal jobs kept operationally visible. Excess terminal jobs are archived, not immediately
+deleted; `API_BUILD_JOB_AUDIT_RETENTION_DAYS` provides 90-day audit retention by default, after
+which archived events and jobs are physically purged.
+
+For local integration only, start the optional PostgreSQL 16 profile without starting the APIs:
+
+```powershell
+docker compose --profile postgres up -d build-job-postgres
+```
+
+The service uses a persistent `volumes/build-job-postgres` bind mount and the safe local-only
+password default `graph-rag-local`. Override `BUILD_JOB_POSTGRES_PASSWORD`, the host-side
+`BUILD_JOB_POSTGRES_DSN`, and the container-network `BUILD_JOB_POSTGRES_DOCKER_DSN` outside local
+development. The `api` profile does not depend on this service and remains file-backed unless
+`API_BUILD_JOB_REPOSITORY_BACKEND=postgresql` is explicitly set.
+
+Database changes and file imports are explicit operator actions:
+
+```powershell
+graph-rag-build-job-db status --json
+graph-rag-build-job-db migrate --json
+graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --dry-run --json
+graph-rag-build-job-db import-file --source storage/indexes/build_jobs.json --json
+```
+
+`status` and `migrate` JSON contains `current_version`, `required_version`, `pending_versions`, and
+`ready`. Import JSON contains scanned/imported/skipped/conflict counts plus `dry_run`. Ready or
+successful commands return exit code `0`; not-ready status, migration failure, validation conflict,
+or import failure returns exit code `1`. Output never contains the DSN or stored payloads.
+
+For initial cutover, provision PostgreSQL 16+, take a backup, run `status` then `migrate`, and run a
+dry-run against any existing V3 file history. Stop the Build API and every build worker before
+switching the backend or executing the final import. Start workers/API only after the execute
+report succeeds, then check readiness, diagnostics, and build-job metrics. Retain the source V3
+directory and database backup as rollback evidence. To roll back, stop the Build API and every
+build worker before switching the backend to `file`; restore the retained V3 source first and
+account for any jobs accepted after cutover. The full backup, upgrade, import, and rollback
+checklist is in [docs/release_process.md](docs/release_process.md#postgresql-build-job-control-plane).
+
 构建 API 的 `/v1/jobs/build` 和 `/v1/jobs/rebuild` 提交路由接受 `Idempotency-Key`。同一个 key 用于同一种操作时，
 会返回原始 job；同一个 key 用于不同操作时，会返回 `409 BUILD_JOB_CONFLICT`。
 
@@ -228,9 +283,9 @@ worker 启动或重启时重新认领。已认领 job 由 lease 保护，`API_BU
 heartbeat 由 `API_BUILD_JOB_HEARTBEAT_SECONDS` 控制，默认 `10`。如果进程在持有 job 时停止，下一次启动会让
 lease 过期，并将 job 报告为安全的 failed/interrupted build，而不是让它永久处于 running。
 
-构建任务存储会从旧 V2 文件一次性迁移为配置的 `BUILD_JOB_STORE_PATH` 目录下的 V3 event envelope，并保留原始
-V2 目录为 `build_jobs.v2.backup`。当前 release 包含 `in_process` 和 `external_worker` 两个 runner backend；
-未来的 repository backend 仍必须实现构建任务 repository port，并在 composition 中选择。
+开发文件后端会从旧 V2 文件一次性迁移为配置的 `BUILD_JOB_STORE_PATH` 目录下的 V3 event envelope，并保留原始
+V2 目录为 `build_jobs.v2.backup`。生产 PostgreSQL 后端只接受上面的显式 schema migration 和 V3 import；
+当前 release 包含 `in_process` 和 `external_worker` 两个 runner backend。
 
 在构建 API 生成 ready artifact manifest、cached documents 和 Milvus vector collection 前，`/v1/answers`
 会返回 `409 Conflict`。
