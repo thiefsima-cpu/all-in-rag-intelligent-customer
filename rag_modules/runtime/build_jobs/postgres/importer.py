@@ -12,13 +12,16 @@ from pathlib import Path
 import psycopg
 
 from rag_modules.contracts.build_jobs import (
+    BUILD_JOB_EVENT_SCHEMA_VERSION,
     BuildJobEvent,
+    BuildJobEventType,
     BuildJobId,
     BuildJobRepositoryError,
     BuildJobRepositoryUnavailableError,
     BuildJobSnapshot,
     BuildJobStatus,
     BuildJobType,
+    JobBaselineImported,
     JobClaimed,
 )
 from rag_modules.runtime.build_jobs.file_repository_codecs import datetime_from_json
@@ -34,6 +37,7 @@ from .repository import PostgresBuildJobRepository
 
 _SOURCE_INVALID_MESSAGE = "Build job V3 import source is invalid."
 _DATABASE_FAILURE_MESSAGE = "Build job PostgreSQL file import failed."
+_V2_SOURCE_SCHEMA_VERSION = 2
 _HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _IDEMPOTENCY_KEYS = frozenset({"key_hash", "job_id", "job_type", "created_at"})
 _ACTIVE_STATUSES = frozenset(
@@ -112,7 +116,7 @@ class V3BuildJobImporter:
 
     def run(self, source_path: str | Path, dry_run: bool = False) -> BuildJobImportReport:
         source_jobs = _discover_source(Path(source_path))
-        scanned_events = sum(len(source.envelope.events) for source in source_jobs)
+        scanned_events = sum(len(_audit_events_for_source(source)) for source in source_jobs)
         try:
             with self._repository._pool.connection(
                 timeout=self._repository._pool_timeout_seconds
@@ -201,11 +205,17 @@ class V3BuildJobImporter:
 
             destination_snapshot = PostgresBuildJobRepository._snapshot_from_row(job_row)
             destination_archived_at = _archived_at_from_row(job_row)
-            if destination_snapshot != snapshot or destination_archived_at != source.archived_at:
+            destination_import_source = _import_source_schema_version_from_row(job_row)
+            expected_import_source = _import_source_schema_version(source)
+            if (
+                destination_snapshot != snapshot
+                or destination_archived_at != source.archived_at
+                or destination_import_source != expected_import_source
+            ):
                 _raise_job_conflict(snapshot.job_id)
             _require_matching_events(
                 snapshot.job_id,
-                source.envelope.events,
+                _audit_events_for_source(source),
                 destination_events,
             )
             skipped_jobs += 1
@@ -234,7 +244,7 @@ class V3BuildJobImporter:
         lock: bool,
     ) -> None:
         statement = _SELECT_EVENT_OWNER_SQL if lock else _READ_EVENT_OWNER_SQL
-        for event in source.envelope.events:
+        for event in _audit_events_for_source(source):
             row = connection.execute(statement, (event.event_id,)).fetchone()
             if row is None:
                 continue
@@ -270,11 +280,12 @@ class V3BuildJobImporter:
                         source.snapshot,
                         archived_at=source.archived_at,
                         updated_at=updated_at,
+                        import_source_schema_version=_import_source_schema_version(source),
                     ),
                 )
             except psycopg.errors.UniqueViolation:
                 _raise_job_conflict(source.snapshot.job_id)
-            for event in source.envelope.events:
+            for event in _audit_events_for_source(source):
                 try:
                     connection.execute(
                         postgres_repository._INSERT_EVENT_SQL,
@@ -422,23 +433,24 @@ def _validate_idempotency_indexes(
 def _validate_global_event_ids(source_jobs: Sequence[_SourceJob]) -> None:
     event_ids: set[str] = set()
     for source in source_jobs:
-        for event in source.envelope.events:
+        for event in _audit_events_for_source(source):
             if event.event_id in event_ids:
                 raise ValueError
             event_ids.add(event.event_id)
 
 
 def _validate_raw_envelope(payload: Mapping[str, object]) -> None:
-    _require_positive_revision(payload.get("revision"))
+    raw_baseline = payload.get("baseline")
+    has_baseline = raw_baseline is not None
+    _require_revision(payload.get("revision"), allow_zero=has_baseline)
     raw_snapshot = payload.get("snapshot")
     if not isinstance(raw_snapshot, Mapping):
         raise ValueError
-    _require_positive_revision(raw_snapshot.get("revision"))
-    raw_baseline = payload.get("baseline")
+    _require_revision(raw_snapshot.get("revision"), allow_zero=has_baseline)
     if raw_baseline is not None:
         if not isinstance(raw_baseline, Mapping):
             raise ValueError
-        _require_positive_revision(raw_baseline.get("revision"))
+        _require_revision(raw_baseline.get("revision"), allow_zero=True)
     raw_events = payload.get("events")
     if not isinstance(raw_events, list):
         raise ValueError
@@ -449,10 +461,11 @@ def _validate_raw_envelope(payload: Mapping[str, object]) -> None:
 
 
 def _validate_envelope(envelope: BuildJobEnvelope) -> None:
-    _require_positive_revision(envelope.revision)
-    _validate_snapshot_datetimes(envelope.snapshot)
+    has_baseline = envelope.baseline is not None
+    _require_revision(envelope.revision, allow_zero=has_baseline)
+    _validate_snapshot_datetimes(envelope.snapshot, allow_zero=has_baseline)
     if envelope.baseline is not None:
-        _validate_snapshot_datetimes(envelope.baseline)
+        _validate_snapshot_datetimes(envelope.baseline, allow_zero=True)
     for event in envelope.events:
         _require_positive_revision(event.revision)
         _require_aware_datetime(event.occurred_at)
@@ -460,8 +473,12 @@ def _validate_envelope(envelope: BuildJobEnvelope) -> None:
             _require_aware_datetime(event.payload.lease_expires_at)
 
 
-def _validate_snapshot_datetimes(snapshot: BuildJobSnapshot) -> None:
-    _require_positive_revision(snapshot.revision)
+def _validate_snapshot_datetimes(
+    snapshot: BuildJobSnapshot,
+    *,
+    allow_zero: bool,
+) -> None:
+    _require_revision(snapshot.revision, allow_zero=allow_zero)
     _require_aware_datetime(snapshot.created_at)
     for value in (snapshot.started_at, snapshot.finished_at, snapshot.lease_expires_at):
         if value is not None:
@@ -470,6 +487,13 @@ def _validate_snapshot_datetimes(snapshot: BuildJobSnapshot) -> None:
 
 def _require_positive_revision(value: object) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError
+
+
+def _require_revision(value: object, *, allow_zero: bool) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError
+    if value < (0 if allow_zero else 1):
         raise ValueError
 
 
@@ -496,12 +520,48 @@ def _job_id_from_owner_row(row: Sequence[object]) -> BuildJobId:
 
 
 def _archived_at_from_row(row: Sequence[object]) -> datetime | None:
-    if len(row) != 19:
+    if len(row) != 20:
         raise BuildJobRepositoryUnavailableError(_DATABASE_FAILURE_MESSAGE)
     value = row[18]
     if value is not None and not isinstance(value, datetime):
         raise BuildJobRepositoryUnavailableError(_DATABASE_FAILURE_MESSAGE)
     return value
+
+
+def _import_source_schema_version_from_row(row: Sequence[object]) -> int | None:
+    if len(row) != 20:
+        raise BuildJobRepositoryUnavailableError(_DATABASE_FAILURE_MESSAGE)
+    value = row[19]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value != _V2_SOURCE_SCHEMA_VERSION:
+        raise BuildJobRepositoryUnavailableError(_DATABASE_FAILURE_MESSAGE)
+    return value
+
+
+def _import_source_schema_version(source: _SourceJob) -> int | None:
+    return _V2_SOURCE_SCHEMA_VERSION if source.envelope.baseline is not None else None
+
+
+def _audit_events_for_source(source: _SourceJob) -> tuple[BuildJobEvent, ...]:
+    baseline = source.envelope.baseline
+    if baseline is None:
+        return source.envelope.events
+    return (
+        BuildJobEvent(
+            event_id=f"{baseline.job_id}:baseline:{baseline.revision}",
+            job_id=baseline.job_id,
+            revision=baseline.revision,
+            event_type=BuildJobEventType.BASELINE_IMPORTED,
+            schema_version=BUILD_JOB_EVENT_SCHEMA_VERSION,
+            occurred_at=baseline.created_at,
+            request_id=baseline.request_id,
+            payload=JobBaselineImported(
+                source_schema_version=_V2_SOURCE_SCHEMA_VERSION,
+            ),
+        ),
+        *source.envelope.events,
+    )
 
 
 def _require_matching_events(

@@ -78,7 +78,7 @@ _SNAPSHOT_COLUMNS = """
     job_id, request_id, job_type, status, revision,
     created_at, started_at, finished_at, message, error, logs, result,
     retry_of_job_id, idempotency_key_hash, worker_id, runner_backend,
-    lease_token, lease_expires_at, archived_at
+    lease_token, lease_expires_at, archived_at, import_source_schema_version
 """
 _SELECT_IDEMPOTENCY_SQL = f"""
 SELECT {_SNAPSHOT_COLUMNS}
@@ -121,16 +121,15 @@ LIMIT %(fetch_limit)s
 """
 _EVENT_SUBJECT_SQL = """
 SELECT
+    TRUE,
     EXISTS (
         SELECT 1
-        FROM graph_rag_control_plane.build_jobs
-        WHERE job_id = %(job_id)s
-    ),
-    EXISTS (
-        SELECT 1
-        FROM graph_rag_control_plane.build_job_events
-        WHERE job_id = %(job_id)s
+        FROM graph_rag_control_plane.build_job_events AS events
+        WHERE events.job_id = subject.job_id
     )
+FROM graph_rag_control_plane.build_jobs AS subject
+WHERE subject.job_id = %(job_id)s
+FOR UPDATE
 """
 _EVENT_LIST_SQL = """
 SELECT event_id, job_id, revision, event_type, schema_version, occurred_at, request_id, payload
@@ -144,12 +143,13 @@ INSERT INTO graph_rag_control_plane.build_jobs (
     job_id, request_id, job_type, status, revision,
     created_at, started_at, finished_at, message, error, logs, result,
     retry_of_job_id, idempotency_key_hash, worker_id, runner_backend,
-    lease_token, lease_expires_at, archived_at, updated_at
+    lease_token, lease_expires_at, archived_at, updated_at,
+    import_source_schema_version
 ) VALUES (
     %s, %s, %s, %s, %s,
     %s, %s, %s, %s, %s, %s, %s,
     %s, %s, %s, %s,
-    %s, %s, %s, %s
+    %s, %s, %s, %s, %s
 )
 """
 _INSERT_EVENT_SQL = """
@@ -251,7 +251,7 @@ WHERE job_id = ANY(%(expired_job_ids)s)
 _IDEMPOTENCY_CONSTRAINT = "build_jobs_idempotency_uq"
 _ACTIVE_CONSTRAINT = "build_jobs_one_active_uq"
 _BATCH_SIZE = 100
-_SCHEMA_VERSION = "1"
+_SCHEMA_VERSION = "2"
 _LEASE_LOST_MESSAGE = "Build job lease is no longer owned by this worker."
 _Now = Callable[[], datetime]
 _P = ParamSpec("_P")
@@ -523,7 +523,7 @@ class PostgresBuildJobRepository:
         job_id: BuildJobId,
         query: BuildJobEventListQuery,
     ) -> BuildJobEventPage:
-        cursor_revision = decode_event_cursor(query.cursor)
+        cursor_revision = decode_event_cursor(query.cursor) if query.cursor else -1
         bounded_limit = self._bounded_limit(query.limit)
         subject_parameters = {"job_id": str(job_id)}
         event_parameters = {
@@ -538,6 +538,8 @@ class PostgresBuildJobRepository:
                         _EVENT_SUBJECT_SQL,
                         subject_parameters,
                     ).fetchone()
+                    if subject is None:
+                        raise BuildJobNotFoundError(job_id)
                     job_exists, events_exist = self._event_subject_state(subject)
                     if not job_exists:
                         raise BuildJobNotFoundError(job_id)
@@ -951,7 +953,7 @@ class PostgresBuildJobRepository:
     @staticmethod
     def _snapshot_from_row(row: Sequence[object]) -> BuildJobSnapshot:
         try:
-            if len(row) != 19:
+            if len(row) != 20:
                 raise _PersistedDataError
             (
                 raw_job_id,
@@ -973,6 +975,7 @@ class PostgresBuildJobRepository:
                 raw_lease_token,
                 raw_lease_expires_at,
                 raw_archived_at,
+                raw_import_source_schema_version,
             ) = row
             job_id = BuildJobId(_required_string(raw_job_id))
             retry_of_job_id = (
@@ -982,12 +985,18 @@ class PostgresBuildJobRepository:
             )
             worker = _worker_from_values(raw_worker_id, raw_runner_backend)
             _optional_datetime(raw_archived_at)
+            revision = _nonnegative_integer(raw_revision)
+            import_source_schema_version = _optional_import_source_schema_version(
+                raw_import_source_schema_version
+            )
+            if revision == 0 and import_source_schema_version != 2:
+                raise _PersistedDataError
             return BuildJobSnapshot(
                 job_id=job_id,
                 request_id=_required_string(raw_request_id),
                 job_type=BuildJobType(_required_string(raw_job_type)),
                 status=BuildJobStatus(_required_string(raw_status)),
-                revision=_positive_integer(raw_revision),
+                revision=revision,
                 created_at=_required_datetime(raw_created_at),
                 started_at=_optional_datetime(raw_started_at),
                 finished_at=_optional_datetime(raw_finished_at),
@@ -1012,6 +1021,7 @@ class PostgresBuildJobRepository:
         *,
         archived_at: datetime | None,
         updated_at: datetime,
+        import_source_schema_version: int | None = None,
     ) -> tuple[object, ...]:
         worker = snapshot.worker
         return (
@@ -1035,6 +1045,7 @@ class PostgresBuildJobRepository:
             snapshot.lease_expires_at,
             archived_at,
             updated_at,
+            import_source_schema_version,
         )
 
     @staticmethod
@@ -1068,11 +1079,12 @@ class PostgresBuildJobRepository:
             ) = row
             if not isinstance(raw_payload, Mapping):
                 raise _PersistedDataError
+            revision = _nonnegative_integer(raw_revision)
             event = event_from_dict(
                 {
                     "event_id": _required_string(raw_event_id),
                     "job_id": _required_string(raw_job_id),
-                    "revision": _positive_integer(raw_revision),
+                    "revision": revision,
                     "event_type": _required_string(raw_event_type),
                     "schema_version": _positive_integer(raw_schema_version),
                     "occurred_at": _required_datetime(raw_occurred_at).isoformat(),
@@ -1080,6 +1092,8 @@ class PostgresBuildJobRepository:
                     "payload": raw_payload,
                 }
             )
+            if revision == 0 and event.event_type.value != "baseline_imported":
+                raise _PersistedDataError
             return event
         except _PersistedDataError:
             raise
@@ -1235,6 +1249,21 @@ def _positive_integer(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise _PersistedDataError
     return value
+
+
+def _nonnegative_integer(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise _PersistedDataError
+    return value
+
+
+def _optional_import_source_schema_version(value: object) -> int | None:
+    if value is None:
+        return None
+    version = _positive_integer(value)
+    if version != 2:
+        raise _PersistedDataError
+    return version
 
 
 def _required_datetime(value: object) -> datetime:

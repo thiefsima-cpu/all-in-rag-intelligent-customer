@@ -4,11 +4,13 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from rag_modules.contracts.build_jobs import BuildJobRepositoryError
 from rag_modules.runtime.build_jobs.postgres import (
@@ -61,14 +63,17 @@ class _StatusConnection:
         raise AssertionError(f"Unexpected status query: {statement}")
 
 
-def test_packaged_migration_is_discovered_with_a_sha256_checksum() -> None:
+def test_packaged_migrations_are_discovered_with_sha256_checksums() -> None:
     manager = PostgresBuildJobSchemaManager("postgresql://unit-test.invalid/build_jobs")
 
-    assert len(manager._migrations) == 1
-    migration = manager._migrations[0]
-    assert migration.version == 1
-    assert migration.name == "build_job_control_plane"
-    assert migration.checksum == hashlib.sha256(migration.sql.encode("utf-8")).hexdigest()
+    assert [(migration.version, migration.name) for migration in manager._migrations] == [
+        (1, "build_job_control_plane"),
+        (2, "imported_baseline_audit"),
+    ]
+    assert all(
+        migration.checksum == hashlib.sha256(migration.sql.encode("utf-8")).hexdigest()
+        for migration in manager._migrations
+    )
 
 
 def test_migration_discovery_sanitizes_resource_errors() -> None:
@@ -95,8 +100,8 @@ def test_status_reports_version_zero_without_executing_ddl() -> None:
 
     assert status == BuildJobPostgresSchemaStatus(
         current_version=0,
-        required_version=1,
-        pending_versions=(1,),
+        required_version=2,
+        pending_versions=(1, 2),
         ready=False,
     )
     assert connection.statements
@@ -222,11 +227,64 @@ def test_cli_sanitizes_unexpected_database_errors(
     assert "private" not in output
 
 
+@pytest.mark.parametrize("command", ["status", "migrate", "import-file"])
+@pytest.mark.parametrize("dsn_case", ["missing", "empty", "whitespace"])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_cli_rejects_unconfigured_dsn_before_database_object_construction(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    command: str,
+    dsn_case: str,
+    as_json: bool,
+) -> None:
+    storage = (
+        SimpleNamespace()
+        if dsn_case == "missing"
+        else SimpleNamespace(build_job_postgres_dsn="" if dsn_case == "empty" else " \t\r\n ")
+    )
+    config = SimpleNamespace(
+        storage=storage,
+        api=SimpleNamespace(
+            build_job_postgres_pool_min_size=1,
+            build_job_postgres_pool_max_size=2,
+            build_job_postgres_pool_timeout_seconds=3.0,
+        ),
+    )
+    argv = [command]
+    if command == "import-file":
+        argv.extend(["--source", str(tmp_path / "private-source.json")])
+    if as_json:
+        argv.append("--json")
+    with (
+        patch.object(build_job_db, "load_config", return_value=config),
+        patch.object(build_job_db, "PostgresBuildJobSchemaManager") as manager_type,
+        patch.object(build_job_db, "PostgresBuildJobRepository") as repository_type,
+        patch.object(build_job_db, "V3BuildJobImporter") as importer_type,
+    ):
+        exit_code = build_job_db.main(argv)
+
+    captured = capsys.readouterr()
+    expected_error = (
+        "Build job PostgreSQL file import failed."
+        if command == "import-file"
+        else "Build job PostgreSQL schema operation failed."
+    )
+    assert exit_code == 1
+    assert captured.err == ""
+    if as_json:
+        assert json.loads(captured.out) == {"error": expected_error, "ready": False}
+    else:
+        assert captured.out == f"{expected_error}\n"
+    manager_type.assert_not_called()
+    repository_type.assert_not_called()
+    importer_type.assert_not_called()
+
+
 def test_status_on_empty_database_does_not_create_schema(postgres_dsn: str) -> None:
     status = PostgresBuildJobSchemaManager(postgres_dsn).status()
 
     assert status.current_version == 0
-    assert status.pending_versions == (1,)
+    assert status.pending_versions == (1, 2)
     with psycopg.connect(postgres_dsn) as connection:
         row = connection.execute(
             "SELECT to_regnamespace(%s) IS NOT NULL",
@@ -242,8 +300,8 @@ def test_migrate_is_repeatable_and_verify_succeeds(postgres_dsn: str) -> None:
     second = manager.migrate()
 
     assert first.ready
-    assert first.current_version == 1
-    assert second.current_version == 1
+    assert first.current_version == 2
+    assert second.current_version == 2
     assert second.pending_versions == ()
     assert manager.verify() == second
 
@@ -274,7 +332,7 @@ def test_concurrent_migrations_serialize_and_record_one_ledger_row(
         row = connection.execute(
             "SELECT count(*) FROM graph_rag_control_plane.schema_migrations"
         ).fetchone()
-    assert row == (1,)
+    assert row == (2,)
 
 
 def test_migration_enforces_constraints_and_installs_keyset_indexes(
@@ -292,6 +350,40 @@ def test_migration_enforces_constraints_and_installs_keyset_indexes(
                     ) VALUES (%s, %s, %s, %s, %s, now(), now())
                     """,
                     ("not-a-job-id", "request-1", "build", "queued", 1),
+                )
+        with connection.transaction():
+            connection.execute(
+                """
+                INSERT INTO graph_rag_control_plane.build_jobs (
+                    job_id, request_id, job_type, status, revision,
+                    created_at, updated_at, import_source_schema_version
+                ) VALUES (%s, %s, %s, %s, 0, now(), now(), 2)
+                """,
+                ("c" * 32, "request-v2", "build", "succeeded"),
+            )
+            connection.execute(
+                """
+                INSERT INTO graph_rag_control_plane.build_job_events (
+                    job_id, revision, event_id, event_type, schema_version,
+                    occurred_at, request_id, payload
+                ) VALUES (%s, 0, %s, 'baseline_imported', 1, now(), %s, %s)
+                """,
+                (
+                    "c" * 32,
+                    f"{'c' * 32}:baseline:0",
+                    "request-v2",
+                    Jsonb({"source_schema_version": 2}),
+                ),
+            )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with connection.transaction():
+                connection.execute(
+                    """
+                    INSERT INTO graph_rag_control_plane.build_jobs (
+                        job_id, request_id, job_type, status, revision, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, 0, now(), now())
+                    """,
+                    ("d" * 32, "request-invalid", "build", "succeeded"),
                 )
         rows = connection.execute(
             """

@@ -15,6 +15,7 @@ from rag_modules.contracts.build_jobs import (
     BuildJobRepositoryError,
     BuildJobRepositoryUnavailableError,
     BuildJobType,
+    JobBaselineImported,
     JobClaimed,
     JobQueued,
     WorkerIdentity,
@@ -193,6 +194,36 @@ class ApiBuildTests(unittest.TestCase):
         self.assertNotIn("private-lease-token", serialized)
         self.assertNotIn("idempotency_key_hash", serialized)
         self.assertNotIn("lease_token", serialized)
+
+    def test_imported_v2_baseline_audit_event_is_publicly_queryable(self) -> None:
+        jobs = _AuditBuildJobs(
+            (
+                _audit_event(
+                    revision=0,
+                    event_type=BuildJobEventType.BASELINE_IMPORTED,
+                    payload=JobBaselineImported(source_schema_version=2),
+                ),
+            )
+        )
+        app = create_build_api_app(system=_FakeApiSystem(), build_job_application=jobs)
+
+        with _client(app) as client:
+            response = client.get(f"/v1/jobs/{'a' * 32}/events")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["events"][0],
+            {
+                "event_id": "00000000000000000000000000000000",
+                "job_id": "a" * 32,
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": "2026-07-26T00:00:00+00:00",
+                "request_id": "audit-request",
+                "payload": {"source_schema_version": 2},
+            },
+        )
 
     def test_build_job_audit_events_map_cursor_missing_and_unavailable_errors(self) -> None:
         cases = (

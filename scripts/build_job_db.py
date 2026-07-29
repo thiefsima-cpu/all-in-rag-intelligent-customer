@@ -92,12 +92,21 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _configured_dsn(config: object) -> str:
+    storage = getattr(config, "storage", None)
+    value = getattr(storage, "build_job_postgres_dsn", None)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Build job PostgreSQL DSN is required.")
+    return value.strip()
+
+
 def _import_file(args: argparse.Namespace) -> int:
     repository: PostgresBuildJobRepository | None = None
     try:
         config = load_config()
+        dsn = _configured_dsn(config)
         repository = PostgresBuildJobRepository(
-            config.storage.build_job_postgres_dsn,
+            dsn,
             now=_utc_now,
             pool_min_size=config.api.build_job_postgres_pool_min_size,
             pool_max_size=config.api.build_job_postgres_pool_max_size,
@@ -122,7 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "import-file":
         return _import_file(args)
     try:
-        dsn = load_config().storage.build_job_postgres_dsn
+        dsn = _configured_dsn(load_config())
         manager = PostgresBuildJobSchemaManager(dsn)
         status = manager.status() if args.command == "status" else manager.migrate()
     except Exception:

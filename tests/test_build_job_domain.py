@@ -23,6 +23,7 @@ from rag_modules.app.build_jobs import (
     JobQueued,
     JobStarted,
     WorkerIdentity,
+    event_from_dict,
     public_build_job_event,
     reduce_build_job,
 )
@@ -120,6 +121,34 @@ class BuildJobDomainTests(unittest.TestCase):
             },
         )
         self.assertNotIn("private-lease-token", json.dumps(public))
+
+    def test_imported_v2_baseline_event_has_a_privacy_safe_public_projection(self) -> None:
+        event = event_from_dict(
+            {
+                "event_id": f"{JOB_ID}:baseline:0",
+                "job_id": str(JOB_ID),
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": NOW.isoformat(),
+                "request_id": "request-1",
+                "payload": {"source_schema_version": 2},
+            }
+        )
+
+        self.assertEqual(
+            public_build_job_event(event),
+            {
+                "event_id": f"{JOB_ID}:baseline:0",
+                "job_id": str(JOB_ID),
+                "revision": 0,
+                "event_type": "baseline_imported",
+                "schema_version": 1,
+                "occurred_at": NOW.isoformat(),
+                "request_id": "request-1",
+                "payload": {"source_schema_version": 2},
+            },
+        )
 
     def test_public_failed_event_redacts_terminal_result_details(self) -> None:
         event = BuildJobEvent(

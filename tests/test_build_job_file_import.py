@@ -11,11 +11,13 @@ import psycopg
 import pytest
 
 from rag_modules.app.build_jobs import (
+    BuildJobEventListQuery,
     BuildJobId,
     BuildJobRepositoryError,
     BuildJobRepositorySettings,
+    public_build_job_event,
 )
-from rag_modules.runtime.build_jobs import FileBuildJobRepository
+from rag_modules.runtime.build_jobs import BuildJobStoreMigrator, FileBuildJobRepository
 from rag_modules.runtime.build_jobs.postgres import (
     BuildJobImportReport,
     PostgresBuildJobRepository,
@@ -112,6 +114,31 @@ def _create_v3_source(tmp_path: Path) -> Path:
     return source_path
 
 
+def _create_migrated_v2_source(tmp_path: Path) -> Path:
+    source_path = tmp_path / "build_jobs.json"
+    source_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "graph-rag-build-jobs-v2",
+                "jobs": [
+                    {
+                        "job_id": "c" * 32,
+                        "request_id": "request-v2",
+                        "job_type": "build",
+                        "status": "succeeded",
+                        "created_at": NOW.isoformat(),
+                        "finished_at": NOW.isoformat(),
+                        "message": "Knowledge base build completed.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    BuildJobStoreMigrator(str(source_path), now=lambda: NOW).migrate()
+    return source_path
+
+
 def _open_importer(dsn: str) -> tuple[V3BuildJobImporter, PostgresBuildJobRepository]:
     PostgresBuildJobSchemaManager(dsn).migrate()
     repository = PostgresBuildJobRepository(
@@ -192,6 +219,51 @@ def test_dry_run_uses_a_read_only_rollback_transaction(tmp_path: Path) -> None:
     assert connection.transaction_force_rollback == [True]
     assert connection.statements[0] == "SET TRANSACTION READ ONLY"
     assert pool.checkout_timeouts == [2.0]
+
+
+def test_v2_revision_zero_baseline_normalizes_to_a_queryable_public_audit_event(
+    tmp_path: Path,
+) -> None:
+    source = postgres_importer._discover_source(_create_migrated_v2_source(tmp_path))[0]
+
+    audit_events = postgres_importer._audit_events_for_source(source)
+
+    assert source.snapshot.revision == 0
+    assert len(audit_events) == 1
+    assert public_build_job_event(audit_events[0]) == {
+        "event_id": f"{source.snapshot.job_id}:baseline:0",
+        "job_id": str(source.snapshot.job_id),
+        "revision": 0,
+        "event_type": "baseline_imported",
+        "schema_version": 1,
+        "occurred_at": NOW.isoformat(),
+        "request_id": "request-v2",
+        "payload": {"source_schema_version": 2},
+    }
+
+
+def test_v2_revision_zero_baseline_import_is_queryable_and_repeatable(
+    tmp_path: Path,
+    postgres_dsn: str,
+) -> None:
+    source_path = _create_migrated_v2_source(tmp_path)
+    importer, repository = _open_importer(postgres_dsn)
+    job_id = BuildJobId("c" * 32)
+    try:
+        first = importer.run(source_path, dry_run=False)
+        page = repository.list_events(job_id, BuildJobEventListQuery(limit=10))
+        second = importer.run(source_path, dry_run=False)
+    finally:
+        repository.close()
+
+    assert first.imported_jobs == 1
+    assert first.scanned_events == 1
+    assert second.skipped_jobs == 1
+    assert second.imported_jobs == 0
+    assert [event.revision for event in page.events] == [0]
+    assert page.next_cursor == ""
+    assert public_build_job_event(page.events[0])["payload"] == {"source_schema_version": 2}
+    assert _database_counts(postgres_dsn) == (1, 1)
 
 
 def test_dry_run_validates_active_and_archive_without_writes(

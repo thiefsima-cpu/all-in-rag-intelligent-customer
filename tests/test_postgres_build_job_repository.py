@@ -323,6 +323,7 @@ def _snapshot_row(
     snapshot: BuildJobSnapshot,
     *,
     archived_at: datetime | None = None,
+    import_source_schema_version: int | None = None,
 ) -> tuple[object, ...]:
     worker = snapshot.worker
     return (
@@ -345,6 +346,7 @@ def _snapshot_row(
         snapshot.lease_token,
         snapshot.lease_expires_at,
         archived_at,
+        import_source_schema_version,
     )
 
 
@@ -1074,13 +1076,17 @@ def test_event_pages_are_revision_ordered_and_invalid_cursor_never_checks_out_co
     assert first_page.next_cursor
     assert second_page.events == (second_event,)
     assert second_page.next_cursor == ""
+    subject_sql, subject_params = first_connection.calls[0]
+    assert "FROM graph_rag_control_plane.build_jobs" in subject_sql
+    assert "FOR UPDATE" in subject_sql
+    assert subject_params == {"job_id": str(snapshot.job_id)}
     event_sql, event_params = first_connection.calls[1]
     assert "revision > %(cursor_revision)s" in event_sql
     assert "ORDER BY revision" in event_sql
     assert "OFFSET" not in event_sql.upper()
     assert event_params == {
         "job_id": str(snapshot.job_id),
-        "cursor_revision": 0,
+        "cursor_revision": -1,
         "fetch_limit": 2,
     }
     checkout_count = len(pool.checkout_timeouts)
@@ -1106,7 +1112,7 @@ def test_existing_job_without_events_is_reported_as_safe_repository_corruption()
 
 def test_missing_event_subject_raises_not_found() -> None:
     job_id = BuildJobId("f" * 32)
-    connection = _FakeConnection([_Rows([(False, False)])])
+    connection = _FakeConnection([_Rows([])])
     repository = _make_repository(_FakePool([connection]))
 
     with pytest.raises(BuildJobNotFoundError) as caught:
@@ -1767,7 +1773,7 @@ def test_diagnostics_is_bounded_and_returns_safe_fixed_warning_on_failure() -> N
 
     assert diagnostics.backend == "postgresql"
     assert diagnostics.ready is False
-    assert diagnostics.schema_version == "1"
+    assert diagnostics.schema_version == "2"
     assert [warning.code for warning in diagnostics.warnings] == ["BUILD_JOB_POSTGRES_UNAVAILABLE"]
     assert all("secret" not in repr(warning) for warning in diagnostics.warnings)
     assert len(connection.calls) == 1
@@ -1785,7 +1791,7 @@ def test_diagnostics_verifies_connectivity_and_schema_without_scanning_jobs() ->
     assert diagnostics == BuildJobRepositoryDiagnostics(
         backend="postgresql",
         ready=True,
-        schema_version="1",
+        schema_version="2",
     )
     assert connection.calls == [("SELECT 1", None)]
     schema_manager.verify.assert_called_once_with()
@@ -2100,6 +2106,84 @@ def test_archived_rows_are_hidden_from_current_reads_but_events_remain_pageable(
     assert first_page.next_cursor
     assert [event.revision for event in second_page.events] == [2]
     assert second_page.next_cursor == ""
+
+
+def test_event_listing_linearizes_with_physical_purge(
+    repository_factory,
+) -> None:
+    clock = MutableClock(NOW)
+    settings = BuildJobRepositorySettings(
+        retention_limit=0,
+        audit_retention_days=90,
+        list_max_limit=100,
+    )
+    reader = repository_factory(clock=clock, settings=settings)
+    purger = repository_factory(clock=clock, settings=settings)
+    archived = submit_and_succeed(
+        reader,
+        "9" * 32,
+        clock=clock,
+        key="linearized-purge-key",
+    )
+    clock.advance(seconds=90 * 86400)
+    before_event_query = threading.Event()
+    purge_finished = threading.Event()
+    original_pool = reader._pool
+
+    class BarrierConnection:
+        def __init__(self, connection) -> None:
+            self._connection = connection
+
+        def transaction(self):
+            return self._connection.transaction()
+
+        def execute(self, query, params=None):
+            if str(query) == repository_module._EVENT_LIST_SQL:
+                before_event_query.set()
+                purge_finished.wait(timeout=1.0)
+            return self._connection.execute(query, params)
+
+    class BarrierCheckout(AbstractContextManager[BarrierConnection]):
+        def __init__(self, timeout: float | None) -> None:
+            self._checkout = original_pool.connection(timeout=timeout)
+            self._connection = None
+
+        def __enter__(self) -> BarrierConnection:
+            self._connection = self._checkout.__enter__()
+            return BarrierConnection(self._connection)
+
+        def __exit__(self, exc_type, exc, traceback) -> bool:
+            return self._checkout.__exit__(exc_type, exc, traceback)
+
+    class BarrierPool:
+        def connection(self, timeout: float | None = None) -> BarrierCheckout:
+            return BarrierCheckout(timeout)
+
+        def close(self) -> None:
+            original_pool.close()
+
+    reader._pool = BarrierPool()
+
+    def purge() -> None:
+        try:
+            purger.apply_retention()
+        finally:
+            purge_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        event_future = executor.submit(
+            reader.list_events,
+            archived.job_id,
+            BuildJobEventListQuery(limit=100),
+        )
+        assert before_event_query.wait(timeout=5.0)
+        purge_future = executor.submit(purge)
+        page = event_future.result(timeout=10.0)
+        purge_future.result(timeout=10.0)
+
+    assert tuple(event.revision for event in page.events) == (1, 2, 3, 4)
+    with pytest.raises(BuildJobNotFoundError):
+        reader.list_events(archived.job_id, BuildJobEventListQuery(limit=100))
 
 
 def _race_two(callable_one, callable_two) -> tuple[object, object]:

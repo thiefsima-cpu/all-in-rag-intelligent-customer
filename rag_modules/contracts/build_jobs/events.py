@@ -17,6 +17,7 @@ BUILD_JOB_EVENT_SCHEMA_VERSION = 1
 
 
 class BuildJobEventType(StrEnum):
+    BASELINE_IMPORTED = "baseline_imported"
     QUEUED = "queued"
     CLAIMED = "claimed"
     STARTED = "started"
@@ -26,6 +27,11 @@ class BuildJobEventType(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
+
+
+@dataclass(frozen=True, slots=True)
+class JobBaselineImported:
+    source_schema_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +87,8 @@ class JobInterrupted:
 
 
 BuildJobEventPayload = (
-    JobQueued
+    JobBaselineImported
+    | JobQueued
     | JobClaimed
     | JobStarted
     | JobProgressRecorded
@@ -106,6 +113,7 @@ class BuildJobEvent:
 
 
 _PAYLOAD_BY_TYPE: dict[BuildJobEventType, type[BuildJobEventPayload]] = {
+    BuildJobEventType.BASELINE_IMPORTED: JobBaselineImported,
     BuildJobEventType.QUEUED: JobQueued,
     BuildJobEventType.CLAIMED: JobClaimed,
     BuildJobEventType.STARTED: JobStarted,
@@ -135,8 +143,12 @@ def public_build_job_event(event: BuildJobEvent) -> JsonObject:
     """Return the explicit, privacy-safe public projection of an audit event."""
 
     payload = event.payload
-    if isinstance(payload, JobQueued):
+    if isinstance(payload, JobBaselineImported):
         public_payload: JsonObject = {
+            "source_schema_version": payload.source_schema_version,
+        }
+    elif isinstance(payload, JobQueued):
+        public_payload = {
             "job_type": payload.job_type.value,
             "retry_of_job_id": str(payload.retry_of_job_id or ""),
         }
@@ -250,6 +262,10 @@ def _payload_from_dict(
     valid_keys = {field.name for field in fields(payload_class)}
     _reject_unknown_keys(payload, valid_keys)
 
+    if payload_class is JobBaselineImported:
+        return JobBaselineImported(
+            source_schema_version=coerce_int(payload["source_schema_version"]),
+        )
     if payload_class is JobQueued:
         retry_of_job_id = payload.get("retry_of_job_id")
         return JobQueued(
@@ -307,6 +323,7 @@ def _value_to_json(value: object) -> JsonValue:
         value,
         (
             JobQueued,
+            JobBaselineImported,
             JobClaimed,
             JobStarted,
             JobProgressRecorded,
@@ -349,6 +366,7 @@ __all__ = [
     "BuildJobEvent",
     "BuildJobEventPayload",
     "BuildJobEventType",
+    "JobBaselineImported",
     "JobCancellationRequested",
     "JobCancelled",
     "JobClaimed",

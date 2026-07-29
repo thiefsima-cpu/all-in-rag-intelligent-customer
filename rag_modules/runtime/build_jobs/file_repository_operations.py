@@ -71,7 +71,7 @@ def submit(
         snapshot = reduce_build_job(None, event)
         storage.write_envelope(repository, BuildJobEnvelope.new(snapshot, event))
         idempotency.write_idempotency_index(repository, key_hash, snapshot)
-        apply_retention(repository)
+        _apply_retention_locked(repository)
         return BuildJobSubmission(BuildJobSubmissionDisposition.CREATED, snapshot)
 
 
@@ -209,7 +209,7 @@ def apply(
         storage.write_envelope(repository, envelope.append(updated, event))
         if updated.status in TERMINAL_STATUSES:
             storage.remove_lease_record(repository, updated.job_id)
-        apply_retention(repository)
+        _apply_retention_locked(repository)
         return updated
 
 
@@ -232,7 +232,7 @@ def recover_expired_leases(
             recovered_snapshot = recover_expired_lease(repository, lease)
             if recovered_snapshot is not None:
                 recovered.append(recovered_snapshot)
-        apply_retention(repository)
+        _apply_retention_locked(repository)
         return tuple(recovered)
 
 
@@ -274,6 +274,11 @@ def recover_expired_lease(
 
 
 def apply_retention(repository: FileBuildJobRepository) -> None:
+    with storage.store_lock(repository):
+        _apply_retention_locked(repository)
+
+
+def _apply_retention_locked(repository: FileBuildJobRepository) -> None:
     terminal = [
         snapshot
         for snapshot in storage.load_all_snapshots(repository)
