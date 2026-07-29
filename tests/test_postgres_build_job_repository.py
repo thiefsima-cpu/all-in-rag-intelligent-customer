@@ -1110,6 +1110,35 @@ def test_existing_job_without_events_is_reported_as_safe_repository_corruption()
         repository.list_events(snapshot.job_id, BuildJobEventListQuery())
 
 
+def test_malformed_baseline_payload_is_reported_as_safe_repository_unavailable() -> None:
+    snapshot = _snapshot("f")
+    malformed_event_row = (
+        f"{snapshot.job_id}:baseline:0",
+        str(snapshot.job_id),
+        0,
+        "baseline_imported",
+        1,
+        NOW,
+        snapshot.request_id,
+        {"source_schema_version": 999},
+    )
+    connection = _FakeConnection(
+        [
+            _Rows([(True, True)]),
+            _Rows([malformed_event_row]),
+        ]
+    )
+    repository = _make_repository(_FakePool([connection]))
+
+    with pytest.raises(
+        BuildJobRepositoryUnavailableError,
+        match=r"^Build job repository is unavailable\.$",
+    ):
+        repository.list_events(snapshot.job_id, BuildJobEventListQuery())
+
+    assert connection.transaction_outcomes == ["rollback"]
+
+
 def test_missing_event_subject_raises_not_found() -> None:
     job_id = BuildJobId("f" * 32)
     connection = _FakeConnection([_Rows([])])
@@ -2109,6 +2138,7 @@ def test_archived_rows_are_hidden_from_current_reads_but_events_remain_pageable(
 
 
 def test_event_listing_linearizes_with_physical_purge(
+    migrated_postgres_dsn: str,
     repository_factory,
 ) -> None:
     clock = MutableClock(NOW)
@@ -2127,7 +2157,7 @@ def test_event_listing_linearizes_with_physical_purge(
     )
     clock.advance(seconds=90 * 86400)
     before_event_query = threading.Event()
-    purge_finished = threading.Event()
+    allow_event_query = threading.Event()
     original_pool = reader._pool
 
     class BarrierConnection:
@@ -2140,7 +2170,7 @@ def test_event_listing_linearizes_with_physical_purge(
         def execute(self, query, params=None):
             if str(query) == repository_module._EVENT_LIST_SQL:
                 before_event_query.set()
-                purge_finished.wait(timeout=1.0)
+                assert allow_event_query.wait(timeout=10.0)
             return self._connection.execute(query, params)
 
     class BarrierCheckout(AbstractContextManager[BarrierConnection]):
@@ -2164,12 +2194,6 @@ def test_event_listing_linearizes_with_physical_purge(
 
     reader._pool = BarrierPool()
 
-    def purge() -> None:
-        try:
-            purger.apply_retention()
-        finally:
-            purge_finished.set()
-
     with ThreadPoolExecutor(max_workers=2) as executor:
         event_future = executor.submit(
             reader.list_events,
@@ -2177,11 +2201,33 @@ def test_event_listing_linearizes_with_physical_purge(
             BuildJobEventListQuery(limit=100),
         )
         assert before_event_query.wait(timeout=5.0)
-        purge_future = executor.submit(purge)
+        purge_future = executor.submit(purger.apply_retention)
+        try:
+            purge_future.result(timeout=5.0)
+            with psycopg.connect(migrated_postgres_dsn) as connection:
+                persisted = connection.execute(
+                    """
+                    SELECT
+                        EXISTS (
+                            SELECT 1
+                            FROM graph_rag_control_plane.build_jobs
+                            WHERE job_id = %s
+                        ),
+                        (
+                            SELECT count(*)
+                            FROM graph_rag_control_plane.build_job_events
+                            WHERE job_id = %s
+                        )
+                    """,
+                    (str(archived.job_id), str(archived.job_id)),
+                ).fetchone()
+            assert persisted == (True, 4)
+        finally:
+            allow_event_query.set()
         page = event_future.result(timeout=10.0)
-        purge_future.result(timeout=10.0)
 
     assert tuple(event.revision for event in page.events) == (1, 2, 3, 4)
+    purger.apply_retention()
     with pytest.raises(BuildJobNotFoundError):
         reader.list_events(archived.job_id, BuildJobEventListQuery(limit=100))
 

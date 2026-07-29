@@ -263,9 +263,14 @@ def _payload_from_dict(
     _reject_unknown_keys(payload, valid_keys)
 
     if payload_class is JobBaselineImported:
-        return JobBaselineImported(
-            source_schema_version=coerce_int(payload["source_schema_version"]),
-        )
+        source_schema_version = payload.get("source_schema_version")
+        if (
+            not isinstance(source_schema_version, int)
+            or isinstance(source_schema_version, bool)
+            or source_schema_version != 2
+        ):
+            raise ValueError("unsupported imported baseline source schema version")
+        return JobBaselineImported(source_schema_version=source_schema_version)
     if payload_class is JobQueued:
         retry_of_job_id = payload.get("retry_of_job_id")
         return JobQueued(

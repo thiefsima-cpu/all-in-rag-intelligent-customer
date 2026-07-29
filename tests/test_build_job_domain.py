@@ -150,6 +150,32 @@ class BuildJobDomainTests(unittest.TestCase):
             },
         )
 
+    def test_imported_baseline_rejects_unsupported_or_malformed_source_schema(self) -> None:
+        cases = (
+            ("unsupported", {"source_schema_version": 999}),
+            ("missing", {}),
+            ("wrong type", {"source_schema_version": "2"}),
+        )
+
+        for label, imported_payload in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^unsupported imported baseline source schema version$",
+                ):
+                    event_from_dict(
+                        {
+                            "event_id": f"{JOB_ID}:baseline:0",
+                            "job_id": str(JOB_ID),
+                            "revision": 0,
+                            "event_type": "baseline_imported",
+                            "schema_version": 1,
+                            "occurred_at": NOW.isoformat(),
+                            "request_id": "request-1",
+                            "payload": imported_payload,
+                        }
+                    )
+
     def test_public_failed_event_redacts_terminal_result_details(self) -> None:
         event = BuildJobEvent(
             event_id=f"{'a' * 32}:4",
