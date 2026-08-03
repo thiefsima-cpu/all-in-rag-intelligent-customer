@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from collections.abc import Sequence
 
-from ...contracts.graph_preparation import GraphLoadCounts, GraphNode
-from ...kernel.json_types import coerce_json_object, coerce_json_value
-from ..ports import Neo4jDriverPort, Neo4jRecordPort
+from ....contracts.graph_preparation import GraphNode, LoadedGraphData
+from ....kernel.json_types import coerce_json_object, coerce_json_value
 
 logger = logging.getLogger(__name__)
 
@@ -57,50 +54,27 @@ ORDER BY s.nodeId
 """
 
 
-@dataclass(slots=True)
-class LoadedGraphData:
-    """Loaded graph node collections ready for document materialization."""
-
-    recipes: list[GraphNode]
-    ingredients: list[GraphNode]
-    cooking_steps: list[GraphNode]
-
-    def to_counts(self) -> GraphLoadCounts:
-        return GraphLoadCounts(
-            recipes=len(self.recipes),
-            ingredients=len(self.ingredients),
-            cooking_steps=len(self.cooking_steps),
-        )
-
-
-class Neo4jSessionLike(Protocol):
-    """Neo4j session surface used by graph-preparation loaders."""
-
-    def run(
-        self,
-        query: str,
-        parameters: object | None = None,
-    ) -> Iterable[Neo4jRecordPort]: ...
-
-
 class Neo4jGraphDataLoader:
     """Load recipe, ingredient, and cooking-step nodes from Neo4j."""
 
-    def load(self, driver: Neo4jDriverPort, *, database: str) -> LoadedGraphData:
+    def load(self, driver: object, *, database: str) -> LoadedGraphData:
         logger.info("Loading graph data from Neo4j...")
-        with driver.session(database=database) as session:
+        with getattr(driver, "session")(database=database) as session:
             recipes = self._load_recipes(session)
             ingredients = self._load_ingredients(session)
             cooking_steps = self._load_cooking_steps(session)
         return LoadedGraphData(
-            recipes=recipes,
-            ingredients=ingredients,
-            cooking_steps=cooking_steps,
+            primary_entities=recipes,
+            primary_group="recipes",
+            related_entity_groups={
+                "ingredients": ingredients,
+                "cooking_steps": cooking_steps,
+            },
         )
 
-    def _load_recipes(self, session: Neo4jSessionLike) -> list[GraphNode]:
+    def _load_recipes(self, session: object) -> list[GraphNode]:
         recipes: list[GraphNode] = []
-        for record in session.run(RECIPES_QUERY):
+        for record in getattr(session, "run")(RECIPES_QUERY):
             properties = coerce_json_object(record.get("originalProperties"))
             properties["category"] = str(record.get("mainCategory") or UNKNOWN_VALUE)
             properties["all_categories"] = coerce_json_value(
@@ -117,7 +91,7 @@ class Neo4jGraphDataLoader:
         logger.info("Loaded %d recipe nodes.", len(recipes))
         return recipes
 
-    def _load_ingredients(self, session: Neo4jSessionLike) -> list[GraphNode]:
+    def _load_ingredients(self, session: object) -> list[GraphNode]:
         ingredients = [
             GraphNode(
                 node_id=str(record.get("nodeId") or ""),
@@ -125,12 +99,12 @@ class Neo4jGraphDataLoader:
                 name=str(record.get("name") or ""),
                 properties=coerce_json_object(record.get("properties")),
             )
-            for record in session.run(INGREDIENTS_QUERY)
+            for record in getattr(session, "run")(INGREDIENTS_QUERY)
         ]
         logger.info("Loaded %d ingredient nodes.", len(ingredients))
         return ingredients
 
-    def _load_cooking_steps(self, session: Neo4jSessionLike) -> list[GraphNode]:
+    def _load_cooking_steps(self, session: object) -> list[GraphNode]:
         cooking_steps = [
             GraphNode(
                 node_id=str(record.get("nodeId") or ""),
@@ -138,7 +112,7 @@ class Neo4jGraphDataLoader:
                 name=str(record.get("name") or ""),
                 properties=coerce_json_object(record.get("properties")),
             )
-            for record in session.run(COOKING_STEPS_QUERY)
+            for record in getattr(session, "run")(COOKING_STEPS_QUERY)
         ]
         logger.info("Loaded %d cooking-step nodes.", len(cooking_steps))
         return cooking_steps

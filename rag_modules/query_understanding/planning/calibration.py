@@ -9,6 +9,7 @@ from ...contracts import (
     QuerySemanticRuntimeSettings,
 )
 from ...contracts.query_constraints import QueryConstraints
+from ...domains.contracts import DomainQueryConstraintSchema
 from ...kernel.routing import SearchStrategy
 from ...query_policy import get_query_policy
 from ...query_policy.models import QueryPolicyBundle
@@ -49,9 +50,11 @@ class QueryPlanCalibrator:
         settings: QuerySemanticRuntimeSettings,
         *,
         policy_bundle: QueryPolicyBundle | None = None,
+        constraint_schema: DomainQueryConstraintSchema | None = None,
     ) -> None:
         self.settings = settings
         self.policy_bundle = policy_bundle or get_query_policy()
+        self.constraint_schema = constraint_schema
         self.policy = self.policy_bundle.routing
 
     def has_meaningful_constraints(
@@ -60,13 +63,8 @@ class QueryPlanCalibrator:
         profile: QuerySemanticProfile,
     ) -> bool:
         meaningful_fields = set(self.policy.meaningful_constraint_fields)
-        if (
-            profile.needs_recipe_recommendation
-            and "needs_recipe_recommendation" in meaningful_fields
-        ):
-            return True
         for field_name in meaningful_fields:
-            value = getattr(constraints, field_name, None)
+            value = constraints.field_value(field_name)
             if isinstance(value, bool):
                 if value:
                     return True
@@ -182,8 +180,8 @@ class QueryPlanCalibrator:
             or plan.complexity >= self.settings.reasoning_complexity_threshold
             or plan.relationship_intensity >= self.settings.reasoning_relationship_threshold
         )
-        plan.constraints.needs_recipe_recommendation = bool(
-            plan.constraints.needs_recipe_recommendation or profile.needs_recipe_recommendation
+        plan.recommendation_required = bool(
+            plan.recommendation_required or profile.recommendation_required
         )
 
     def _calibrate_strategy(self, plan: QueryPlan, profile: QuerySemanticProfile) -> None:
@@ -264,6 +262,7 @@ class QueryPlanCalibrator:
             plan.query or "",
             settings=self.settings,
             policy_bundle=self.policy_bundle,
+            constraint_schema=self.constraint_schema,
         )
         self._apply_profile(plan, profile)
         self._calibrate_strategy(plan, profile)

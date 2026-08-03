@@ -16,19 +16,9 @@ class DocumentArtifactStatsCollector:
             raw_stats.to_dict() if isinstance(raw_stats, GraphPreparationStats) else raw_stats
         )
         return DocumentArtifactStats(
-            total_recipes=_count_value(
-                stats.get("total_recipes"),
-                len(getattr(data_module, "recipes", []) or []),
-            ),
-            total_ingredients=_count_value(
-                stats.get("total_ingredients"),
-                len(getattr(data_module, "ingredients", []) or []),
-            ),
-            total_cooking_steps=_count_value(
-                stats.get(
-                    "total_cooking_steps",
-                ),
-                len(getattr(data_module, "cooking_steps", []) or []),
+            total_entities=_count_value(
+                stats.get("total_entities"),
+                len(getattr(data_module, "entities", []) or []),
             ),
             total_documents=_count_value(
                 stats.get("total_documents"),
@@ -38,6 +28,7 @@ class DocumentArtifactStatsCollector:
                 stats.get("total_chunks"),
                 len(getattr(data_module, "chunks", []) or []),
             ),
+            domain_metrics=coerce_json_object(stats.get("domain_metrics")),
         )
 
 

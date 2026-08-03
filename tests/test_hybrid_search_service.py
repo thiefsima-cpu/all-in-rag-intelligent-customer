@@ -97,7 +97,7 @@ class _StubCandidateGenerator:
                         name="constraints",
                         rank_name="constraints",
                         search_method="constraints",
-                        search_type="constraint_recipe",
+                        search_type="constraint_domain",
                         rank_order=0,
                     ),
                     documents=[EvidenceDocument(content="c", entity_name="C")],
@@ -158,7 +158,7 @@ class HybridSearchServiceTests(unittest.TestCase):
         request = RetrievalRequest.from_inputs(
             query="recommend tofu dishes",
             top_k=2,
-            constraints=QueryConstraints(max_cook_minutes=30),
+            constraints=QueryConstraints(temporal_filters={"max_duration_minutes": 30}),
         )
 
         outcome = service.hybrid_evidence_search(request)

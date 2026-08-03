@@ -48,9 +48,7 @@ class GraphDataModulePort(Protocol):
 
     documents: list[TextDocument]
     chunks: list[TextDocument]
-    recipes: list[GraphNode]
-    ingredients: list[GraphNode]
-    cooking_steps: list[GraphNode]
+    entities: list[GraphNode]
 
     def load_graph_data(self) -> GraphLoadCounts | JsonObject: ...
 

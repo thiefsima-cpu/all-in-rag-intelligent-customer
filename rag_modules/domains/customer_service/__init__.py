@@ -2,8 +2,11 @@
 
 from ..contracts import (
     CitationProjection,
+    DomainBuildDataView,
     DomainOntology,
     DomainPack,
+    DomainQueryConstraintSchema,
+    DomainReasoningVocabulary,
     GraphNodeType,
     GraphRelationType,
 )
@@ -108,6 +111,32 @@ CUSTOMER_SERVICE_DOMAIN_PACK = DomainPack(
         expose_matched_terms=False,
     ),
     evaluation_resource="evaluation.json",
+    query_constraints=DomainQueryConstraintSchema(),
+    reasoning_vocabulary=DomainReasoningVocabulary(
+        subject_fallback="the target customer-service entities",
+        comparison_labels=(
+            "Order",
+            "Product",
+            "RefundPolicy",
+            "WarrantyPolicy",
+            "InvoicePolicy",
+            "ServicePolicy",
+            "SupportArticle",
+        ),
+        compositional_labels=(
+            ("Product", "products"),
+            ("PolicyTerm", "policy terms"),
+            ("SupportArticle", "support articles"),
+        ),
+        semantic_effect_label="policy effects",
+        constraint_labels=(
+            ("RefundPolicy", "refund policies"),
+            ("WarrantyPolicy", "warranty policies"),
+            ("InvoicePolicy", "invoice policies"),
+        ),
+    ),
+    build_data_view=DomainBuildDataView(primary_group="entities"),
+    graph_import_resource="customer_service_seed.cypher",
 )
 DOMAIN_PACK = CUSTOMER_SERVICE_DOMAIN_PACK
 

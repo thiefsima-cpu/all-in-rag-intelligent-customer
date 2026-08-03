@@ -15,29 +15,22 @@ _CONTENT_KEYS = frozenset(
     {
         "answer",
         "authorization",
-        "category_terms",
         "content",
         "cookie",
-        "cuisine_terms",
         "entity_keywords",
+        "entity_terms",
         "error",
-        "excluded_category_terms",
-        "excluded_cuisine_terms",
-        "excluded_ingredients",
-        "excluded_terms",
-        "exclude_terms",
-        "health_terms",
-        "include_terms",
-        "ingredients",
+        "excluded_entity_terms",
+        "extension",
         "matched_terms",
         "password",
-        "preference_terms",
         "preview",
         "prompt",
         "query",
         "question",
         "secret",
         "source_entities",
+        "structured_filters",
         "sub_questions",
         "target_entities",
         "token",
@@ -55,6 +48,7 @@ _CREDENTIAL_KEYS = frozenset(
         "refresh_token",
     }
 )
+_SENSITIVE_CONTAINER_KEYS = frozenset({"extension", "structured_filters", "temporal_filters"})
 _SENSITIVE_SUFFIXES = (
     "_answer",
     "_authorization",
@@ -66,6 +60,7 @@ _SENSITIVE_SUFFIXES = (
     "_query",
     "_question",
     "_secret",
+    "_terms",
 )
 
 
@@ -96,7 +91,11 @@ class TraceSanitizer:
     ) -> Any:
         sensitive = force_sensitive or self._is_sensitive_key(key)
         if isinstance(value, Mapping):
-            protect_children = force_sensitive or self._is_credential_key(key)
+            protect_children = (
+                force_sensitive
+                or self._is_credential_key(key)
+                or self._is_sensitive_container_key(key)
+            )
             return {
                 str(child_key): self.sanitize_value(
                     child_value,
@@ -142,6 +141,11 @@ class TraceSanitizer:
     def _is_credential_key(key: str) -> bool:
         normalized = str(key or "").strip().lower().replace("-", "_")
         return normalized in _CREDENTIAL_KEYS
+
+    @staticmethod
+    def _is_sensitive_container_key(key: str) -> bool:
+        normalized = str(key or "").strip().lower().replace("-", "_")
+        return normalized in _SENSITIVE_CONTAINER_KEYS
 
 
 __all__ = ["TraceSanitizer"]

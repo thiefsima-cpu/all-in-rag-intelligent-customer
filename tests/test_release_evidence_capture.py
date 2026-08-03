@@ -118,7 +118,7 @@ def _live_case_detail(
     return {
         "case_id": case_id,
         "query_type": "single_recipe",
-        "cuisine": "sichuan",
+        "domain": "recipe",
         "constraint_types": [],
         "risk_tags": [],
         "response_mode": "grounded_answer",
@@ -151,7 +151,7 @@ def _live_case_detail(
         "answer_preview": "Mapo tofu uses tofu.",
         "evidence": [
             {
-                "recipe_name": "Mapo Tofu",
+                "entity_name": "Mapo Tofu",
                 "source": "vector",
                 "snippet": "Mapo tofu uses tofu and a spicy sauce.",
             }
@@ -627,7 +627,7 @@ def test_capture_rejects_manual_review_jsonl_reordered_from_policy_order(tmp_pat
     }
     for group_name, label in (
         ("by_query_type", "single_recipe"),
-        ("by_cuisine", "sichuan"),
+        ("by_domain", "recipe"),
         ("by_response_mode", "grounded_answer"),
         ("by_strategy", "hybrid_traditional"),
     ):
@@ -1132,7 +1132,8 @@ def test_release_evidence_fixture_uses_real_gate_report_details(tmp_path: Path) 
     assert len(integration["checks"]) == integration["metrics"]["check_count"] == 18
     assert len(integration["cases"]) == integration["metrics"]["case_count"] == 1
     assert integration["cases"][0]["has_observation"] is True
-    assert len(live_quality["checks"]) == 18
+    assert len(live_quality["checks"]) == 19
+    assert any(check["name"] == "coverage.domains.recipe" for check in live_quality["checks"])
     assert len(live_quality["cases"]) == live_quality["metrics"]["case_count"] == 1
     assert live_quality["cases"][0]["metrics"] == {
         "recall_at_k": 1.0,
@@ -1664,7 +1665,7 @@ def test_capture_rejects_self_consistent_zero_live_ttft_evidence(tmp_path: Path)
     report["metrics"]["p95_ttft_ms"] = 0.0
     for slice_name in (
         "by_query_type",
-        "by_cuisine",
+        "by_domain",
         "by_constraint_type",
         "by_risk_tag",
         "by_response_mode",
@@ -1768,7 +1769,7 @@ def test_capture_rejects_missing_grounded_case_retrieval_metric(
     report = json.loads(fixture.live_quality_report.read_text(encoding="utf-8"))
     report["metrics"]["case_count"] = 2
     report["metrics"]["by_query_type"]["single_recipe"]["case_count"] = 2
-    report["metrics"]["by_cuisine"]["sichuan"]["case_count"] = 2
+    report["metrics"]["by_domain"]["recipe"]["case_count"] = 2
     report["metrics"]["by_response_mode"]["grounded_answer"]["case_count"] = 2
     report["metrics"]["by_strategy"]["hybrid_traditional"]["case_count"] = 2
     case_count_check = next(
@@ -1847,7 +1848,7 @@ def test_capture_allows_nonblocking_live_case_quality_failure(tmp_path: Path) ->
     }
     for group_name, label in (
         ("by_query_type", "single_recipe"),
-        ("by_cuisine", "sichuan"),
+        ("by_domain", "recipe"),
         ("by_response_mode", "grounded_answer"),
         ("by_strategy", "hybrid_traditional"),
     ):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 
 from ...contracts import RetrievalRequest
@@ -49,11 +50,7 @@ class _MilvusSearchOperations(MilvusOperationHost):
                     "domain",
                     "attributes",
                     "node_id",
-                    "recipe_name",
                     "node_type",
-                    "category",
-                    "cuisine_type",
-                    "difficulty",
                     "doc_type",
                     "chunk_id",
                     "parent_id",
@@ -92,22 +89,40 @@ def _metadata_filter(metadata: Mapping[str, object]) -> dict[str, JsonValue]:
 def _filter_expression(filters: Mapping[str, JsonValue]) -> str:
     filter_conditions: list[str] = []
     for key, value in filters.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        physical_fields = {
+            "domain",
+            "entity_id",
+            "entity_name",
+            "entity_type",
+            "node_id",
+            "node_type",
+            "doc_type",
+            "chunk_id",
+            "parent_id",
+        }
+        field_name = key if key in physical_fields else f'attributes["{key}"]'
         if isinstance(value, str):
-            filter_conditions.append(f'{key} == "{value}"')
+            filter_conditions.append(f'{field_name} == "{value}"')
         elif isinstance(value, (int, float)):
-            filter_conditions.append(f"{key} == {value}")
+            filter_conditions.append(f"{field_name} == {value}")
         elif isinstance(value, list):
             string_values = [item for item in value if isinstance(item, str)]
             if len(string_values) == len(value):
                 value_str = '", "'.join(string_values)
-                filter_conditions.append(f'{key} in ["{value_str}"]')
+                filter_conditions.append(f'{field_name} in ["{value_str}"]')
             else:
                 value_str = ", ".join(map(str, value))
-                filter_conditions.append(f"{key} in [{value_str}]")
+                filter_conditions.append(f"{field_name} in [{value_str}]")
     return " and ".join(filter_conditions)
 
 
-def _format_hits(results: object, *, default_domain: str = "recipe") -> list[JsonObject]:
+def _format_hits(
+    results: object,
+    *,
+    default_domain: str = "",
+) -> list[JsonObject]:
     formatted_results: list[JsonObject] = []
     if not results:
         return formatted_results
@@ -115,29 +130,29 @@ def _format_hits(results: object, *, default_domain: str = "recipe") -> list[Jso
     for hit in first_result:
         entity = hit["entity"]
         entity_id = entity.get("entity_id") or entity.get("node_id") or ""
-        entity_name = entity.get("entity_name") or entity.get("recipe_name") or ""
+        entity_name = entity.get("entity_name") or ""
         entity_type = entity.get("entity_type") or entity.get("node_type") or ""
+        raw_attributes = entity.get("attributes")
+        attributes = dict(raw_attributes) if isinstance(raw_attributes, Mapping) else {}
+        metadata = {
+            **attributes,
+            "entity_id": entity_id,
+            "entity_name": entity_name,
+            "entity_type": entity_type,
+            "domain": entity.get("domain") or default_domain,
+            "attributes": attributes,
+            "node_id": entity_id,
+            "node_type": entity_type,
+            "doc_type": entity.get("doc_type") or "",
+            "chunk_id": entity.get("chunk_id") or "",
+            "parent_id": entity.get("parent_id") or "",
+        }
         formatted_results.append(
             {
                 "id": hit["id"],
                 "score": hit["distance"],
                 "text": entity["text"],
-                "metadata": {
-                    "entity_id": entity_id,
-                    "entity_name": entity_name,
-                    "entity_type": entity_type,
-                    "domain": entity.get("domain") or default_domain,
-                    "attributes": entity.get("attributes") or {},
-                    "node_id": entity_id,
-                    "recipe_name": entity_name,
-                    "node_type": entity_type,
-                    "category": entity.get("category") or "",
-                    "cuisine_type": entity.get("cuisine_type") or "",
-                    "difficulty": entity.get("difficulty") or 0,
-                    "doc_type": entity.get("doc_type") or "",
-                    "chunk_id": entity.get("chunk_id") or "",
-                    "parent_id": entity.get("parent_id") or "",
-                },
+                "metadata": metadata,
             }
         )
     return formatted_results

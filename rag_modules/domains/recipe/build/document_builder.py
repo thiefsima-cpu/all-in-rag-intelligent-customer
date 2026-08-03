@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
-from ...contracts.graph_preparation import GraphNode
-from ...domains.recipe.semantic_schema import infer_recipe_semantics
-from ...kernel.documents import TextDocument
-from ...kernel.json_types import JsonObject, coerce_json_object
-from ...safe_logging import log_failure
-from ..ports import Neo4jDriverPort
-from .models import PreparedIngredientInput, PreparedStepInput
+from ....contracts.graph_preparation import GraphNode
+from ....kernel.documents import TextDocument
+from ....kernel.json_types import JsonObject, coerce_json_object
+from ....safe_logging import log_failure
+from ..semantic_schema import infer_recipe_semantics
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +44,39 @@ ORDER BY r.nodeId, COALESCE(c.stepOrder, s.stepNumber, 999)
 """
 
 
+@dataclass(slots=True, frozen=True)
+class PreparedIngredientInput:
+    recipe_id: str
+    name: str = ""
+    category: str = ""
+    amount: str = ""
+    unit: str = ""
+    description: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class PreparedStepInput:
+    recipe_id: str
+    name: str = ""
+    description: str = ""
+    step_number: int = 0
+    methods: str = ""
+    tools: str = ""
+    time_estimate: str = ""
+    step_order: int = 0
+
+
 class RecipeDocumentBuilder:
     """Build retrieval-ready recipe documents and semantic metadata."""
 
     def build(
         self,
         *,
-        driver: Neo4jDriverPort,
+        driver: object,
         database: str,
-        recipes: Iterable[GraphNode],
+        entities: Iterable[GraphNode],
     ) -> list[TextDocument]:
-        recipe_list = [recipe for recipe in recipes]
+        recipe_list = [recipe for recipe in entities]
         if not recipe_list:
             return []
 
@@ -96,13 +117,17 @@ class RecipeDocumentBuilder:
     def _load_ingredients_by_recipe(
         self,
         *,
-        driver: Neo4jDriverPort,
+        driver: object,
         database: str,
         recipe_ids: list[str],
     ) -> dict[str, list[PreparedIngredientInput]]:
         ingredients_by_recipe: dict[str, list[PreparedIngredientInput]] = defaultdict(list)
-        with driver.session(database=database) as session:
-            for record in session.run(RECIPE_INGREDIENTS_QUERY, {"recipe_ids": recipe_ids}):
+        with getattr(driver, "session")(database=database) as session:
+            records = getattr(session, "run")(
+                RECIPE_INGREDIENTS_QUERY,
+                {"recipe_ids": recipe_ids},
+            )
+            for record in records:
                 recipe_id = str(record["recipe_id"])
                 ingredients_by_recipe[recipe_id].append(
                     PreparedIngredientInput(
@@ -119,13 +144,14 @@ class RecipeDocumentBuilder:
     def _load_steps_by_recipe(
         self,
         *,
-        driver: Neo4jDriverPort,
+        driver: object,
         database: str,
         recipe_ids: list[str],
     ) -> dict[str, list[PreparedStepInput]]:
         steps_by_recipe: dict[str, list[PreparedStepInput]] = defaultdict(list)
-        with driver.session(database=database) as session:
-            for record in session.run(RECIPE_STEPS_QUERY, {"recipe_ids": recipe_ids}):
+        with getattr(driver, "session")(database=database) as session:
+            records = getattr(session, "run")(RECIPE_STEPS_QUERY, {"recipe_ids": recipe_ids})
+            for record in records:
                 recipe_id = str(record["recipe_id"])
                 steps_by_recipe[recipe_id].append(
                     PreparedStepInput(

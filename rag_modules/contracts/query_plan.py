@@ -45,7 +45,7 @@ def _resolve_plan_strategy(
         return SearchStrategy(raw_strategy)
     except ValueError:
         validation_errors.append(f"invalid_strategy:{raw_strategy}")
-        if constraints.has_constraints() or constraints.needs_recipe_recommendation:
+        if constraints.has_constraints():
             return SearchStrategy.COMBINED
         return SearchStrategy.HYBRID_TRADITIONAL
 
@@ -97,7 +97,7 @@ class QueryPlan:
     relation_types: list[str] = field(default_factory=list)
     max_depth: int = 2
     constraints: QueryConstraints = field(default_factory=QueryConstraints)
-    needs_recipe_recommendation: bool = False
+    recommendation_required: bool = False
     answer_style: str = "concise"
     planner_version: str = f"query-planner-v3:{SEMANTIC_SCHEMA_VERSION}"
     used_cache: bool = False
@@ -162,12 +162,9 @@ class QueryPlan:
         ):
             reasoning_required = True
 
-        needs_recipe_recommendation = bool(
-            data.get("needs_recipe_recommendation")
-            or constraints.needs_recipe_recommendation
-            or resolved_profile.needs_recipe_recommendation
+        recommendation_required = bool(
+            data.get("recommendation_required") or resolved_profile.recommendation_required
         )
-        constraints.needs_recipe_recommendation = needs_recipe_recommendation
 
         entity_keywords = _profile_values(data, "entity_keywords", resolved_profile.entity_keywords)
         topic_keywords = _profile_values(data, "topic_keywords", resolved_profile.topic_keywords)
@@ -199,7 +196,7 @@ class QueryPlan:
                 maximum=semantic_settings.graph_query_max_depth_cap,
             ),
             constraints=constraints,
-            needs_recipe_recommendation=needs_recipe_recommendation,
+            recommendation_required=recommendation_required,
             answer_style=str(data.get("answer_style") or "concise"),
             planner_mode=query_planner_mode(data.get("planner_mode")),
             semantic_profile=resolved_profile,
@@ -226,7 +223,7 @@ class QueryPlan:
                 "relation_types": self.relation_types,
                 "max_depth": self.max_depth,
                 "constraints": self.constraints.to_dict(),
-                "needs_recipe_recommendation": self.needs_recipe_recommendation,
+                "recommendation_required": self.recommendation_required,
                 "answer_style": self.answer_style,
                 "planner_version": self.planner_version,
                 "used_cache": self.used_cache,

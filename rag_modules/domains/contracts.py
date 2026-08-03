@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -116,6 +116,68 @@ class CitationProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class DomainConstraintField:
+    """One domain-owned query-constraint extension populated from a policy lexicon."""
+
+    name: str
+    term_group: str = ""
+    first_match_only: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DomainQueryConstraintSchema:
+    """Allowed extension fields and lexical extraction rules for one domain."""
+
+    fields: tuple[DomainConstraintField, ...] = ()
+    excluded_term_fields: tuple[str, ...] = ()
+    maximum_duration_field: str = ""
+
+    @property
+    def field_names(self) -> tuple[str, ...]:
+        return tuple(field.name for field in self.fields)
+
+    def project_extension(self, payload: Mapping[str, object]) -> JsonObject:
+        nested = payload.get("extension")
+        nested_payload = nested if isinstance(nested, Mapping) else {}
+        legacy_time = payload.get("time")
+        legacy_time_payload = legacy_time if isinstance(legacy_time, Mapping) else {}
+        return {
+            field_name: nested_payload.get(
+                field_name,
+                payload.get(field_name, legacy_time_payload.get(field_name)),
+            )
+            for field_name in self.field_names
+            if nested_payload.get(
+                field_name,
+                payload.get(field_name, legacy_time_payload.get(field_name)),
+            )
+            not in (None, "", [], {})
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DomainReasoningVocabulary:
+    """Domain-owned labels and copy used to describe graph reasoning chains."""
+
+    subject_fallback: str = "the target entities"
+    comparison_labels: tuple[str, ...] = ()
+    compositional_labels: tuple[tuple[str, str], ...] = ()
+    semantic_effect_label: str = "semantic effects"
+    semantic_node_labels: tuple[str, ...] = ()
+    constraint_labels: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DomainBuildDataView:
+    """Domain-owned names for build-time entity groups and diagnostic projections."""
+
+    primary_group: str
+    related_groups: tuple[str, ...] = ()
+    count_metrics: tuple[tuple[str, str], ...] = ()
+    distribution_metrics: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class DomainPack:
     """Complete versioned behavior surface for one knowledge domain."""
 
@@ -127,14 +189,31 @@ class DomainPack:
     vector_collection_name: str
     citation_projection: CitationProjection
     evaluation_resource: str
+    query_constraints: DomainQueryConstraintSchema
+    reasoning_vocabulary: DomainReasoningVocabulary
+    build_data_view: DomainBuildDataView
+    build_adapter: str = "ontology"
+    build_loader_factory: Callable[[], object] | None = None
+    build_document_builder_factory: Callable[[], object] | None = None
+    graph_import_resource: str = ""
+    graph_import_replacements: tuple[tuple[str, str], ...] = ()
+    semantic_graph_writer_factory: Callable[..., object] | None = None
+    semantic_schema_enabled: bool = False
+    semantic_schema_count_field: str = ""
+    constraint_matcher_type: type[object] | None = None
+    allow_domainless_graph_records: bool = False
 
 
 __all__ = [
     "CitationProjection",
+    "DomainBuildDataView",
+    "DomainConstraintField",
     "DomainDocumentMapper",
     "DomainExtraction",
     "DomainOntology",
     "DomainPack",
+    "DomainQueryConstraintSchema",
+    "DomainReasoningVocabulary",
     "ExtractedEntity",
     "ExtractedRelation",
     "GraphNodeType",

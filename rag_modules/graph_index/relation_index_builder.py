@@ -21,6 +21,18 @@ def _entity_domain(entity: EntityKeyValue) -> str:
     return str(metadata.get("domain") or nested_domain or "").strip()
 
 
+def _property_index_terms(properties: object) -> list[str]:
+    if not isinstance(properties, dict):
+        return []
+    terms: list[str] = []
+    for value in properties.values():
+        if isinstance(value, (str, int, float, bool)) and str(value).strip():
+            terms.append(str(value))
+        elif isinstance(value, (list, tuple, set)):
+            terms.extend(str(item) for item in value if str(item).strip())
+    return terms
+
+
 class RelationIndexBuilder:
     """Build relation key-value payloads from graph edges and semantic tags."""
 
@@ -105,10 +117,10 @@ class RelationIndexBuilder:
         ]
 
         for source_id, source_entity in list(store.entity_kv_store.items()):
-            if source_entity.entity_type != "Recipe":
-                continue
             props = source_entity.metadata.get("properties", {}) or {}
             semantic_relations = props.get("semantic_relations", {}) or {}
+            if not isinstance(semantic_relations, dict):
+                continue
             semantic_items: List[Tuple[str, str, List[str]]] = []
 
             for rel_type in simple_semantic_relations:
@@ -123,7 +135,7 @@ class RelationIndexBuilder:
                 value_content = "\n".join(
                     [
                         f"relation_type: {rel_type}",
-                        f"source_recipe: {source_entity.entity_name}",
+                        f"source_entity: {source_entity.entity_name}",
                         f"semantic_target: {target_name}",
                     ]
                 )
@@ -159,10 +171,8 @@ class RelationIndexBuilder:
         keys.extend(
             str(value)
             for value in (
-                source_props.get("category"),
-                source_props.get("cuisineType"),
-                target_props.get("category"),
-                target_props.get("cuisineType"),
+                *_property_index_terms(source_props),
+                *_property_index_terms(target_props),
                 *self.relation_index_keywords.get(relation_type, ()),
             )
             if value

@@ -29,14 +29,14 @@ class EvalResponseMode(StrEnum):
 class EvalExpectation:
     response_mode: EvalResponseMode
     strategy: str | None
-    recipe_names: tuple[str, ...]
+    entity_names: tuple[str, ...]
     answer_terms: tuple[str, ...]
-    recipe_relevance: dict[str, float]
+    entity_relevance: dict[str, float]
 
 
 @dataclass(frozen=True)
 class OfflineEvidenceFixture:
-    recipe_name: str
+    entity_name: str
     content: str
     score: float
     evidence_type: str
@@ -61,10 +61,10 @@ class EvalCase:
 
 _ROOT_KEYS = frozenset({"id", "query", "category", "dimensions", "expectation", "offline_fixture"})
 _EXPECTATION_KEYS = frozenset(
-    {"response_mode", "strategy", "recipe_names", "answer_terms", "recipe_relevance"}
+    {"response_mode", "strategy", "entity_names", "answer_terms", "entity_relevance"}
 )
 _OFFLINE_FIXTURE_KEYS = frozenset({"strategy", "answer", "evidence"})
-_EVIDENCE_KEYS = frozenset({"recipe_name", "content", "score", "evidence_type"})
+_EVIDENCE_KEYS = frozenset({"entity_name", "content", "score", "evidence_type"})
 
 
 def _case_context(corpus_path: Path, index: int, case_id: str | None = None) -> str:
@@ -234,7 +234,7 @@ def _require_nonnegative_number(
     return number
 
 
-def _parse_recipe_relevance(
+def _parse_entity_relevance(
     value: object,
     *,
     corpus_path: Path,
@@ -246,38 +246,38 @@ def _parse_recipe_relevance(
         corpus_path=corpus_path,
         index=index,
         case_id=case_id,
-        field_name="expectation.recipe_relevance",
+        field_name="expectation.entity_relevance",
     )
     parsed: dict[str, float] = {}
-    for recipe_name, grade in relevance.items():
+    for entity_name, grade in relevance.items():
         name = _require_string(
-            recipe_name,
+            entity_name,
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
-            field_name="expectation.recipe_relevance key",
+            field_name="expectation.entity_relevance key",
         )
         if name in parsed:
             raise _validation_error(
                 corpus_path,
                 index,
                 case_id,
-                "expectation.recipe_relevance contains a normalized key collision: "
-                f"{recipe_name!r} normalizes to {name!r}",
+                "expectation.entity_relevance contains a normalized key collision: "
+                f"{entity_name!r} normalizes to {name!r}",
             )
         parsed[name] = _require_nonnegative_number(
             grade,
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
-            field_name=f"expectation.recipe_relevance[{name!r}]",
+            field_name=f"expectation.entity_relevance[{name!r}]",
         )
     if parsed and not any(grade > 0 for grade in parsed.values()):
         raise _validation_error(
             corpus_path,
             index,
             case_id,
-            "expectation.recipe_relevance must contain at least one positive grade",
+            "expectation.entity_relevance must contain at least one positive grade",
         )
     return parsed
 
@@ -329,12 +329,12 @@ def _parse_expectation(
             case_id=case_id,
             field_name="expectation.strategy",
         ),
-        recipe_names=_require_string_tuple(
-            payload["recipe_names"],
+        entity_names=_require_string_tuple(
+            payload["entity_names"],
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
-            field_name="expectation.recipe_names",
+            field_name="expectation.entity_names",
         ),
         answer_terms=_require_string_tuple(
             payload["answer_terms"],
@@ -343,8 +343,8 @@ def _parse_expectation(
             case_id=case_id,
             field_name="expectation.answer_terms",
         ),
-        recipe_relevance=_parse_recipe_relevance(
-            payload["recipe_relevance"],
+        entity_relevance=_parse_entity_relevance(
+            payload["entity_relevance"],
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
@@ -377,12 +377,12 @@ def _parse_evidence_fixture(
         field_name=field_name,
     )
     return OfflineEvidenceFixture(
-        recipe_name=_require_string(
-            payload["recipe_name"],
+        entity_name=_require_string(
+            payload["entity_name"],
             corpus_path=corpus_path,
             index=index,
             case_id=case_id,
-            field_name=f"{field_name}.recipe_name",
+            field_name=f"{field_name}.entity_name",
         ),
         content=_require_string(
             payload["content"],
@@ -533,19 +533,19 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
             "offline_fixture.strategy must match expectation.strategy",
         )
     if expectation.response_mode.is_abstention:
-        if expectation.recipe_names:
+        if expectation.entity_names:
             raise _validation_error(
                 corpus_path,
                 index,
                 case_id,
-                "abstention expectation must not contain recipe_names",
+                "abstention expectation must not contain entity_names",
             )
-        if expectation.recipe_relevance:
+        if expectation.entity_relevance:
             raise _validation_error(
                 corpus_path,
                 index,
                 case_id,
-                "abstention expectation must not contain recipe_relevance",
+                "abstention expectation must not contain entity_relevance",
             )
         if offline_fixture.evidence:
             raise _validation_error(
@@ -562,19 +562,19 @@ def _parse_eval_case(payload: dict[str, Any], *, corpus_path: Path, index: int) 
                 case_id,
                 "grounded_answer offline_fixture must contain evidence",
             )
-        fixture_recipe_names = {item.recipe_name for item in offline_fixture.evidence}
+        fixture_entity_names = {item.entity_name for item in offline_fixture.evidence}
         positive_relevance_names = {
-            name for name, grade in expectation.recipe_relevance.items() if grade > 0
+            name for name, grade in expectation.entity_relevance.items() if grade > 0
         }
-        expected_recipe_names = set(expectation.recipe_names) | positive_relevance_names
-        missing_recipe_names = sorted(expected_recipe_names - fixture_recipe_names)
-        if missing_recipe_names:
+        expected_entity_names = set(expectation.entity_names) | positive_relevance_names
+        missing_entity_names = sorted(expected_entity_names - fixture_entity_names)
+        if missing_entity_names:
             raise _validation_error(
                 corpus_path,
                 index,
                 case_id,
-                "grounded expected recipes are absent from offline_fixture.evidence: "
-                f"{missing_recipe_names}",
+                "grounded expected entities are absent from offline_fixture.evidence: "
+                f"{missing_entity_names}",
             )
     return EvalCase(
         case_id=case_id,

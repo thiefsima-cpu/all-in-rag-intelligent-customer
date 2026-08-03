@@ -52,8 +52,9 @@ class AnswerEvidenceBuilderTests(unittest.TestCase):
         document = TextDocument(
             content="宫保鸡丁是一道经典川菜。",
             metadata={
-                "recipe_id": "recipe-2",
-                "recipe_name": "宫保鸡丁",
+                "domain": "recipe",
+                "entity_id": "recipe-2",
+                "entity_name": "宫保鸡丁",
                 "source": "hybrid",
                 "score": 0.9,
             },

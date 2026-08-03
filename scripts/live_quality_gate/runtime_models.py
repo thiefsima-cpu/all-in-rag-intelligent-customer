@@ -11,7 +11,7 @@ from scripts.gates import GateCheckResult
 
 @dataclass(frozen=True)
 class LiveQualityEvidence:
-    recipe_name: str
+    entity_name: str
     source: str
     content: str
     score: float
@@ -23,7 +23,7 @@ class LiveQualityObservation:
     answer: str
     strategy: str
     evidence: tuple[LiveQualityEvidence, ...]
-    ranked_recipe_names: tuple[str, ...]
+    ranked_entity_names: tuple[str, ...]
     sources: frozenset[str]
     fallback_used: bool
     retrieval_degraded: bool
@@ -70,7 +70,7 @@ class JudgeRunResult:
 class DeterministicCaseResult:
     case_id: str
     query_type: str
-    cuisine: str
+    domain: str
     constraint_types: tuple[str, ...]
     risk_tags: tuple[str, ...]
     response_mode: str

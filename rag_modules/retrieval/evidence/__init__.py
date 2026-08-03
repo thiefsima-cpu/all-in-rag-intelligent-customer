@@ -1,5 +1,3 @@
 """Retrieval-owned evidence helpers."""
 
-from .constraint_matcher import RecipeConstraintMatcher
-
-__all__ = ["RecipeConstraintMatcher"]
+__all__: list[str] = []

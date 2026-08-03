@@ -15,7 +15,6 @@ from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RequestControl
 from ..evidence_processing import EvidenceUnitRanker, normalize_evidence_document
-from ..kernel.json_types import as_string_list
 from ..safe_logging import log_failure
 from .ports import RerankClientPort
 from .runtime_profile import RetrievalPostProcessSettings
@@ -217,8 +216,8 @@ class RetrievalPostProcessor:
             or doc.entity_id
             or doc.entity_name
             or metadata.get("node_id")
-            or metadata.get("recipe_id")
-            or metadata.get("recipe_name")
+            or metadata.get("entity_id")
+            or metadata.get("entity_name")
             or f"hash::{hash((doc.content or '')[:200])}"
         )
 
@@ -242,17 +241,11 @@ class RetrievalPostProcessor:
             if isinstance(relationships_text, list):
                 graph_parts.extend(str(line) for line in relationships_text[:8])
 
-        is_recipe = (
-            doc.entity_type.casefold() == "recipe"
-            or doc.evidence_type.casefold() == "recipe"
-            or str(metadata.get("domain") or "").strip().casefold() == "recipe"
-        )
-        entity_label = "菜谱" if is_recipe else "实体"
         fields = [
-            f"{entity_label}: {doc.entity_name or metadata.get('name') or ''}",
+            f"实体: {doc.entity_name or metadata.get('name') or ''}",
             f"来源: {doc.source or metadata.get('search_method') or metadata.get('search_type') or ''}",
             f"证据类型: {doc.evidence_type or metadata.get('search_type') or ''}",
-            f"匹配词: {', '.join((doc.matched_terms or as_string_list(metadata.get('matched_ingredients')))[:12])}",
+            f"匹配词: {', '.join(doc.matched_terms[:12])}",
             f"约束证据: {doc.constraint_evidence or metadata.get('constraint_reasons') or ''}",
             f"图谱证据: {'; '.join(graph_parts[:12])}",
             f"内容摘要: {(doc.content or '')[:max_chars]}",

@@ -156,7 +156,7 @@ def _answer_workflow_copy() -> AnswerWorkflowCopyPolicy:
         strategy_icon_default="[ROUTE]",
         document_summary_template="Found {document_count} relevant documents: {document_summaries}",
         document_summary_total_template="\n    Total results: {document_count}",
-        unknown_recipe_name="unknown",
+        unknown_entity_name="unknown",
         unknown_search_type="unknown",
     )
 

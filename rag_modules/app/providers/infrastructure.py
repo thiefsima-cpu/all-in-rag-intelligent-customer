@@ -6,9 +6,11 @@ from typing import cast
 
 from ...build_pipeline.document_artifacts import DocumentIndexCache
 from ...build_pipeline.graph_preparation import (
-    DomainDocumentBuilder,
-    DomainGraphDataLoader,
+    DomainDocumentBuilderContract,
+    DomainDocumentChunkerContract,
+    GraphDataLoader,
     GraphDataPreparationModule,
+    create_domain_build_collaborators,
 )
 from ...build_pipeline.ports import Neo4jDriverPort as BuildPipelineNeo4jDriverPort
 from ...configuration.models import GraphRAGConfig
@@ -82,23 +84,19 @@ class _DefaultInfrastructureProvider:
             return existing
         storage = config.storage
         domain_pack = get_domain_pack(config.domain.name)
-        domain_loader = None
-        domain_document_builder = None
-        if domain_pack.name != "recipe":
-            domain_loader = DomainGraphDataLoader(
-                domain_pack.ontology,
-                domain_name=domain_pack.name,
-            )
-            domain_document_builder = DomainDocumentBuilder(domain_pack.document_mapper)
+        loader, document_builder, chunker = create_domain_build_collaborators(domain_pack)
         return GraphDataPreparationModule(
             uri=storage.neo4j_uri,
             user=storage.neo4j_user,
             password=storage.neo4j_password,
             database=storage.neo4j_database,
             driver=cast(BuildPipelineNeo4jDriverPort, neo4j_manager.driver),
-            loader=domain_loader,
-            document_builder=domain_document_builder,
+            loader=cast(GraphDataLoader, loader),
+            document_builder=cast(DomainDocumentBuilderContract, document_builder),
+            chunker=cast(DomainDocumentChunkerContract, chunker),
             domain_name=domain_pack.name,
+            domain_version=domain_pack.version,
+            data_view=domain_pack.build_data_view,
         )
 
     def provide_index_module(

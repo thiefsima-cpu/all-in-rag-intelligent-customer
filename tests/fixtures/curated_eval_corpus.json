@@ -7,16 +7,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "graph_rag",
-      "recipe_names": ["水煮肉片"],
+      "entity_names": ["水煮肉片"],
       "answer_terms": ["麻辣", "花椒"],
-      "recipe_relevance": {"水煮肉片": 3.0}
+      "entity_relevance": {"水煮肉片": 3.0}
     },
     "offline_fixture": {
       "strategy": "graph_rag",
       "answer": "依据菜谱证据 #1，水煮肉片通过豆瓣酱、花椒和辣椒形成麻辣鲜香。",
       "evidence": [
         {
-          "recipe_name": "水煮肉片",
+          "entity_name": "水煮肉片",
           "content": "水煮肉片使用豆瓣酱、花椒和辣椒，形成麻辣鲜香的川菜风味。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -32,16 +32,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "graph_rag",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["麻辣"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "graph_rag",
       "answer": "依据菜谱证据 #1，麻辣风味通常来自花椒、辣椒、豆瓣酱和热油激香。",
       "evidence": [
         {
-          "recipe_name": "川菜风味关系",
+          "entity_name": "川菜风味关系",
           "content": "麻辣风味与花椒、辣椒、豆瓣酱、热油激香等食材和技法关系紧密。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -57,16 +57,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": ["宫保鸡丁"],
+      "entity_names": ["宫保鸡丁"],
       "answer_terms": ["宫保鸡丁"],
-      "recipe_relevance": {"宫保鸡丁": 3.0}
+      "entity_relevance": {"宫保鸡丁": 3.0}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，宫保鸡丁需要鸡丁、花生、干辣椒和调味汁快炒。",
       "evidence": [
         {
-          "recipe_name": "宫保鸡丁",
+          "entity_name": "宫保鸡丁",
           "content": "宫保鸡丁的做法包括鸡丁上浆、花生备用、干辣椒爆香并用调味汁快炒。",
           "score": 1.0,
           "evidence_type": "text"
@@ -82,16 +82,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": ["鱼香肉丝"],
+      "entity_names": ["鱼香肉丝"],
       "answer_terms": ["鱼香肉丝"],
-      "recipe_relevance": {"鱼香肉丝": 3.0}
+      "entity_relevance": {"鱼香肉丝": 3.0}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，鱼香肉丝用肉丝、木耳、笋丝和鱼香汁炒成酸甜咸鲜。",
       "evidence": [
         {
-          "recipe_name": "鱼香肉丝",
+          "entity_name": "鱼香肉丝",
           "content": "鱼香肉丝需要肉丝、木耳、笋丝和鱼香汁，炒出酸甜咸鲜的风味。",
           "score": 1.0,
           "evidence_type": "text"
@@ -107,16 +107,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": null,
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["少油", "鸡肉"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，可优先考虑少油鸡肉快手菜，并控制在二十分钟内完成。",
       "evidence": [
         {
-          "recipe_name": "少油鸡肉推荐",
+          "entity_name": "少油鸡肉推荐",
           "content": "少油鸡肉快手菜适合二十分钟内完成，适合有时间和油量约束的推荐。",
           "score": 1.0,
           "evidence_type": "text"
@@ -132,16 +132,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": null,
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["豆腐", "清淡"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，可以推荐豆腐类清淡家常菜，减少辣椒和重油。",
       "evidence": [
         {
-          "recipe_name": "清淡豆腐推荐",
+          "entity_name": "清淡豆腐推荐",
           "content": "豆腐类家常菜可以做得清淡，少放辣椒和重油，适合作为推荐。",
           "score": 1.0,
           "evidence_type": "text"
@@ -157,16 +157,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": ["西红柿炒鸡蛋"],
+      "entity_names": ["西红柿炒鸡蛋"],
       "answer_terms": ["西红柿炒鸡蛋"],
-      "recipe_relevance": {"西红柿炒鸡蛋": 3.0}
+      "entity_relevance": {"西红柿炒鸡蛋": 3.0}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，西红柿炒鸡蛋先炒鸡蛋，再炒西红柿出汁后合炒。",
       "evidence": [
         {
-          "recipe_name": "西红柿炒鸡蛋",
+          "entity_name": "西红柿炒鸡蛋",
           "content": "西红柿炒鸡蛋先把鸡蛋炒熟盛出，再炒西红柿出汁，最后合炒调味。",
           "score": 1.0,
           "evidence_type": "text"
@@ -182,16 +182,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["新手", "三十分钟"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，新手可选择三十分钟内完成的简单素菜。",
       "evidence": [
         {
-          "recipe_name": "新手素菜推荐",
+          "entity_name": "新手素菜推荐",
           "content": "适合新手的素菜应步骤少、调味简单，并能在三十分钟内完成。",
           "score": 1.0,
           "evidence_type": "text"
@@ -207,16 +207,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "graph_rag",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["麻辣", "关系"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "graph_rag",
       "answer": "依据菜谱证据 #1，麻辣风味关系网络连接花椒、辣椒、豆瓣酱和热油技法。",
       "evidence": [
         {
-          "recipe_name": "川菜麻辣子图",
+          "entity_name": "川菜麻辣子图",
           "content": "麻辣风味的关系网络包括花椒、辣椒、豆瓣酱、热油技法和多道川菜。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -232,9 +232,9 @@
     "expectation": {
       "response_mode": "no_evidence",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["证据不足"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -250,9 +250,9 @@
     "expectation": {
       "response_mode": "no_evidence",
       "strategy": null,
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["证据不足"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -268,9 +268,9 @@
     "expectation": {
       "response_mode": "clarification",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["请说明具体"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -286,9 +286,9 @@
     "expectation": {
       "response_mode": "clarification",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["请说明具体"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -304,16 +304,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "graph_rag",
-      "recipe_names": ["水煮肉片"],
+      "entity_names": ["水煮肉片"],
       "answer_terms": ["豆瓣酱", "花椒", "水煮肉片"],
-      "recipe_relevance": {"水煮肉片": 3.0}
+      "entity_relevance": {"水煮肉片": 3.0}
     },
     "offline_fixture": {
       "strategy": "graph_rag",
       "answer": "依据菜谱证据 #1，水煮肉片通过豆瓣酱炒香、花椒爆香和热油泼香形成麻辣风味。",
       "evidence": [
         {
-          "recipe_name": "水煮肉片",
+          "entity_name": "水煮肉片",
           "content": "水煮肉片的多跳做法包括豆瓣酱炒香、花椒爆香、肉片上浆和热油泼香。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -329,9 +329,9 @@
     "expectation": {
       "response_mode": "constraint_conflict",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["冲突", "放宽"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -347,9 +347,9 @@
     "expectation": {
       "response_mode": "constraint_conflict",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["冲突", "放宽"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -365,16 +365,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "combined",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": ["少油", "不辣", "三十分钟"],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "combined",
       "answer": "依据菜谱证据 #1，可选少油、不辣、三十分钟内完成的一锅热菜，并避开豆腐和花生。",
       "evidence": [
         {
-          "recipe_name": "少油不辣热菜推荐",
+          "entity_name": "少油不辣热菜推荐",
           "content": "少油、不辣、三十分钟内完成的一锅热菜适合新手两人份，并可避开豆腐和花生。",
           "score": 1.0,
           "evidence_type": "text"
@@ -390,16 +390,16 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": ["西红柿炒鸡蛋"],
+      "entity_names": ["西红柿炒鸡蛋"],
       "answer_terms": ["西红柿炒鸡蛋", "下饭"],
-      "recipe_relevance": {"西红柿炒鸡蛋": 3.0}
+      "entity_relevance": {"西红柿炒鸡蛋": 3.0}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
       "answer": "依据菜谱证据 #1，西红柿炒鸡蛋用西红柿和鸡蛋就能做成下饭热菜。",
       "evidence": [
         {
-          "recipe_name": "西红柿炒鸡蛋",
+          "entity_name": "西红柿炒鸡蛋",
           "content": "西红柿炒鸡蛋只需要西红柿和鸡蛋，酸甜下饭，适合家常快手菜。",
           "score": 1.0,
           "evidence_type": "text"
@@ -418,7 +418,7 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": [
+      "entity_names": [
         "番茄炒鸡蛋"
       ],
       "answer_terms": [
@@ -426,7 +426,7 @@
         "鸡蛋",
         "十分钟"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "番茄炒鸡蛋": 3.0
       }
     },
@@ -435,7 +435,7 @@
       "answer": "依据菜谱证据 #1，番茄炒鸡蛋只用番茄和鸡蛋快炒，口味不辣，适合作为十分钟内完成的值班热菜。",
       "evidence": [
         {
-          "recipe_name": "番茄炒鸡蛋",
+          "entity_name": "番茄炒鸡蛋",
           "content": "番茄炒鸡蛋用番茄和鸡蛋快炒，口味不辣，适合作为十分钟内完成的值班热菜。",
           "score": 1.0,
           "evidence_type": "text"
@@ -455,7 +455,7 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": [
+      "entity_names": [
         "清淡新人团队餐"
       ],
       "answer_terms": [
@@ -463,7 +463,7 @@
         "三十分钟",
         "花生"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "清淡新人团队餐": 3.0
       }
     },
@@ -472,7 +472,7 @@
       "answer": "依据菜谱证据 #1，清淡新人团队餐适合新人三十分钟内复刻，并且不使用花生。",
       "evidence": [
         {
-          "recipe_name": "清淡新人团队餐",
+          "entity_name": "清淡新人团队餐",
           "content": "清淡新人团队餐强调少油不辣、步骤少，适合新人三十分钟内复刻，并且不使用花生。",
           "score": 1.0,
           "evidence_type": "text"
@@ -492,12 +492,12 @@
     "expectation": {
       "response_mode": "no_evidence",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "证据不足",
         "不能提供"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -517,12 +517,12 @@
     "expectation": {
       "response_mode": "no_evidence",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "证据不足",
         "不能编造"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -541,12 +541,12 @@
     "expectation": {
       "response_mode": "clarification",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "授权",
         "公开菜谱"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -565,12 +565,12 @@
     "expectation": {
       "response_mode": "clarification",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "库存来源",
         "离线资料"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -589,12 +589,12 @@
     "expectation": {
       "response_mode": "constraint_conflict",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "冲突",
         "放宽"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -613,7 +613,7 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "hybrid_traditional",
-      "recipe_names": [
+      "entity_names": [
         "清淡豆腐家常菜"
       ],
       "answer_terms": [
@@ -621,7 +621,7 @@
         "豆腐",
         "轻食"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "清淡豆腐家常菜": 3.0
       }
     },
@@ -630,7 +630,7 @@
       "answer": "依据菜谱证据 #1，清淡豆腐家常菜使用豆腐并减少重油重辣，适合作为轻食客户的清淡家常菜方向。",
       "evidence": [
         {
-          "recipe_name": "清淡豆腐家常菜",
+          "entity_name": "清淡豆腐家常菜",
           "content": "清淡豆腐家常菜使用豆腐并减少重油重辣，适合作为轻食客户的清淡家常菜方向。",
           "score": 0.72,
           "evidence_type": "text"
@@ -650,12 +650,12 @@
     "expectation": {
       "response_mode": "constraint_conflict",
       "strategy": "hybrid_traditional",
-      "recipe_names": [],
+      "entity_names": [],
       "answer_terms": [
         "冲突",
         "放宽"
       ],
-      "recipe_relevance": {}
+      "entity_relevance": {}
     },
     "offline_fixture": {
       "strategy": "hybrid_traditional",
@@ -675,14 +675,14 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "graph_rag",
-      "recipe_names": [
+      "entity_names": [
         "水煮肉片"
       ],
       "answer_terms": [
         "#1",
         "关系"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "水煮肉片": 3.0
       }
     },
@@ -691,7 +691,7 @@
       "answer": "依据菜谱证据 #1，水煮肉片的麻辣鲜香来自豆瓣酱炒香、花椒增麻、辣椒增辣、垫底蔬菜承味和肉片上浆保嫩之间的关系。",
       "evidence": [
         {
-          "recipe_name": "水煮肉片",
+          "entity_name": "水煮肉片",
           "content": "水煮肉片的风味链路包括豆瓣酱炒香、花椒增麻、辣椒增辣、垫底蔬菜承味和肉片上浆保嫩，这些食材和步骤共同贡献麻辣鲜香。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -710,14 +710,14 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "combined",
-      "recipe_names": [
+      "entity_names": [
         "川菜麻辣子图"
       ],
       "answer_terms": [
         "#1",
         "关系网络"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "川菜麻辣子图": 3.0
       }
     },
@@ -726,7 +726,7 @@
       "answer": "依据菜谱证据 #1，离线川菜麻辣子图连接花椒、辣椒、豆瓣酱和热油技法，形成麻辣风味关系网络。",
       "evidence": [
         {
-          "recipe_name": "川菜麻辣子图",
+          "entity_name": "川菜麻辣子图",
           "content": "川菜麻辣子图包含花椒、辣椒、豆瓣酱、热油技法和多道麻辣菜之间的关系网络。",
           "score": 1.0,
           "evidence_type": "graph"
@@ -745,14 +745,14 @@
     "expectation": {
       "response_mode": "grounded_answer",
       "strategy": "combined",
-      "recipe_names": [
+      "entity_names": [
         "新手低风险素菜"
       ],
       "answer_terms": [
         "#1",
         "步骤少"
       ],
-      "recipe_relevance": {
+      "entity_relevance": {
         "新手低风险素菜": 3.0
       }
     },
@@ -761,7 +761,7 @@
       "answer": "依据菜谱证据 #1，新手低风险素菜步骤少、调味简单，适合培训班。",
       "evidence": [
         {
-          "recipe_name": "新手低风险素菜",
+          "entity_name": "新手低风险素菜",
           "content": "新手低风险素菜强调步骤少、调味简单，适合作为培训班的入门推荐方向。",
           "score": 0.76,
           "evidence_type": "text"

@@ -117,7 +117,6 @@ class GenerationPlanner:
         resolved_name = entity_name or citation
         return template.format(
             entity_name=resolved_name,
-            recipe_name=resolved_name,
             citation=citation,
         )
 

@@ -1,14 +1,15 @@
-"""Chunking rules for build-time recipe documents."""
+"""Domain-neutral chunking rules for build-time documents."""
 
 from __future__ import annotations
 
 from typing import Iterable, List, Tuple
 
 from ...kernel.documents import TextDocument
+from .state import DomainDocumentChunker as DomainDocumentChunkerBase
 
 
-class RecipeDocumentChunker:
-    """Split recipe documents into retrieval-oriented chunks."""
+class DomainDocumentChunker(DomainDocumentChunkerBase):
+    """Split domain documents into retrieval-oriented chunks."""
 
     def chunk(
         self,

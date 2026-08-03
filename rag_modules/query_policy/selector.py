@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 
-from ..domains import get_domain_pack
+from ..domains import DEFAULT_DOMAIN_NAME, get_domain_pack
 from .loader import DEFAULT_BUNDLE_NAME, default_policy_bundle_path, get_query_policy
 from .models import QueryPolicyBundle
 
@@ -58,7 +58,7 @@ def resolve_query_policy_selector(
         _domain_name(overrides or {})
         or _domain_name(profile_overrides)
         or _domain_name(domain_payload)
-        or "recipe"
+        or DEFAULT_DOMAIN_NAME
     )
     bundle = _selector_string(
         profile, "bundle", _selector_string(base, "bundle", DEFAULT_BUNDLE_NAME)

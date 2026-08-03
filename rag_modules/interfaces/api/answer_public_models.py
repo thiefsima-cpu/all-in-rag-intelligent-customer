@@ -75,7 +75,6 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
     content: str = ""
     entity_id: str = ""
     entity_name: str = ""
-    recipe_name: str = ""
     entity_type: str = ""
     score: float = 0.0
     source: str = "unknown"
@@ -87,11 +86,8 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
     def _domain_projection(
         *,
         metadata: JsonObject,
-        recipe_projection: bool = False,
     ) -> tuple[str, CitationProjection | None]:
         domain_name = str(metadata.get("domain") or "").strip()
-        if not domain_name and recipe_projection:
-            domain_name = "recipe"
         if not domain_name:
             return "", None
         try:
@@ -106,12 +102,8 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
         *,
         metadata: JsonObject,
         fallback_attributes: JsonObject | None = None,
-        recipe_projection: bool = False,
     ) -> JsonObject:
-        _, projection = cls._domain_projection(
-            metadata=metadata,
-            recipe_projection=recipe_projection,
-        )
+        _, projection = cls._domain_projection(metadata=metadata)
         if projection is None:
             return {}
         nested_attributes = coerce_json_object(metadata.get("attributes"))
@@ -121,15 +113,7 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
     @classmethod
     def from_dto(cls, document: EvidenceDocument) -> "PublicEvidenceDocumentResponseModel":
         metadata = coerce_json_object(document.metadata)
-        recipe_projection = bool(
-            document.entity_type.casefold() == "recipe"
-            or document.evidence_type.casefold() == "recipe"
-            or str(metadata.get("domain") or "").strip().casefold() == "recipe"
-        )
-        domain_name, projection = cls._domain_projection(
-            metadata=metadata,
-            recipe_projection=recipe_projection,
-        )
+        _, projection = cls._domain_projection(metadata=metadata)
         expose_content = bool(getattr(projection, "expose_content", False))
         expose_identity = bool(getattr(projection, "expose_entity_identity", False))
         expose_matched_terms = bool(getattr(projection, "expose_matched_terms", False))
@@ -137,18 +121,12 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
             content=document.content if expose_content else "",
             entity_id=document.entity_id if expose_identity else "",
             entity_name=document.entity_name if expose_identity else "",
-            recipe_name=(
-                document.entity_name if domain_name == "recipe" and expose_identity else ""
-            ),
             entity_type=document.entity_type,
             score=document.score,
             source=document.source,
             evidence_type=document.evidence_type,
             matched_terms=list(document.matched_terms) if expose_matched_terms else [],
-            attributes=cls._public_attributes(
-                metadata=metadata,
-                recipe_projection=recipe_projection,
-            ),
+            attributes=cls._public_attributes(metadata=metadata),
         )
 
     @classmethod
@@ -157,15 +135,7 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
         document: EvidenceDocumentResponseModel,
     ) -> "PublicEvidenceDocumentResponseModel":
         metadata = coerce_json_object(document.metadata)
-        recipe_projection = bool(
-            document.entity_type.casefold() == "recipe"
-            or document.evidence_type.casefold() == "recipe"
-            or str(metadata.get("domain") or "").strip().casefold() == "recipe"
-        )
-        domain_name, projection = cls._domain_projection(
-            metadata=metadata,
-            recipe_projection=recipe_projection,
-        )
+        _, projection = cls._domain_projection(metadata=metadata)
         expose_content = bool(getattr(projection, "expose_content", False))
         expose_identity = bool(getattr(projection, "expose_entity_identity", False))
         expose_matched_terms = bool(getattr(projection, "expose_matched_terms", False))
@@ -173,18 +143,12 @@ class PublicEvidenceDocumentResponseModel(BaseModel):
             content=document.content if expose_content else "",
             entity_id=document.entity_id if expose_identity else "",
             entity_name=document.entity_name if expose_identity else "",
-            recipe_name=(
-                document.entity_name if domain_name == "recipe" and expose_identity else ""
-            ),
             entity_type=document.entity_type,
             score=document.score,
             source=document.source,
             evidence_type=document.evidence_type,
             matched_terms=list(document.matched_terms) if expose_matched_terms else [],
-            attributes=cls._public_attributes(
-                metadata=metadata,
-                recipe_projection=recipe_projection,
-            ),
+            attributes=cls._public_attributes(metadata=metadata),
         )
 
 

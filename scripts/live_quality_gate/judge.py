@@ -48,7 +48,7 @@ def build_judge_packet(
         "answer": observation.answer,
         "evidence": [
             {
-                "recipe_name": item.recipe_name,
+                "entity_name": item.entity_name,
                 "source": item.source,
                 "snippet": item.content[:_MAX_SNIPPET_CHARS],
             }

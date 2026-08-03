@@ -47,12 +47,13 @@ class StubDataModule:
                 properties={"methods": "焖煮"},
             )
         ]
+        self.entities = [*self.recipes, *self.ingredients, *self.cooking_steps]
         self.documents = []
         self.chunks = []
         self.build_calls = 0
         self.chunk_calls = []
 
-    def build_recipe_documents(self):
+    def build_documents(self):
         self.build_calls += 1
         self.documents = [
             TextDocument(
@@ -92,11 +93,14 @@ class StubDataModule:
 
     def get_statistics(self):
         return {
-            "total_recipes": len(self.recipes),
-            "total_ingredients": len(self.ingredients),
-            "total_cooking_steps": len(self.cooking_steps),
+            "total_entities": len(self.entities),
             "total_documents": len(self.documents),
             "total_chunks": len(self.chunks),
+            "domain_metrics": {
+                "total_recipes": len(self.recipes),
+                "total_ingredients": len(self.ingredients),
+                "total_cooking_steps": len(self.cooking_steps),
+            },
         }
 
 
@@ -126,7 +130,7 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             config = self._build_config(Path(tmp_dir))
             cache = DocumentIndexCache(config)
             writer = StubDataModule()
-            writer.build_recipe_documents()
+            writer.build_documents()
             writer.chunk_documents(chunk_size=128, chunk_overlap=16)
 
             saved_manifest = cache.save(writer)
@@ -170,7 +174,7 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             config = self._build_config(Path(tmp_dir))
             cache = DocumentIndexCache(config)
             original = StubDataModule()
-            original.build_recipe_documents()
+            original.build_documents()
             original.chunk_documents(chunk_size=128, chunk_overlap=16)
             cache.save(original)
 
@@ -187,7 +191,7 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             config = self._build_config(Path(tmp_dir))
             cache = DocumentIndexCache(config)
             original = StubDataModule(domain_name="recipe")
-            original.build_recipe_documents()
+            original.build_documents()
             original.chunk_documents(chunk_size=128, chunk_overlap=16)
             cache.save(original)
 
@@ -200,7 +204,7 @@ class DocumentArtifactCacheTests(unittest.TestCase):
             config = self._build_config(Path(tmp_dir))
             cache = DocumentIndexCache(config)
             original = StubDataModule()
-            original.build_recipe_documents()
+            original.build_documents()
             original.chunk_documents(chunk_size=128, chunk_overlap=16)
             cache.save(original)
 
@@ -216,25 +220,28 @@ class DocumentArtifactCacheTests(unittest.TestCase):
 
     def test_stats_collector_accepts_typed_graph_preparation_stats(self) -> None:
         data_module = SimpleNamespace(
-            recipes=[],
-            ingredients=[],
-            cooking_steps=[],
+            entities=[],
             documents=[],
             chunks=[],
             get_statistics=lambda: GraphPreparationStats(
-                total_recipes=2,
-                total_ingredients=3,
-                total_cooking_steps=4,
+                domain_name="recipe",
+                total_entities=9,
                 total_documents=5,
                 total_chunks=6,
+                domain_metrics={
+                    "total_recipes": 2,
+                    "total_ingredients": 3,
+                    "total_cooking_steps": 4,
+                },
             ),
         )
 
         stats = DocumentArtifactStatsCollector().collect(data_module)
 
-        self.assertEqual(stats.total_recipes, 2)
-        self.assertEqual(stats.total_ingredients, 3)
-        self.assertEqual(stats.total_cooking_steps, 4)
+        self.assertEqual(stats.total_entities, 9)
+        self.assertEqual(stats.domain_metrics["total_recipes"], 2)
+        self.assertEqual(stats.domain_metrics["total_ingredients"], 3)
+        self.assertEqual(stats.domain_metrics["total_cooking_steps"], 4)
         self.assertEqual(stats.total_documents, 5)
         self.assertEqual(stats.total_chunks, 6)
 

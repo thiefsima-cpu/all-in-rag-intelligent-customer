@@ -82,7 +82,7 @@ ALLOWED_IMPORTS = {
     "configuration": frozenset({"contracts", "domains", "kernel", "query_policy"}),
     "contracts": frozenset({"kernel"}),
     "domain": frozenset({"domains", "kernel"}),
-    "domains": frozenset({"kernel"}),
+    "domains": frozenset({"contracts", "kernel", "safe_logging"}),
     "evidence_processing": frozenset({"contracts"}),
     "generation": frozenset(
         {
@@ -131,11 +131,14 @@ ALLOWED_IMPORTS = {
         {"configuration", "contracts", "kernel", "safe_logging", "trace_privacy"}
     ),
     "query_policy": frozenset({"domains"}),
-    "query_understanding": frozenset({"contracts", "kernel", "query_policy", "safe_logging"}),
+    "query_understanding": frozenset(
+        {"contracts", "domains", "kernel", "query_policy", "safe_logging"}
+    ),
     "retrieval": frozenset(
         {
             "configuration",
             "contracts",
+            "domains",
             "evidence_processing",
             "graph_index",
             "infra",

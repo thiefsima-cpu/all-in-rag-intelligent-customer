@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from typing import List, Optional
 
 from ...kernel.documents import TextDocument
-from ...kernel.json_types import coerce_int
 from ...safe_logging import log_failure
 from .contracts import MilvusOperationHost
 
@@ -40,13 +39,27 @@ class _MilvusWriterOperations(MilvusOperationHost):
         default_chunk_id: str | None = None,
     ) -> dict[str, object]:
         metadata = chunk.metadata or {}
-        entity_id = (
-            metadata.get("entity_id") or metadata.get("node_id") or metadata.get("recipe_id", "")
-        )
-        entity_name = metadata.get("entity_name") or metadata.get("recipe_name", "")
+        entity_id = metadata.get("entity_id") or metadata.get("node_id") or ""
+        entity_name = metadata.get("entity_name") or ""
         entity_type = metadata.get("entity_type") or metadata.get("node_type", "")
         raw_attributes = metadata.get("attributes")
-        attributes = dict(raw_attributes) if isinstance(raw_attributes, Mapping) else {}
+        reserved_fields = {
+            "entity_id",
+            "entity_name",
+            "entity_type",
+            "domain",
+            "attributes",
+            "node_id",
+            "node_type",
+            "doc_type",
+            "chunk_id",
+            "parent_id",
+        }
+        attributes = {
+            str(key): value for key, value in metadata.items() if key not in reserved_fields
+        }
+        if isinstance(raw_attributes, Mapping):
+            attributes.update({str(key): value for key, value in raw_attributes.items()})
         chunk_id = chunk.metadata.get("chunk_id") or default_chunk_id or f"chunk_{index}"
         return {
             "id": self._safe_truncate(chunk_id, 150),
@@ -57,13 +70,8 @@ class _MilvusWriterOperations(MilvusOperationHost):
             "entity_type": self._safe_truncate(entity_type, 100),
             "domain": self._safe_truncate(self.domain_name, 100),
             "attributes": attributes,
-            # Physical compatibility columns for pre-DomainPack recipe filters.
             "node_id": self._safe_truncate(entity_id, 100),
-            "recipe_name": self._safe_truncate(entity_name, 300),
             "node_type": self._safe_truncate(entity_type, 100),
-            "category": self._safe_truncate(chunk.metadata.get("category", ""), 100),
-            "cuisine_type": self._safe_truncate(chunk.metadata.get("cuisine_type", ""), 200),
-            "difficulty": coerce_int(chunk.metadata.get("difficulty"), 0),
             "doc_type": self._safe_truncate(chunk.metadata.get("doc_type", ""), 50),
             "chunk_id": self._safe_truncate(chunk_id, 150),
             "parent_id": self._safe_truncate(chunk.metadata.get("parent_id", ""), 100),

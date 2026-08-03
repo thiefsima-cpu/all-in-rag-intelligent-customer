@@ -14,14 +14,13 @@ from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
 from .adapters import BM25Retriever, GraphKVRetriever, VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
-from .evidence import RecipeConstraintMatcher
 from .hybrid_driver_service import HybridDriverService
 from .hybrid_index_service import HybridIndexArtifacts, HybridIndexService
 from .hybrid_parent_document_service import HybridParentDocumentService
 from .hybrid_runtime_state import HybridRetrievalState
 from .keyword_service import QueryKeywordExtractor
 from .parent_doc_enricher import ParentDocumentEnricher
-from .ports import Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
+from .ports import ConstraintMatcherPort, Neo4jDriverPort, Neo4jManagerPort, VectorIndexModulePort
 from .runtime_adapter_factory import (
     DefaultHybridRuntimeAdapterFactory,
     HybridRuntimeAdapterFactory,
@@ -92,8 +91,8 @@ class HybridRetrievalRuntime:
         return dict(self.state.parent_doc_map or {})
 
     @property
-    def recipe_matcher(self) -> Optional[RecipeConstraintMatcher]:
-        return self.state.recipe_matcher
+    def constraint_matcher(self) -> Optional[ConstraintMatcherPort]:
+        return self.state.constraint_matcher
 
     @property
     def vector_retriever(self) -> VectorRetriever | None:
@@ -124,10 +123,10 @@ class HybridRetrievalRuntime:
             self.state,
             artifacts.parent_doc_map,
         )
-        self.state.recipe_matcher = artifacts.recipe_matcher
+        self.state.constraint_matcher = artifacts.constraint_matcher
 
-    def get_recipe_matcher(self) -> Optional[RecipeConstraintMatcher]:
-        return self.state.recipe_matcher
+    def get_constraint_matcher(self) -> Optional[ConstraintMatcherPort]:
+        return self.state.constraint_matcher
 
     def ensure_dual_level_service(self) -> DualLevelRetriever:
         if self.state.dual_level_service is None:

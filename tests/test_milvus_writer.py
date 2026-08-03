@@ -103,8 +103,8 @@ def test_build_vector_index_writes_sanitized_entities_to_explicit_collection() -
         _chunk(
             "x" * 15001,
             chunk_id="c" * 151,
-            node_id="recipe-1",
-            recipe_name="Mapo tofu",
+            entity_id="entity-1",
+            entity_name="Mapo tofu",
             difficulty="3",
         ),
         _chunk("second"),
@@ -118,7 +118,7 @@ def test_build_vector_index_writes_sanitized_entities_to_explicit_collection() -
     assert writer.embeddings.texts == [chunk.page_content for chunk in chunks]
     assert len(writer.client.inserted[0][1][0]["id"]) == 150
     assert len(writer.client.inserted[0][1][0]["text"]) == 15000
-    assert writer.client.inserted[0][1][0]["difficulty"] == 3
+    assert writer.client.inserted[0][1][0]["attributes"]["difficulty"] == "3"
     assert writer.client.flushed == ["recipes__green"]
     assert writer.client.loaded == ["recipes__green"]
     sleep.assert_called_once_with(2)

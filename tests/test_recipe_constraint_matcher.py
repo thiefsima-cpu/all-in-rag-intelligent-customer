@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.domains.recipe.constraint_matcher import RecipeConstraintMatcher
 from rag_modules.kernel.documents import TextDocument
-from rag_modules.retrieval.evidence import RecipeConstraintMatcher
 
 
 class RecipeConstraintMatcherTests(unittest.TestCase):
@@ -35,10 +35,9 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
 
         results = matcher.filter_and_rank(
             QueryConstraints(
-                ingredients=["tofu"],
-                cuisine_terms=["Sichuan"],
-                include_terms=["chili"],
-            ),
+                entity_terms=["chili"],
+                extension={"ingredients": ["tofu"], "cuisine_terms": ["Sichuan"]},
+            ).to_dict(),
             limit=5,
         )
 
@@ -47,7 +46,7 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
             ["Mapo Tofu", "Home Tofu"],
         )
         self.assertGreater(results[0].metadata["constraint_score"], 0)
-        self.assertEqual(results[0].metadata["search_type"], "constraint_recipe")
+        self.assertEqual(results[0].metadata["search_type"], "constraint_domain")
         self.assertTrue(results[0].metadata["constraint_reasons"])
         self.assertEqual(results[0].page_content, "Mapo tofu with tofu and chili")
 
@@ -66,10 +65,10 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
 
         results = matcher.filter_and_rank(
             QueryConstraints(
-                include_terms=["tofu"],
-                exclude_terms=["pork"],
-                excluded_cuisine_terms=["Sichuan"],
-            ),
+                entity_terms=["tofu"],
+                excluded_entity_terms=["pork"],
+                extension={"excluded_cuisine_terms": ["Sichuan"]},
+            ).to_dict(),
             limit=5,
         )
 
@@ -98,11 +97,10 @@ class RecipeConstraintMatcherTests(unittest.TestCase):
 
         results = matcher.filter_and_rank(
             QueryConstraints(
-                include_terms=["tofu"],
-                max_total_minutes=30,
-                max_prep_minutes=10,
-                max_cook_minutes=20,
-            ),
+                entity_terms=["tofu"],
+                temporal_filters={"max_duration_minutes": 30},
+                extension={"max_prep_minutes": 10, "max_cook_minutes": 20},
+            ).to_dict(),
             limit=5,
         )
 

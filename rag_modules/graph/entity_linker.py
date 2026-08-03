@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 from ..configuration.models import GraphSettings
+from ..domains import DEFAULT_DOMAIN_NAME
 from ..query_understanding.registry import (
     DEFAULT_ENTITY_LINKER_PREFERRED_LABELS,
     default_entity_linker_query_type_priorities,
@@ -84,7 +85,8 @@ class EntityLinker:
         preferred_labels: Iterable[str] | None = None,
         lookup_fields: Iterable[str] | None = None,
         allowed_labels: Iterable[str] | None = None,
-        domain_name: str = "recipe",
+        domain_name: str = DEFAULT_DOMAIN_NAME,
+        allow_domainless_graph_records: bool = False,
     ):
         self.driver = driver
         self.database = database
@@ -111,7 +113,8 @@ class EntityLinker:
                 str(label).strip() for label in (allowed_labels or ()) if str(label).strip()
             )
         )
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or DEFAULT_DOMAIN_NAME)
+        self.allow_domainless_graph_records = bool(allow_domainless_graph_records)
         self.query_type_label_priorities = dict(
             graph_settings.entity_linker_query_type_label_priorities
             if graph_settings
@@ -149,7 +152,7 @@ class EntityLinker:
         WHERE ($allowed_labels = [] OR any(label IN labels(n) WHERE label IN $allowed_labels))
           AND (
                n.domain = $domain_name
-               OR ($domain_name = 'recipe' AND n.domain IS NULL)
+               OR ($allow_domainless_graph_records AND n.domain IS NULL)
           )
           AND (
                n.nodeId = $text
@@ -189,6 +192,7 @@ class EntityLinker:
                     lookup_fields=self.lookup_fields,
                     allowed_labels=self.allowed_labels,
                     domain_name=self.domain_name,
+                    allow_domainless_graph_records=self.allow_domainless_graph_records,
                 )
                 candidates = [self._from_record(text, record) for record in records]
         except Exception as exc:

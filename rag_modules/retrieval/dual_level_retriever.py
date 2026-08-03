@@ -6,6 +6,7 @@ import logging
 from typing import List, Optional
 
 from ..contracts import EvidenceDocument, RetrievalRequest
+from ..domains import DEFAULT_DOMAIN_NAME, get_domain_pack
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 from .dual_level_evidence_service import DualLevelEvidenceService
 from .keyword_service import QueryKeywordExtractor
@@ -34,11 +35,15 @@ class DualLevelRetriever:
         )
         config = getattr(graph_indexing, "config", None)
         domain = getattr(config, "domain", None)
-        domain_name = str(getattr(domain, "name", "recipe") or "recipe")
+        domain_name = str(getattr(domain, "name", DEFAULT_DOMAIN_NAME) or DEFAULT_DOMAIN_NAME)
+        domain_pack = get_domain_pack(domain_name)
         self.fallback_retriever = fallback_retriever or Neo4jFallbackRetriever(
             driver=driver,
             database=database,
             domain_name=domain_name,
+            allowed_labels=domain_pack.ontology.node_labels,
+            lookup_fields=domain_pack.ontology.entity_lookup_fields,
+            allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
         )
 
     def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:

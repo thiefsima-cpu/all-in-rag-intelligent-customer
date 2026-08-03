@@ -20,11 +20,13 @@ def test_extract_combines_entities_constraints_relations_and_deduplicates() -> N
         recommendation_hits=["healthy"],
         relation_types=["USES"],
         constraints={
-            "preference_terms": ["light"],
-            "health_terms": ["low-sodium"],
-            "cuisine_terms": ["Sichuan"],
-            "category_terms": ["soup"],
-            "include_terms": ["ginger"],
+            "entity_terms": ["ginger"],
+            "extension": {
+                "preference_terms": ["light"],
+                "health_terms": ["low-sodium"],
+                "cuisine_terms": ["Sichuan"],
+                "category_terms": ["soup"],
+            },
         },
     )
     with (
@@ -43,11 +45,11 @@ def test_extract_combines_entities_constraints_relations_and_deduplicates() -> N
     assert topics == [
         "quick",
         "healthy",
+        "ginger",
         "light",
         "low-sodium",
         "Sichuan",
         "soup",
-        "ginger",
         "ingredient",
     ]
 

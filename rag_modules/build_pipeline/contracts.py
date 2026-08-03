@@ -20,7 +20,7 @@ class DocumentArtifactBuilderPort(Protocol):
 @dataclass(slots=True)
 class SemanticGraphSchemaSyncResult:
     enabled: bool
-    recipes: int = 0
+    source_entities: int = 0
     nodes: int = 0
     relationships: int = 0
     error: str = ""
@@ -32,7 +32,7 @@ class SemanticGraphSchemaSyncResult:
         if self.enabled and not self.error:
             payload.update(
                 {
-                    "recipes": self.recipes,
+                    "source_entities": self.source_entities,
                     "nodes": self.nodes,
                     "relationships": self.relationships,
                 }

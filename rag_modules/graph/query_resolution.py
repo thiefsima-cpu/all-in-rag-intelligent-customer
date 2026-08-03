@@ -292,22 +292,29 @@ def _constraints_present(
     if condition.constraints_present_any:
         return _any_constraint_present(constraints)
     for field_name in condition.constraints_present:
-        value = constraints.get(field_name)
-        if field_name == "time" and isinstance(value, Mapping):
-            if any(item is not None for item in value.values()):
-                return True
-            continue
-        if value:
+        if _constraint_value_present(_nested_constraint_value(constraints, field_name)):
             return True
     return False
 
 
 def _any_constraint_present(constraints: JsonObject) -> bool:
-    for key, value in constraints.items():
-        if key == "time" and isinstance(value, Mapping):
-            if any(item is not None for item in value.values()):
-                return True
-            continue
-        if value:
-            return True
-    return False
+    return any(_constraint_value_present(value) for value in constraints.values())
+
+
+def _nested_constraint_value(constraints: Mapping[str, object], field_path: str) -> object:
+    value: object = constraints
+    for part in field_path.split("."):
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _constraint_value_present(value: object) -> bool:
+    if isinstance(value, Mapping):
+        return any(_constraint_value_present(item) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_constraint_value_present(item) for item in value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None and bool(value)

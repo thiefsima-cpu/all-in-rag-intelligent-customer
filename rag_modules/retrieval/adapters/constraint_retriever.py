@@ -10,15 +10,15 @@ from typing import Callable, List, Optional
 
 from ...contracts import EvidenceDocument, RetrievalRequest
 from ...langchain_document_adapter import to_evidence_document
-from ..evidence import RecipeConstraintMatcher
+from ..ports import ConstraintMatcherPort
 
 logger = logging.getLogger(__name__)
 
 
 class ConstraintRetriever:
-    """Adapt RecipeConstraintMatcher to the shared retrieval contracts."""
+    """Adapt the selected DomainPack constraint matcher to retrieval contracts."""
 
-    def __init__(self, matcher_getter: Callable[[], Optional[RecipeConstraintMatcher]]) -> None:
+    def __init__(self, matcher_getter: Callable[[], Optional[ConstraintMatcherPort]]) -> None:
         self._matcher_getter = matcher_getter
 
     def search(self, request: RetrievalRequest) -> List[EvidenceDocument]:
@@ -28,7 +28,7 @@ class ConstraintRetriever:
             return []
 
         docs = matcher.filter_and_rank(
-            constraints=constraints,
+            constraints=constraints.to_dict(),
             min_score=0.0,
             limit=request.effective_candidate_k,
         )
@@ -37,12 +37,12 @@ class ConstraintRetriever:
             evidence = to_evidence_document(doc)
             metadata = dict(evidence.metadata or {})
             metadata["search_method"] = "constraints"
-            metadata["search_type"] = "constraint_recipe"
+            metadata["search_type"] = "constraint_domain"
             evidence_docs.append(
                 replace(
                     evidence,
                     search_method="constraints",
-                    search_type="constraint_recipe",
+                    search_type="constraint_domain",
                     metadata=metadata,
                 )
             )

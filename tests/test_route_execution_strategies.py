@@ -385,7 +385,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             top_k=7,
             candidate_k=9,
             strategy=SearchStrategy.COMBINED.value,
-            constraints=QueryConstraints(max_cook_minutes=30),
+            constraints=QueryConstraints(temporal_filters={"max_duration_minutes": 30}),
             query_plan=request.query_plan,
             entity_keywords=["pepper"],
             topic_keywords=["texture"],
@@ -928,7 +928,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
             query="recommend tofu dishes",
             top_k=3,
             candidate_k=5,
-            constraints=QueryConstraints(max_cook_minutes=30),
+            constraints=QueryConstraints(temporal_filters={"max_duration_minutes": 30}),
             query_plan=plan,
             strategy="combined",
         )
@@ -937,7 +937,7 @@ class RouteExecutionStrategiesTests(unittest.TestCase):
         self.assertEqual(request.candidate_k, 5)
         self.assertEqual(request.strategy, "combined")
         self.assertIs(request.query_plan, plan)
-        self.assertEqual(request.constraints.max_cook_minutes, 30)
+        self.assertEqual(request.constraints.temporal_filters["max_duration_minutes"], 30)
 
 
 if __name__ == "__main__":

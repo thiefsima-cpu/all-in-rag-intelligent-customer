@@ -9,6 +9,7 @@ from ...contracts import (
     QuerySemanticRuntimeSettings,
 )
 from ...contracts.query_constraints import QueryConstraints
+from ...domains.contracts import DomainQueryConstraintSchema
 from ...kernel.routing import SearchStrategy
 from ...query_policy.models import QueryPolicyBundle
 from ..features import fallback_keywords, normalize_graph_sources
@@ -23,10 +24,12 @@ class RuleBasedPlanner:
         settings: QuerySemanticRuntimeSettings,
         calibrator: QueryPlanCalibrator,
         policy_bundle: QueryPolicyBundle | None = None,
+        constraint_schema: DomainQueryConstraintSchema | None = None,
     ) -> None:
         self.settings = settings
         self.calibrator = calibrator
         self.policy_bundle = policy_bundle
+        self.constraint_schema = constraint_schema
 
     def _resolve_source_entities(
         self,
@@ -63,6 +66,7 @@ class RuleBasedPlanner:
             query,
             settings=self.settings,
             policy_bundle=self.policy_bundle,
+            constraint_schema=self.constraint_schema,
         )
         constraints = QueryConstraints.from_dict(profile.constraints)
         complexity = max(
@@ -99,7 +103,7 @@ class RuleBasedPlanner:
 
         return QueryPlan(
             query=query,
-            intent="recommendation" if profile.needs_recipe_recommendation else "qa",
+            intent="recommendation" if profile.recommendation_required else "qa",
             complexity=complexity,
             relationship_intensity=relationship_intensity,
             reasoning_required=(
@@ -122,7 +126,7 @@ class RuleBasedPlanner:
                 policy_bundle=self.policy_bundle,
             ),
             constraints=constraints,
-            needs_recipe_recommendation=profile.needs_recipe_recommendation,
+            recommendation_required=profile.recommendation_required,
             fallback_reason="rule_based",
             planner_mode=QueryPlannerMode.RULE_BASED,
             semantic_profile=profile,

@@ -244,11 +244,8 @@ def _to_answer_workflow_copy(
         strategy_icon_default=str(payload.get("strategy_icon_default") or ""),
         document_summary_template=str(payload.get("document_summary_template") or ""),
         document_summary_total_template=str(payload.get("document_summary_total_template") or ""),
-        unknown_recipe_name=str(
-            value.get("unknown_entity_name")
-            or value.get("unknown_recipe_name")
-            or payload.get("unknown_entity_name")
-            or ""
+        unknown_entity_name=str(
+            value.get("unknown_entity_name") or payload.get("unknown_entity_name") or ""
         ),
         unknown_search_type=str(payload.get("unknown_search_type") or ""),
     )

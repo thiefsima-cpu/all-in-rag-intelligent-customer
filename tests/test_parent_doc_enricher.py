@@ -24,12 +24,12 @@ def test_attach_respects_top_n_missing_parent_and_truncation() -> None:
     enricher = _enricher(
         TextDocument(
             content="123456",
-            metadata={"node_id": "recipe-1", "recipe_name": "Mapo tofu"},
+            metadata={"node_id": "entity-1", "entity_name": "Mapo tofu"},
         )
     )
     docs = [
-        TextDocument(content="chunk", metadata={"parent_id": "recipe-1"}),
-        TextDocument(content="second", metadata={"node_id": "recipe-1"}),
+        TextDocument(content="chunk", metadata={"parent_id": "entity-1"}),
+        TextDocument(content="second", metadata={"node_id": "entity-1"}),
         TextDocument(content="missing", metadata={"node_id": "unknown"}),
     ]
 
@@ -54,38 +54,38 @@ def test_attach_evidence_fills_parent_identity_without_overwriting_child_values(
     enricher = _enricher(
         TextDocument(
             content="short",
-            metadata={"node_id": "recipe-1", "recipe_name": "Parent recipe"},
+            metadata={"node_id": "entity-1", "entity_name": "Parent entity"},
         )
     )
-    inherited = EvidenceDocument(content="chunk", metadata={"parent_id": "recipe-1"})
+    inherited = EvidenceDocument(content="chunk", metadata={"parent_id": "entity-1"})
     explicit = EvidenceDocument(
         content="chunk",
-        node_id="recipe-1",
-        entity_name="Child recipe",
+        node_id="entity-1",
+        entity_name="Child entity",
     )
 
     first, second = enricher.attach_evidence([inherited, explicit], top_n=2)
 
-    assert first.node_id == "recipe-1"
-    assert first.entity_name == "Parent recipe"
-    assert first.metadata["entity_name"] == "Parent recipe"
-    assert second.entity_name == "Child recipe"
+    assert first.node_id == "entity-1"
+    assert first.entity_name == "Parent entity"
+    assert first.metadata["entity_name"] == "Parent entity"
+    assert second.entity_name == "Child entity"
 
 
-def test_graph_enrichment_finds_parent_by_recipe_lists_and_preserves_graph_source() -> None:
+def test_graph_enrichment_finds_parent_by_entity_lists_and_preserves_graph_source() -> None:
     enricher = _enricher(
         TextDocument(
             content="parent",
-            metadata={"node_id": "recipe-1", "recipe_name": "Mapo tofu"},
+            metadata={"node_id": "entity-1", "entity_name": "Mapo tofu"},
         )
     )
     by_id = TextDocument(
         content="graph detail",
-        metadata={"recipe_node_ids": ["missing", "recipe-1"], "search_type": "path"},
+        metadata={"entity_ids": ["missing", "entity-1"], "search_type": "path"},
     )
     by_name = TextDocument(
         content="parent",
-        metadata={"recipe_names": ["Mapo tofu"], "search_source": "graph"},
+        metadata={"entity_names": ["Mapo tofu"], "search_source": "graph"},
     )
 
     first, second = enricher.enrich_graph_documents([by_id, by_name], top_n=0)
@@ -101,22 +101,22 @@ def test_graph_evidence_inherits_parent_metadata_and_appends_context() -> None:
         TextDocument(
             content="parent",
             metadata={
-                "node_id": "recipe-1",
-                "recipe_id": "recipe-id",
-                "recipe_name": "Mapo tofu",
+                "node_id": "entity-1",
+                "entity_id": "entity-id",
+                "entity_name": "Mapo tofu",
             },
         )
     )
     graph = EvidenceDocument(
         content="graph detail",
         search_type="graph_path",
-        metadata={"recipe_names": ["Mapo tofu"]},
+        metadata={"entity_names": ["Mapo tofu"]},
     )
 
     [result] = enricher.enrich_graph_evidence_documents([graph], top_n=0)
 
-    assert result.node_id == "recipe-1"
-    assert result.entity_id == "recipe-id"
+    assert result.node_id == "entity-1"
+    assert result.entity_id == "entity-id"
     assert result.entity_name == "Mapo tofu"
     assert result.metadata["search_source"] == "graph_path"
     assert "[Graph retrieval evidence]" in result.content
@@ -124,20 +124,20 @@ def test_graph_evidence_inherits_parent_metadata_and_appends_context() -> None:
 
 def test_graph_enrichment_returns_originals_for_empty_input_or_missing_parent() -> None:
     empty = _enricher()
-    docs = [EvidenceDocument(content="graph", metadata={"recipe_name": "unknown"})]
+    docs = [EvidenceDocument(content="graph", metadata={"entity_name": "unknown"})]
 
     assert empty.enrich_graph_evidence_documents(docs) is docs
-    populated = _enricher(TextDocument(content="parent", metadata={"node_id": "recipe-1"}))
+    populated = _enricher(TextDocument(content="parent", metadata={"node_id": "entity-1"}))
     assert populated.enrich_graph_evidence_documents(docs)[0] is docs[0]
 
 
-def test_find_parent_uses_direct_keys_and_recipe_name_fallbacks() -> None:
+def test_find_parent_uses_direct_keys_and_entity_name_fallbacks() -> None:
     parent = TextDocument(
         content="parent",
-        metadata={"node_id": "recipe-1", "recipe_name": "Mapo tofu"},
+        metadata={"node_id": "entity-1", "entity_name": "Mapo tofu"},
     )
     enricher = _enricher(parent)
 
-    assert enricher._find_parent({"recipe_id": "recipe-1"}) is parent
-    assert enricher._find_parent({"recipe_name": "Mapo tofu"}) is parent
-    assert enricher._find_parent({"recipe_name": "unknown"}) is None
+    assert enricher._find_parent({"entity_id": "entity-1"}) is parent
+    assert enricher._find_parent({"entity_name": "Mapo tofu"}) is parent
+    assert enricher._find_parent({"entity_name": "unknown"}) is None

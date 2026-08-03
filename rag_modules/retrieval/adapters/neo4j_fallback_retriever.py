@@ -1,12 +1,14 @@
-"""Neo4j fallback adapter for dual-level retrieval."""
+"""Domain-neutral Neo4j fallback adapter for dual-level retrieval."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import TypedDict, cast
 
 from ...contracts import EvidenceDocument
+from ...domains import DEFAULT_DOMAIN_NAME
 from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..ports import Neo4jDriverPort
@@ -22,18 +24,34 @@ class _EntityRecord(TypedDict):
     score: object
 
 
-class _TopicRecord(TypedDict):
-    node_id: object
-    name: object
-    category: object
-    cuisine_type: object
-    difficulty: object
-    ingredients: list[str]
-    matched_keyword: object
-
-
 class _NameRecord(TypedDict):
     name: object
+
+
+_ENTITY_QUERY = """
+UNWIND $keywords AS keyword
+MATCH (node)
+WHERE ($allowed_labels = [] OR any(label IN labels(node) WHERE label IN $allowed_labels))
+  AND (
+    node.domain = $domain_name
+    OR ($allow_domainless_graph_records AND node.domain IS NULL)
+  )
+  AND any(field IN $lookup_fields
+          WHERE node[field] IS NOT NULL AND toString(node[field]) CONTAINS keyword)
+WITH node, max(CASE
+    WHEN node.nodeId = keyword THEN 1.0
+    WHEN coalesce(node.name, node.title) = keyword THEN 0.95
+    ELSE 0.7
+END) AS score
+RETURN
+    node.nodeId AS node_id,
+    coalesce(node.name, node.title, node.nodeId) AS name,
+    coalesce(node.description, node.content, '') AS description,
+    labels(node) AS labels,
+    score
+ORDER BY score DESC
+LIMIT $limit
+"""
 
 
 def _coerce_float(value: object, default: float = 0.0) -> float:
@@ -49,52 +67,12 @@ def _string_list(value: object) -> list[str]:
     return [str(item) for item in value if item]
 
 
-def _entity_query(domain_name: str) -> str:
-    if domain_name == "recipe":
-        return """
-        UNWIND $keywords AS keyword
-        CALL db.index.fulltext.queryNodes('recipe_fulltext_index', keyword + '*')
-        YIELD node, score
-        WHERE node:Recipe
-          AND (node.domain = 'recipe' OR node.domain IS NULL)
-        RETURN
-            node.nodeId AS node_id,
-            node.name AS name,
-            node.description AS description,
-            labels(node) AS labels,
-            score
-        ORDER BY score DESC
-        LIMIT $limit
-        """
-    return """
-    UNWIND $keywords AS keyword
-    MATCH (node)
-    WHERE node.domain = $domain
-      AND any(value IN [node.nodeId, node.name, node.title, node.content]
-              WHERE value IS NOT NULL AND toString(value) CONTAINS keyword)
-    WITH node, max(CASE
-        WHEN node.nodeId = keyword THEN 1.0
-        WHEN coalesce(node.name, node.title) = keyword THEN 0.95
-        ELSE 0.7
-    END) AS score
-    RETURN
-        node.nodeId AS node_id,
-        coalesce(node.name, node.title, node.nodeId) AS name,
-        coalesce(node.description, node.content, '') AS description,
-        labels(node) AS labels,
-        score
-    ORDER BY score DESC
-    LIMIT $limit
-    """
-
-
 def _entity_document(record: _EntityRecord, domain_name: str) -> EvidenceDocument:
     content_parts: list[str] = []
-    entity_label = "菜谱" if domain_name == "recipe" else "实体"
     if record["name"]:
-        content_parts.append(f"{entity_label}: {record['name']}")
+        content_parts.append(f"entity: {record['name']}")
     if record["description"]:
-        content_parts.append(f"描述: {record['description']}")
+        content_parts.append(f"description: {record['description']}")
     labels = _string_list(record.get("labels"))
     entity_type = labels[0] if labels else "Entity"
     return EvidenceDocument(
@@ -120,39 +98,35 @@ def _entity_document(record: _EntityRecord, domain_name: str) -> EvidenceDocumen
 
 
 class Neo4jFallbackRetriever:
-    """Run direct Neo4j fallback queries when in-memory graph indexes are sparse."""
+    """Run direct ontology-scoped fallback queries when graph indexes are sparse."""
 
     def __init__(
         self,
         *,
         driver: Neo4jDriverPort | None,
         database: str,
-        domain_name: str = "recipe",
+        domain_name: str = DEFAULT_DOMAIN_NAME,
+        allowed_labels: tuple[str, ...] = (),
+        lookup_fields: tuple[str, ...] = ("nodeId", "name", "title", "content", "description"),
+        allow_domainless_graph_records: bool = False,
     ) -> None:
         self.driver = driver
         self.database = database
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or DEFAULT_DOMAIN_NAME)
+        self.allowed_labels = tuple(allowed_labels)
+        self.lookup_fields = tuple(lookup_fields)
+        self.allow_domainless_graph_records = bool(allow_domainless_graph_records)
 
     def entity_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
         if not keywords or limit <= 0 or self.driver is None:
             return []
-
-        results: list[EvidenceDocument] = []
         try:
             with self.driver.session(database=self.database) as session:
                 records = cast(
                     Iterable[_EntityRecord],
-                    session.run(
-                        _entity_query(self.domain_name),
-                        {
-                            "keywords": keywords,
-                            "limit": limit,
-                            "domain": self.domain_name,
-                        },
-                    ),
+                    session.run(_ENTITY_QUERY, self._query_params(keywords, limit)),
                 )
-                for record in records:
-                    results.append(_entity_document(record, self.domain_name))
+                return [_entity_document(record, self.domain_name) for record in records]
         except Exception as exc:
             log_failure(
                 logger,
@@ -161,100 +135,44 @@ class Neo4jFallbackRetriever:
                 code="RETRIEVAL_FAILED",
                 error=exc,
             )
-        return results
+            return []
 
     def topic_search(self, keywords: list[str], limit: int) -> list[EvidenceDocument]:
-        if not keywords or limit <= 0 or self.driver is None:
-            return []
-        if self.domain_name != "recipe":
-            return self.entity_search(keywords, limit)
-
-        results: list[EvidenceDocument] = []
-        try:
-            with self.driver.session(database=self.database) as session:
-                cypher_query = """
-                UNWIND $keywords AS keyword
-                MATCH (r:Recipe)
-                WHERE (r.domain = 'recipe' OR r.domain IS NULL)
-                  AND (r.category CONTAINS keyword
-                   OR r.cuisineType CONTAINS keyword
-                   OR r.tags CONTAINS keyword)
-                WITH r, keyword
-                OPTIONAL MATCH (r)-[:REQUIRES]->(i:Ingredient)
-                WITH r, keyword, collect(i.name)[0..3] AS ingredients
-                RETURN
-                    r.nodeId AS node_id,
-                    r.name AS name,
-                    r.category AS category,
-                    r.cuisineType AS cuisine_type,
-                    r.difficulty AS difficulty,
-                    ingredients,
-                    keyword AS matched_keyword
-                ORDER BY r.difficulty ASC, r.name
-                LIMIT $limit
-                """
-                records = cast(
-                    Iterable[_TopicRecord],
-                    session.run(cypher_query, {"keywords": keywords, "limit": limit}),
-                )
-                for record in records:
-                    content_parts = [f"菜谱: {record['name']}"]
-                    if record["category"]:
-                        content_parts.append(f"分类: {record['category']}")
-                    if record["cuisine_type"]:
-                        content_parts.append(f"菜系: {record['cuisine_type']}")
-                    if record["difficulty"]:
-                        content_parts.append(f"难度: {record['difficulty']}")
-                    ingredients = _string_list(record.get("ingredients"))
-                    if ingredients:
-                        content_parts.append(f"主要食材: {', '.join(record['ingredients'][:3])}")
-                    results.append(
-                        EvidenceDocument(
-                            content="\n".join(content_parts),
-                            node_id=str(record["node_id"]),
-                            entity_name=str(record["name"] or ""),
-                            node_type="Recipe",
-                            score=0.75,
-                            search_type="graph_topic_fallback",
-                            search_method="neo4j_fallback",
-                            retrieval_level="topic",
-                            source="neo4j_fallback",
-                            matched_terms=[str(record["matched_keyword"] or "")],
-                            metadata=coerce_json_object(
-                                {
-                                    "name": record["name"],
-                                    "category": record["category"],
-                                    "cuisine_type": record["cuisine_type"],
-                                    "difficulty": record["difficulty"],
-                                    "matched_keyword": record["matched_keyword"],
-                                    "source": "neo4j_fallback",
-                                }
-                            ),
-                        )
-                    )
-        except Exception as exc:
-            log_failure(
-                logger,
-                logging.ERROR,
-                "retrieval_operation_failed",
-                code="RETRIEVAL_FAILED",
-                error=exc,
+        return [
+            replace(
+                document,
+                search_type="graph_topic_fallback",
+                retrieval_level="topic",
             )
-        return results
+            for document in self.entity_search(keywords, limit)
+        ]
 
     def node_neighbors(self, node_id: str, max_neighbors: int = 3) -> list[str]:
         if not node_id or self.driver is None:
             return []
+        query = """
+        MATCH (n {nodeId: $node_id})-[r]-(neighbor)
+        WHERE (neighbor.domain = $domain_name
+               OR ($allow_domainless_graph_records AND neighbor.domain IS NULL))
+          AND ($allowed_labels = []
+               OR any(label IN labels(neighbor) WHERE label IN $allowed_labels))
+        RETURN coalesce(neighbor.name, neighbor.title, neighbor.nodeId) AS name
+        LIMIT $limit
+        """
         try:
             with self.driver.session(database=self.database) as session:
-                query = """
-                MATCH (n {nodeId: $node_id})-[r]-(neighbor)
-                RETURN neighbor.name AS name
-                LIMIT $limit
-                """
                 records = cast(
                     Iterable[_NameRecord],
-                    session.run(query, {"node_id": node_id, "limit": max_neighbors}),
+                    session.run(
+                        query,
+                        {
+                            "node_id": node_id,
+                            "limit": max_neighbors,
+                            "domain_name": self.domain_name,
+                            "allowed_labels": list(self.allowed_labels),
+                            "allow_domainless_graph_records": self.allow_domainless_graph_records,
+                        },
+                    ),
                 )
                 return [str(record["name"]) for record in records if record["name"]]
         except Exception as exc:
@@ -266,3 +184,13 @@ class Neo4jFallbackRetriever:
                 error=exc,
             )
             return []
+
+    def _query_params(self, keywords: list[str], limit: int) -> dict[str, object]:
+        return {
+            "keywords": keywords,
+            "limit": limit,
+            "domain_name": self.domain_name,
+            "allowed_labels": list(self.allowed_labels),
+            "lookup_fields": list(self.lookup_fields),
+            "allow_domainless_graph_records": self.allow_domainless_graph_records,
+        }

@@ -94,6 +94,7 @@ class ModelClientPortTests(unittest.TestCase):
 
         module = _MilvusModuleWithoutNetwork(
             collection_name="recipes",
+            domain_name="recipe",
             dimension=2,
             embedding_client=embedding_client,
         )
@@ -172,7 +173,7 @@ class ModelClientPortTests(unittest.TestCase):
         self.assertEqual([doc.entity_name for doc in result], ["second", "first"])
         self.assertEqual(rerank_client.calls[0]["query"], "which one")
 
-    def test_retrieval_reranker_preserves_recipe_label_and_document_order(self) -> None:
+    def test_retrieval_reranker_uses_generic_entity_label_and_preserves_order(self) -> None:
         rerank_client = _FakeRerankClient(order=[1, 0])
         processor = RetrievalPostProcessor(
             settings=self.postprocess_settings,
@@ -206,7 +207,7 @@ class ModelClientPortTests(unittest.TestCase):
         )
 
         assert rerank_client.calls[0]["documents"] == [
-            "菜谱: Mapo tofu\n来源: unknown\n证据类型: recipe\n内容摘要: recipe content",
+            "实体: Mapo tofu\n来源: unknown\n证据类型: recipe\n内容摘要: recipe content",
             "实体: Order CS-1001\n来源: unknown\n证据类型: text\n内容摘要: order content",
         ]
         self.assertEqual(
@@ -327,6 +328,7 @@ class ModelClientPortTests(unittest.TestCase):
         embedding_client = _TimeoutEmbeddingClient()
         module = _MilvusModuleWithoutNetwork(
             collection_name="recipes",
+            domain_name="recipe",
             dimension=2,
             embedding_client=embedding_client,
         )

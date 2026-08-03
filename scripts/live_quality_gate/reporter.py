@@ -112,7 +112,7 @@ def _case_summary(
     return {
         "case_id": result.case_id,
         "query_type": result.query_type,
-        "cuisine": result.cuisine,
+        "domain": result.domain,
         "constraint_types": list(result.constraint_types),
         "risk_tags": list(result.risk_tags),
         "response_mode": result.response_mode,
@@ -135,7 +135,7 @@ def _case_summary(
         "answer_preview": result.observation.answer[:300],
         "evidence": [
             {
-                "recipe_name": item.recipe_name,
+                "entity_name": item.entity_name,
                 "source": item.source,
                 "snippet": item.content[:160],
             }
@@ -166,7 +166,7 @@ def _manual_review_sample(
         "case_id": result.case_id,
         "owner": case.manual_review.owner,
         "query_type": result.query_type,
-        "cuisine": result.cuisine,
+        "domain": result.domain,
         "risk_tags": list(result.risk_tags),
         "constraint_types": list(result.constraint_types),
         "expected_response_mode": result.response_mode,
@@ -179,7 +179,7 @@ def _manual_review_sample(
         "answer_preview": result.observation.answer[:500],
         "evidence": [
             {
-                "recipe_name": item.recipe_name,
+                "entity_name": item.entity_name,
                 "source": item.source,
                 "snippet": item.content[:240],
             }

@@ -7,20 +7,20 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, cast
 
 from rank_bm25 import BM25Okapi
 
 from ..configuration.models import GraphRAGConfig
+from ..domains import get_domain_pack
 from ..graph_index import GraphIndexingModule
 from ..kernel.documents import TextDocument
 from ..kernel.json_types import JsonObject, coerce_json_object
 from ..safe_logging import log_failure
 from .adapters import BM25Retriever
 from .cache import RetrievalCacheStore
-from .evidence import RecipeConstraintMatcher
 from .parent_doc_enricher import ParentDocumentEnricher
-from .ports import GraphDataModulePort, Neo4jDriverPort
+from .ports import ConstraintMatcherPort, GraphDataModulePort, Neo4jDriverPort
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class HybridIndexArtifacts:
     bm25_corpus_docs: List[TextDocument] = field(default_factory=list)
     graph_indexed: bool = False
     parent_doc_map: Dict[str, TextDocument] = field(default_factory=dict)
-    recipe_matcher: Optional[RecipeConstraintMatcher] = None
+    constraint_matcher: Optional[ConstraintMatcherPort] = None
 
 
 class HybridIndexService:
@@ -48,6 +48,7 @@ class HybridIndexService:
         parent_enricher: ParentDocumentEnricher,
     ) -> None:
         self.config = config
+        self.domain_pack = get_domain_pack(config.domain.name)
         self.storage = config.storage
         self.data_module = data_module
         self.graph_indexing = graph_indexing
@@ -89,7 +90,7 @@ class HybridIndexService:
                 or self._build_parent_doc_map()
             )
             self.parent_enricher.parent_doc_map = parent_doc_map
-            recipe_matcher = RecipeConstraintMatcher(list(parent_doc_map.values()))
+            constraint_matcher = self._constraint_matcher(parent_doc_map)
             if not self.restore_bm25_retriever(payload):
                 return None
         except Exception as exc:
@@ -107,7 +108,7 @@ class HybridIndexService:
             bm25_corpus_docs=list(self.bm25_retriever.corpus_docs),
             graph_indexed=self.graph_indexed,
             parent_doc_map=parent_doc_map,
-            recipe_matcher=recipe_matcher,
+            constraint_matcher=constraint_matcher,
         )
         if not (
             artifacts.bm25 is not None and artifacts.bm25_corpus_docs and artifacts.graph_indexed
@@ -165,7 +166,7 @@ class HybridIndexService:
             bm25_corpus_docs=list(self.bm25_retriever.corpus_docs),
             graph_indexed=self.graph_indexed,
             parent_doc_map=parent_doc_map,
-            recipe_matcher=RecipeConstraintMatcher(list(parent_doc_map.values())),
+            constraint_matcher=self._constraint_matcher(parent_doc_map),
         )
 
     def _build_parent_doc_map(self) -> Dict[str, TextDocument]:
@@ -178,15 +179,7 @@ class HybridIndexService:
 
         logger.info("Building hybrid graph index...")
         try:
-            domain_name = str(getattr(self.config.domain, "name", "recipe") or "recipe")
-            if domain_name == "recipe":
-                recipes = self.data_module.recipes
-                ingredients = self.data_module.ingredients
-                cooking_steps = self.data_module.cooking_steps
-                self.graph_indexing.create_entity_key_values(recipes, ingredients, cooking_steps)
-            else:
-                entities = getattr(self.data_module, "entities", None) or []
-                self.graph_indexing.create_domain_entity_key_values(entities)
+            self.graph_indexing.create_domain_entity_key_values(self.data_module.entities)
             relationships = self._extract_relationships_from_graph(driver)
             self.graph_indexing.create_relation_key_values(relationships)
             self.graph_indexing.deduplicate_entities_and_relations()
@@ -211,26 +204,21 @@ class HybridIndexService:
 
         try:
             with driver.session(database=self.database) as session:
-                domain_name = str(getattr(self.config.domain, "name", "recipe") or "recipe")
-                if domain_name == "recipe":
-                    query = """
-                    MATCH (source)-[r]->(target)
-                    WHERE coalesce(source.domain, 'recipe') = 'recipe'
-                      AND coalesce(target.domain, 'recipe') = 'recipe'
-                      AND (source.nodeId >= '200000000' OR target.nodeId >= '200000000')
-                    RETURN source.nodeId as source_id,
-                           type(r) as relation_type,
-                           target.nodeId as target_id
-                    """
-                else:
-                    query = f"""
-                    MATCH (source)-[r]->(target)
-                    WHERE source.domain = '{domain_name}' AND target.domain = '{domain_name}'
-                    RETURN source.nodeId as source_id,
-                           type(r) as relation_type,
-                           target.nodeId as target_id
-                    """
-                for record in session.run(query):
+                query = """
+                MATCH (source)-[r]->(target)
+                WHERE (source.domain = $domain_name OR ($allow_domainless AND source.domain IS NULL))
+                  AND (target.domain = $domain_name OR ($allow_domainless AND target.domain IS NULL))
+                RETURN source.nodeId as source_id,
+                       type(r) as relation_type,
+                       target.nodeId as target_id
+                """
+                for record in session.run(
+                    query,
+                    {
+                        "domain_name": self.domain_pack.name,
+                        "allow_domainless": self.domain_pack.allow_domainless_graph_records,
+                    },
+                ):
                     relationships.append(
                         (
                             str(record["source_id"]),
@@ -248,6 +236,15 @@ class HybridIndexService:
             )
 
         return relationships
+
+    def _constraint_matcher(
+        self,
+        parent_doc_map: Dict[str, TextDocument],
+    ) -> ConstraintMatcherPort | None:
+        matcher_type = self.domain_pack.constraint_matcher_type
+        if matcher_type is None:
+            return None
+        return cast(ConstraintMatcherPort, matcher_type(list(parent_doc_map.values())))
 
 
 def _parent_document_metadata(item: Mapping[object, object]) -> JsonObject:

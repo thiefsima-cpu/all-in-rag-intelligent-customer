@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from ..domains import DEFAULT_DOMAIN_NAME
 from ..kernel.json_types import JsonObject, coerce_int, coerce_json_object
 from ..runtime.artifacts import ArtifactManifestStore
 
@@ -77,7 +78,7 @@ class GraphCacheStats:
     schema_version: str = GRAPH_CACHE_STATS_SCHEMA_VERSION
     updated_at: str = field(default_factory=_utc_now_iso)
     graph_signature: str = ""
-    domain_name: str = "recipe"
+    domain_name: str = DEFAULT_DOMAIN_NAME
     entity_count: int = 0
     relation_type_count: int = 0
     entities: list[GraphCacheEntityStats] = field(default_factory=list)
@@ -106,7 +107,7 @@ class GraphCacheStats:
             schema_version=str(data.get("schema_version") or GRAPH_CACHE_STATS_SCHEMA_VERSION),
             updated_at=str(data.get("updated_at") or _utc_now_iso()),
             graph_signature=str(data.get("graph_signature") or ""),
-            domain_name=str(data.get("domain_name") or "recipe"),
+            domain_name=str(data.get("domain_name") or DEFAULT_DOMAIN_NAME),
             entity_count=coerce_int(data.get("entity_count"), 0),
             relation_type_count=coerce_int(data.get("relation_type_count"), 0),
             entities=_entity_stats(data.get("entities")),

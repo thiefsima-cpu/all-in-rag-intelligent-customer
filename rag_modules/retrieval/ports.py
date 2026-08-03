@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Protocol
 
@@ -105,9 +106,7 @@ class GraphDataModulePort(Protocol):
 
     documents: list[TextDocument]
     chunks: list[TextDocument]
-    recipes: list[GraphNode]
-    ingredients: list[GraphNode]
-    cooking_steps: list[GraphNode]
+    entities: list[GraphNode]
 
     def load_graph_data(self) -> GraphLoadCounts | JsonObject: ...
 
@@ -122,6 +121,18 @@ class GraphDataModulePort(Protocol):
     def get_statistics(self) -> GraphPreparationStats | JsonObject: ...
 
     def close(self) -> None: ...
+
+
+class ConstraintMatcherPort(ABC):
+    """Domain-owned structured constraint filtering over retrieval documents."""
+
+    @abstractmethod
+    def filter_and_rank(
+        self,
+        constraints: object,
+        min_score: float = 0.0,
+        limit: int = 20,
+    ) -> list[TextDocument]: ...
 
 
 class HybridCandidateRuntimePort(Protocol):
@@ -150,6 +161,7 @@ class RerankClientPort(Protocol):
 
 __all__ = [
     "GraphDataModulePort",
+    "ConstraintMatcherPort",
     "HybridCandidateRuntimePort",
     "Neo4jDriverPort",
     "Neo4jManagerPort",

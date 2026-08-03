@@ -78,7 +78,7 @@ retrieval_provider: RetrievalRuntimeProvider = runtime_provider.retrieval_runtim
 service_provider: ApplicationServiceProvider = runtime_provider.services
 
 trace_stats: TraceStatsDiagnostics = TraceStatsDiagnostics.from_payload({"dropped_events": 1})
-data_stats: DataStatsDiagnostics = DataStatsDiagnostics.from_payload({"total_recipes": 2})
+data_stats: DataStatsDiagnostics = DataStatsDiagnostics.from_payload({"total_entities": 2})
 policy_bundle = get_query_policy()
 first_sub_question: GraphSubQuestionPolicy = policy_bundle.graph.sub_questions[0]
 generation_decision_policy: GenerationDecisionPolicy = policy_bundle.generation.decision
@@ -88,8 +88,8 @@ graph_relationship_snapshot: GraphRelationshipSnapshot = GraphRelationshipSnapsh
     start_node_id="r1",
     end_node_id="i1",
 )
-graph_load_counts: GraphLoadCounts = GraphLoadCounts(recipes=1)
-graph_preparation_stats: GraphPreparationStats = GraphPreparationStats(total_recipes=1)
+graph_load_counts: GraphLoadCounts = GraphLoadCounts(total_entities=1)
+graph_preparation_stats: GraphPreparationStats = GraphPreparationStats(total_entities=1)
 
 
 class _CompletionMessage:

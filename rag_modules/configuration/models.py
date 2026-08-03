@@ -137,7 +137,7 @@ class GraphSettings(ConfigSection):
     graph_rank_semantic_relation_weight: float = 0.08
     graph_rank_evidence_unit_weight: float = 0.03
     graph_rank_relationship_weight: float = 0.01
-    graph_rank_recipe_presence_weight: float = 0.1
+    graph_rank_entity_presence_weight: float = 0.1
     graph_rank_query_overlap_weight: float = 0.02
     entity_linker_limit_per_entity: int = 4
     entity_linker_min_confidence: float = 0.45
@@ -335,7 +335,7 @@ class StorageSettings(ConfigSection):
     neo4j_database: str = "neo4j"
     milvus_host: str = "localhost"
     milvus_port: int = 19530
-    milvus_collection_name: str = "cooking_knowledge"
+    milvus_collection_name: str = "customer_service_knowledge"
     milvus_dimension: int = Field(default=1024, ge=0)
     enable_index_cache: bool = True
     index_cache_dir: str = "storage/indexes"
@@ -353,7 +353,7 @@ class StorageSettings(ConfigSection):
 class DomainSettings(ConfigSection):
     """Select the versioned business-domain behavior pack."""
 
-    name: str = "recipe"
+    name: str = "customer_service"
 
     @field_validator("name")
     @classmethod

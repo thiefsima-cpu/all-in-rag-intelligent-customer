@@ -57,7 +57,7 @@ single-maintainer repository. All three branches block deletion and non-fast-for
    exact commit exercised by the live gates, and the configured artifact
    manifest must identify the active ready knowledge base used by the serving
    API. Capture requires the canonical schema-v2 live-quality policy and a
-   schema-v2 live report with the 52-case baseline, five customer-service
+   schema-v2 live report with the 18-case customer-service baseline, five
    grounded-answer cases, rerank coverage, and all interaction SLO checks.
 8. Evidence review and finalization: review the complete quality evidence ZIP,
    download the finalized compact manifest artifact, and commit that manifest

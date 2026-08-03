@@ -61,7 +61,7 @@ def _answer_copy(**overrides: str) -> AnswerWorkflowCopyPolicy:
             "Found {document_count} relevant documents: {document_summaries}"
         ),
         "document_summary_total_template": "\n    Total results: {document_count}",
-        "unknown_recipe_name": "unknown",
+        "unknown_entity_name": "unknown",
         "unknown_search_type": "unknown",
     }
     values.update(overrides)

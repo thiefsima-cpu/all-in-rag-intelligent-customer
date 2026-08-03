@@ -194,7 +194,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
             bm25_corpus_docs=[parent_doc],
             graph_indexed=True,
             parent_doc_map={"p": parent_doc},
-            recipe_matcher="matcher",
+            constraint_matcher="matcher",
         )
         adapter_factory = _StubAdapterFactory()
         driver_service = _StubDriverService()
@@ -216,7 +216,7 @@ class HybridRetrievalRuntimeTests(unittest.TestCase):
         self.assertEqual(adapter_factory.dual_calls[0]["driver"], "driver")
         self.assertEqual(runtime.bm25, "bm25-cache")
         self.assertTrue(runtime.graph_indexed)
-        self.assertEqual(runtime.recipe_matcher, "matcher")
+        self.assertEqual(runtime.constraint_matcher, "matcher")
         self.assertEqual(parent_documents.apply_calls[0], {"p": parent_doc})
 
     def test_bm25_candidates_rebuild_from_data_only_cached_corpus(self) -> None:

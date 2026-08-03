@@ -11,6 +11,7 @@ from rag_modules.contracts import (
     QuerySemanticRuntimeSettings,
 )
 from rag_modules.contracts.query_constraints import QueryConstraints
+from rag_modules.domains import get_domain_pack
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding.planning.calibration import (
     QueryPlanCalibrator,
@@ -22,7 +23,11 @@ from tests.configuration_test_helpers import build_test_config
 
 
 def _calibrator() -> QueryPlanCalibrator:
-    return QueryPlanCalibrator(QuerySemanticRuntimeSettings.from_config(build_test_config()))
+    pack = get_domain_pack("recipe")
+    return QueryPlanCalibrator(
+        QuerySemanticRuntimeSettings.from_config(build_test_config()),
+        constraint_schema=pack.query_constraints,
+    )
 
 
 def test_calibration_value_helpers_accept_enums_strings_and_invalid_values() -> None:
@@ -37,18 +42,13 @@ def test_calibration_value_helpers_accept_enums_strings_and_invalid_values() -> 
 def test_meaningful_constraints_handles_recommendation_boolean_values_and_empty_fields() -> None:
     calibrator = _calibrator()
 
-    assert calibrator.has_meaningful_constraints(
-        QueryConstraints(), QuerySemanticProfile(needs_recipe_recommendation=True)
-    )
-    assert calibrator.has_meaningful_constraints(
-        QueryConstraints(ingredients=["tofu"]), QuerySemanticProfile()
-    )
-    assert calibrator.has_meaningful_constraints(
-        QueryConstraints(needs_recipe_recommendation=True), QuerySemanticProfile()
-    )
     assert not calibrator.has_meaningful_constraints(
-        QueryConstraints(needs_recipe_recommendation=False), QuerySemanticProfile()
+        QueryConstraints(), QuerySemanticProfile(recommendation_required=True)
     )
+    assert calibrator.has_meaningful_constraints(
+        QueryConstraints(extension={"ingredients": ["tofu"]}), QuerySemanticProfile()
+    )
+    assert not calibrator.has_meaningful_constraints(QueryConstraints(), QuerySemanticProfile())
 
 
 @pytest.mark.parametrize(
@@ -88,7 +88,7 @@ def test_strategy_resolution_covers_graph_constraint_pressure_and_fallbacks() ->
     neutral = QuerySemanticProfile(
         query_type=GraphQueryType.ENTITY_RELATION, relationship_intensity=0.0
     )
-    constrained = QueryConstraints(ingredients=["tofu"])
+    constrained = QueryConstraints(extension={"ingredients": ["tofu"]})
     empty = QueryConstraints()
 
     assert (
@@ -221,7 +221,7 @@ def test_calibrate_merges_semantics_fills_keywords_and_records_changes() -> None
         complexity=0.9,
         relationship_intensity=0.9,
         reasoning_required=True,
-        needs_recipe_recommendation=True,
+        recommendation_required=True,
     )
 
     with patch(
@@ -230,7 +230,7 @@ def test_calibrate_merges_semantics_fills_keywords_and_records_changes() -> None
     ):
         calibrator.calibrate(plan)
 
-    assert plan.strategy is SearchStrategy.COMBINED
+    assert plan.strategy is SearchStrategy.GRAPH_RAG
     assert plan.graph_query_type is GraphQueryType.MULTI_HOP
     assert plan.entity_keywords == ["tofu"]
     assert plan.topic_keywords == ["texture"]

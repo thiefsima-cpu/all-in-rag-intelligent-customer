@@ -9,6 +9,7 @@ from typing import Any, Protocol
 import requests
 from pymilvus import MilvusClient
 
+from rag_modules.domains import get_domain_pack
 from rag_modules.infra.neo4j import create_neo4j_driver
 from scripts.gates import GateCheckResult, GateFailureType
 
@@ -17,7 +18,9 @@ from .models import IntegrationGatePolicy, IntegrationGateSettings
 _ENTITY_COUNT_QUERY = """
 MATCH (entity)
 WHERE entity.domain = $domain_name
-   OR ($domain_name = 'recipe' AND entity:Recipe)
+   OR ($allow_domainless_graph_records
+       AND entity.domain IS NULL
+       AND any(label IN labels(entity) WHERE label IN $primary_labels))
 RETURN count(entity) AS entity_count
 """
 
@@ -38,6 +41,7 @@ def run_dependency_probes(
     milvus_client_factory: MilvusClientFactory = MilvusClient,
     http_session: requests.Session | None = None,
 ) -> tuple[GateCheckResult, ...]:
+    domain_pack = get_domain_pack(settings.domain_name)
     owns_session = http_session is None
     session = http_session if http_session is not None else requests.Session()
     try:
@@ -46,6 +50,8 @@ def run_dependency_probes(
                 settings=settings,
                 minimum_count=policy.dependency_minimums.neo4j_entity_count,
                 driver_factory=neo4j_driver_factory,
+                primary_labels=domain_pack.ontology.primary_labels,
+                allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
             ),
             probe_milvus(
                 settings=settings,
@@ -68,6 +74,8 @@ def probe_neo4j(
     settings: IntegrationGateSettings,
     minimum_count: int,
     driver_factory: Neo4jDriverFactory,
+    primary_labels: tuple[str, ...] = (),
+    allow_domainless_graph_records: bool = False,
 ) -> GateCheckResult:
     start_time = perf_counter()
     driver: Any | None = None
@@ -84,7 +92,14 @@ def probe_neo4j(
             session_context = driver.session()
 
         with session_context as session:
-            result = session.run(_ENTITY_COUNT_QUERY, {"domain_name": settings.domain_name})
+            result = session.run(
+                _ENTITY_COUNT_QUERY,
+                {
+                    "domain_name": settings.domain_name,
+                    "primary_labels": list(primary_labels),
+                    "allow_domainless_graph_records": allow_domainless_graph_records,
+                },
+            )
             record = result.single()
         entity_count = _safe_int(_record_value(record, "entity_count"))
     except Exception:

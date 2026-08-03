@@ -5,24 +5,18 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, Mapping
 
-from ...kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
 from .json import canonical_json_bytes, json_safe
 
 
 def compute_graph_signature(data_module: object) -> str:
-    domain_name = str(getattr(data_module, "domain_name", "recipe") or "recipe")
-    collections = (
-        ("recipes", getattr(data_module, "recipes", []) or []),
-        ("ingredients", getattr(data_module, "ingredients", []) or []),
-        ("cooking_steps", getattr(data_module, "cooking_steps", []) or []),
-    )
+    domain_name = str(getattr(data_module, "domain_name", "") or "")
+    domain_version = str(getattr(data_module, "domain_version", "") or "")
+    entities = getattr(data_module, "entities", []) or []
     payload: Dict[str, Any] = {
-        "schema": "graph-content-v3",
+        "schema": "graph-content-v4",
         "domain": domain_name,
-        "semantic_schema_version": SEMANTIC_SCHEMA_VERSION,
-    }
-    for collection_name, collection in collections:
-        payload[collection_name] = sorted(
+        "domain_version": domain_version,
+        "entities": sorted(
             (
                 {
                     "node_id": str(getattr(node, "node_id", "")),
@@ -30,14 +24,15 @@ def compute_graph_signature(data_module: object) -> str:
                     "labels": sorted(str(label) for label in (getattr(node, "labels", []) or [])),
                     "properties": json_safe(getattr(node, "properties", {}) or {}),
                 }
-                for node in collection
+                for node in entities
             ),
             key=lambda item: (
                 item["node_id"],
                 item["name"],
                 canonical_json_bytes(item["properties"]),
             ),
-        )
+        ),
+    }
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
@@ -52,12 +47,18 @@ def _signature(namespace: str, payload: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
-def compute_document_signature(*, graph_signature: str, chunk_size: int, chunk_overlap: int) -> str:
+def compute_document_signature(
+    *,
+    graph_signature: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    domain_version: str = "",
+) -> str:
     return _signature(
         "document-artifacts-v2",
         {
             "graph_signature": graph_signature,
-            "semantic_schema_version": SEMANTIC_SCHEMA_VERSION,
+            "domain_version": str(domain_version),
             "chunk_size": int(chunk_size),
             "chunk_overlap": int(chunk_overlap),
         },

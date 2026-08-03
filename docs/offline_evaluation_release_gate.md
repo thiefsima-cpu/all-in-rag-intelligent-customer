@@ -83,12 +83,12 @@ Each row has:
 - `expectation.response_mode`: one of `grounded_answer`, `no_evidence`,
   `clarification`, or `constraint_conflict`;
 - `expectation.strategy`: a strategy string or `null`;
-- `expectation.recipe_names`, `answer_terms`, and `recipe_relevance`;
+- `expectation.entity_names`, `answer_terms`, and `entity_relevance`;
 - `offline_fixture.strategy`, `answer`, and compact `evidence` rows.
 
 Grounded cases must contain fixture evidence and every positively expected
-recipe must appear in the fixture evidence. Abstention cases (`no_evidence`,
-`clarification`, and `constraint_conflict`) must have no evidence and no recipe
+entity must appear in the fixture evidence. Abstention cases (`no_evidence`,
+`clarification`, and `constraint_conflict`) must have no evidence and no entity
 expectations. A successful abstention is a primary expected outcome, not a
 fallback.
 
@@ -104,6 +104,7 @@ real employee data, or live system identifiers.
 `scripts/eval_queries.py` reports:
 
 - Recall@K, MRR, and nDCG@K for grounded-answer cases with relevance labels;
+- `entity_hit_rate` across cases with expected entity names;
 - deterministic lexical faithfulness and citation accuracy for grounded-answer
   cases;
 - `response_mode_accuracy` across all quality cases;

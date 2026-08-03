@@ -18,8 +18,8 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
     metadata = {
         "search_source": "graph",
         "final_score": 0.9,
-        "recipe_node_ids": ["r1"],
-        "recipe_names": ["Mapo tofu"],
+        "entity_ids": ["r1"],
+        "entity_names": ["Mapo tofu"],
         "matched_terms": ["tofu", "tofu"],
         "evidence_units": [
             explicit.to_dict(),
@@ -61,12 +61,12 @@ def test_extracts_explicit_primary_and_merged_graph_units_with_deduplication() -
     assert len({unit["unit_id"] for unit in units}) == len(units)
 
 
-def test_extracts_direct_graph_payload_and_metadata_recipe_fallbacks() -> None:
+def test_extracts_direct_graph_payload_and_generic_entity_metadata() -> None:
     metadata = {
         "search_method": "neo4j",
         "score": 0.4,
-        "recipe_id": "r2",
-        "recipe_name": "Soup",
+        "entity_id": "r2",
+        "entity_name": "Soup",
         "graph_evidence": {
             "connected_nodes": [{"id": "a"}, {"id": "b", "name": "Broth"}],
             "relationships": [{"relation_type": "RELATED", "startNodeId": "a", "endNodeId": "b"}],
@@ -90,7 +90,7 @@ def test_falls_back_to_trimmed_document_claim_and_handles_empty_content() -> Non
         evidence_document_from_text_document(
             TextDocument(
                 content=long_content,
-                metadata={"node_id": "r3", "recipe_name": "Soup", "search_type": "vector"},
+                metadata={"node_id": "r3", "entity_name": "Soup", "search_type": "vector"},
             )
         )
     )

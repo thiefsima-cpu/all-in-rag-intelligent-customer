@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 
 from ..contracts import RequestBudgetExceeded, RequestCancelled, RequestControl
-from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from ..safe_logging import log_failure
 from .ports import Neo4jDriverPort, Neo4jRecordPort
 from .retrieval_plan import GraphRetrievalPlan
@@ -23,24 +22,21 @@ class GraphQueryExecutor:
         driver: Neo4jDriverPort | None,
         database: str = "neo4j",
         *,
-        domain_name: str = "recipe",
-        primary_node_labels: tuple[str, ...] = ("Recipe",),
-        semantic_relation_types: tuple[str, ...] = tuple(SEMANTIC_RELATION_TYPES),
-        semantic_node_labels: tuple[str, ...] = tuple(SEMANTIC_NODE_LABELS_SET),
-        allowed_node_labels: tuple[str, ...] = (
-            "Recipe",
-            "Ingredient",
-            "CookingStep",
-            "Category",
-        ),
+        domain_name: str = "",
+        primary_node_labels: tuple[str, ...] = (),
+        semantic_relation_types: tuple[str, ...] = (),
+        semantic_node_labels: tuple[str, ...] = (),
+        allowed_node_labels: tuple[str, ...] = (),
+        allow_domainless_graph_records: bool = False,
     ) -> None:
         self.driver = driver
         self.database = database
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or "")
         self.primary_node_labels = tuple(primary_node_labels)
         self.semantic_relation_types = tuple(semantic_relation_types)
         self.semantic_node_labels = tuple(semantic_node_labels)
         self.allowed_node_labels = tuple(allowed_node_labels)
+        self.allow_domainless_graph_records = bool(allow_domainless_graph_records)
 
     def multi_hop_paths(
         self,
@@ -256,7 +252,7 @@ class GraphQueryExecutor:
             ($target_node_ids <> [] AND target.nodeId IN $target_node_ids)
             OR ($target_node_ids = [] AND ANY(kw IN $target_terms WHERE
                 (coalesce(target.name, target.title) IS NOT NULL AND (toString(coalesce(target.name, target.title)) CONTAINS kw OR kw CONTAINS toString(coalesce(target.name, target.title)))) OR
-                (target.category IS NOT NULL AND (toString(target.category) CONTAINS kw OR kw CONTAINS toString(target.category)))
+                (target.nodeId IS NOT NULL AND (toString(target.nodeId) CONTAINS kw OR kw CONTAINS toString(target.nodeId)))
             ))
           )
         """
@@ -269,8 +265,8 @@ class GraphQueryExecutor:
             "target_node_ids": plan.target_node_ids,
             "target_terms": plan.target_terms,
             "relation_types": plan.relation_types,
-            "semantic_relation_types": SEMANTIC_RELATION_TYPES,
-            "semantic_node_labels": list(SEMANTIC_NODE_LABELS_SET),
+            "semantic_relation_types": [],
+            "semantic_node_labels": [],
             "limit": plan.max_nodes,
         }
 
@@ -288,7 +284,7 @@ class GraphQueryExecutor:
         return params
 
     def _path_node_filter(self) -> str:
-        if self.domain_name == "recipe":
+        if self.allow_domainless_graph_records:
             return (
                 "AND ALL(n IN nodes(path) WHERE n.domain = $domain_name OR "
                 "(n.domain IS NULL AND (n.createdFrom = 'semantic_schema' OR "
@@ -297,7 +293,7 @@ class GraphQueryExecutor:
         return "AND ALL(n IN nodes(path) WHERE n.domain = $domain_name)"
 
     def _node_domain_filter(self, variable: str) -> str:
-        if self.domain_name == "recipe":
+        if self.allow_domainless_graph_records:
             return (
                 f"AND ({variable}.domain = $domain_name OR "
                 f"({variable}.domain IS NULL AND "

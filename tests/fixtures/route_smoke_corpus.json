@@ -1,4 +1,6 @@
-[
+{
+  "domain": "recipe",
+  "cases": [
   {
     "name": "single_recipe_gongbao",
     "category": "single_recipe",
@@ -7,7 +9,7 @@
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "qa",
     "expected_reasoning_required": false,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["CONTAINS_STEP"]
   },
   {
@@ -18,7 +20,7 @@
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "qa",
     "expected_reasoning_required": false,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["CONTAINS_STEP"]
   },
   {
@@ -29,7 +31,7 @@
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "qa",
     "expected_reasoning_required": false,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["CONTAINS_STEP"]
   },
   {
@@ -40,7 +42,7 @@
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "qa",
     "expected_reasoning_required": false,
-    "expected_needs_recipe_recommendation": false
+    "expected_recommendation_required": false
   },
   {
     "name": "light_home_style_recommendation",
@@ -49,13 +51,13 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "recommendation",
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": ["HAS_FLAVOR", "HAS_HEALTH_TAG", "HAS_CUISINE_STYLE"],
     "expected_constraints": {
-      "include_terms": ["家常菜"],
-      "cuisine_terms": ["家常菜"],
-      "health_terms": ["清淡"],
-      "needs_recipe_recommendation": true
+      "extension": {
+        "cuisine_terms": ["家常菜"],
+        "health_terms": ["清淡"]
+      }
     }
   },
   {
@@ -65,14 +67,15 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "recommendation",
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": ["HAS_TIME_PROFILE", "HAS_HEALTH_TAG"],
     "expected_constraints": {
-      "health_terms": ["少油"],
-      "time": {
-        "max_total_minutes": 20
+      "temporal_filters": {
+        "max_duration_minutes": 20
       },
-      "needs_recipe_recommendation": true
+      "extension": {
+        "health_terms": ["少油"]
+      }
     }
   },
   {
@@ -82,11 +85,12 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "recommendation",
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "expected_constraints": {
-      "exclude_terms": ["花生"],
-      "excluded_ingredients": ["花生"],
-      "needs_recipe_recommendation": true
+      "excluded_entity_terms": ["花生"],
+      "extension": {
+        "excluded_ingredients": ["花生"]
+      }
     }
   },
   {
@@ -96,20 +100,20 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "recommendation",
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": [
       "HAS_DIET_TAG",
       "HAS_TIME_PROFILE",
       "HAS_DIFFICULTY_LEVEL"
     ],
     "expected_constraints": {
-      "include_terms": ["素菜"],
-      "cuisine_terms": ["素菜"],
-      "preference_terms": ["新手"],
-      "time": {
-        "max_total_minutes": 30
+      "temporal_filters": {
+        "max_duration_minutes": 30
       },
-      "needs_recipe_recommendation": true
+      "extension": {
+        "cuisine_terms": ["素菜"],
+        "preference_terms": ["新手"]
+      }
     }
   },
   {
@@ -119,12 +123,13 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "recommendation",
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": ["HAS_HEALTH_TAG", "HAS_CUISINE_STYLE"],
     "expected_constraints": {
-      "cuisine_terms": ["家常菜"],
-      "health_terms": ["高血压", "低盐"],
-      "needs_recipe_recommendation": true
+      "extension": {
+        "cuisine_terms": ["家常菜"],
+        "health_terms": ["高血压", "低盐"]
+      }
     }
   },
   {
@@ -134,7 +139,7 @@
     "expected_strategy": "hybrid_traditional",
     "expected_graph_query_type": "entity_relation",
     "expected_intent": "qa",
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["HAS_CUISINE_STYLE"]
   },
   {
@@ -145,7 +150,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "CONTAINS_STEP",
       "HAS_FLAVOR",
@@ -164,7 +169,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "CONTAINS_STEP",
       "HAS_FLAVOR",
@@ -183,7 +188,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "USES_TECHNIQUE",
       "CONTRIBUTES_TO",
@@ -199,7 +204,7 @@
     "expected_graph_query_type": "path_finding",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "HAS_FLAVOR",
       "CONTRIBUTES_TO",
@@ -215,7 +220,7 @@
     "expected_graph_query_type": "path_finding",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
     "min_complexity": 0.5,
     "min_relationship_intensity": 0.5
@@ -228,7 +233,7 @@
     "expected_graph_query_type": "path_finding",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "USES_TECHNIQUE",
       "TECHNIQUE_MODIFIES_TEXTURE"
@@ -244,7 +249,7 @@
     "expected_graph_query_type": "path_finding",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
     "min_complexity": 0.5,
     "min_relationship_intensity": 0.5
@@ -257,7 +262,7 @@
     "expected_graph_query_type": "subgraph",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": [
       "USES_TECHNIQUE",
       "INGREDIENT_CONTRIBUTES_TO",
@@ -273,7 +278,7 @@
     "expected_graph_query_type": "subgraph",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false,
+    "expected_recommendation_required": false,
     "required_relation_types": ["HAS_FLAVOR", "HAS_CUISINE_STYLE"],
     "min_relationship_intensity": 0.5
   },
@@ -281,15 +286,12 @@
     "name": "same_flavor_recipe_cluster",
     "category": "clustering",
     "query": "有哪些和宫保鸡丁同风味的菜？",
-    "expected_strategy": "combined",
+    "expected_strategy": "graph_rag",
     "expected_graph_query_type": "clustering",
     "expected_intent": "recommendation",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": true,
-    "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"],
-    "expected_constraints": {
-      "needs_recipe_recommendation": true
-    }
+    "expected_recommendation_required": true,
+    "required_relation_types": ["HAS_FLAVOR", "INGREDIENT_CONTRIBUTES_TO"]
   },
   {
     "name": "similar_recipe_cluster",
@@ -299,7 +301,7 @@
     "expected_graph_query_type": "clustering",
     "expected_intent": "qa",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": false
+    "expected_recommendation_required": false
   },
   {
     "name": "tofu_health_relation_recommendation",
@@ -309,7 +311,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "recommendation",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": [
       "HAS_FLAVOR",
       "HAS_HEALTH_TAG",
@@ -318,9 +320,10 @@
       "INGREDIENT_CONTRIBUTES_TO"
     ],
     "expected_constraints": {
-      "cuisine_terms": ["家常菜"],
-      "health_terms": ["清淡", "减脂"],
-      "needs_recipe_recommendation": true
+      "extension": {
+        "cuisine_terms": ["家常菜"],
+        "health_terms": ["清淡", "减脂"]
+      }
     },
     "min_complexity": 0.7,
     "min_relationship_intensity": 0.7
@@ -333,7 +336,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "recommendation",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": [
       "USES_TECHNIQUE",
       "HAS_HEALTH_TAG",
@@ -343,11 +346,12 @@
       "TECHNIQUE_MODIFIES_TEXTURE"
     ],
     "expected_constraints": {
-      "health_terms": ["少油"],
-      "time": {
-        "max_total_minutes": 20
+      "temporal_filters": {
+        "max_duration_minutes": 20
       },
-      "needs_recipe_recommendation": true
+      "extension": {
+        "health_terms": ["少油"]
+      }
     },
     "min_complexity": 0.7,
     "min_relationship_intensity": 0.7
@@ -360,7 +364,7 @@
     "expected_graph_query_type": "multi_hop",
     "expected_intent": "recommendation",
     "expected_reasoning_required": true,
-    "expected_needs_recipe_recommendation": true,
+    "expected_recommendation_required": true,
     "required_relation_types": [
       "HAS_FLAVOR",
       "HAS_CUISINE_STYLE",
@@ -368,12 +372,14 @@
       "INGREDIENT_CONTRIBUTES_TO"
     ],
     "expected_constraints": {
-      "exclude_terms": ["花生"],
-      "excluded_ingredients": ["花生"],
-      "cuisine_terms": ["川菜"],
-      "needs_recipe_recommendation": true
+      "excluded_entity_terms": ["花生"],
+      "extension": {
+        "excluded_ingredients": ["花生"],
+        "cuisine_terms": ["川菜"]
+      }
     },
     "min_complexity": 0.7,
     "min_relationship_intensity": 0.7
   }
-]
+  ]
+}

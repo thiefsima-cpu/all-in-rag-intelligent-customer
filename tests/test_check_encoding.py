@@ -48,7 +48,7 @@ class CheckEncodingTests(unittest.TestCase):
 
 
 class GraphEvidenceBuilderEncodingTests(unittest.TestCase):
-    def test_subgraph_evidence_uses_readable_name_when_no_recipe_name_exists(self) -> None:
+    def test_subgraph_evidence_uses_readable_name_when_no_entity_name_exists(self) -> None:
         subgraph = SimpleNamespace(
             central_nodes=[],
             connected_nodes=[],
@@ -59,4 +59,4 @@ class GraphEvidenceBuilderEncodingTests(unittest.TestCase):
         evidence = GraphEvidenceBuilder().subgraph_to_evidence(subgraph, [], "query")
 
         self.assertEqual(evidence[0].entity_name, READABLE_SUBGRAPH_NAME)
-        self.assertEqual(evidence[0].metadata["recipe_name"], READABLE_SUBGRAPH_NAME)
+        self.assertEqual(evidence[0].metadata["entity_name"], READABLE_SUBGRAPH_NAME)

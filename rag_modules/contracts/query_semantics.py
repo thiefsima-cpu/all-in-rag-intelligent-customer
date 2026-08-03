@@ -83,7 +83,7 @@ class QuerySemanticProfile:
     complexity: float = 0.5
     relationship_intensity: float = 0.5
     reasoning_required: bool = False
-    needs_recipe_recommendation: bool = False
+    recommendation_required: bool = False
     recommendation_hits: list[str] = field(default_factory=list)
     relation_hits: list[str] = field(default_factory=list)
     constraint_hits: list[str] = field(default_factory=list)
@@ -123,7 +123,7 @@ class QuerySemanticProfile:
             complexity=coerce_float(payload.get("complexity"), 0.5),
             relationship_intensity=coerce_float(payload.get("relationship_intensity"), 0.5),
             reasoning_required=bool(payload.get("reasoning_required")),
-            needs_recipe_recommendation=bool(payload.get("needs_recipe_recommendation")),
+            recommendation_required=bool(payload.get("recommendation_required")),
             recommendation_hits=as_string_list(payload.get("recommendation_hits")),
             relation_hits=as_string_list(payload.get("relation_hits")),
             constraint_hits=as_string_list(payload.get("constraint_hits")),
@@ -151,7 +151,7 @@ class QuerySemanticProfile:
             "complexity": self.complexity,
             "relationship_intensity": self.relationship_intensity,
             "reasoning_required": self.reasoning_required,
-            "needs_recipe_recommendation": self.needs_recipe_recommendation,
+            "recommendation_required": self.recommendation_required,
             "recommendation_hits": list(self.recommendation_hits),
             "relation_hits": list(self.relation_hits),
             "constraint_hits": list(self.constraint_hits),

@@ -140,15 +140,15 @@ The gate reports deterministic metrics and judge metrics side by side:
 - judge scores such as faithfulness, answer relevance, safety, and
   completeness;
 - latency, token usage, and estimated cost;
-- slice metrics by query type, cuisine, constraint type, risk tag, response
+- slice metrics by query type, domain, constraint type, risk tag, response
   mode, and strategy.
 
 ## Interaction SLOs and schema v2
 
 The canonical `eval/live_quality_gate.json` policy is schema version 2 and the
-gate report is schema version 2. The baseline is exactly 52 cases, including
-exactly five `customer_service` cases whose expected response mode is
-`grounded_answer`. Every case is evaluated with one debug SSE request to
+gate report is schema version 2. The baseline is exactly 18 `customer_service`
+cases, including exactly five cases whose expected response mode is
+`grounded_answer` and thirteen safe-control cases. Every case is evaluated with one debug SSE request to
 `/v1/debug/answers/stream`; the gate does not make a second non-streaming
 request to measure interaction latency.
 

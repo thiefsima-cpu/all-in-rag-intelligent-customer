@@ -31,7 +31,7 @@ class DocumentArtifactBuildService:
         if callable(build_documents):
             build_documents()
         else:
-            data_module.build_recipe_documents()
+            data_module.build_documents()
         chunks = data_module.chunk_documents(
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,

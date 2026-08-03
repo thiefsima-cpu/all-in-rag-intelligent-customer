@@ -12,8 +12,15 @@ def test_graph_preparation_dtos_are_owned_by_contracts() -> None:
         name=None,
         properties={"difficulty": "easy"},
     )
-    counts = contracts.GraphLoadCounts(recipes=1, ingredients=2, cooking_steps=3)
-    stats = contracts.GraphPreparationStats(total_recipes=1, total_chunks=4)
+    counts = contracts.GraphLoadCounts(
+        total_entities=6,
+        entity_groups={"primary": 1, "related": 5},
+    )
+    stats = contracts.GraphPreparationStats(
+        domain_name="customer_service",
+        total_entities=1,
+        total_chunks=4,
+    )
 
     assert contracts.GraphNode.__module__ == "rag_modules.contracts.graph_preparation"
     assert contracts.GraphLoadCounts.__module__ == "rag_modules.contracts.graph_preparation"
@@ -21,13 +28,16 @@ def test_graph_preparation_dtos_are_owned_by_contracts() -> None:
     assert graph_node.node_id == "7"
     assert graph_node.labels == ["Recipe"]
     assert graph_node.name == ""
-    assert counts.to_dict() == {"recipes": 1, "ingredients": 2, "cooking_steps": 3}
+    assert counts.to_dict() == {
+        "total_entities": 6,
+        "entity_groups": {"primary": 1, "related": 5},
+    }
     assert stats.to_dict() == {
-        "total_recipes": 1,
-        "total_ingredients": 0,
-        "total_cooking_steps": 0,
+        "domain_name": "customer_service",
+        "total_entities": 1,
         "total_documents": 0,
         "total_chunks": 4,
+        "domain_metrics": {},
     }
 
 

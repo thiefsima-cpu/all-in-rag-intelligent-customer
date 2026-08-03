@@ -55,7 +55,7 @@ def passing_metrics() -> dict[str, object]:
         "avg_judge_scores": {"faithfulness": 1.0, "answer_relevance": 0.9},
         "by_risk_tag": {},
         "by_query_type": {"single_recipe": {"case_count": 1, "pass_rate": 1.0}},
-        "by_cuisine": {"sichuan": {"case_count": 1, "pass_rate": 1.0}},
+        "by_domain": {"sichuan": {"case_count": 1, "pass_rate": 1.0}},
         "by_constraint_type": {"weekday": {"case_count": 1, "pass_rate": 1.0}},
         "by_response_mode": {"grounded_answer": {"case_count": 1, "pass_rate": 1.0}},
         "by_strategy": {"combined": {"case_count": 1, "pass_rate": 1.0}},
@@ -68,7 +68,7 @@ def test_policy_thresholds_fail_missing_required_slice_as_coverage_regression() 
             "required_slice_coverage": RequiredSliceCoverage(
                 risk_tags={"prompt_injection": 1},
                 query_types={"single_recipe": 1},
-                cuisines={"sichuan": 1},
+                domains={"sichuan": 1},
                 constraint_types={},
                 response_modes={"grounded_answer": 1},
             )

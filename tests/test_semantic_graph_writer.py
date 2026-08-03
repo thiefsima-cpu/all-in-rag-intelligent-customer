@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rag_modules.infra.semantic_graph_writer import SemanticGraphSchemaWriter
+from rag_modules.domains.recipe.semantic_graph_writer import SemanticGraphSchemaWriter
 from rag_modules.kernel.documents import TextDocument
 from tests.configuration_test_helpers import build_test_config
 

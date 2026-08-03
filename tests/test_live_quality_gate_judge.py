@@ -89,7 +89,7 @@ def test_build_judge_packet_contains_redacted_evidence_summary() -> None:
     assert packet["answer"] == "Use doubanjiang with tofu for mapo tofu."
     assert packet["evidence"] == [
         {
-            "recipe_name": "Mapo Tofu",
+            "entity_name": "Mapo Tofu",
             "source": "vector",
             "snippet": "Mapo tofu uses doubanjiang and tofu.",
         }
@@ -109,7 +109,7 @@ def test_build_judge_packet_limits_evidence_items_and_snippet_length() -> None:
     observation = make_observation(
         evidence=tuple(
             type(evidence)(
-                recipe_name=f"Recipe {index}",
+                entity_name=f"Recipe {index}",
                 source="vector",
                 content=("x" * 300),
                 score=0.9,
@@ -121,7 +121,7 @@ def test_build_judge_packet_limits_evidence_items_and_snippet_length() -> None:
     packet = build_judge_packet(case(), observation)
 
     assert len(packet["evidence"]) == 6
-    assert packet["evidence"][0]["recipe_name"] == "Recipe 0"
+    assert packet["evidence"][0]["entity_name"] == "Recipe 0"
     assert len(packet["evidence"][0]["snippet"]) == 300
 
 

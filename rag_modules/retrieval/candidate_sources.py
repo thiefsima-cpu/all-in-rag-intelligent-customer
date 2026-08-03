@@ -42,7 +42,7 @@ class ConstraintCandidateSource:
         name="constraints",
         rank_name="constraints",
         search_method="constraints",
-        search_type="constraint_recipe",
+        search_type="constraint_domain",
         rank_order=0,
     )
 

@@ -1,4 +1,6 @@
-[
+{
+  "domain": "recipe",
+  "cases": [
   {
     "name": "graph_explanation_real_route",
     "question": "为什么水煮肉片里的豆瓣酱、花椒、辣椒和垫底蔬菜会共同形成麻辣鲜香？它们之间分别是什么关系？",
@@ -198,4 +200,5 @@
     ],
     "graph_documents": []
   }
-]
+  ]
+}

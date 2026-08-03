@@ -443,9 +443,15 @@ def test_customer_service_graph_queries_filter_every_traversed_node_by_domain() 
     assert "neighbor.domain = $domain_name" in queries[3]
 
 
-def test_recipe_graph_queries_reject_explicit_other_domain_nodes() -> None:
+def test_graph_queries_allow_domainless_nodes_only_when_pack_enables_compatibility() -> None:
     driver = _RecordingNeo4jDriver()
-    executor = GraphQueryExecutor(driver, database="neo4j", domain_name="recipe")
+    executor = GraphQueryExecutor(
+        driver,
+        database="neo4j",
+        domain_name="legacy_domain",
+        allowed_node_labels=("PrimaryEntity", "SemanticEntity"),
+        allow_domainless_graph_records=True,
+    )
     plan = _FakeRetrievalPlan()
 
     executor.multi_hop_paths(plan)

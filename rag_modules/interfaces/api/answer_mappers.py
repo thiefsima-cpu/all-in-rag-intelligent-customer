@@ -18,23 +18,16 @@ from ...kernel.json_types import JsonObject, coerce_json_object
 
 
 def constraints_payload(value: QueryConstraints) -> JsonObject:
-    return {
-        "include_terms": list(value.include_terms),
-        "exclude_terms": list(value.exclude_terms),
-        "ingredients": list(value.ingredients),
-        "excluded_ingredients": list(value.excluded_ingredients),
-        "cuisine_terms": list(value.cuisine_terms),
-        "excluded_cuisine_terms": list(value.excluded_cuisine_terms),
-        "category_terms": list(value.category_terms),
-        "health_terms": list(value.health_terms),
-        "preference_terms": list(value.preference_terms),
-        "time": {
-            "max_total_minutes": value.max_total_minutes,
-            "max_prep_minutes": value.max_prep_minutes,
-            "max_cook_minutes": value.max_cook_minutes,
-        },
-        "needs_recipe_recommendation": value.needs_recipe_recommendation,
-    }
+    return coerce_json_object(
+        {
+            "entity_terms": list(value.entity_terms),
+            "excluded_entity_terms": list(value.excluded_entity_terms),
+            "relation_types": list(value.relation_types),
+            "temporal_filters": value.temporal_filters,
+            "structured_filters": value.structured_filters,
+            "extension": value.extension,
+        }
+    )
 
 
 def score_breakdown_payload(value: QuerySemanticScoreBreakdown) -> JsonObject:
@@ -66,7 +59,7 @@ def semantic_profile_payload(value: QuerySemanticProfile) -> JsonObject:
         "complexity": value.complexity,
         "relationship_intensity": value.relationship_intensity,
         "reasoning_required": value.reasoning_required,
-        "needs_recipe_recommendation": value.needs_recipe_recommendation,
+        "recommendation_required": value.recommendation_required,
         "recommendation_hits": list(value.recommendation_hits),
         "relation_hits": list(value.relation_hits),
         "constraint_hits": list(value.constraint_hits),
@@ -94,7 +87,7 @@ def query_plan_payload(value: QueryPlan) -> JsonObject:
         "relation_types": list(value.relation_types),
         "max_depth": value.max_depth,
         "constraints": constraints_payload(value.constraints),
-        "needs_recipe_recommendation": value.needs_recipe_recommendation,
+        "recommendation_required": value.recommendation_required,
         "answer_style": value.answer_style,
         "planner_version": value.planner_version,
         "used_cache": value.used_cache,

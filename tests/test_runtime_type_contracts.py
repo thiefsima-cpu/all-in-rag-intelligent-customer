@@ -16,14 +16,15 @@ from rag_modules.kernel.documents import TextDocument
 
 class _GraphDataFake:
     def __init__(self) -> None:
+        self.entities: list[object] = []
         self.documents = [TextDocument(content="doc")]
         self.chunks = [TextDocument(content="chunk")]
         self.closed = False
 
     def load_graph_data(self) -> dict[str, object]:
-        return {"recipes": 1}
+        return {"total_entities": 1}
 
-    def build_recipe_documents(self) -> list[TextDocument]:
+    def build_documents(self) -> list[TextDocument]:
         return list(self.documents)
 
     def chunk_documents(self, chunk_size: int = 500, chunk_overlap: int = 50) -> list[TextDocument]:

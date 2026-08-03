@@ -18,10 +18,10 @@ class _FakeResult:
 
 
 class _FakeSession:
-    def __init__(self, *, recipe_count: int, domain_entity_count: int = 0) -> None:
-        self.recipe_count = recipe_count
+    def __init__(self, *, domain_entity_count: int = 0) -> None:
         self.domain_entity_count = domain_entity_count
         self.statements: list[str] = []
+        self.parameters: list[object | None] = []
 
     def __enter__(self):
         return self
@@ -29,10 +29,9 @@ class _FakeSession:
     def __exit__(self, exc_type, exc, traceback) -> None:
         return None
 
-    def run(self, statement: str):
+    def run(self, statement: str, parameters: object | None = None):
         self.statements.append(statement)
-        if "AS recipe_count" in statement:
-            return _FakeResult({"recipe_count": self.recipe_count})
+        self.parameters.append(parameters)
         if "AS domain_entity_count" in statement:
             return _FakeResult({"domain_entity_count": self.domain_entity_count})
         if "MATCH (n) RETURN count(n) AS c" in statement:
@@ -43,11 +42,8 @@ class _FakeSession:
 
 
 class _FakeDriver:
-    def __init__(self, *, recipe_count: int, domain_entity_count: int = 0) -> None:
-        self.fake_session = _FakeSession(
-            recipe_count=recipe_count,
-            domain_entity_count=domain_entity_count,
-        )
+    def __init__(self, *, domain_entity_count: int = 0) -> None:
+        self.fake_session = _FakeSession(domain_entity_count=domain_entity_count)
         self.closed = False
 
     def session(self, *, database: str):
@@ -72,7 +68,7 @@ def _config(domain_name: str = "recipe"):
 
 class ImportNeo4jTests(unittest.TestCase):
     def test_import_graph_skips_existing_recipe_data_when_requested(self) -> None:
-        driver = _FakeDriver(recipe_count=3)
+        driver = _FakeDriver(domain_entity_count=3)
         self.assertTrue(hasattr(import_neo4j, "import_graph"))
 
         imported = import_neo4j.import_graph(
@@ -83,11 +79,19 @@ class ImportNeo4jTests(unittest.TestCase):
 
         self.assertFalse(imported)
         self.assertEqual(1, len(driver.fake_session.statements))
-        self.assertIn("AS recipe_count", driver.fake_session.statements[0])
+        self.assertIn("AS domain_entity_count", driver.fake_session.statements[0])
+        self.assertEqual(
+            driver.fake_session.parameters[0],
+            {
+                "domain_name": "recipe",
+                "primary_labels": ["Recipe"],
+                "allow_domainless_graph_records": True,
+            },
+        )
         self.assertTrue(driver.closed)
 
     def test_import_graph_runs_csv_script_when_recipe_data_is_missing(self) -> None:
-        driver = _FakeDriver(recipe_count=0)
+        driver = _FakeDriver(domain_entity_count=0)
         self.assertTrue(hasattr(import_neo4j, "import_graph"))
 
         imported = import_neo4j.import_graph(
@@ -104,7 +108,7 @@ class ImportNeo4jTests(unittest.TestCase):
         self.assertTrue(driver.closed)
 
     def test_customer_service_domain_imports_customer_knowledge_seed(self) -> None:
-        driver = _FakeDriver(recipe_count=99, domain_entity_count=0)
+        driver = _FakeDriver(domain_entity_count=0)
 
         imported = import_neo4j.import_graph(
             _config("customer_service"),
@@ -121,7 +125,7 @@ class ImportNeo4jTests(unittest.TestCase):
         )
 
     def test_customer_service_domain_skips_only_when_customer_data_exists(self) -> None:
-        driver = _FakeDriver(recipe_count=0, domain_entity_count=2)
+        driver = _FakeDriver(domain_entity_count=2)
 
         imported = import_neo4j.import_graph(
             _config("customer_service"),

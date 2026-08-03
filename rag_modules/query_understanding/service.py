@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings, RequestControl
 from ..contracts.runtime import QueryAnalysis, QueryUnderstandingSnapshot
+from ..domains import get_domain_pack
 from ..query_policy.models import QueryPolicyBundle
 from .planning import QueryPlanner
 from .ports import LLMClientPort
@@ -27,11 +28,13 @@ class QueryUnderstandingService:
         self.llm_client = llm_client
         self.planner_settings = planner_settings
         self.semantic_settings = semantic_settings
+        constraint_schema = get_domain_pack(config.domain.name).query_constraints
         self.query_planner = QueryPlanner(
             llm_client,
             settings=self.planner_settings,
             semantic_settings=self.semantic_settings,
             policy_bundle=policy_bundle,
+            constraint_schema=constraint_schema,
         )
 
     def understand(

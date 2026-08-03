@@ -54,7 +54,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             entity_keywords=["tofu"],
             source_entities=["mapo tofu"],
             topic_keywords=["spicy"],
-            constraints=QueryConstraints(max_cook_minutes=30),
+            constraints=QueryConstraints(temporal_filters={"max_duration_minutes": 30}),
         )
         request = RetrievalRequest.from_inputs(
             query="recommend tofu dishes",
@@ -78,7 +78,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
                     name="constraints",
                     rank_name="constraints",
                     search_method="constraints",
-                    search_type="constraint_recipe",
+                    search_type="constraint_domain",
                     rank_order=0,
                 ),
                 [EvidenceDocument(content="constraint-doc", entity_name="C")],
@@ -114,7 +114,9 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
             ["tofu", "mapo tofu"],
         )
         self.assertEqual(calibrated_request.topic_keywords, ["spicy"])
-        self.assertEqual(calibrated_request.constraints.max_cook_minutes, 30)
+        self.assertEqual(
+            calibrated_request.constraints.temporal_filters["max_duration_minutes"], 30
+        )
         self.assertEqual(candidate_set.stats["constraints"], 1)
         self.assertEqual(candidate_set.stats["dual"], 1)
         self.assertEqual(
@@ -127,7 +129,7 @@ class RetrievalCandidateGeneratorTests(unittest.TestCase):
         )
         self.assertEqual(
             candidate_set.constraint_docs[0].metadata["search_type"],
-            "constraint_recipe",
+            "constraint_domain",
         )
 
     def test_generate_degrades_failed_source_and_continues_later_sources(self) -> None:

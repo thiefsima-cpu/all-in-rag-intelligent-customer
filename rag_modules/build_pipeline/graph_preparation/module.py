@@ -6,22 +6,23 @@ import logging
 from typing import cast
 
 from ...contracts.graph_preparation import GraphLoadCounts, GraphNode, GraphPreparationStats
+from ...domains.contracts import DomainBuildDataView
 from ...infra.neo4j import create_neo4j_driver
 from ...kernel.documents import TextDocument
 from ..ports import Neo4jDriverPort
-from .chunker import RecipeDocumentChunker
-from .document_builder import RecipeDocumentBuilder
-from .domain_loader import DomainDocumentBuilder, DomainGraphDataLoader
-from .loader import Neo4jGraphDataLoader
-from .models import PreparedIngredientInput, PreparedStepInput
-from .state import GraphPreparationState
+from .state import (
+    DomainDocumentBuilder,
+    DomainDocumentChunker,
+    GraphDataLoader,
+    GraphPreparationState,
+)
 from .statistics import GraphPreparationStatisticsService
 
 logger = logging.getLogger(__name__)
 
 
 class GraphDataPreparationModule:
-    """Load recipe graph data from Neo4j and materialize recipe documents."""
+    """Load graph data and materialize documents through DomainPack collaborators."""
 
     def __init__(
         self,
@@ -32,20 +33,25 @@ class GraphDataPreparationModule:
         *,
         driver: Neo4jDriverPort | None = None,
         state: GraphPreparationState | None = None,
-        loader: Neo4jGraphDataLoader | DomainGraphDataLoader | None = None,
-        document_builder: RecipeDocumentBuilder | DomainDocumentBuilder | None = None,
-        chunker: RecipeDocumentChunker | None = None,
+        loader: GraphDataLoader,
+        document_builder: DomainDocumentBuilder,
+        chunker: DomainDocumentChunker,
         statistics_service: GraphPreparationStatisticsService | None = None,
-        domain_name: str = "recipe",
+        domain_name: str = "",
+        domain_version: str = "",
+        data_view: DomainBuildDataView | None = None,
     ) -> None:
         self.database = database
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name)
+        self.domain_version = str(domain_version)
+        self.data_view = data_view or DomainBuildDataView(primary_group="entities")
         self.state = state or GraphPreparationState()
-        self.loader = loader or Neo4jGraphDataLoader()
-        self.document_builder = document_builder or RecipeDocumentBuilder()
-        self.chunker = chunker or RecipeDocumentChunker()
+        self.loader = loader
+        self.document_builder = document_builder
+        self.chunker = chunker
         self.statistics_service = statistics_service or GraphPreparationStatisticsService(
-            domain_name=self.domain_name
+            domain_name=self.domain_name,
+            data_view=self.data_view,
         )
         self._owns_driver = False
 
@@ -59,36 +65,12 @@ class GraphDataPreparationModule:
             logger.info("Neo4j connection established")
 
     @property
-    def recipes(self) -> list[GraphNode]:
-        return self.state.recipes
-
-    @recipes.setter
-    def recipes(self, value: list[GraphNode]) -> None:
-        self.state.recipes = list(value or [])
-
-    @property
     def entities(self) -> list[GraphNode]:
-        return self.state.recipes
+        return self.state.entities
 
     @entities.setter
     def entities(self, value: list[GraphNode]) -> None:
-        self.state.recipes = list(value or [])
-
-    @property
-    def ingredients(self) -> list[GraphNode]:
-        return self.state.ingredients
-
-    @ingredients.setter
-    def ingredients(self, value: list[GraphNode]) -> None:
-        self.state.ingredients = list(value or [])
-
-    @property
-    def cooking_steps(self) -> list[GraphNode]:
-        return self.state.cooking_steps
-
-    @cooking_steps.setter
-    def cooking_steps(self, value: list[GraphNode]) -> None:
-        self.state.cooking_steps = list(value or [])
+        self.state.primary_entities = list(value or [])
 
     @property
     def documents(self) -> list[TextDocument]:
@@ -117,9 +99,8 @@ class GraphDataPreparationModule:
         """Load entities declared by the selected domain from Neo4j."""
 
         loaded = self.loader.load(self.driver, database=self.database)
-        self.recipes = loaded.recipes
-        self.ingredients = loaded.ingredients
-        self.cooking_steps = loaded.cooking_steps
+        self.state.primary_entities = loaded.primary_entities
+        self.state.related_entity_groups = dict(loaded.related_entity_groups)
         return loaded.to_counts()
 
     def build_documents(self) -> list[TextDocument]:
@@ -129,30 +110,11 @@ class GraphDataPreparationModule:
         documents = self.document_builder.build(
             driver=self.driver,
             database=self.database,
-            recipes=self.recipes,
+            entities=self.state.primary_entities,
         )
         self.documents = documents
         logger.info("Built %d %s documents.", len(documents), self.domain_name)
         return documents
-
-    def build_recipe_documents(self) -> list[TextDocument]:
-        """Compatibility alias for the retired recipe-specific build port."""
-
-        return self.build_documents()
-
-    def _build_recipe_document(
-        self,
-        *,
-        recipe: GraphNode,
-        ingredients: list[PreparedIngredientInput],
-        steps: list[PreparedStepInput],
-    ) -> TextDocument:
-        recipe_builder = cast(RecipeDocumentBuilder, self.document_builder)
-        return recipe_builder.build_document(
-            recipe=recipe,
-            ingredients=ingredients,
-            steps=steps,
-        )
 
     def chunk_documents(self, chunk_size: int = 500, chunk_overlap: int = 50) -> list[TextDocument]:
         """Split domain documents into retrieval chunks."""

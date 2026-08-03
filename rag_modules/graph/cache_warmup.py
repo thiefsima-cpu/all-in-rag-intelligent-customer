@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from ..domains import DEFAULT_DOMAIN_NAME
 from .cache_stats import GraphCacheEntityStats, GraphCacheStats, GraphCacheStatsStore
 from .ports import Neo4jDriverPort, Neo4jRecordPort, Neo4jSessionPort
 
@@ -27,17 +28,14 @@ class GraphCacheWarmupService:
         self,
         store: GraphCacheStatsStore,
         *,
-        domain_name: str = "recipe",
-        allowed_node_labels: tuple[str, ...] = (
-            "Recipe",
-            "Ingredient",
-            "CookingStep",
-            "Category",
-        ),
+        domain_name: str = DEFAULT_DOMAIN_NAME,
+        allowed_node_labels: tuple[str, ...] = (),
+        allow_domainless_graph_records: bool = False,
     ) -> None:
         self.store = store
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or DEFAULT_DOMAIN_NAME)
         self.allowed_node_labels = tuple(allowed_node_labels)
+        self.allow_domainless_graph_records = bool(allow_domainless_graph_records)
 
     def warm(self, driver: Neo4jDriverPort, *, database_name: str) -> GraphWarmupResult:
         stats = self._load_or_build_graph_stats(driver, database_name=database_name)
@@ -116,14 +114,14 @@ class GraphCacheWarmupService:
             "AND (n.domain = $domain_name OR "
             "(n.domain IS NULL AND (n.createdFrom = 'semantic_schema' OR "
             "ANY(label IN labels(n) WHERE label IN $allowed_node_labels))))"
-            if self.domain_name == "recipe"
+            if self.allow_domainless_graph_records
             else "AND n.domain = $domain_name"
         )
         degree_expression = (
             "COUNT { (n)--(neighbor) WHERE neighbor.domain = $domain_name OR "
             "(neighbor.domain IS NULL AND (neighbor.createdFrom = 'semantic_schema' OR "
             "ANY(label IN labels(neighbor) WHERE label IN $allowed_node_labels))) }"
-            if self.domain_name == "recipe"
+            if self.allow_domainless_graph_records
             else "COUNT { (n)--(neighbor) WHERE neighbor.domain = $domain_name }"
         )
         page_cursor = ""
@@ -151,7 +149,7 @@ class GraphCacheWarmupService:
                 "limit": max(1, int(page_size)),
                 "domain_name": self.domain_name,
             }
-            if self.domain_name == "recipe":
+            if self.allow_domainless_graph_records:
                 entity_params["allowed_node_labels"] = list(self.allowed_node_labels)
             page_records: list[Neo4jRecordPort] = list(session.run(entity_query, entity_params))
             if not page_records:
@@ -179,7 +177,7 @@ class GraphCacheWarmupService:
             "AND (target.domain = $domain_name OR "
             "(target.domain IS NULL AND (target.createdFrom = 'semantic_schema' OR "
             "ANY(label IN labels(target) WHERE label IN $allowed_node_labels))))"
-            if self.domain_name == "recipe"
+            if self.allow_domainless_graph_records
             else "WHERE source.domain = $domain_name AND target.domain = $domain_name"
         )
         relation_query = f"""
@@ -189,7 +187,7 @@ class GraphCacheWarmupService:
         ORDER BY frequency DESC
         """
         relation_params: dict[str, object] = {"domain_name": self.domain_name}
-        if self.domain_name == "recipe":
+        if self.allow_domainless_graph_records:
             relation_params["allowed_node_labels"] = list(self.allowed_node_labels)
         return {
             str(record["rel_type"] or ""): _int_value(record["frequency"])

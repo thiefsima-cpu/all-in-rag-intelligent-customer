@@ -140,8 +140,6 @@ class GraphKVRetriever:
                     "matched_keyword": keyword,
                     "source": "graph_entity",
                 }
-                if domain_name == "recipe":
-                    metadata["recipe_name"] = entity.entity_name
                 docs.append(
                     EvidenceDocument(
                         content=entity.value_content,
@@ -200,8 +198,6 @@ class GraphKVRetriever:
                     "target_name": relation.metadata.get("target_name", ""),
                     "source": "graph_topic",
                 }
-                if domain_name == "recipe":
-                    metadata["recipe_name"] = relation.metadata.get("source_name", "")
                 docs.append(
                     EvidenceDocument(
                         content=relation.value_content,

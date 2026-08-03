@@ -48,7 +48,7 @@ def evaluate_deterministic_case(
 
     if case.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
         retrieval = retrieval_metrics(
-            observation.ranked_recipe_names,
+            observation.ranked_entity_names,
             case.relevant_items,
             k=top_k,
         )
@@ -57,12 +57,12 @@ def evaluate_deterministic_case(
             "mrr": retrieval["reciprocal_rank"],
             "ndcg_at_k": retrieval["ndcg_at_k"],
         }
-        if _missing_positive_relevant_recipes(
-            observation.ranked_recipe_names,
+        if _missing_positive_relevant_entities(
+            observation.ranked_entity_names,
             case.relevant_items,
             top_k=top_k,
         ):
-            failures.append("missing_relevant_recipes")
+            failures.append("missing_relevant_entities")
     else:
         metrics = dict(_EMPTY_RETRIEVAL_METRICS)
 
@@ -88,7 +88,7 @@ def evaluate_deterministic_case(
     return DeterministicCaseResult(
         case_id=case.case_id,
         query_type=case.query_type,
-        cuisine=case.cuisine,
+        domain=case.domain,
         constraint_types=tuple(case.constraint_types),
         risk_tags=tuple(case.risk_tags),
         response_mode=case.expected_response_mode.value,
@@ -110,7 +110,7 @@ def aggregate_live_quality_metrics(
     summary.update(
         {
             "by_query_type": _slice_single(grouped_results, lambda result: result.query_type),
-            "by_cuisine": _slice_single(grouped_results, lambda result: result.cuisine),
+            "by_domain": _slice_single(grouped_results, lambda result: result.domain),
             "by_constraint_type": _slice_multi(
                 grouped_results,
                 lambda result: result.constraint_types,
@@ -278,28 +278,28 @@ def _response_mode_passed(
     return any(marker in answer for marker in markers.get(response_mode, ()))
 
 
-def _missing_positive_relevant_recipes(
-    ranked_recipe_names: Sequence[str],
-    relevant_recipes: Mapping[str, float],
+def _missing_positive_relevant_entities(
+    ranked_entity_names: Sequence[str],
+    relevant_entities: Mapping[str, float],
     *,
     top_k: int,
 ) -> bool:
     positive_labels = {
-        _normalize_label(recipe_name)
-        for recipe_name, grade in relevant_recipes.items()
-        if float(grade) > 0 and _normalize_label(recipe_name)
+        _normalize_label(entity_name)
+        for entity_name, grade in relevant_entities.items()
+        if float(grade) > 0 and _normalize_label(entity_name)
     }
     required_hits = min(len(positive_labels), max(0, int(top_k)))
     if required_hits <= 0:
         return False
-    retrieved = set(_top_k_labels(ranked_recipe_names, top_k=top_k))
+    retrieved = set(_top_k_labels(ranked_entity_names, top_k=top_k))
     return len(retrieved & positive_labels) < required_hits
 
 
-def _top_k_labels(ranked_recipe_names: Sequence[str], *, top_k: int) -> tuple[str, ...]:
+def _top_k_labels(ranked_entity_names: Sequence[str], *, top_k: int) -> tuple[str, ...]:
     labels: list[str] = []
-    for recipe_name in ranked_recipe_names:
-        label = _normalize_label(recipe_name)
+    for entity_name in ranked_entity_names:
+        label = _normalize_label(entity_name)
         if label and label not in labels:
             labels.append(label)
         if len(labels) >= max(0, int(top_k)):
@@ -468,7 +468,7 @@ def _required_slice_coverage_checks(
             policy.required_slice_coverage.query_types,
             metrics.get("by_query_type"),
         ),
-        "cuisines": (policy.required_slice_coverage.cuisines, metrics.get("by_cuisine")),
+        "domains": (policy.required_slice_coverage.domains, metrics.get("by_domain")),
         "constraint_types": (
             policy.required_slice_coverage.constraint_types,
             metrics.get("by_constraint_type"),
@@ -512,7 +512,7 @@ def _slice_threshold_checks(
     groups = {
         "risk_tags": (policy.slice_thresholds.risk_tags, metrics.get("by_risk_tag")),
         "query_types": (policy.slice_thresholds.query_types, metrics.get("by_query_type")),
-        "cuisines": (policy.slice_thresholds.cuisines, metrics.get("by_cuisine")),
+        "domains": (policy.slice_thresholds.domains, metrics.get("by_domain")),
         "constraint_types": (
             policy.slice_thresholds.constraint_types,
             metrics.get("by_constraint_type"),

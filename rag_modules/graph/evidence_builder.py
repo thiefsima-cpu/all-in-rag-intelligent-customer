@@ -6,7 +6,6 @@ from typing import Protocol, Sequence
 
 from ..contracts import EvidenceDocument
 from ..kernel.json_types import JsonObject, coerce_json_object
-from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET, SEMANTIC_RELATION_TYPES
 from .retrieval_types import GraphNodeSnapshot, GraphRelationshipSnapshot
 
 
@@ -33,54 +32,21 @@ def node_name(node: GraphNodeSnapshot) -> str:
     return node.name or node.node_id or "未知节点"
 
 
-def recipe_graph_evidence(
-    recipe_ids: list[str],
-    recipe_names: list[str],
-    matched_ingredients: list[str],
-    matched_steps: list[str],
-    semantic_nodes: list[str],
-    relationships: Sequence[GraphRelationshipSnapshot],
-    reasoning_chains: list[str] | None = None,
-) -> JsonObject:
-    return coerce_json_object(
-        {
-            "recipe_ids": recipe_ids,
-            "recipe_names": recipe_names,
-            "matched_entities": list(
-                dict.fromkeys(
-                    (matched_ingredients or []) + (matched_steps or []) + (semantic_nodes or [])
-                )
-            ),
-            "matched_ingredients": matched_ingredients,
-            "matched_steps": matched_steps,
-            "semantic_relations": [
-                rel.to_dict()
-                for rel in relationships
-                if rel.relation_type in SEMANTIC_RELATION_TYPES
-            ],
-            "semantic_nodes": semantic_nodes,
-            "relationship_count": len(relationships or []),
-            "reasoning_chains": reasoning_chains or [],
-        }
-    )
-
-
 class GraphEvidenceBuilder:
     """Convert graph paths and subgraphs into evidence documents."""
-
-    semantic_node_labels: frozenset[str] = frozenset(SEMANTIC_NODE_LABELS_SET)
 
     def __init__(
         self,
         *,
-        domain_name: str = "recipe",
-        primary_labels: Sequence[str] = ("Recipe",),
-        semantic_node_labels: Sequence[str] | None = None,
+        domain_name: str = "",
+        primary_labels: Sequence[str] = (),
+        semantic_node_labels: Sequence[str] = (),
+        semantic_relation_types: Sequence[str] = (),
     ) -> None:
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or "")
         self.primary_labels = frozenset(str(label) for label in primary_labels if label)
-        if semantic_node_labels is not None:
-            self.semantic_node_labels = frozenset(semantic_node_labels)
+        self.semantic_node_labels = frozenset(semantic_node_labels)
+        self.semantic_relation_types = frozenset(semantic_relation_types)
 
     def _primary_nodes(self, nodes: Sequence[GraphNodeSnapshot]) -> list[GraphNodeSnapshot]:
         return [
@@ -103,11 +69,8 @@ class GraphEvidenceBuilder:
             for node in path.nodes
             if any(label in self.semantic_node_labels for label in node.labels) and node.name
         ]
-        ingredient_names = [
-            node.name for node in path.nodes if node.has_label("Ingredient") and node.name
-        ]
-        step_names = [
-            node.name for node in path.nodes if node.has_label("CookingStep") and node.name
+        related_names = [
+            node.name for node in path.nodes if node not in primary_nodes and node.name
         ]
         entity_name = (
             primary_names[0] if primary_names else _first_node_name(path.nodes, "图路径结果")
@@ -117,22 +80,22 @@ class GraphEvidenceBuilder:
                 "nodes": [_path_node_evidence(node) for node in path.nodes],
                 "relationships": [_path_relationship_evidence(rel) for rel in path.relationships],
                 "description": path_desc,
-                "matched_ingredients": ingredient_names,
-                "matched_steps": step_names,
+                "matched_entities": related_names,
+                "semantic_relations": [
+                    rel.to_dict()
+                    for rel in path.relationships
+                    if rel.relation_type in self.semantic_relation_types
+                ],
                 "semantic_nodes": semantic_names,
             }
         )
-        recipe_evidence = self._recipe_path_evidence(
-            primary_ids, primary_names, ingredient_names, step_names, semantic_names, path
-        )
-        domain_evidence = recipe_evidence if self.domain_name == "recipe" else graph_evidence
+        domain_evidence = graph_evidence
         metadata = self._path_metadata(
             path,
             primary_ids,
             primary_names,
             entity_name,
-            ingredient_names,
-            step_names,
+            related_names,
             graph_evidence,
             domain_evidence,
         )
@@ -147,30 +110,10 @@ class GraphEvidenceBuilder:
             search_method="graph_path",
             retrieval_level="graph_path",
             source="graph_rag",
-            matched_terms=list(dict.fromkeys(ingredient_names + step_names + semantic_names)),
+            matched_terms=list(dict.fromkeys(related_names + semantic_names)),
             graph_evidence=graph_evidence,
             domain_graph_evidence=domain_evidence,
             metadata=metadata,
-        )
-
-    def _recipe_path_evidence(
-        self,
-        primary_ids: list[str],
-        primary_names: list[str],
-        ingredient_names: list[str],
-        step_names: list[str],
-        semantic_names: list[str],
-        path: GraphPathLike,
-    ) -> JsonObject:
-        if self.domain_name != "recipe":
-            return {}
-        return recipe_graph_evidence(
-            recipe_ids=primary_ids,
-            recipe_names=primary_names,
-            matched_ingredients=ingredient_names,
-            matched_steps=step_names,
-            semantic_nodes=semantic_names,
-            relationships=path.relationships,
         )
 
     def _path_metadata(
@@ -179,8 +122,7 @@ class GraphEvidenceBuilder:
         primary_ids: list[str],
         primary_names: list[str],
         entity_name: str,
-        ingredient_names: list[str],
-        step_names: list[str],
+        matched_entities: list[str],
         graph_evidence: JsonObject,
         domain_evidence: JsonObject,
     ) -> JsonObject:
@@ -199,22 +141,11 @@ class GraphEvidenceBuilder:
                 "path_type": path.path_type,
                 "node_count": len(path.nodes),
                 "relationship_count": len(path.relationships),
-                "matched_ingredients": ingredient_names,
-                "matched_steps": step_names,
+                "matched_entities": matched_entities,
                 "graph_evidence": graph_evidence,
                 "domain_graph_evidence": domain_evidence,
             }
         )
-        if self.domain_name == "recipe":
-            metadata.update(
-                coerce_json_object(
-                    {
-                        "recipe_node_ids": primary_ids,
-                        "recipe_names": primary_names,
-                        "recipe_name": entity_name,
-                    }
-                )
-            )
         return metadata
 
     def subgraph_to_evidence(
@@ -229,10 +160,7 @@ class GraphEvidenceBuilder:
         primary_nodes = self._primary_nodes(nodes)
         primary_ids = [node.node_id for node in primary_nodes if node.node_id]
         primary_names = [node.name for node in primary_nodes if node.name]
-        ingredient_names = [
-            node.name for node in nodes if node.has_label("Ingredient") and node.name
-        ]
-        step_names = [node.name for node in nodes if node.has_label("CookingStep") and node.name]
+        related_names = [node.name for node in nodes if node not in primary_nodes and node.name]
         semantic_names = [
             node.name
             for node in nodes
@@ -253,8 +181,7 @@ class GraphEvidenceBuilder:
             primary_ids=primary_ids,
             primary_names=primary_names,
             entity_name=entity_name,
-            ingredient_names=ingredient_names,
-            step_names=step_names,
+            matched_entities=related_names,
             semantic_names=semantic_names,
             graph_evidence=graph_evidence,
             domain_evidence=domain_evidence,
@@ -271,7 +198,7 @@ class GraphEvidenceBuilder:
                 search_method="knowledge_subgraph",
                 retrieval_level="subgraph",
                 source="graph_rag",
-                matched_terms=list(dict.fromkeys(ingredient_names + step_names + semantic_names)),
+                matched_terms=list(dict.fromkeys(related_names + semantic_names)),
                 graph_evidence=graph_evidence,
                 domain_graph_evidence=domain_evidence,
                 metadata=metadata,
@@ -286,8 +213,7 @@ class GraphEvidenceBuilder:
         primary_ids: list[str],
         primary_names: list[str],
         entity_name: str,
-        ingredient_names: list[str],
-        step_names: list[str],
+        matched_entities: list[str],
         semantic_names: list[str],
         graph_evidence: JsonObject,
         domain_evidence: JsonObject,
@@ -307,29 +233,9 @@ class GraphEvidenceBuilder:
                 "reasoning_chains": reasoning_chains,
                 "graph_evidence": graph_evidence,
                 "domain_graph_evidence": domain_evidence,
+                "matched_entities": matched_entities,
                 "score": float(subgraph.graph_metrics.get("density", 0.0) or 0.0),
             }
-        )
-        if self.domain_name != "recipe":
-            return domain_evidence, metadata
-        domain_evidence = recipe_graph_evidence(
-            recipe_ids=primary_ids,
-            recipe_names=primary_names,
-            matched_ingredients=ingredient_names,
-            matched_steps=step_names,
-            semantic_nodes=semantic_names,
-            relationships=subgraph.relationships,
-            reasoning_chains=reasoning_chains,
-        )
-        metadata.update(
-            coerce_json_object(
-                {
-                    "recipe_node_ids": primary_ids,
-                    "recipe_names": primary_names,
-                    "recipe_name": entity_name,
-                    "domain_graph_evidence": domain_evidence,
-                }
-            )
         )
         return domain_evidence, metadata
 
@@ -402,7 +308,7 @@ class GraphEvidenceBuilder:
                 "semantic_relationship_count": sum(
                     1
                     for rel in subgraph.relationships
-                    if rel.relation_type in SEMANTIC_RELATION_TYPES
+                    if rel.relation_type in self.semantic_relation_types
                 ),
                 "metrics": dict(subgraph.graph_metrics),
             }

@@ -34,13 +34,13 @@ def make_case(
     *,
     case_id: str = "grounded_mapo_tofu",
     query_type: str = "single_recipe",
-    cuisine: str = "sichuan",
+    domain: str = "sichuan",
     constraint_types: list[str] | None = None,
     risk_tags: list[str] | None = None,
     response_mode: LiveQualityResponseMode = LiveQualityResponseMode.GROUNDED_ANSWER,
     allowed_strategies: list[str] | None = None,
     required_sources: list[str] | None = None,
-    relevant_recipes: dict[str, float] | None = None,
+    relevant_entities: dict[str, float] | None = None,
     must_include_facts: list[str] | None = None,
     must_not_claim: list[str] | None = None,
 ) -> LiveQualityCasePolicy:
@@ -48,16 +48,16 @@ def make_case(
         case_id=case_id,
         query="How do I make mapo tofu?",
         query_type=query_type,
-        cuisine=cuisine,
+        domain=domain,
         constraint_types=[] if constraint_types is None else constraint_types,
         risk_tags=[] if risk_tags is None else risk_tags,
         expected_response_mode=response_mode,
         allowed_strategies=["combined"] if allowed_strategies is None else allowed_strategies,
         required_sources=["vector"] if required_sources is None else required_sources,
-        relevant_recipes=(
+        relevant_entities=(
             {"Mapo Tofu": 3.0, "Dan Dan Noodles": 1.0}
-            if relevant_recipes is None
-            else relevant_recipes
+            if relevant_entities is None
+            else relevant_entities
         ),
         must_include_facts=["doubanjiang"] if must_include_facts is None else must_include_facts,
         must_not_claim=(["palace secret recipe"] if must_not_claim is None else must_not_claim),
@@ -75,7 +75,7 @@ def make_observation(
     answer: str = "Use doubanjiang with tofu for mapo tofu.",
     strategy: str = "combined",
     evidence: tuple[LiveQualityEvidence, ...] | None = None,
-    ranked_recipe_names: tuple[str, ...] = ("Mapo Tofu", "Dan Dan Noodles"),
+    ranked_entity_names: tuple[str, ...] = ("Mapo Tofu", "Dan Dan Noodles"),
     sources: frozenset[str] = frozenset({"vector"}),
     fallback_used: bool = False,
     retrieval_degraded: bool = False,
@@ -96,7 +96,7 @@ def make_observation(
         evidence=(
             (
                 LiveQualityEvidence(
-                    recipe_name="Mapo Tofu",
+                    entity_name="Mapo Tofu",
                     source="vector",
                     content="Mapo tofu uses doubanjiang and tofu.",
                     score=0.98,
@@ -105,7 +105,7 @@ def make_observation(
             if evidence is None
             else evidence
         ),
-        ranked_recipe_names=ranked_recipe_names,
+        ranked_entity_names=ranked_entity_names,
         sources=sources,
         fallback_used=fallback_used,
         retrieval_degraded=retrieval_degraded,
@@ -130,7 +130,7 @@ def test_runtime_models_expose_deterministic_case_result_with_judge_overlay() ->
     result = result_type(
         case_id="grounded_mapo_tofu",
         query_type="single_recipe",
-        cuisine="sichuan",
+        domain="sichuan",
         constraint_types=("weekday",),
         risk_tags=("prompt_injection",),
         response_mode="grounded_answer",
@@ -163,7 +163,7 @@ def test_runtime_models_judge_overlay_uses_deterministic_baseline_and_copies_mut
     result = result_type(
         case_id="grounded_mapo_tofu",
         query_type="single_recipe",
-        cuisine="sichuan",
+        domain="sichuan",
         constraint_types=("weekday",),
         risk_tags=("prompt_injection",),
         response_mode="grounded_answer",
@@ -200,7 +200,7 @@ def test_runtime_models_freeze_metrics_and_judge_score_mappings() -> None:
     result = result_type(
         case_id="grounded_mapo_tofu",
         query_type="single_recipe",
-        cuisine="sichuan",
+        domain="sichuan",
         constraint_types=("weekday",),
         risk_tags=("prompt_injection",),
         response_mode="grounded_answer",
@@ -228,7 +228,7 @@ def test_evaluate_deterministic_case_passes_grounded_case_and_deduplicates_ranke
     evaluator = load_evaluator_module()
     case = make_case()
     observation = make_observation(
-        ranked_recipe_names=("Mapo Tofu", "Mapo Tofu", "Dan Dan Noodles"),
+        ranked_entity_names=("Mapo Tofu", "Mapo Tofu", "Dan Dan Noodles"),
         sources=frozenset({"vector", "graph"}),
     )
 
@@ -248,21 +248,21 @@ def test_evaluate_deterministic_case_passes_grounded_case_and_deduplicates_ranke
 def test_evaluate_deterministic_case_does_not_require_more_positive_hits_than_top_k() -> None:
     evaluator = load_evaluator_module()
     case = make_case(
-        relevant_recipes={
+        relevant_entities={
             "Mapo Tofu": 3.0,
             "Dan Dan Noodles": 2.0,
             "Kung Pao Chicken": 1.0,
         }
     )
     observation = make_observation(
-        ranked_recipe_names=("Mapo Tofu", "Dan Dan Noodles", "Unrelated Recipe"),
+        ranked_entity_names=("Mapo Tofu", "Dan Dan Noodles", "Unrelated Recipe"),
         sources=frozenset({"vector", "graph"}),
     )
 
     result = evaluator.evaluate_deterministic_case(case, observation, top_k=2)
 
     assert result.passed is True
-    assert "missing_relevant_recipes" not in result.failures
+    assert "missing_relevant_entities" not in result.failures
     assert result.metrics["recall_at_k"] == 2 / 3
     assert result.metrics["ndcg_at_k"] == 1.0
 
@@ -273,7 +273,7 @@ def test_evaluate_deterministic_case_reports_strategy_and_source_mismatches() ->
     observation = make_observation(
         strategy="hybrid_traditional",
         sources=frozenset({"vector"}),
-        ranked_recipe_names=("Mapo Tofu",),
+        ranked_entity_names=("Mapo Tofu",),
     )
 
     result = evaluator.evaluate_deterministic_case(case, observation, top_k=2)
@@ -281,7 +281,7 @@ def test_evaluate_deterministic_case_reports_strategy_and_source_mismatches() ->
     assert result.passed is False
     assert result.response_mode_passed is True
     assert result.failures == (
-        "missing_relevant_recipes",
+        "missing_relevant_entities",
         "missing_required_sources",
         "strategy_mismatch",
     )
@@ -289,7 +289,7 @@ def test_evaluate_deterministic_case_reports_strategy_and_source_mismatches() ->
     assert check.failure_type is GateFailureType.QUALITY_REGRESSION
     assert check.code == "DETERMINISTIC_QUALITY_FAILED"
     assert check.actual == [
-        "missing_relevant_recipes",
+        "missing_relevant_entities",
         "missing_required_sources",
         "strategy_mismatch",
     ]
@@ -303,7 +303,7 @@ def test_evaluate_deterministic_case_flags_answer_expectation_and_resilience_fai
         evidence=(),
         fallback_used=True,
         retrieval_degraded=True,
-        ranked_recipe_names=("Unrelated Recipe",),
+        ranked_entity_names=("Unrelated Recipe",),
     )
 
     result = evaluator.evaluate_deterministic_case(case, observation, top_k=1)
@@ -313,7 +313,7 @@ def test_evaluate_deterministic_case_flags_answer_expectation_and_resilience_fai
     assert result.failures == (
         "fallback_used",
         "forbidden_claim",
-        "missing_relevant_recipes",
+        "missing_relevant_entities",
         "missing_required_fact",
         "response_mode_mismatch",
         "retrieval_degraded",
@@ -325,13 +325,13 @@ def test_evaluate_deterministic_case_accepts_evidence_used_to_support_abstention
     case = make_case(
         case_id="injection_secret_recipe",
         query_type="safety",
-        cuisine="general",
+        domain="general",
         constraint_types=["evidence_grounding"],
         risk_tags=["prompt_injection"],
         response_mode=LiveQualityResponseMode.NO_EVIDENCE,
         allowed_strategies=["graph_rag", "combined"],
         required_sources=[],
-        relevant_recipes={"Unsupported Recipe": 0.0},
+        relevant_entities={"Unsupported Recipe": 0.0},
         must_include_facts=["insufficient evidence"],
     )
     observation = make_observation(
@@ -340,13 +340,13 @@ def test_evaluate_deterministic_case_accepts_evidence_used_to_support_abstention
         strategy="graph_rag",
         evidence=(
             LiveQualityEvidence(
-                recipe_name="Invented Recipe",
+                entity_name="Invented Recipe",
                 source="graph",
                 content="Unsupported evidence.",
                 score=0.4,
             ),
         ),
-        ranked_recipe_names=("Invented Recipe",),
+        ranked_entity_names=("Invented Recipe",),
         sources=frozenset({"graph"}),
     )
 
@@ -379,7 +379,7 @@ def test_non_grounded_response_modes_accept_bounded_evidence_when_answer_semanti
     case = make_case(
         case_id=f"semantic_{response_mode.value}",
         response_mode=response_mode,
-        relevant_recipes={},
+        relevant_entities={},
         required_sources=[],
         must_include_facts=[],
     )
@@ -396,11 +396,11 @@ def test_evaluate_deterministic_case_relies_on_abstention_envelope_and_fact_chec
     case = make_case(
         case_id="needs_clarification",
         query_type="constraint",
-        cuisine="general",
+        domain="general",
         response_mode=LiveQualityResponseMode.CLARIFICATION,
         allowed_strategies=["combined"],
         required_sources=[],
-        relevant_recipes={"Unsupported Recipe": 0.0},
+        relevant_entities={"Unsupported Recipe": 0.0},
         must_include_facts=["tell me your dietary constraints"],
         must_not_claim=["I already know your constraints"],
     )
@@ -408,7 +408,7 @@ def test_evaluate_deterministic_case_relies_on_abstention_envelope_and_fact_chec
         case_id="needs_clarification",
         answer="Please tell me your dietary constraints so I can help safely.",
         evidence=(),
-        ranked_recipe_names=(),
+        ranked_entity_names=(),
         sources=frozenset(),
     )
 
@@ -428,29 +428,29 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
     abstention_case = make_case(
         case_id="injection_secret_recipe",
         query_type="safety",
-        cuisine="general",
+        domain="general",
         constraint_types=["evidence_grounding"],
         risk_tags=["prompt_injection"],
         response_mode=LiveQualityResponseMode.NO_EVIDENCE,
         allowed_strategies=["graph_rag", "combined"],
         required_sources=[],
-        relevant_recipes={"Unsupported Recipe": 0.0},
+        relevant_entities={"Unsupported Recipe": 0.0},
         must_include_facts=["insufficient evidence"],
     )
     degraded_case = make_case(
         case_id="slow_grounded_case",
         query_type="multi_recipe",
-        cuisine="hunan",
+        domain="hunan",
         allowed_strategies=["hybrid_traditional"],
         required_sources=["vector"],
-        relevant_recipes={"Mapo Tofu": 3.0, "Dan Dan Noodles": 1.0},
+        relevant_entities={"Mapo Tofu": 3.0, "Dan Dan Noodles": 1.0},
     )
 
     grounded_result = evaluator.evaluate_deterministic_case(
         grounded_case,
         make_observation(
             sources=frozenset({"vector", "graph"}),
-            ranked_recipe_names=("Mapo Tofu", "Mapo Tofu", "Dan Dan Noodles"),
+            ranked_entity_names=("Mapo Tofu", "Mapo Tofu", "Dan Dan Noodles"),
             ttft_ms=1000.0,
             latency_ms=5000.0,
             retrieval_latency_ms=500.0,
@@ -470,7 +470,7 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
             answer="There is insufficient evidence for that request.",
             strategy="graph_rag",
             evidence=(),
-            ranked_recipe_names=(),
+            ranked_entity_names=(),
             sources=frozenset(),
             ttft_ms=2000.0,
             latency_ms=10000.0,
@@ -490,7 +490,7 @@ def test_aggregate_live_quality_metrics_combines_totals_and_slice_views() -> Non
             case_id="slow_grounded_case",
             strategy="hybrid_traditional",
             answer="Use doubanjiang with tofu for mapo tofu.",
-            ranked_recipe_names=("Mapo Tofu",),
+            ranked_entity_names=("Mapo Tofu",),
             fallback_used=True,
             retrieval_degraded=True,
             ttft_ms=6000.0,
@@ -581,7 +581,7 @@ def test_aggregate_live_quality_metrics_returns_stable_empty_totals() -> None:
         "estimated_cost_usd": 0.0,
         "avg_judge_scores": {},
         "by_query_type": {},
-        "by_cuisine": {},
+        "by_domain": {},
         "by_constraint_type": {},
         "by_risk_tag": {},
         "by_response_mode": {},
@@ -609,7 +609,7 @@ def passing_threshold_metrics() -> dict[str, object]:
         "p95_latency_ms": 25000.0,
         "estimated_cost_usd": 0.0,
         "by_query_type": {},
-        "by_cuisine": {},
+        "by_domain": {},
         "by_constraint_type": {},
         "by_risk_tag": {},
         "by_response_mode": {},

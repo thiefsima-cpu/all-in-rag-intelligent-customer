@@ -73,7 +73,7 @@ def run_eval(
             print(
                 f"  strategy={item['evaluation']['strategy']} "
                 f"docs={item['retrieval']['doc_count']} "
-                f"recipes={item['retrieval']['recipe_names'][:5]}"
+                f"entities={item['retrieval']['entity_names'][:5]}"
             )
             print(
                 f"  latency_ms={item['runtime']['latency_ms']:.1f} "
@@ -81,8 +81,8 @@ def run_eval(
             )
             print(f"  category={item['category']} failures={item['failures']}")
             print(f"  evidence={item['retrieval']['evidence'][:3]}")
-            if item["retrieval"]["missing_recipe_names"]:
-                print(f"  missing={item['retrieval']['missing_recipe_names']}")
+            if item["retrieval"]["missing_entity_names"]:
+                print(f"  missing={item['retrieval']['missing_entity_names']}")
             if (
                 item["evaluation"]["expected_strategy"]
                 and item["evaluation"]["strategy"] != item["evaluation"]["expected_strategy"]

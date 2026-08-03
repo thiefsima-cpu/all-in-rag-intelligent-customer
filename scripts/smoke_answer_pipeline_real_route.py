@@ -22,6 +22,7 @@ from rag_modules.contracts import (
 from rag_modules.contracts.runtime.graph import GraphRetrievalSnapshot
 from rag_modules.contracts.runtime.retrieval import HybridRetrievalOutcome
 from rag_modules.contracts.runtime.workflows import QueryUnderstandingSnapshot
+from rag_modules.domains import get_domain_pack
 from rag_modules.query_understanding import QueryPlanner
 from rag_modules.retrieval.runtime_profile import (
     RetrievalRuntimeProfile,
@@ -136,15 +137,25 @@ def _rate(passed_count: int, total_count: int) -> float:
     return passed_count / total_count if total_count else 0.0
 
 
-def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RealRouteAnswerPipelineCase]:
+def load_corpus(
+    path: str | Path = DEFAULT_CORPUS_PATH,
+) -> tuple[str, List[RealRouteAnswerPipelineCase]]:
     corpus_path = Path(path).resolve()
     with corpus_path.open("r", encoding="utf-8") as file:
         payload = json.load(file)
-    if not isinstance(payload, list):
-        raise ValueError(f"Answer pipeline corpus at {corpus_path} must be a JSON list.")
-    return [
-        RealRouteAnswerPipelineCase.from_dict(item) for item in payload if isinstance(item, dict)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Answer pipeline corpus at {corpus_path} must be a JSON object.")
+    domain_name = str(payload.get("domain") or "").strip()
+    cases = payload.get("cases")
+    if not domain_name or not isinstance(cases, list):
+        raise ValueError(f"Answer pipeline corpus at {corpus_path} must define domain and cases.")
+    return domain_name, [
+        RealRouteAnswerPipelineCase.from_dict(item) for item in cases if isinstance(item, dict)
     ]
+
+
+def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RealRouteAnswerPipelineCase]:
+    return load_corpus(path)[1]
 
 
 class _StaticHybridRetrieval:
@@ -247,11 +258,13 @@ class _StaticGraphRetrieval:
 
 
 class _OfflineQueryUnderstandingService:
-    def __init__(self, retrieval_profile: RetrievalRuntimeProfile) -> None:
+    def __init__(self, retrieval_profile: RetrievalRuntimeProfile, domain_name: str) -> None:
+        domain_pack = get_domain_pack(domain_name)
         self.query_planner = QueryPlanner(
             None,
             settings=retrieval_profile.planner,
             semantic_settings=retrieval_profile.semantics,
+            constraint_schema=domain_pack.query_constraints,
         )
 
     def understand(self, query: str, *, control=None) -> QueryUnderstandingSnapshot:
@@ -259,10 +272,11 @@ class _OfflineQueryUnderstandingService:
         return QueryUnderstandingSnapshot.from_plan(self.query_planner.rule_based_plan(query))
 
 
-def build_retrieval_profile(top_k: int) -> RetrievalRuntimeProfile:
+def build_retrieval_profile(top_k: int, domain_name: str) -> RetrievalRuntimeProfile:
     config = load_config(
         source=EnvConfigSource(environ={}),
         overrides={
+            "domain": {"name": domain_name},
             "models": {"enable_rerank": False},
             "retrieval": {
                 "hybrid_default_candidate_multiplier": 1,
@@ -409,13 +423,16 @@ def evaluate_contracts(
     return checks
 
 
-def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
-    retrieval_profile = build_retrieval_profile(case.top_k)
+def evaluate_case(case: RealRouteAnswerPipelineCase, domain_name: str) -> dict:
+    retrieval_profile = build_retrieval_profile(case.top_k, domain_name)
     hybrid_retrieval = _StaticHybridRetrieval(case)
     graph_retrieval = _StaticGraphRetrieval(case)
     config = load_config(
         source=EnvConfigSource(environ={}),
-        overrides={"retrieval": {"top_k": case.top_k}},
+        overrides={
+            "domain": {"name": domain_name},
+            "retrieval": {"top_k": case.top_k},
+        },
     )
     routing_workflow = RoutingWorkflowService(
         traditional_retrieval=hybrid_retrieval,
@@ -423,7 +440,10 @@ def evaluate_case(case: RealRouteAnswerPipelineCase) -> dict:
         llm_client=None,
         config=config,
         retrieval_profile=retrieval_profile,
-        query_understanding_service=_OfflineQueryUnderstandingService(retrieval_profile),
+        query_understanding_service=_OfflineQueryUnderstandingService(
+            retrieval_profile,
+            domain_name,
+        ),
     )
     generation_module = OfflineGenerationModule([case.answer_text])
     tracer, sink = build_tracer()
@@ -563,9 +583,11 @@ def calculate_contract_metrics(results: List[dict]) -> dict[str, float]:
 
 
 def run_smoke(corpus_path: str | Path = DEFAULT_CORPUS_PATH) -> dict:
-    results = [evaluate_case(case) for case in load_cases(corpus_path)]
+    domain_name, cases = load_corpus(corpus_path)
+    results = [evaluate_case(case, domain_name) for case in cases]
     failures = [item for item in results if not item["passed"]]
     return {
+        "domain": domain_name,
         "case_count": len(results),
         "passed_count": len(results) - len(failures),
         "metrics": calculate_contract_metrics(results),

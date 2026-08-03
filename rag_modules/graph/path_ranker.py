@@ -8,19 +8,24 @@ from typing import Dict, List
 from ..configuration.models import GraphSettings
 from ..contracts import EvidenceDocument
 from ..kernel.json_types import coerce_float, coerce_int
-from ..kernel.semantic_schema import SEMANTIC_RELATION_TYPES
 
 
 class GraphDocumentRanker:
     """Score graph evidence with configurable structural evidence weights."""
 
-    def __init__(self, graph_settings: GraphSettings):
+    def __init__(
+        self,
+        graph_settings: GraphSettings,
+        *,
+        semantic_relation_types: tuple[str, ...] = (),
+    ):
         self.base_weight = float(graph_settings.graph_rank_base_weight)
         self.semantic_relation_weight = float(graph_settings.graph_rank_semantic_relation_weight)
         self.evidence_unit_weight = float(graph_settings.graph_rank_evidence_unit_weight)
         self.relationship_weight = float(graph_settings.graph_rank_relationship_weight)
-        self.recipe_presence_weight = float(graph_settings.graph_rank_recipe_presence_weight)
+        self.entity_presence_weight = float(graph_settings.graph_rank_entity_presence_weight)
         self.query_overlap_weight = float(graph_settings.graph_rank_query_overlap_weight)
+        self.semantic_relation_types = frozenset(semantic_relation_types)
 
     def rank(self, documents: List[EvidenceDocument], query: str) -> List[EvidenceDocument]:
         return sorted(documents, key=lambda doc: self._score(doc, query), reverse=True)
@@ -77,7 +82,7 @@ class GraphDocumentRanker:
         semantic_rel_count = sum(
             1
             for rel in relationships
-            if isinstance(rel, dict) and (rel.get("type") or "") in SEMANTIC_RELATION_TYPES
+            if isinstance(rel, dict) and (rel.get("type") or "") in self.semantic_relation_types
         )
         if not semantic_rel_count:
             semantic_rel_count = coerce_int(
@@ -87,8 +92,8 @@ class GraphDocumentRanker:
         score += semantic_rel_count * self.semantic_relation_weight
         score += len(relationships) * self.relationship_weight
         score += len(doc.evidence_units or []) * self.evidence_unit_weight
-        if metadata.get("recipe_node_ids") or metadata.get("recipe_names") or doc.entity_name:
-            score += self.recipe_presence_weight
+        if metadata.get("entity_ids") or metadata.get("entity_names") or doc.entity_name:
+            score += self.entity_presence_weight
         score += self._query_overlap(doc, query) * self.query_overlap_weight
         return score
 
@@ -100,9 +105,9 @@ class GraphDocumentRanker:
             raw_relationships = graph_evidence.get("relationships")
             if isinstance(raw_relationships, list):
                 relationships.extend(rel for rel in raw_relationships if isinstance(rel, dict))
-        recipe_evidence = doc.domain_graph_evidence or {}
-        if isinstance(recipe_evidence, dict):
-            raw_relations = recipe_evidence.get("semantic_relations")
+        domain_evidence = doc.domain_graph_evidence or {}
+        if isinstance(domain_evidence, dict):
+            raw_relations = domain_evidence.get("semantic_relations")
             if isinstance(raw_relations, list):
                 relationships.extend(rel for rel in raw_relations if isinstance(rel, dict))
         return relationships
@@ -121,10 +126,10 @@ class GraphDocumentRanker:
     @staticmethod
     def _dedupe_key(doc: EvidenceDocument) -> str:
         metadata = doc.metadata or {}
-        recipe_ids = metadata.get("recipe_node_ids")
-        recipe_names = metadata.get("recipe_names")
-        if isinstance(recipe_ids, list) and recipe_ids:
-            return "recipe_id::" + str(recipe_ids[0])
-        if isinstance(recipe_names, list) and recipe_names:
-            return "recipe_name::" + str(recipe_names[0])
+        entity_ids = metadata.get("entity_ids")
+        entity_names = metadata.get("entity_names")
+        if isinstance(entity_ids, list) and entity_ids:
+            return "entity_id::" + str(entity_ids[0])
+        if isinstance(entity_names, list) and entity_names:
+            return "entity_name::" + str(entity_names[0])
         return doc.document_key()

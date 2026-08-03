@@ -119,7 +119,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         data_module = type("DataModule", (), {})()
         data_module.graph_load_calls = 0
         data_module.documents = [TextDocument(content="doc")]
-        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.get_statistics = lambda: {"total_entities": 1, "total_chunks": 1}
 
         def _load_graph_data():
             data_module.graph_load_calls += 1
@@ -197,7 +197,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         )
         data_module = type("DataModule", (), {})()
         data_module.documents = [TextDocument(content="doc")]
-        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.get_statistics = lambda: {"total_entities": 1, "total_chunks": 1}
         data_module.load_graph_data = lambda: None
         index_module = type("IndexModule", (), {})()
         index_module.has_collection = lambda: False
@@ -242,7 +242,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         )
         data_module = type("DataModule", (), {})()
         data_module.documents = [TextDocument(content="doc")]
-        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.get_statistics = lambda: {"total_entities": 1, "total_chunks": 1}
         data_module.load_graph_data = lambda: None
         index_module = type("IndexModule", (), {})()
         index_module.has_collection = lambda: False
@@ -305,7 +305,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         document_artifact_builder = _FakeDocumentArtifactBuilder(document_result)
         data_module = type("DataModule", (), {})()
         data_module.documents = [TextDocument(content="doc")]
-        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.get_statistics = lambda: {"total_entities": 1, "total_chunks": 1}
         data_module.load_graph_data = lambda: None
         index_module = type("IndexModule", (), {})()
         index_module.has_collection = lambda: True
@@ -354,7 +354,7 @@ class KnowledgeBaseBuildWorkflowTests(unittest.TestCase):
         )
         data_module = type("DataModule", (), {})()
         data_module.documents = [TextDocument(content="doc")]
-        data_module.get_statistics = lambda: {"total_recipes": 1, "total_chunks": 1}
+        data_module.get_statistics = lambda: {"total_entities": 1, "total_chunks": 1}
         data_module.load_graph_data = lambda: None
         index_module = type("IndexModule", (), {})()
         index_module.has_collection = lambda: False

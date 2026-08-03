@@ -176,14 +176,8 @@ class AnswerWorkflowCopyPolicy:
     strategy_icon_default: str
     document_summary_template: str
     document_summary_total_template: str
-    unknown_recipe_name: str
+    unknown_entity_name: str
     unknown_search_type: str
-
-    @property
-    def unknown_entity_name(self) -> str:
-        """Domain-neutral name backed by the deprecated storage field."""
-
-        return self.unknown_recipe_name
 
 
 @dataclass(frozen=True)
