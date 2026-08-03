@@ -7,7 +7,12 @@ from collections.abc import Mapping
 from typing import Any, Dict, List
 
 from ..domains.contracts import DomainQueryConstraintSchema
-from ..kernel.json_types import JsonObject, as_string_list, coerce_json_object
+from ..kernel.json_types import (
+    JsonObject,
+    as_string_list,
+    coerce_json_object,
+    coerce_json_value,
+)
 from .graph_features import infer_graph_query_type
 from .lexical_features import (
     _active_registry,
@@ -118,7 +123,9 @@ def _infer_domain_extension(
             continue
         matches = matched_terms(query, registry.policy.lexicon.term_group(field.term_group))
         if matches:
-            extension[field.name] = matches[0] if field.first_match_only else matches
+            extension[field.name] = coerce_json_value(
+                matches[0] if field.first_match_only else matches
+            )
     for field_name in schema.excluded_term_fields:
         if excluded_terms:
             extension[field_name] = list(excluded_terms)
@@ -140,16 +147,18 @@ def normalize_query_constraints(
         maximum_duration = legacy_time_payload.get(schema.maximum_duration_field)
         if maximum_duration not in (None, "") and "max_duration_minutes" not in temporal:
             temporal["max_duration_minutes"] = maximum_duration
-    return {
-        "entity_terms": as_string_list(data.get("entity_terms") or data.get("include_terms")),
-        "excluded_entity_terms": as_string_list(
-            data.get("excluded_entity_terms") or data.get("exclude_terms")
-        ),
-        "relation_types": as_string_list(data.get("relation_types")),
-        "temporal_filters": temporal,
-        "structured_filters": coerce_json_object(data.get("structured_filters")),
-        "extension": schema.project_extension(data) if schema else {},
-    }
+    return coerce_json_object(
+        {
+            "entity_terms": as_string_list(data.get("entity_terms") or data.get("include_terms")),
+            "excluded_entity_terms": as_string_list(
+                data.get("excluded_entity_terms") or data.get("exclude_terms")
+            ),
+            "relation_types": as_string_list(data.get("relation_types")),
+            "temporal_filters": temporal,
+            "structured_filters": coerce_json_object(data.get("structured_filters")),
+            "extension": schema.project_extension(data) if schema else {},
+        }
+    )
 
 
 __all__ = [

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ...kernel.documents import TextDocument
-from ...kernel.json_types import as_string_list
+from ...kernel.json_types import as_string_list, coerce_json_value
 from ..contracts import (
     CitationProjection,
     DomainBuildDataView,
@@ -54,7 +54,7 @@ class RecipeDocumentMapper(DomainDocumentMapper):
                 "node_id": entity_id,
                 "node_type": "Recipe",
                 "doc_type": "recipe",
-                "matched_terms": matched_terms,
+                "matched_terms": [coerce_json_value(term) for term in matched_terms],
                 **semantics,
             },
         )

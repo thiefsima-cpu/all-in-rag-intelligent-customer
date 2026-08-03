@@ -4,26 +4,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Protocol
 
 from ...contracts.graph_preparation import GraphNode, LoadedGraphData
 from ...domains.contracts import DomainDocumentMapper, DomainOntology
 from ...kernel.documents import TextDocument
 from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
-from ..ports import Neo4jDriverPort
+from ..ports import Neo4jDriverPort, Neo4jSessionPort
 from .state import DomainDocumentBuilder as DomainDocumentBuilderBase
 from .state import GraphDataLoader
 
 logger = logging.getLogger(__name__)
-
-
-class Neo4jSessionLike(Protocol):
-    def run(
-        self,
-        query: str,
-        parameters: object | None = None,
-    ) -> Iterable[Mapping[str, object]]: ...
 
 
 DOMAIN_ENTITIES_QUERY = """
@@ -61,7 +52,7 @@ class DomainGraphDataLoader(GraphDataLoader):
             related_entity_groups={},
         )
 
-    def _load_entities(self, session: Neo4jSessionLike) -> list[GraphNode]:
+    def _load_entities(self, session: Neo4jSessionPort) -> list[GraphNode]:
         entities: list[GraphNode] = []
         for record in session.run(
             DOMAIN_ENTITIES_QUERY,

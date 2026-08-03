@@ -3,6 +3,7 @@
 from typing import cast
 
 from ...contracts.graph_preparation import LoadedGraphData
+from ...domains.contracts import DomainPack
 from .chunker import DomainDocumentChunker
 from .domain_loader import DomainDocumentBuilder, DomainGraphDataLoader
 from .models import GraphRelation
@@ -20,7 +21,9 @@ from .state import (
 from .statistics import GraphPreparationStatisticsService
 
 
-def create_domain_build_collaborators(domain_pack):
+def create_domain_build_collaborators(
+    domain_pack: DomainPack,
+) -> tuple[GraphDataLoader, DomainDocumentBuilderContract, DomainDocumentChunkerContract]:
     """Resolve build adapters from the adapter key owned by a DomainPack."""
 
     chunker = DomainDocumentChunker()

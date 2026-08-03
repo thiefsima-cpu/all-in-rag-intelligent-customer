@@ -200,7 +200,7 @@ class DomainPack:
     semantic_graph_writer_factory: Callable[..., object] | None = None
     semantic_schema_enabled: bool = False
     semantic_schema_count_field: str = ""
-    constraint_matcher_type: type[object] | None = None
+    constraint_matcher_type: Callable[[list[TextDocument]], object] | None = None
     allow_domainless_graph_records: bool = False
 
 

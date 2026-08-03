@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...contracts.graph_preparation import GraphPreparationStats as _GraphPreparationStats
 from ...domains.contracts import DomainBuildDataView
-from ...kernel.json_types import JsonObject, coerce_int
+from ...kernel.json_types import JsonObject, coerce_int, coerce_json_value
 from .state import GraphPreparationState
 
 UNKNOWN_VALUE = "未知"
@@ -60,7 +60,7 @@ class GraphPreparationStatisticsService:
             for document in state.documents:
                 value = str(document.metadata.get(metadata_field, UNKNOWN_VALUE) or UNKNOWN_VALUE)
                 distribution[value] = distribution.get(value, 0) + 1
-            metrics[metric_name] = distribution
+            metrics[metric_name] = coerce_json_value(distribution)
         return metrics
 
 

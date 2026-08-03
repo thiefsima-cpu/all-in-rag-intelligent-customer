@@ -47,7 +47,7 @@ class _RecipeConstraintValues:
 
 
 class RecipeConstraintMatcher:
-    def __init__(self, documents: list[TextDocument]):
+    def __init__(self, documents: list[TextDocument]) -> None:
         self.documents = documents
 
     @staticmethod
