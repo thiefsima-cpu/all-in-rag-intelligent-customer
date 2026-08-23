@@ -14,7 +14,7 @@ class _StatsPayload:
 
 class _GraphStatsSource:
     def get_statistics(self) -> object:
-        return _StatsPayload({"total_recipes": 2})
+        return _StatsPayload({"total_entities": 2})
 
 
 class _VectorStatsSource:
@@ -48,7 +48,7 @@ def test_runtime_owns_minimal_statistics_source_ports() -> None:
 def test_default_runtime_stats_access_coerces_minimal_source_shapes() -> None:
     access = DefaultRuntimeStatsAccess()
 
-    assert access.get_graph_data_stats(_GraphStatsSource()) == {"total_recipes": 2}
+    assert access.get_graph_data_stats(_GraphStatsSource()) == {"total_entities": 2}
     assert access.get_vector_collection_stats(_VectorStatsSource()) == {
         "collection_name": "recipes",
         "row_count": 4,

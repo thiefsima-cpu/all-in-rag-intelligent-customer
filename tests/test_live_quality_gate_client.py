@@ -153,13 +153,13 @@ def case() -> LiveQualityCasePolicy:
         case_id="grounded_mapo_tofu",
         query="How do I make mapo tofu?",
         query_type="single_recipe",
-        cuisine="sichuan",
+        domain="customer_service",
         constraint_types=[],
         risk_tags=[],
         expected_response_mode=LiveQualityResponseMode.GROUNDED_ANSWER,
         allowed_strategies=["hybrid_traditional", "combined"],
         required_sources=["vector"],
-        relevant_recipes={"Mapo Tofu": 3.0},
+        relevant_entities={"Mapo Tofu": 3.0},
         must_include_facts=["tofu"],
         must_not_claim=["palace secret recipe"],
         judge_rubric={
@@ -173,6 +173,7 @@ def case() -> LiveQualityCasePolicy:
 def policy() -> LiveQualityGatePolicy:
     return LiveQualityGatePolicy(
         schema_version=2,
+        domain="customer_service",
         top_k=6,
         timeouts=LiveQualityTimeouts(request_seconds=12.5, judge_seconds=45.0),
         judge=LiveQualityJudgePolicy(
@@ -220,19 +221,19 @@ def answer_payload() -> dict[str, Any]:
             "grounding": {
                 "evidence_documents": [
                     {
-                        "recipe_name": "Mapo Tofu",
+                        "entity_name": "Mapo Tofu",
                         "source": "vector",
                         "content": "Mapo tofu uses tofu and doubanjiang.",
                         "score": 0.98,
                     },
                     {
-                        "recipe_name": "Dan Dan Noodles",
+                        "entity_name": "Dan Dan Noodles",
                         "source": "graph",
                         "content": "Sichuan peppercorns are common in Sichuan dishes.",
                         "score": 0.61,
                     },
                     {
-                        "recipe_name": "Mapo Tofu",
+                        "entity_name": "Mapo Tofu",
                         "source": "vector",
                         "content": "Serve mapo tofu hot.",
                         "score": 0.52,
@@ -323,25 +324,25 @@ def test_normalize_live_quality_observation_extracts_answer_metrics_and_diagnost
         strategy="combined",
         evidence=(
             LiveQualityEvidence(
-                recipe_name="Mapo Tofu",
+                entity_name="Mapo Tofu",
                 source="vector",
                 content="Mapo tofu uses tofu and doubanjiang.",
                 score=0.98,
             ),
             LiveQualityEvidence(
-                recipe_name="Dan Dan Noodles",
+                entity_name="Dan Dan Noodles",
                 source="graph",
                 content="Sichuan peppercorns are common in Sichuan dishes.",
                 score=0.61,
             ),
             LiveQualityEvidence(
-                recipe_name="Mapo Tofu",
+                entity_name="Mapo Tofu",
                 source="vector",
                 content="Serve mapo tofu hot.",
                 score=0.52,
             ),
         ),
-        ranked_recipe_names=("Mapo Tofu", "Dan Dan Noodles", "Mapo Tofu"),
+        ranked_entity_names=("Mapo Tofu", "Dan Dan Noodles", "Mapo Tofu"),
         sources=frozenset({"vector", "graph", "rerank"}),
         fallback_used=True,
         retrieval_degraded=True,
@@ -363,7 +364,7 @@ def test_normalize_live_quality_observation_extracts_answer_metrics_and_diagnost
 def test_normalize_live_quality_observation_preserves_duplicate_ranked_recipes() -> None:
     observation = normalize(answer_payload())
 
-    assert observation.ranked_recipe_names == ("Mapo Tofu", "Dan Dan Noodles", "Mapo Tofu")
+    assert observation.ranked_entity_names == ("Mapo Tofu", "Dan Dan Noodles", "Mapo Tofu")
 
 
 def test_normalize_live_quality_observation_ignores_zero_count_stage_sources() -> None:
@@ -737,7 +738,7 @@ def test_run_live_case_accepts_no_evidence_debug_sse_with_an_explicit_empty_evid
     abstention_case = case().model_copy(
         update={
             "expected_response_mode": LiveQualityResponseMode.NO_EVIDENCE,
-            "relevant_recipes": {},
+            "relevant_entities": {},
         }
     )
     response = success_response(payload)
@@ -1405,7 +1406,7 @@ def test_run_live_case_treats_sparse_debug_payload_as_contract_invalid(
     ("missing_path", "secret"),
     [
         (
-            ("response", "grounding", "evidence_documents", 0, "recipe_name"),
+            ("response", "grounding", "evidence_documents", 0, "entity_name"),
             "recipe-name-secret",
         ),
         (("response", "grounding", "evidence_documents", 0, "source"), "source-secret"),

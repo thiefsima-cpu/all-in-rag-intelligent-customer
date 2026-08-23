@@ -7,7 +7,7 @@ import re
 from typing import Any, Iterable, Mapping, Sequence
 
 _CITATION_PATTERN = re.compile(
-    r"(?:菜谱证据|Recipe\s+Evidence|Evidence|证据)\s*[#：:]?\s*(\d+)",
+    r"(?:Evidence|证据)\s*[#：:]?\s*(\d+)",
     re.IGNORECASE,
 )
 _CLAIM_SPLIT_PATTERN = re.compile(r"[。！？!?；;.\n]+")
@@ -175,10 +175,10 @@ def _evidence_text(document: Any) -> str:
     pieces = [
         payload.get("content"),
         payload.get("page_content"),
-        payload.get("recipe_name"),
+        payload.get("entity_name"),
         metadata.get("content"),
         metadata.get("page_content"),
-        metadata.get("recipe_name"),
+        metadata.get("entity_name"),
     ]
     for unit in payload.get("evidence_units") or metadata.get("evidence_units") or []:
         if isinstance(unit, dict):

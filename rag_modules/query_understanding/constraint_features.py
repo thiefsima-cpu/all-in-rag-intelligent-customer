@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any, Dict, List
 
+from ..domains.contracts import DomainQueryConstraintSchema
+from ..kernel.json_types import (
+    JsonObject,
+    as_string_list,
+    coerce_json_object,
+    coerce_json_value,
+)
 from .graph_features import infer_graph_query_type
 from .lexical_features import (
     _active_registry,
@@ -41,30 +49,6 @@ def extract_minutes(
     return None
 
 
-def extract_style(
-    query: str,
-    *,
-    registry: QueryUnderstandingRegistry | None = None,
-) -> str:
-    active_registry = _active_registry(registry)
-    for style in active_registry.cuisine_style_terms:
-        if style in query:
-            return style
-    return ""
-
-
-def extract_difficulty(
-    query: str,
-    *,
-    registry: QueryUnderstandingRegistry | None = None,
-) -> str:
-    active_registry = _active_registry(registry)
-    for difficulty in active_registry.difficulty_terms:
-        if difficulty in query:
-            return difficulty
-    return ""
-
-
 def extract_excluded_terms(
     query: str,
     *,
@@ -84,6 +68,7 @@ def infer_query_constraints(
     query: str,
     *,
     registry: QueryUnderstandingRegistry | None = None,
+    constraint_schema: DomainQueryConstraintSchema | None = None,
 ) -> Dict[str, Any]:
     active_registry = _active_registry(registry)
     normalized = normalize_query_text(query)
@@ -94,51 +79,91 @@ def infer_query_constraints(
 
     explicit_minutes = extract_minutes(normalized, registry=active_registry)
     excluded_terms = extract_excluded_terms(normalized, registry=active_registry)
-    style = extract_style(normalized, registry=active_registry) if selection_intent else ""
-    difficulty = (
-        extract_difficulty(normalized, registry=active_registry) if selection_intent else ""
-    )
-    category_hits = (
-        matched_terms(normalized, active_registry.ingredient_category_terms)
-        if selection_intent
-        else []
-    )
-    health_hits = (
-        matched_terms(normalized, active_registry.health_terms) if selection_intent else []
+    extension = _infer_domain_extension(
+        normalized,
+        excluded_terms=excluded_terms,
+        selection_intent=selection_intent,
+        registry=active_registry,
+        schema=constraint_schema,
     )
 
     if (
         query_type in {"path_finding", "multi_hop", "subgraph", "clustering"}
         and not selection_intent
     ):
-        category_hits = []
-        health_hits = []
-        style = ""
-        difficulty = ""
+        extension = {}
 
     return {
-        "include_terms": dedupe_preserve_order([*category_hits, *([style] if style else [])]),
-        "exclude_terms": excluded_terms,
-        "ingredients": [],
-        "excluded_ingredients": excluded_terms,
-        "cuisine_terms": [style] if style else [],
-        "excluded_cuisine_terms": [],
-        "category_terms": dedupe_preserve_order(category_hits),
-        "health_terms": dedupe_preserve_order(health_hits),
-        "preference_terms": dedupe_preserve_order([*([difficulty] if difficulty else [])]),
-        "time": {
-            "max_total_minutes": explicit_minutes if filtering_intent else None,
-            "max_prep_minutes": None,
-            "max_cook_minutes": None,
-        },
-        "needs_recipe_recommendation": bool(recommendation_intent),
+        "entity_terms": [],
+        "excluded_entity_terms": excluded_terms,
+        "relation_types": [],
+        "temporal_filters": (
+            {"max_duration_minutes": explicit_minutes}
+            if filtering_intent and explicit_minutes is not None
+            else {}
+        ),
+        "structured_filters": {},
+        "extension": extension,
     }
 
 
+def _infer_domain_extension(
+    query: str,
+    *,
+    excluded_terms: list[str],
+    selection_intent: bool,
+    registry: QueryUnderstandingRegistry,
+    schema: DomainQueryConstraintSchema | None,
+) -> JsonObject:
+    if not selection_intent or schema is None:
+        return {}
+    extension: JsonObject = {}
+    for field in schema.fields:
+        if not field.term_group:
+            continue
+        matches = matched_terms(query, registry.policy.lexicon.term_group(field.term_group))
+        if matches:
+            extension[field.name] = coerce_json_value(
+                matches[0] if field.first_match_only else matches
+            )
+    for field_name in schema.excluded_term_fields:
+        if excluded_terms:
+            extension[field_name] = list(excluded_terms)
+    return extension
+
+
+def normalize_query_constraints(
+    payload: Mapping[str, object] | None,
+    *,
+    schema: DomainQueryConstraintSchema | None,
+) -> JsonObject:
+    """Project planner output into the neutral core plus the selected pack extension."""
+
+    data = payload or {}
+    temporal = coerce_json_object(data.get("temporal_filters"))
+    legacy_time = data.get("time")
+    legacy_time_payload = legacy_time if isinstance(legacy_time, Mapping) else {}
+    if schema and schema.maximum_duration_field:
+        maximum_duration = legacy_time_payload.get(schema.maximum_duration_field)
+        if maximum_duration not in (None, "") and "max_duration_minutes" not in temporal:
+            temporal["max_duration_minutes"] = maximum_duration
+    return coerce_json_object(
+        {
+            "entity_terms": as_string_list(data.get("entity_terms") or data.get("include_terms")),
+            "excluded_entity_terms": as_string_list(
+                data.get("excluded_entity_terms") or data.get("exclude_terms")
+            ),
+            "relation_types": as_string_list(data.get("relation_types")),
+            "temporal_filters": temporal,
+            "structured_filters": coerce_json_object(data.get("structured_filters")),
+            "extension": schema.project_extension(data) if schema else {},
+        }
+    )
+
+
 __all__ = [
-    "extract_difficulty",
     "extract_excluded_terms",
     "extract_minutes",
-    "extract_style",
     "infer_query_constraints",
+    "normalize_query_constraints",
 ]

@@ -9,17 +9,13 @@ can use them directly instead of relying only on virtual in-memory relations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Dict, Iterable, List, cast
 
-from ..kernel.documents import TextDocument
-from ..kernel.json_types import JsonObject, coerce_int, coerce_json_object
-from ..kernel.semantic_schema import (
-    SEMANTIC_NODE_LABELS,
-    SEMANTIC_RELATION_TYPES,
-    SEMANTIC_SCHEMA_VERSION,
-)
-from .neo4j import Neo4jConnectionManager, create_neo4j_driver
+from ...kernel.documents import TextDocument
+from ...kernel.json_types import JsonObject, coerce_int, coerce_json_object
+from ...kernel.semantic_schema import SEMANTIC_SCHEMA_VERSION
+from .semantic_schema import SEMANTIC_NODE_LABELS, SEMANTIC_RELATION_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -51,24 +47,32 @@ def _json_value_items(value: object) -> list[object]:
 class SemanticGraphSchemaWriter:
     """Write semantic schema nodes and relationships to Neo4j."""
 
-    def __init__(self, config, neo4j_manager: Neo4jConnectionManager | None = None):
+    def __init__(
+        self,
+        config,
+        neo4j_manager: object | None = None,
+        driver_factory: Callable[..., object] | None = None,
+    ):
         self.config = config
         self.storage = config.storage
         self.graph = config.graph
         self.neo4j_manager = neo4j_manager
-        self.driver: Any | None = None
+        self.driver_factory = driver_factory
+        self.driver: object | None = None
         self._owns_driver = False
 
     def __enter__(self) -> "SemanticGraphSchemaWriter":
         if self.neo4j_manager is not None:
-            self.driver = self.neo4j_manager.driver
-        else:
-            self.driver = create_neo4j_driver(
+            self.driver = getattr(self.neo4j_manager, "driver")
+        elif self.driver_factory is not None:
+            self.driver = self.driver_factory(
                 self.storage.neo4j_uri,
                 self.storage.neo4j_user,
                 self.storage.neo4j_password,
             )
             self._owns_driver = True
+        else:
+            raise RuntimeError("Semantic graph writer requires a Neo4j manager or driver factory.")
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -76,7 +80,7 @@ class SemanticGraphSchemaWriter:
 
     def close(self) -> None:
         if self._owns_driver and self.driver:
-            self.driver.close()
+            getattr(self.driver, "close")()
             self.driver = None
             self._owns_driver = False
 
@@ -90,15 +94,19 @@ class SemanticGraphSchemaWriter:
         opened_here = False
         if self.driver is None:
             if self.neo4j_manager is not None:
-                self.driver = self.neo4j_manager.driver
-            else:
-                self.driver = create_neo4j_driver(
+                self.driver = getattr(self.neo4j_manager, "driver")
+            elif self.driver_factory is not None:
+                self.driver = self.driver_factory(
                     self.storage.neo4j_uri,
                     self.storage.neo4j_user,
                     self.storage.neo4j_password,
                 )
                 self._owns_driver = True
                 opened_here = True
+            else:
+                raise RuntimeError(
+                    "Semantic graph writer requires a Neo4j manager or driver factory."
+                )
 
         rows = self._build_rows(documents)
         if not rows:
@@ -111,7 +119,7 @@ class SemanticGraphSchemaWriter:
             raise RuntimeError("Neo4j driver is not initialized.")
 
         try:
-            with driver.session(database=self.storage.neo4j_database) as session:
+            with getattr(driver, "session")(database=self.storage.neo4j_database) as session:
                 self._ensure_constraints(session)
                 result = cast(Dict[str, int], session.execute_write(self._write_rows, rows))
             logger.info("Semantic graph schema sync complete: %s", result)

@@ -45,7 +45,7 @@ def _answer_workflow_copy_payload() -> dict[str, str]:
             "Found {document_count} relevant documents: {document_summaries}"
         ),
         "document_summary_total_template": "\n    Total results: {document_count}",
-        "unknown_recipe_name": "unknown",
+        "unknown_entity_name": "unknown",
         "unknown_search_type": "unknown",
     }
 
@@ -55,14 +55,9 @@ def _policy_payload() -> dict:
         "lexicon": {
             "term_sets": {
                 "relation_markers": ["custom relation marker"],
-                "flavor_terms": ["umami"],
-                "texture_effect_terms": [],
-                "technique_terms": [],
-                "diet_terms": [],
-                "health_terms": [],
-                "cuisine_style_terms": [],
-                "ingredient_category_terms": [],
-                "difficulty_terms": [],
+                "semantic_entity_terms": ["umami"],
+                "semantic_effect_terms": [],
+                "semantic_entity_term_groups": ["semantic_entity_terms"],
                 "time_markers": [],
                 "path_markers": [],
                 "subgraph_markers": [],
@@ -128,7 +123,7 @@ def _policy_payload() -> dict:
         "routing": {
             "graph_first_query_types": ["subgraph"],
             "multi_hop_graph_first_relation_hits": 2,
-            "meaningful_constraint_fields": ["needs_recipe_recommendation"],
+            "meaningful_constraint_fields": ["recommendation_required"],
             "validation_labels": {
                 "strategy": "strategy_adjusted",
                 "graph_query_type": "query_type_adjusted",
@@ -169,7 +164,7 @@ def _policy_payload() -> dict:
                 "missing_relation_evidence": "Missing graph evidence.",
                 "sparse_evidence": "Sparse evidence.",
                 "missing_information_caution": "Missing information caution.",
-                "fallback_claim_template": "{recipe_name} evidence.",
+                "fallback_claim_template": "{entity_name} evidence.",
             },
             "decision": {
                 "default_answer_type": "direct_answer",

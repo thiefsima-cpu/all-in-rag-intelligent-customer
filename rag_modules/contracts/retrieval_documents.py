@@ -129,13 +129,10 @@ class EvidenceDocument:
             or self.entity_id
             or self.metadata.get("node_id")
             or self.metadata.get("parent_id")
-            or self.metadata.get("recipe_id")
         )
         if node_id:
             return node_id
-        entity_name = self.entity_name or coerce_str(
-            self.metadata.get("entity_name") or self.metadata.get("recipe_name")
-        )
+        entity_name = self.entity_name or coerce_str(self.metadata.get("entity_name"))
         if entity_name:
             entity_type = (
                 self.entity_type or coerce_str(self.metadata.get("entity_type")) or "entity"
@@ -196,8 +193,7 @@ def matched_terms_from_metadata(metadata: JsonObject) -> list[str]:
         "matched_keyword",
         "matched_entities",
         "matched_attributes",
-        "matched_ingredients",
-        "matched_steps",
+        "matched_relationships",
     ):
         value = metadata.get(key)
         if isinstance(value, list):
@@ -213,20 +209,12 @@ def evidence_document_from_text_document(document: TextDocument) -> EvidenceDocu
     return EvidenceDocument(
         content=document.content,
         entity_id=coerce_str(
-            metadata.get("entity_id")
-            or metadata.get("node_id")
-            or metadata.get("parent_id")
-            or metadata.get("recipe_id")
+            metadata.get("entity_id") or metadata.get("node_id") or metadata.get("parent_id")
         ),
-        entity_name=coerce_str(
-            metadata.get("entity_name") or metadata.get("recipe_name") or metadata.get("name")
-        ),
+        entity_name=coerce_str(metadata.get("entity_name") or metadata.get("name")),
         entity_type=coerce_str(metadata.get("entity_type") or metadata.get("node_type")),
         node_id=coerce_str(
-            metadata.get("node_id")
-            or metadata.get("entity_id")
-            or metadata.get("parent_id")
-            or metadata.get("recipe_id")
+            metadata.get("node_id") or metadata.get("entity_id") or metadata.get("parent_id")
         ),
         node_type=coerce_str(metadata.get("node_type") or metadata.get("entity_type")),
         score=coerce_float(
@@ -250,7 +238,9 @@ def evidence_document_from_text_document(document: TextDocument) -> EvidenceDocu
         evidence_type=coerce_str(
             metadata.get("evidence_type")
             or metadata.get("search_type")
-            or ("recipe" if metadata.get("recipe_name") else "text")
+            or metadata.get("doc_type")
+            or metadata.get("entity_type")
+            or "text"
         ),
         matched_terms=matched_terms_from_metadata(metadata),
         graph_evidence=coerce_json_object(metadata.get("graph_evidence")),

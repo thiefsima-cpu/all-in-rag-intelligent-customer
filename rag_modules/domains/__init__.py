@@ -9,10 +9,14 @@ from typing import cast
 from ..kernel.json_types import JsonObject
 from .contracts import (
     CitationProjection,
+    DomainBuildDataView,
+    DomainConstraintField,
     DomainDocumentMapper,
     DomainExtraction,
     DomainOntology,
     DomainPack,
+    DomainQueryConstraintSchema,
+    DomainReasoningVocabulary,
     ExtractedEntity,
     ExtractedRelation,
     GraphNodeType,
@@ -25,6 +29,7 @@ _DOMAIN_PACKS = {
     CUSTOMER_SERVICE_DOMAIN_PACK.name: CUSTOMER_SERVICE_DOMAIN_PACK,
     RECIPE_DOMAIN_PACK.name: RECIPE_DOMAIN_PACK,
 }
+DEFAULT_DOMAIN_NAME = "customer_service"
 
 
 def register_domain_pack(pack: DomainPack, *, replace: bool = False) -> None:
@@ -73,10 +78,15 @@ def load_domain_evaluation(pack: DomainPack) -> JsonObject:
 
 __all__ = [
     "CitationProjection",
+    "DEFAULT_DOMAIN_NAME",
+    "DomainBuildDataView",
+    "DomainConstraintField",
     "DomainDocumentMapper",
     "DomainExtraction",
     "DomainOntology",
     "DomainPack",
+    "DomainQueryConstraintSchema",
+    "DomainReasoningVocabulary",
     "ExtractedEntity",
     "ExtractedRelation",
     "GraphNodeType",

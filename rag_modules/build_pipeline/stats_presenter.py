@@ -41,19 +41,6 @@ class KnowledgeBaseStatsPresenter:
 
     @staticmethod
     def _data_stat_lines(stats: Mapping[str, object]) -> list[str]:
-        if stats.get("domain_name") in (None, "", "recipe"):
-            lines = [
-                "\nKnowledge base stats:",
-                f"   Recipes: {stats.get('total_recipes', 0)}",
-                f"   Ingredients: {stats.get('total_ingredients', 0)}",
-                f"   Cooking steps: {stats.get('total_cooking_steps', 0)}",
-                f"   Documents: {stats.get('total_documents', 0)}",
-                f"   Chunks: {stats.get('total_chunks', 0)}",
-            ]
-            categories_payload = stats.get("categories")
-            if isinstance(categories_payload, dict):
-                lines.append(f"   Categories: {', '.join(list(categories_payload)[:10])}")
-            return lines
         lines = [
             "\nKnowledge base stats:",
             f"   Domain: {stats.get('domain_name', '')}",
@@ -64,6 +51,10 @@ class KnowledgeBaseStatsPresenter:
         entity_types = stats.get("entity_types")
         if isinstance(entity_types, dict):
             lines.append(f"   Entity types: {', '.join(list(entity_types)[:10])}")
+        domain_metrics = stats.get("domain_metrics")
+        if isinstance(domain_metrics, dict):
+            for name, value in domain_metrics.items():
+                lines.append(f"   {str(name).replace('_', ' ').title()}: {value}")
         return lines
 
     def vector_row_count(self) -> int:

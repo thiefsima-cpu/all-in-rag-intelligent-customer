@@ -35,7 +35,13 @@ class KnowledgeBaseStatsPresenterTests(unittest.TestCase):
             data_module=type(
                 "DataModule",
                 (),
-                {"get_statistics": lambda self: {"total_recipes": 2, "total_chunks": 4}},
+                {
+                    "get_statistics": lambda self: {
+                        "domain_name": "recipe",
+                        "total_entities": 2,
+                        "total_chunks": 4,
+                    }
+                },
             )(),
             index_module=type("IndexModule", (), {"stats": {"row_count": 4}})(),
             query_router=type("QueryRouter", (), {"stats": {"total_queries": 3}})(),
@@ -47,7 +53,7 @@ class KnowledgeBaseStatsPresenterTests(unittest.TestCase):
         self.assertEqual(stats_access.graph_stats_calls, 1)
         self.assertEqual(stats_access.vector_stats_calls, 1)
         self.assertEqual(stats_access.route_stats_calls, 1)
-        self.assertTrue(any("Recipes: 2" in message for message in messages))
+        self.assertTrue(any("Entities: 2" in message for message in messages))
         self.assertTrue(any("Vector rows: 4" in message for message in messages))
         self.assertTrue(any("Routed queries: 3" in message for message in messages))
 

@@ -260,11 +260,7 @@ class AnswerPipelineService:
             entity_name = (
                 doc.entity_name
                 or metadata.get("entity_name")
-                or getattr(
-                    self.answer_workflow_copy,
-                    "unknown_entity_name",
-                    getattr(self.answer_workflow_copy, "unknown_recipe_name", "unknown"),
-                )
+                or self.answer_workflow_copy.unknown_entity_name
             )
             search_type = (
                 doc.search_type

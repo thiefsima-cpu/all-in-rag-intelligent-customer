@@ -8,10 +8,8 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ..kernel.json_types import JsonObject, as_string_list, coerce_json_object
-from ..kernel.time_parsing import parse_minutes
 
 
 def loads_json_object(text: str) -> JsonObject:
@@ -33,79 +31,74 @@ def loads_json_object(text: str) -> JsonObject:
 
 @dataclass
 class QueryConstraints:
-    include_terms: list[str] = field(default_factory=list)
-    exclude_terms: list[str] = field(default_factory=list)
-    ingredients: list[str] = field(default_factory=list)
-    excluded_ingredients: list[str] = field(default_factory=list)
-    cuisine_terms: list[str] = field(default_factory=list)
-    excluded_cuisine_terms: list[str] = field(default_factory=list)
-    category_terms: list[str] = field(default_factory=list)
-    health_terms: list[str] = field(default_factory=list)
-    preference_terms: list[str] = field(default_factory=list)
-    max_total_minutes: Optional[int] = None
-    max_prep_minutes: Optional[int] = None
-    max_cook_minutes: Optional[int] = None
-    needs_recipe_recommendation: bool = False
+    """Domain-neutral filters carried through query planning and retrieval."""
+
+    entity_terms: list[str] = field(default_factory=list)
+    excluded_entity_terms: list[str] = field(default_factory=list)
+    relation_types: list[str] = field(default_factory=list)
+    temporal_filters: JsonObject = field(default_factory=dict)
+    structured_filters: JsonObject = field(default_factory=dict)
+    extension: JsonObject = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object] | None) -> "QueryConstraints":
         payload = data or {}
-        time_data = payload.get("time")
-        time_payload = time_data if isinstance(time_data, Mapping) else {}
+        temporal_data = payload.get("temporal_filters")
+        temporal_payload = temporal_data if isinstance(temporal_data, Mapping) else {}
+        structured_data = payload.get("structured_filters")
+        structured_payload = structured_data if isinstance(structured_data, Mapping) else {}
+        extension_data = payload.get("extension")
+        extension_payload = extension_data if isinstance(extension_data, Mapping) else {}
         return cls(
-            include_terms=as_string_list(payload.get("include_terms")),
-            exclude_terms=as_string_list(payload.get("exclude_terms")),
-            ingredients=as_string_list(payload.get("ingredients")),
-            excluded_ingredients=as_string_list(payload.get("excluded_ingredients")),
-            cuisine_terms=as_string_list(payload.get("cuisine_terms")),
-            excluded_cuisine_terms=as_string_list(payload.get("excluded_cuisine_terms")),
-            category_terms=as_string_list(payload.get("category_terms")),
-            health_terms=as_string_list(payload.get("health_terms")),
-            preference_terms=as_string_list(payload.get("preference_terms")),
-            max_total_minutes=parse_minutes(time_payload.get("max_total_minutes")),
-            max_prep_minutes=parse_minutes(time_payload.get("max_prep_minutes")),
-            max_cook_minutes=parse_minutes(time_payload.get("max_cook_minutes")),
-            needs_recipe_recommendation=bool(payload.get("needs_recipe_recommendation", False)),
+            entity_terms=as_string_list(payload.get("entity_terms")),
+            excluded_entity_terms=as_string_list(payload.get("excluded_entity_terms")),
+            relation_types=as_string_list(payload.get("relation_types")),
+            temporal_filters=coerce_json_object(temporal_payload),
+            structured_filters=coerce_json_object(structured_payload),
+            extension=coerce_json_object(extension_payload),
         )
 
     def has_constraints(self) -> bool:
         return any(
             [
-                self.include_terms,
-                self.exclude_terms,
-                self.ingredients,
-                self.excluded_ingredients,
-                self.cuisine_terms,
-                self.excluded_cuisine_terms,
-                self.category_terms,
-                self.health_terms,
-                self.preference_terms,
-                self.max_total_minutes is not None,
-                self.max_prep_minutes is not None,
-                self.max_cook_minutes is not None,
+                self.entity_terms,
+                self.excluded_entity_terms,
+                self.relation_types,
+                self.temporal_filters,
+                self.structured_filters,
+                self.extension,
             ]
         )
+
+    def field_value(self, field_name: str) -> object:
+        """Resolve a policy-owned meaningful-field selector without fixed domain attributes."""
+
+        if field_name.startswith("extension."):
+            return self.extension.get(field_name.removeprefix("extension."))
+        if field_name.startswith("temporal_filters."):
+            return self.temporal_filters.get(field_name.removeprefix("temporal_filters."))
+        if field_name.startswith("structured_filters."):
+            return self.structured_filters.get(field_name.removeprefix("structured_filters."))
+        return {
+            "entity_terms": self.entity_terms,
+            "excluded_entity_terms": self.excluded_entity_terms,
+            "relation_types": self.relation_types,
+            "temporal_filters": self.temporal_filters,
+            "structured_filters": self.structured_filters,
+            "extension": self.extension,
+        }.get(field_name)
 
     def to_dict(self) -> JsonObject:
         return coerce_json_object(
             {
-                "include_terms": self.include_terms,
-                "exclude_terms": self.exclude_terms,
-                "ingredients": self.ingredients,
-                "excluded_ingredients": self.excluded_ingredients,
-                "cuisine_terms": self.cuisine_terms,
-                "excluded_cuisine_terms": self.excluded_cuisine_terms,
-                "category_terms": self.category_terms,
-                "health_terms": self.health_terms,
-                "preference_terms": self.preference_terms,
-                "time": {
-                    "max_total_minutes": self.max_total_minutes,
-                    "max_prep_minutes": self.max_prep_minutes,
-                    "max_cook_minutes": self.max_cook_minutes,
-                },
-                "needs_recipe_recommendation": self.needs_recipe_recommendation,
+                "entity_terms": self.entity_terms,
+                "excluded_entity_terms": self.excluded_entity_terms,
+                "relation_types": self.relation_types,
+                "temporal_filters": self.temporal_filters,
+                "structured_filters": self.structured_filters,
+                "extension": self.extension,
             }
         )
 
 
-__all__ = ["QueryConstraints", "loads_json_object", "parse_minutes"]
+__all__ = ["QueryConstraints", "loads_json_object"]

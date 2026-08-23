@@ -30,10 +30,10 @@ def _document_metadata(doc: EvidenceDocument | dict[str, Any]) -> dict[str, Any]
     return dict(doc.metadata or {})
 
 
-def _document_recipe_name(doc: EvidenceDocument | dict[str, Any]) -> str:
+def _document_entity_name(doc: EvidenceDocument | dict[str, Any]) -> str:
     if isinstance(doc, dict):
-        return str(doc.get("recipe_name") or _document_metadata(doc).get("recipe_name") or "")
-    return str(doc.entity_name or _document_metadata(doc).get("recipe_name") or "")
+        return str(doc.get("entity_name") or _document_metadata(doc).get("entity_name") or "")
+    return str(doc.entity_name or _document_metadata(doc).get("entity_name") or "")
 
 
 def _document_evidence_units(doc: EvidenceDocument | dict[str, Any]) -> List[dict]:
@@ -50,19 +50,19 @@ def _document_graph_evidence(doc: EvidenceDocument | dict[str, Any]) -> dict[str
     return dict(doc.graph_evidence or {})
 
 
-def _doc_recipe_names(docs: List[EvidenceDocument | dict[str, Any]]) -> List[str]:
+def _doc_entity_names(docs: List[EvidenceDocument | dict[str, Any]]) -> List[str]:
     names = []
     for doc in docs:
-        name = _document_recipe_name(doc)
+        name = _document_entity_name(doc)
         if name and name not in names:
             names.append(name)
     return names
 
 
-def _ranked_doc_recipe_names(
+def _ranked_doc_entity_names(
     docs: List[EvidenceDocument | dict[str, Any]],
 ) -> List[str]:
-    return [name for name in (_document_recipe_name(doc) for doc in docs) if name]
+    return [name for name in (_document_entity_name(doc) for doc in docs) if name]
 
 
 def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List[dict]:
@@ -75,8 +75,8 @@ def _doc_evidence_summary(docs: List[EvidenceDocument | dict[str, Any]]) -> List
             summaries.append(
                 {
                     "doc_id": str(doc.get("doc_id") or ""),
-                    "recipe_id": str(doc.get("recipe_id") or doc.get("node_id") or ""),
-                    "recipe_name": _document_recipe_name(doc),
+                    "entity_id": str(doc.get("entity_id") or doc.get("node_id") or ""),
+                    "entity_name": _document_entity_name(doc),
                     "source": str(
                         doc.get("source")
                         or doc.get("search_method")
@@ -118,9 +118,9 @@ def _answer_has_citation_marker(answer: str) -> bool:
     return any(marker in answer for marker in ("菜谱证据", "依据"))
 
 
-def _expected_recipe_names(case: EvalCase) -> list[str]:
-    names = list(case.expectation.recipe_names)
-    for name, grade in case.expectation.recipe_relevance.items():
+def _expected_entity_names(case: EvalCase) -> list[str]:
+    names = list(case.expectation.entity_names)
+    for name, grade in case.expectation.entity_relevance.items():
         if grade > 0 and name not in names:
             names.append(name)
     return names
@@ -170,10 +170,10 @@ def _actual_response_mode(
     expected_response_mode: EvalResponseMode,
     *,
     documents: tuple[EvidenceDocument | dict[str, Any], ...],
-    recipe_names: list[str],
+    entity_names: list[str],
     answer: str,
 ) -> EvalResponseMode:
-    if documents or recipe_names or _answer_has_citation_marker(answer):
+    if documents or entity_names or _answer_has_citation_marker(answer):
         return EvalResponseMode.GROUNDED_ANSWER
     if expected_response_mode.is_abstention:
         return expected_response_mode
@@ -190,13 +190,13 @@ def score_eval_observation(
     documents = tuple(observation.documents or ())
     answer = str(observation.answer or "")
     expected = case.expectation
-    expected_recipe_names = _expected_recipe_names(case)
-    recipe_names = _doc_recipe_names(list(documents))
-    ranked_recipe_names = _ranked_doc_recipe_names(list(documents))
+    expected_entity_names = _expected_entity_names(case)
+    entity_names = _doc_entity_names(list(documents))
+    ranked_entity_names = _ranked_doc_entity_names(list(documents))
     missing_names = [
         expected_name
-        for expected_name in expected_recipe_names
-        if expected_name not in recipe_names
+        for expected_name in expected_entity_names
+        if expected_name not in entity_names
     ]
     answer_missing_terms = (
         [term for term in expected.answer_terms if term not in answer] if generate else []
@@ -206,7 +206,7 @@ def score_eval_observation(
     actual_response_mode = _actual_response_mode(
         expected.response_mode,
         documents=documents,
-        recipe_names=recipe_names,
+        entity_names=entity_names,
         answer=answer,
     )
 
@@ -216,7 +216,7 @@ def score_eval_observation(
             f"expected_strategy={expected.strategy} actual_strategy={observation.strategy}"
         )
     if missing_names:
-        failures.append(f"missing_recipe_names={missing_names}")
+        failures.append(f"missing_entity_names={missing_names}")
     if answer_failed:
         failures.append(f"missing_answer_terms={answer_missing_terms}")
 
@@ -227,8 +227,8 @@ def score_eval_observation(
     else:
         if documents:
             response_mode_failures.append("unexpected_evidence")
-        if recipe_names:
-            response_mode_failures.append(f"unexpected_recipe_names={recipe_names}")
+        if entity_names:
+            response_mode_failures.append(f"unexpected_entity_names={entity_names}")
         if _answer_has_citation_marker(answer):
             response_mode_failures.append("unexpected_citation")
     failures.extend(response_mode_failures)
@@ -243,8 +243,8 @@ def score_eval_observation(
         failures.append("response_mode_mismatch")
 
     if expected.response_mode is EvalResponseMode.GROUNDED_ANSWER:
-        relevance = expected.recipe_relevance or {name: 1.0 for name in expected_recipe_names}
-        ranking = retrieval_metrics(ranked_recipe_names, relevance, k=top_k)
+        relevance = expected.entity_relevance or {name: 1.0 for name in expected_entity_names}
+        ranking = retrieval_metrics(ranked_entity_names, relevance, k=top_k)
         grounding = (
             grounding_metrics(answer, documents) if generate else _grounding_not_applicable()
         )
@@ -267,8 +267,8 @@ def score_eval_observation(
         "evaluation": {
             "strategy": observation.strategy,
             "expected_strategy": expected.strategy,
-            "expected_recipe_names": expected_recipe_names,
-            "expected_recipe_relevance": dict(expected.recipe_relevance),
+            "expected_entity_names": expected_entity_names,
+            "expected_entity_relevance": dict(expected.entity_relevance),
             "expected_answer_terms": list(expected.answer_terms),
             "expected_response_mode": expected.response_mode.value,
             "actual_response_mode": actual_response_mode.value,
@@ -279,9 +279,9 @@ def score_eval_observation(
             "answer_preview": answer[:300] if answer else "",
         },
         "retrieval": {
-            "recipe_names": recipe_names,
-            "ranked_recipe_names": ranked_recipe_names,
-            "missing_recipe_names": missing_names,
+            "entity_names": entity_names,
+            "ranked_entity_names": ranked_entity_names,
+            "missing_entity_names": missing_names,
             "doc_count": len(documents),
             "evidence": _doc_evidence_summary(list(documents)),
             **ranking,
@@ -333,11 +333,11 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         if item.get("evaluation", {}).get("strategy")
         == item.get("evaluation", {}).get("expected_strategy")
     )
-    recipe_cases = [
-        item for item in results if item.get("evaluation", {}).get("expected_recipe_names")
+    entity_cases = [
+        item for item in results if item.get("evaluation", {}).get("expected_entity_names")
     ]
-    recipe_passed = sum(
-        1 for item in recipe_cases if not item.get("retrieval", {}).get("missing_recipe_names")
+    entity_passed = sum(
+        1 for item in entity_cases if not item.get("retrieval", {}).get("missing_entity_names")
     )
     graph_covered = sum(
         1
@@ -482,7 +482,7 @@ def calculate_eval_metrics(results: List[dict]) -> dict:
         "response_mode_counts": dict(sorted(response_mode_counts.items())),
         "dimension_counts": dict(sorted(dimension_counts.items())),
         "strategy_accuracy": strategy_passed / len(strategy_cases) if strategy_cases else None,
-        "recipe_hit_rate": recipe_passed / len(recipe_cases) if recipe_cases else None,
+        "entity_hit_rate": entity_passed / len(entity_cases) if entity_cases else None,
         "graph_evidence_coverage": graph_covered / total,
         "graph_evidence_unit_coverage": graph_unit_covered / total,
         "avg_evidence_score": sum(scores) / len(scores) if scores else 0.0,
@@ -528,7 +528,7 @@ def build_offline_eval_observation(
     documents = tuple(
         EvidenceDocument(
             content=fixture.content,
-            entity_name=fixture.recipe_name,
+            entity_name=fixture.entity_name,
             node_id=f"offline-quality-{case.case_id}-{rank}",
             doc_id=f"offline-quality-{case.case_id}-{rank}",
             score=fixture.score,
@@ -536,7 +536,7 @@ def build_offline_eval_observation(
             evidence_type=fixture.evidence_type,
             matched_terms=list(case.expectation.answer_terms),
             graph_evidence=(
-                {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": fixture.recipe_name}]}
+                {"relationships": [{"type": "OFFLINE_SUPPORTS", "target": fixture.entity_name}]}
                 if fixture.evidence_type == "graph"
                 else {}
             ),

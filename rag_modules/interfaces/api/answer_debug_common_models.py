@@ -46,14 +46,12 @@ class EvidenceDocumentResponseModel(BaseModel):
     entity_name: str = ""
     entity_type: str = ""
     node_id: str = ""
-    recipe_name: str = ""
     node_type: str = ""
     score: float = 0.0
     search_type: str = ""
     search_method: str = ""
     retrieval_level: str = ""
     doc_id: str = ""
-    recipe_id: str = ""
     source: str = "unknown"
     evidence_type: str = "text"
     matched_terms: list[str] = Field(default_factory=list)
@@ -72,14 +70,12 @@ class EvidenceDocumentResponseModel(BaseModel):
             entity_name=document.entity_name,
             entity_type=document.entity_type,
             node_id=document.node_id,
-            recipe_name=document.entity_name,
             node_type=document.node_type,
             score=document.score,
             search_type=document.search_type,
             search_method=document.search_method,
             retrieval_level=document.retrieval_level,
             doc_id=document.doc_id,
-            recipe_id=document.entity_id,
             source=document.source,
             evidence_type=document.evidence_type,
             matched_terms=list(document.matched_terms),

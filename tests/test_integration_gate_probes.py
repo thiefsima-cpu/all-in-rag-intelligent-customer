@@ -61,8 +61,8 @@ class FakeNeo4jSession:
         return None
 
     def run(self, query: str, parameters: object | None = None) -> FakeNeo4jResult:
-        del parameters
         self._driver.queries.append(query)
+        self._driver.query_parameters.append(parameters)
         if self._driver.run_error is not None:
             raise self._driver.run_error
         return FakeNeo4jResult(self._driver.entity_count)
@@ -74,6 +74,7 @@ class FakeNeo4jDriver:
         self.run_error = run_error
         self.closed = False
         self.queries: list[str] = []
+        self.query_parameters: list[object | None] = []
         self.session_databases: list[str | None] = []
 
     def session(self, *, database: str | None = None) -> FakeNeo4jSession:
@@ -298,6 +299,21 @@ def test_neo4j_probe_uses_repository_driver_factory_contract_and_query_database(
     assert len(neo4j.queries) == 1
     assert "entity.domain = $domain_name" in neo4j.queries[0]
     assert "AS entity_count" in neo4j.queries[0]
+    assert neo4j.query_parameters == [
+        {
+            "domain_name": "customer_service",
+            "primary_labels": [
+                "Order",
+                "Product",
+                "RefundPolicy",
+                "WarrantyPolicy",
+                "InvoicePolicy",
+                "ServicePolicy",
+                "SupportArticle",
+            ],
+            "allow_domainless_graph_records": False,
+        }
+    ]
 
 
 def test_milvus_probe_accepts_configured_collection_alias() -> None:

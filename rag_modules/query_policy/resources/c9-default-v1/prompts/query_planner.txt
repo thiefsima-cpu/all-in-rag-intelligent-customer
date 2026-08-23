@@ -45,22 +45,23 @@
   "relation_types": [],
   "max_depth": 2,
   "constraints": {{
-    "include_terms": [],
-    "exclude_terms": [],
-    "ingredients": [],
-    "excluded_ingredients": [],
-    "cuisine_terms": [],
-    "excluded_cuisine_terms": [],
-    "category_terms": [],
-    "health_terms": [],
-    "preference_terms": [],
-    "time": {{
-      "max_total_minutes": null,
+    "entity_terms": [],
+    "excluded_entity_terms": [],
+    "relation_types": [],
+    "temporal_filters": {{"max_duration_minutes": null}},
+    "structured_filters": {{}},
+    "extension": {{
+      "ingredients": [],
+      "excluded_ingredients": [],
+      "cuisine_terms": [],
+      "excluded_cuisine_terms": [],
+      "category_terms": [],
+      "health_terms": [],
+      "preference_terms": [],
       "max_prep_minutes": null,
       "max_cook_minutes": null
-    }},
-    "needs_recipe_recommendation": false
+    }}
   }},
-  "needs_recipe_recommendation": false,
+  "recommendation_required": false,
   "answer_style": "concise"
 }}

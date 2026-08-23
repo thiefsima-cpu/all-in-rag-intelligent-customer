@@ -18,9 +18,11 @@ from ...contracts import (
     RequestControl,
 )
 from ...contracts.query_constraints import QueryConstraints, loads_json_object
+from ...domains.contracts import DomainQueryConstraintSchema
 from ...query_policy import get_query_policy
 from ...query_policy.models import QueryPolicyBundle
 from ...safe_logging import log_failure
+from ..constraint_features import normalize_query_constraints
 from ..ports import LLMClientPort
 from ..registry import QueryUnderstandingRegistry, query_registry
 from ..scoring import should_use_fast_rule_plan
@@ -40,21 +42,25 @@ class QueryPlanner:
         settings: QueryPlannerRuntimeSettings,
         semantic_settings: QuerySemanticRuntimeSettings,
         policy_bundle: QueryPolicyBundle | None = None,
+        constraint_schema: DomainQueryConstraintSchema | None = None,
     ):
         self.llm_client = llm_client
         self.policy_bundle = policy_bundle or get_query_policy()
         self.registry: QueryUnderstandingRegistry = query_registry(self.policy_bundle)
         self.settings = settings
         self.semantic_settings = semantic_settings
+        self.constraint_schema = constraint_schema
         self._plan_cache = QueryPlannerCache()
         self._calibrator = QueryPlanCalibrator(
             self.semantic_settings,
             policy_bundle=self.policy_bundle,
+            constraint_schema=self.constraint_schema,
         )
         self._rule_planner = RuleBasedPlanner(
             self.semantic_settings,
             self._calibrator,
             policy_bundle=self.policy_bundle,
+            constraint_schema=self.constraint_schema,
         )
 
     def plan(self, query: str, *, control: RequestControl | None = None) -> QueryPlan:
@@ -120,9 +126,15 @@ class QueryPlanner:
             if control is not None:
                 control.raise_if_cancelled()
             response_content = self._response_text(response) or "{}"
+            plan_payload = loads_json_object(response_content)
+            raw_constraints = plan_payload.get("constraints")
+            plan_payload["constraints"] = normalize_query_constraints(
+                raw_constraints if isinstance(raw_constraints, dict) else None,
+                schema=self.constraint_schema,
+            )
             plan = QueryPlan.from_dict(
                 query,
-                loads_json_object(response_content),
+                plan_payload,
                 semantic_settings=self.semantic_settings,
                 schema_relation_types=self.registry.graph_relation_types,
             )

@@ -1,19 +1,21 @@
-"""Ontology-driven graph loading for non-recipe domain packs."""
+"""Ontology-driven graph loading for domain packs."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 
-from ...contracts.graph_preparation import GraphNode
+from ...contracts.graph_preparation import GraphNode, LoadedGraphData
 from ...domains.contracts import DomainDocumentMapper, DomainOntology
 from ...kernel.documents import TextDocument
 from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
-from ..ports import Neo4jDriverPort
-from .loader import LoadedGraphData, Neo4jSessionLike, _string_list
+from ..ports import Neo4jDriverPort, Neo4jSessionPort
+from .state import DomainDocumentBuilder as DomainDocumentBuilderBase
+from .state import GraphDataLoader
 
 logger = logging.getLogger(__name__)
+
 
 DOMAIN_ENTITIES_QUERY = """
 MATCH (n)
@@ -26,20 +28,31 @@ ORDER BY elementId(n)
 """
 
 
-class DomainGraphDataLoader:
+class DomainGraphDataLoader(GraphDataLoader):
     """Load all primary entities declared by a domain ontology."""
 
-    def __init__(self, ontology: DomainOntology, *, domain_name: str) -> None:
+    def __init__(
+        self,
+        ontology: DomainOntology,
+        *,
+        domain_name: str,
+        primary_group: str = "entities",
+    ) -> None:
         self.ontology = ontology
         self.domain_name = str(domain_name)
+        self.primary_group = str(primary_group)
 
     def load(self, driver: Neo4jDriverPort, *, database: str) -> LoadedGraphData:
         with driver.session(database=database) as session:
             entities = self._load_entities(session)
         logger.info("Loaded %d domain entities.", len(entities))
-        return LoadedGraphData(recipes=entities, ingredients=[], cooking_steps=[])
+        return LoadedGraphData(
+            primary_entities=entities,
+            primary_group=self.primary_group,
+            related_entity_groups={},
+        )
 
-    def _load_entities(self, session: Neo4jSessionLike) -> list[GraphNode]:
+    def _load_entities(self, session: Neo4jSessionPort) -> list[GraphNode]:
         entities: list[GraphNode] = []
         for record in session.run(
             DOMAIN_ENTITIES_QUERY,
@@ -76,7 +89,15 @@ def _first_property(properties: Mapping[str, object], field_names: tuple[str, ..
     return ""
 
 
-class DomainDocumentBuilder:
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, Sequence):
+        return [str(item) for item in value if str(item)]
+    return []
+
+
+class DomainDocumentBuilder(DomainDocumentBuilderBase):
     """Materialize retrieval documents through the selected domain mapper."""
 
     def __init__(self, mapper: DomainDocumentMapper) -> None:
@@ -87,11 +108,11 @@ class DomainDocumentBuilder:
         *,
         driver: Neo4jDriverPort,
         database: str,
-        recipes: Iterable[GraphNode],
+        entities: Iterable[GraphNode],
     ) -> list[TextDocument]:
         del driver, database
         documents: list[TextDocument] = []
-        for entity in recipes:
+        for entity in entities:
             payload = {
                 **dict(entity.properties or {}),
                 "entity_id": entity.node_id,

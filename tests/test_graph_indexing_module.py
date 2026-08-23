@@ -49,7 +49,7 @@ class GraphIndexingModuleTests(unittest.TestCase):
             name="step 1",
             properties={"description": "stir fry aromatics", "technique": "stir fry", "time": "3m"},
         )
-        module.create_entity_key_values([recipe], [ingredient], [step])
+        module.create_entity_key_values([recipe, ingredient, step])
         module.create_relation_key_values(
             [
                 ("r1", "REQUIRES", "i1"),
@@ -154,9 +154,7 @@ class GraphIndexingModuleTests(unittest.TestCase):
         sparse_step = SimpleNamespace(node_id="s-sparse", properties={})
 
         module.create_entity_key_values(
-            [recipe, sparse_recipe],
-            [ingredient, sparse_ingredient],
-            [step, sparse_step],
+            [recipe, sparse_recipe, ingredient, sparse_ingredient, step, sparse_step]
         )
 
         full_recipe = module.entity_kv_store["r-full"]

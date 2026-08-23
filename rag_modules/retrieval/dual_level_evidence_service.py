@@ -76,7 +76,7 @@ class DualLevelEvidenceService:
                 content_parts.append(f"相关菜品: {source_name}")
             if metadata.get("target_name"):
                 content_parts.append(f"相关信息: {metadata['target_name']}")
-            if source_kv and source_kv.entity_type == "Recipe":
+            if source_kv:
                 first_line = (source_kv.value_content or "").split("\n")[0]
                 if first_line:
                     content_parts.append(f"菜谱详情: {first_line}")
@@ -117,8 +117,6 @@ class DualLevelEvidenceService:
         for keyword in topic_keywords:
             entities = self.graph_indexing.get_entities_by_key(keyword)
             for entity in entities:
-                if entity.entity_type != "Recipe":
-                    continue
                 results.append(
                     EvidenceDocument(
                         content=f"主题分类: {keyword}\n{entity.value_content}",

@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
+from ..domains.contracts import DomainReasoningVocabulary
 from ..kernel.json_types import JsonObject
-from ..kernel.semantic_schema import SEMANTIC_NODE_LABELS_SET
 from ..query_policy import get_query_policy
 from ..query_policy.models import QueryPolicyBundle
 from .retrieval_types import GraphNodeSnapshot, KnowledgeSubgraph
@@ -46,8 +46,14 @@ class GraphReasoningOutcome:
 class GraphReasoningStrategy:
     """Produce compact reasoning chains from a knowledge subgraph."""
 
-    def __init__(self, *, policy_bundle: QueryPolicyBundle | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        policy_bundle: QueryPolicyBundle | None = None,
+        vocabulary: DomainReasoningVocabulary | None = None,
+    ) -> None:
         self.policy_bundle = policy_bundle or get_query_policy()
+        self.vocabulary = vocabulary or DomainReasoningVocabulary()
         reasoning_policy = self.policy_bundle.graph.reasoning
         self.causal_relation_types = set(reasoning_policy.causal_relation_types)
         self.compositional_relation_types = set(reasoning_policy.compositional_relation_types)
@@ -139,53 +145,55 @@ class GraphReasoningStrategy:
 
     def _compositional_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
         central_names = self._names(subgraph.central_nodes)
-        technique_names = self._names_by_label(subgraph, "Technique")
-        flavor_names = self._names_by_label(subgraph, "Flavor")
-        time_profiles = self._names_by_label(subgraph, "TimeProfile")
-        difficulty_levels = self._names_by_label(subgraph, "DifficultyLevel")
         effect_names = self._names_by_semantic_label(subgraph)
 
         chains: list[str] = []
-        subject = ", ".join(central_names[:3]) or "the target recipes"
-        if technique_names:
-            chains.append(f"{subject} connect to techniques: {', '.join(technique_names[:4])}.")
-        if flavor_names:
-            chains.append(f"{subject} connect to flavor nodes: {', '.join(flavor_names[:4])}.")
+        subject = ", ".join(central_names[:3]) or self.vocabulary.subject_fallback
+        for node_label, display_label in self.vocabulary.compositional_labels:
+            names = self._names_by_label(subgraph, node_label)
+            if names:
+                chains.append(f"{subject} connect to {display_label}: {', '.join(names[:4])}.")
         if effect_names:
             chains.append(
-                f"{subject} connect to semantic effect nodes: {', '.join(effect_names[:4])}."
+                f"{subject} connect to {self.vocabulary.semantic_effect_label}: "
+                f"{', '.join(effect_names[:4])}."
             )
-        if time_profiles or difficulty_levels:
-            descriptors = ", ".join((time_profiles + difficulty_levels)[:4])
-            chains.append(f"{subject} expose preparation constraints through: {descriptors}.")
+        constraint_names = [
+            name
+            for node_label, _display_label in self.vocabulary.constraint_labels
+            for name in self._names_by_label(subgraph, node_label)
+        ]
+        if constraint_names:
+            chains.append(
+                f"{subject} expose domain constraints through: {', '.join(constraint_names[:4])}."
+            )
         return chains
 
     def _comparative_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
-        recipe_names = self._names_by_label(subgraph, "Recipe")
-        if len(recipe_names) < 2:
-            recipe_names = self._names(subgraph.central_nodes)
-        technique_names = self._names_by_label(subgraph, "Technique")
-        flavor_names = self._names_by_label(subgraph, "Flavor")
+        entity_names = self._comparison_names(subgraph)
         effect_names = self._names_by_semantic_label(subgraph)
 
-        if len(recipe_names) < 2:
+        if len(entity_names) < 2:
             return []
 
         shared_features: list[str] = []
-        if technique_names:
-            shared_features.append("techniques " + ", ".join(technique_names[:3]))
-        if flavor_names:
-            shared_features.append("flavors " + ", ".join(flavor_names[:3]))
+        for node_label, display_label in self.vocabulary.compositional_labels:
+            names = self._names_by_label(subgraph, node_label)
+            if names:
+                shared_features.append(f"{display_label} {', '.join(names[:3])}")
         if effect_names:
-            shared_features.append("effects " + ", ".join(effect_names[:3]))
+            shared_features.append(
+                f"{self.vocabulary.semantic_effect_label} {', '.join(effect_names[:3])}"
+            )
 
         if not shared_features:
             return [
-                f"{recipe_names[0]} and {recipe_names[1]} appear in the same local graph neighborhood."
+                f"{entity_names[0]} and {entity_names[1]} appear in the same local graph neighborhood."
             ]
 
         return [
-            f"{recipe_names[0]} and {recipe_names[1]} intersect through {'; '.join(shared_features[:2])}."
+            f"{entity_names[0]} and {entity_names[1]} intersect through "
+            f"{'; '.join(shared_features[:2])}."
         ]
 
     def _connectivity_chains(self, subgraph: KnowledgeSubgraph) -> list[str]:
@@ -232,10 +240,11 @@ class GraphReasoningStrategy:
         return self._names(nodes)
 
     def _names_by_semantic_label(self, subgraph: KnowledgeSubgraph) -> list[str]:
+        semantic_labels = set(self.vocabulary.semantic_node_labels)
         nodes = [
             node
             for node in (subgraph.central_nodes or []) + (subgraph.connected_nodes or [])
-            if any(label in SEMANTIC_NODE_LABELS_SET for label in _node_labels(node))
+            if any(label in semantic_labels for label in _node_labels(node))
         ]
         return self._names(nodes)
 
@@ -243,13 +252,21 @@ class GraphReasoningStrategy:
         return len(self._names_by_semantic_label(subgraph))
 
     def _supports_comparison(self, subgraph: KnowledgeSubgraph, query: str) -> bool:
-        recipe_names = self._names_by_label(subgraph, "Recipe")
+        entity_names = self._comparison_names(subgraph)
         normalized_query = (query or "").lower()
         return (
-            len(recipe_names) >= 2
+            len(entity_names) >= 2
             or len(subgraph.central_nodes or []) >= 2
             or any(term in normalized_query for term in self.comparison_markers)
         )
+
+    def _comparison_names(self, subgraph: KnowledgeSubgraph) -> list[str]:
+        names = [
+            name
+            for label in self.vocabulary.comparison_labels
+            for name in self._names_by_label(subgraph, label)
+        ]
+        return list(dict.fromkeys(names)) or self._names(subgraph.central_nodes)
 
     @staticmethod
     def _query_overlap(text: str, query: str) -> int:

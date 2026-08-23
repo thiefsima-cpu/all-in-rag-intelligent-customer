@@ -41,7 +41,7 @@ class _KnowledgeBaseSchemaSyncMixin(_KnowledgeBaseSchemaSyncHost):
             self._emit(
                 progress,
                 "[OK] Semantic graph schema synced: "
-                f"recipes={result.recipes}, "
+                f"source_entities={result.source_entities}, "
                 f"semantic_nodes={result.nodes}, "
                 f"semantic_relationships={result.relationships}",
             )

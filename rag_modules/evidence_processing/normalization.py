@@ -22,8 +22,6 @@ def _matched_terms(metadata: JsonObject) -> list[str]:
         "matched_terms",
         "matched_entities",
         "matched_attributes",
-        "matched_ingredients",
-        "matched_steps",
     ):
         value = metadata.get(key)
         if isinstance(value, list):
@@ -39,12 +37,8 @@ def normalize_evidence_document(
 ) -> EvidenceDocument:
     content = document_content(document)
     metadata = document_metadata(document)
-    recipe_ids = metadata.get("recipe_node_ids")
     entity_id = str(first_value(metadata, ["entity_id", "node_id", "parent_id"], ""))
-    if isinstance(recipe_ids, list) and recipe_ids:
-        entity_id = str(recipe_ids[0])
-
-    entity_name = str(first_value(metadata, ["entity_name", "recipe_name", "name"], ""))
+    entity_name = str(first_value(metadata, ["entity_name", "name"], ""))
     entity_type = str(first_value(metadata, ["entity_type", "node_type"], ""))
     source = str(
         first_value(metadata, ["search_source", "search_method", "search_type"], "unknown")
@@ -83,7 +77,7 @@ def normalize_evidence_document(
         entity_id=entity_id,
         entity_name=entity_name,
         entity_type=entity_type,
-        node_id=str(first_value(metadata, ["node_id", "entity_id", "parent_id", "recipe_id"], "")),
+        node_id=str(first_value(metadata, ["node_id", "entity_id", "parent_id"], "")),
         doc_id=doc_id,
         source=source,
         score=score,

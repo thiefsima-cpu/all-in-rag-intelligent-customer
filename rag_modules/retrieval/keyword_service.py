@@ -40,11 +40,8 @@ class QueryKeywordExtractor:
             [
                 *profile.topic_keywords,
                 *profile.recommendation_hits,
-                *as_string_list(constraints.get("preference_terms")),
-                *as_string_list(constraints.get("health_terms")),
-                *as_string_list(constraints.get("cuisine_terms")),
-                *as_string_list(constraints.get("category_terms")),
-                *as_string_list(constraints.get("include_terms")),
+                *as_string_list(constraints.get("entity_terms")),
+                *_constraint_extension_terms(constraints.get("extension")),
             ]
         )
         for relation_type in profile.relation_types:
@@ -57,7 +54,7 @@ class QueryKeywordExtractor:
             topic_keywords = self.dedupe_terms(
                 [
                     *profile.recommendation_hits,
-                    *as_string_list(constraints.get("preference_terms")),
+                    *_constraint_extension_terms(constraints.get("extension")),
                 ]
             )
 
@@ -79,3 +76,9 @@ class QueryKeywordExtractor:
             seen.add(value)
             output.append(value)
         return output
+
+
+def _constraint_extension_terms(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    return [term for item in value.values() for term in as_string_list(item)]

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.build_pipeline.graph_preparation import GraphDataPreparationModule
+from rag_modules.build_pipeline.graph_preparation import (
+    GraphDataPreparationModule,
+    create_domain_build_collaborators,
+)
+from rag_modules.domains import get_domain_pack
 
 
 class FakeResult(list):
@@ -145,9 +149,17 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
         )
 
     def _build_module(self) -> GraphDataPreparationModule:
+        pack = get_domain_pack("recipe")
+        loader, document_builder, chunker = create_domain_build_collaborators(pack)
         return GraphDataPreparationModule(
             database="neo4j",
             driver=self._build_driver(),
+            loader=loader,
+            document_builder=document_builder,
+            chunker=chunker,
+            domain_name=pack.name,
+            domain_version=pack.version,
+            data_view=pack.build_data_view,
         )
 
     def test_load_graph_data_normalizes_recipe_categories(self) -> None:
@@ -155,18 +167,22 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
 
         counts = module.load_graph_data()
 
-        self.assertEqual(counts.recipes, 1)
-        self.assertEqual(counts.ingredients, 2)
-        self.assertEqual(counts.cooking_steps, 1)
-        self.assertEqual(module.recipes[0].properties["category"], "家常菜")
-        self.assertEqual(module.recipes[0].properties["all_categories"], ["家常菜", "川菜"])
-        self.assertEqual(module.ingredients[1].name, "豆瓣酱")
+        self.assertEqual(counts.total_entities, 4)
+        self.assertEqual(
+            counts.entity_groups,
+            {"recipes": 1, "ingredients": 2, "cooking_steps": 1},
+        )
+        self.assertEqual(module.state.primary_entities[0].properties["category"], "家常菜")
+        self.assertEqual(
+            module.state.primary_entities[0].properties["all_categories"], ["家常菜", "川菜"]
+        )
+        self.assertEqual(module.state.related_entity_groups["ingredients"][1].name, "豆瓣酱")
 
     def test_build_recipe_documents_materializes_semantic_metadata(self) -> None:
         module = self._build_module()
         module.load_graph_data()
 
-        documents = module.build_recipe_documents()
+        documents = module.build_documents()
 
         self.assertEqual(len(documents), 1)
         document = documents[0]
@@ -185,7 +201,7 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
     def test_chunking_and_statistics_follow_section_boundaries(self) -> None:
         module = self._build_module()
         module.load_graph_data()
-        module.build_recipe_documents()
+        module.build_documents()
 
         chunks = module.chunk_documents(chunk_size=80, chunk_overlap=10)
         stats = module.get_statistics()
@@ -194,13 +210,13 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
         self.assertEqual(chunks[0].metadata["chunk_index"], 0)
         self.assertEqual(chunks[0].metadata["section_title"], "main_title")
         self.assertEqual(chunks[-1].metadata["section_title"], "语义标签")
-        self.assertEqual(stats.total_recipes, 1)
+        self.assertEqual(stats.total_entities, 4)
         self.assertEqual(stats.total_documents, 1)
         self.assertEqual(stats.total_chunks, 6)
-        self.assertEqual(stats.categories["家常菜"], 1)
-        self.assertEqual(stats.cuisines["川菜"], 1)
+        self.assertEqual(stats.domain_metrics["categories"]["家常菜"], 1)
+        self.assertEqual(stats.domain_metrics["cuisines"]["川菜"], 1)
         self.assertGreater(stats.avg_chunk_size, 0)
-        self.assertEqual(stats.to_dict()["total_recipes"], 1)
+        self.assertEqual(stats.to_dict()["domain_metrics"]["total_recipes"], 1)
 
     def test_empty_statistics_to_dict_preserves_legacy_sparse_shape(self) -> None:
         module = self._build_module()
@@ -211,11 +227,22 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
         self.assertEqual(
             stats.to_dict(),
             {
-                "total_recipes": 1,
-                "total_ingredients": 2,
-                "total_cooking_steps": 1,
+                "domain_name": "recipe",
+                "total_entities": 4,
                 "total_documents": 0,
                 "total_chunks": 0,
+                "domain_metrics": {
+                    "total_recipes": 1,
+                    "total_ingredients": 2,
+                    "total_cooking_steps": 1,
+                    "categories": {},
+                    "cuisines": {},
+                    "difficulties": {},
+                },
+                "entity_types": {"Recipe": 1, "Ingredient": 2, "CookingStep": 1},
+                "document_types": {},
+                "avg_content_length": 0.0,
+                "avg_chunk_size": 0.0,
             },
         )
 
@@ -251,10 +278,21 @@ class GraphDataPreparationModuleTests(unittest.TestCase):
                 "stepOrder": "bad",
             }
         ]
-        module = GraphDataPreparationModule(database="neo4j", driver=driver)
+        pack = get_domain_pack("recipe")
+        loader, document_builder, chunker = create_domain_build_collaborators(pack)
+        module = GraphDataPreparationModule(
+            database="neo4j",
+            driver=driver,
+            loader=loader,
+            document_builder=document_builder,
+            chunker=chunker,
+            domain_name=pack.name,
+            domain_version=pack.version,
+            data_view=pack.build_data_view,
+        )
         module.load_graph_data()
 
-        [document] = module.build_recipe_documents()
+        [document] = module.build_documents()
 
         self.assertEqual(document.metadata["ingredients_count"], 1)
         self.assertEqual(document.metadata["steps_count"], 1)

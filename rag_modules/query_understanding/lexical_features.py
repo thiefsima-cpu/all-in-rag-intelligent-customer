@@ -186,16 +186,7 @@ def extract_query_tokens(
     except Exception:
         raw_tokens = [part.strip() for part in segmented_text.split(" ") if part.strip()]
 
-    matched = dedupe_preserve_order(
-        [
-            *matched_terms(normalized, active_registry.texture_effect_terms),
-            *matched_terms(normalized, active_registry.flavor_terms),
-            *matched_terms(normalized, active_registry.technique_terms),
-            *matched_terms(normalized, active_registry.health_terms),
-            *matched_terms(normalized, active_registry.cuisine_style_terms),
-            *matched_terms(normalized, active_registry.ingredient_category_terms),
-        ]
-    )
+    matched = matched_terms(normalized, active_registry.semantic_node_terms)
 
     cleaned: List[str] = []
     for token in [*raw_tokens, *matched]:

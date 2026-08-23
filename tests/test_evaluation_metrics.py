@@ -76,7 +76,7 @@ class EvaluationMetricTests(unittest.TestCase):
                     "evaluation": {
                         "expected_strategy": "hybrid",
                         "strategy": "hybrid",
-                        "expected_recipe_names": ["a"],
+                        "expected_entity_names": ["a"],
                         "expected_response_mode": "grounded_answer",
                         "response_mode_passed": True,
                         "answer_checked": True,
@@ -84,7 +84,7 @@ class EvaluationMetricTests(unittest.TestCase):
                         "answer_preview": "Evidence 1",
                     },
                     "retrieval": {
-                        "missing_recipe_names": [],
+                        "missing_entity_names": [],
                         "recall_at_k": 1.0,
                         "reciprocal_rank": 0.5,
                         "ndcg_at_k": 0.75,

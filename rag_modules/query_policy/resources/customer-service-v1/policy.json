@@ -21,14 +21,9 @@
         "query_stopwords": ["请", "一下", "帮我", "能否", "可以"],
         "graph_source_prefixes": ["订单", "商品", "政策", "工单"],
         "graph_source_suffixes": ["号", "编号", "规则", "条款"],
-        "flavor_terms": [],
-        "texture_effect_terms": [],
-        "technique_terms": [],
-        "diet_terms": [],
-        "health_terms": [],
-        "cuisine_style_terms": [],
-        "ingredient_category_terms": ["退款", "保修", "发票", "物流", "账号", "支付", "隐私"],
-        "difficulty_terms": []
+        "business_topic_terms": ["退款", "保修", "发票", "物流", "账号", "支付", "隐私"],
+        "semantic_effect_terms": [],
+        "semantic_entity_term_groups": ["business_topic_terms"]
       }
     },
     "regex_rules": {
@@ -60,7 +55,7 @@
     "relation_index_suffix_templates": {"$replace": {"HAS_REFUND_RULE": "{source_entity}_退款规则", "HAS_WARRANTY_TERM": "{source_entity}_保修条款", "HAS_STATUS": "{source_entity}_状态"}}
   },
   "routing": {
-    "meaningful_constraint_fields": ["include_terms", "exclude_terms", "category_terms", "preference_terms"],
+    "meaningful_constraint_fields": ["entity_terms", "excluded_entity_terms", "temporal_filters", "structured_filters"],
     "strategy_rules": [
       {
         "strategy": "graph_rag",

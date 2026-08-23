@@ -55,7 +55,7 @@ class DefaultHybridRetrievalComponentFactory:
         runtime: HybridRetrievalRuntime,
         fusion_ranker: FusionRanker,
     ) -> HybridSearchService:
-        constraint_retriever = ConstraintRetriever(runtime.get_recipe_matcher)
+        constraint_retriever = ConstraintRetriever(runtime.get_constraint_matcher)
         return HybridSearchService(
             config=config,
             retrieval_profile=retrieval_profile,

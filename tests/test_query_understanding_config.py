@@ -165,8 +165,8 @@ class QueryUnderstandingConfigTests(unittest.TestCase):
         payload = config.to_domain_dict()["query_understanding"]
 
         self.assertIn("policy", payload)
-        self.assertEqual("c9-default-v1", payload["policy"]["bundle"])
-        self.assertEqual("c9-default-v1", config.query_understanding.policy.bundle)
+        self.assertEqual("customer-service-v1", payload["policy"]["bundle"])
+        self.assertEqual("customer-service-v1", config.query_understanding.policy.bundle)
         self.assertEqual("", config.query_understanding.policy.bundle_path)
 
     def test_query_understanding_policy_selector_accepts_env_override(self) -> None:

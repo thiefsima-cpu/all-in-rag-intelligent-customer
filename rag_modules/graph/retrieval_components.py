@@ -85,27 +85,14 @@ class DefaultGraphRetrievalComponentFactory:
             lookup_fields=domain_pack.ontology.entity_lookup_fields,
             allowed_labels=domain_pack.ontology.primary_labels,
             domain_name=domain_pack.name,
+            allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
         )
         graph_plan_builder = GraphPlanBuilder(entity_linker)
-        graph_executor = GraphQueryExecutor(
-            None,
-            database=database_name,
-            domain_name=domain_pack.name,
-            primary_node_labels=domain_pack.ontology.primary_labels,
-            semantic_relation_types=tuple(
-                relation.name for relation in domain_pack.ontology.relation_types
-            ),
-            semantic_node_labels=(),
-            allowed_node_labels=domain_pack.ontology.node_labels,
+        graph_executor = _graph_query_executor(domain_pack, database_name)
+        postprocessor = _graph_postprocessor(config, domain_pack)
+        reasoning_strategy = GraphReasoningStrategy(
+            policy_bundle=policy_bundle, vocabulary=domain_pack.reasoning_vocabulary
         )
-        postprocessor = GraphRetrievalPostProcessor(
-            evidence_builder=GraphEvidenceBuilder(
-                domain_name=domain_pack.name,
-                primary_labels=domain_pack.ontology.primary_labels,
-            ),
-            ranker=GraphDocumentRanker(config.graph),
-        )
-        reasoning_strategy = GraphReasoningStrategy(policy_bundle=policy_bundle)
         orchestrator = GraphEvidenceOrchestrator(
             graph_plan_builder=graph_plan_builder,
             graph_executor=graph_executor,
@@ -140,6 +127,43 @@ class DefaultGraphRetrievalComponentFactory:
         )
 
 
+def _graph_query_executor(domain_pack: DomainPack, database_name: str) -> GraphQueryExecutor:
+    relation_types = tuple(relation.name for relation in domain_pack.ontology.relation_types)
+    return GraphQueryExecutor(
+        None,
+        database=database_name,
+        domain_name=domain_pack.name,
+        primary_node_labels=domain_pack.ontology.primary_labels,
+        semantic_relation_types=relation_types,
+        semantic_node_labels=(),
+        allowed_node_labels=domain_pack.ontology.node_labels,
+        allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
+    )
+
+
+def _graph_postprocessor(
+    config: GraphRAGConfig,
+    domain_pack: DomainPack,
+) -> GraphRetrievalPostProcessor:
+    primary_labels = domain_pack.ontology.primary_labels
+    relation_types = tuple(relation.name for relation in domain_pack.ontology.relation_types)
+    semantic_labels = tuple(
+        label for label in domain_pack.ontology.node_labels if label not in primary_labels
+    )
+    return GraphRetrievalPostProcessor(
+        evidence_builder=GraphEvidenceBuilder(
+            domain_name=domain_pack.name,
+            primary_labels=primary_labels,
+            semantic_node_labels=semantic_labels,
+            semantic_relation_types=relation_types,
+        ),
+        ranker=GraphDocumentRanker(
+            config.graph,
+            semantic_relation_types=relation_types,
+        ),
+    )
+
+
 def _cache_warmup_services(
     config: GraphRAGConfig,
     domain_pack: DomainPack,
@@ -149,4 +173,5 @@ def _cache_warmup_services(
         store,
         domain_name=domain_pack.name,
         allowed_node_labels=domain_pack.ontology.node_labels,
+        allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
     )

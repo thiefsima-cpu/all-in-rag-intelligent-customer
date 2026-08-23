@@ -22,7 +22,7 @@ def _iter_metadata_values(value: object) -> list[object]:
 
 
 class ParentDocumentEnricher:
-    """Replace top ranked chunks or graph snippets with full recipe documents."""
+    """Replace top ranked chunks or graph snippets with full parent documents."""
 
     def __init__(self, config, documents: Optional[Iterable[TextDocument]] = None):
         self.config = config
@@ -87,14 +87,14 @@ class ParentDocumentEnricher:
             metadata = dict(doc.metadata or {})
             metadata.setdefault("node_id", doc.node_id or parent.metadata.get("node_id"))
             metadata.setdefault(
-                "entity_name", doc.entity_name or parent.metadata.get("recipe_name")
+                "entity_name", doc.entity_name or parent.metadata.get("entity_name")
             )
             enriched.append(
                 replace(
                     doc,
                     content=self._truncate_parent_content(parent.content or "", max_chars),
                     node_id=doc.node_id or str(parent.metadata.get("node_id") or ""),
-                    entity_name=doc.entity_name or str(parent.metadata.get("recipe_name") or ""),
+                    entity_name=doc.entity_name or str(parent.metadata.get("entity_name") or ""),
                     metadata=metadata,
                 )
             )
@@ -158,9 +158,9 @@ class ParentDocumentEnricher:
                     doc,
                     content=content,
                     node_id=doc.node_id or str(metadata.get("node_id") or ""),
-                    entity_name=doc.entity_name or str(metadata.get("recipe_name") or ""),
+                    entity_name=doc.entity_name or str(metadata.get("entity_name") or ""),
                     entity_id=doc.entity_id
-                    or str(metadata.get("recipe_id") or metadata.get("node_id") or ""),
+                    or str(metadata.get("entity_id") or metadata.get("node_id") or ""),
                     metadata=metadata,
                 )
             )
@@ -168,21 +168,21 @@ class ParentDocumentEnricher:
         return self.attach_evidence(enriched, top_n=top_n)
 
     def _find_parent(self, metadata: Mapping[str, object]) -> Optional[TextDocument]:
-        for node_id in _iter_metadata_values(metadata.get("recipe_node_ids")):
+        for node_id in _iter_metadata_values(metadata.get("entity_ids")):
             parent = self.parent_doc_map.get(str(node_id))
             if parent:
                 return parent
-        for recipe_name in _iter_metadata_values(metadata.get("recipe_names")):
+        for entity_name in _iter_metadata_values(metadata.get("entity_names")):
             for parent in self.parent_doc_map.values():
-                if parent.metadata.get("recipe_name") == recipe_name:
+                if parent.metadata.get("entity_name") == entity_name:
                     return parent
         parent = self.parent_doc_map.get(self._doc_parent_key(metadata))
         if parent:
             return parent
-        recipe_name = str(metadata.get("recipe_name") or "")
-        if recipe_name:
+        entity_name = str(metadata.get("entity_name") or "")
+        if entity_name:
             for candidate in self.parent_doc_map.values():
-                if candidate.metadata.get("recipe_name") == recipe_name:
+                if candidate.metadata.get("entity_name") == entity_name:
                     return candidate
         return None
 
@@ -201,7 +201,7 @@ class ParentDocumentEnricher:
     @staticmethod
     def _doc_parent_key(metadata: Mapping[str, object]) -> str:
         return str(
-            metadata.get("node_id") or metadata.get("parent_id") or metadata.get("recipe_id") or ""
+            metadata.get("node_id") or metadata.get("parent_id") or metadata.get("entity_id") or ""
         )
 
     def _evidence_parent_key(self, doc: EvidenceDocument) -> str:
@@ -211,6 +211,6 @@ class ParentDocumentEnricher:
             or doc.entity_id
             or metadata.get("node_id")
             or metadata.get("parent_id")
-            or metadata.get("recipe_id")
+            or metadata.get("entity_id")
             or ""
         )

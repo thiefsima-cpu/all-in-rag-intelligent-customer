@@ -101,15 +101,9 @@ class BM25Retriever:
                 continue
             src = self.corpus_docs[idx]
             metadata = dict(src.metadata or {})
-            entity_name = str(
-                metadata.get("entity_name")
-                or metadata.get("recipe_name")
-                or metadata.get("name")
-                or ""
-            )
+            entity_name = str(metadata.get("entity_name") or metadata.get("name") or "")
             entity_id = str(
                 metadata.get("entity_id")
-                or metadata.get("recipe_id")
                 or metadata.get("node_id")
                 or metadata.get("parent_id")
                 or ""
@@ -136,12 +130,7 @@ class BM25Retriever:
                     entity_id=entity_id,
                     entity_name=entity_name,
                     entity_type=entity_type,
-                    node_id=str(
-                        metadata.get("node_id")
-                        or metadata.get("parent_id")
-                        or metadata.get("recipe_id")
-                        or ""
-                    ),
+                    node_id=str(metadata.get("node_id") or metadata.get("parent_id") or ""),
                     node_type=entity_type,
                     score=score,
                     search_type="bm25",

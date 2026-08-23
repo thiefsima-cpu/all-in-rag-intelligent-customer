@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Sequence, Tuple
 
 from ..contracts import QuerySemanticProfile, QuerySemanticRuntimeSettings
+from ..domains.contracts import DomainQueryConstraintSchema
 from ..query_policy.models import QueryPolicyBundle
 from .features import (
     extract_entity_candidates,
@@ -102,7 +103,7 @@ def split_graph_entities(
 
     if query_type == "path_finding" and not target_entities:
         target_entities = normalize_graph_sources(
-            matched_terms(normalized, active_registry.texture_effect_terms),
+            matched_terms(normalized, active_registry.semantic_effect_terms),
             registry=active_registry,
         )
 
@@ -170,6 +171,7 @@ def infer_query_semantic_profile(
     settings: QuerySemanticRuntimeSettings,
     policy_bundle: QueryPolicyBundle | None = None,
     registry: QueryUnderstandingRegistry | None = None,
+    constraint_schema: DomainQueryConstraintSchema | None = None,
 ) -> QuerySemanticProfile:
     active_registry = _active_registry(policy_bundle=policy_bundle, registry=registry)
     original_query = str(query or "").strip()
@@ -190,19 +192,17 @@ def infer_query_semantic_profile(
         settings=settings,
         registry=active_registry,
     )
-    constraints = infer_query_constraints(normalized, registry=active_registry)
+    constraints = infer_query_constraints(
+        normalized,
+        registry=active_registry,
+        constraint_schema=constraint_schema,
+    )
     recommendation_intent = has_recommendation_intent(normalized, registry=active_registry)
     recommendation_hits = (
         marker_hits(normalized, active_registry.recommendation_markers)
         if recommendation_intent
         else []
     )
-    needs_recipe_recommendation = bool(
-        constraints.get("needs_recipe_recommendation") or recommendation_intent
-    )
-    if needs_recipe_recommendation:
-        constraints["needs_recipe_recommendation"] = True
-
     relation_hits = marker_hits(normalized, active_registry.relation_markers)
     constraint_hits = marker_hits(normalized, active_registry.constraint_markers)
     structural_hits = marker_hits(normalized, active_registry.structural_reasoning_markers)
@@ -236,7 +236,7 @@ def infer_query_semantic_profile(
         complexity=complexity,
         relationship_intensity=relationship_intensity,
         reasoning_required=reasoning_required,
-        needs_recipe_recommendation=needs_recipe_recommendation,
+        recommendation_required=recommendation_intent,
         recommendation_hits=recommendation_hits,
         relation_hits=relation_hits,
         constraint_hits=constraint_hits,

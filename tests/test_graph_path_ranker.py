@@ -6,17 +6,20 @@ from tests.configuration_test_helpers import build_test_config
 
 
 def _ranker() -> GraphDocumentRanker:
-    return GraphDocumentRanker(build_test_config().graph)
+    return GraphDocumentRanker(
+        build_test_config().graph,
+        semantic_relation_types=("CONTRIBUTES_TO",),
+    )
 
 
-def test_rank_rewards_semantic_relationships_recipe_identity_and_query_overlap() -> None:
+def test_rank_rewards_semantic_relationships_entity_identity_and_query_overlap() -> None:
     rich = EvidenceDocument(
         content="pepper aroma",
         entity_name="Mapo tofu",
         score=0.1,
         evidence_units=[{"claim": "aroma"}],
         graph_evidence={"relationships": [{"type": "CONTRIBUTES_TO"}]},
-        metadata={"recipe_node_ids": ["r1"], "relevance_score": 0.2},
+        metadata={"entity_ids": ["r1"], "relevance_score": 0.2},
     )
     plain = EvidenceDocument(content="unrelated", score=0.2)
 
@@ -27,7 +30,7 @@ def test_score_uses_semantic_count_fallback_and_handles_empty_query() -> None:
     document = EvidenceDocument(
         content="graph",
         graph_evidence={"semantic_relationship_count": 2},
-        metadata={"final_score": 0.5, "recipe_names": ["Mapo tofu"]},
+        metadata={"final_score": 0.5, "entity_names": ["Mapo tofu"]},
     )
 
     assert _ranker()._score(document, "") > 0.5
@@ -53,19 +56,19 @@ def test_query_overlap_reads_content_and_string_metadata_only() -> None:
     assert _ranker()._query_overlap(document, "") == 0
 
 
-def test_dedupe_merges_duplicate_recipe_evidence_without_reordering() -> None:
+def test_dedupe_merges_duplicate_entity_evidence_without_reordering() -> None:
     first = EvidenceDocument(
         content="first",
         score=0.2,
-        metadata={"recipe_node_ids": ["r1"], "relationship_count": 1},
+        metadata={"entity_ids": ["r1"], "relationship_count": 1},
     )
     duplicate = EvidenceDocument(
         content="second",
         score=0.9,
         graph_evidence={"description": "path"},
-        metadata={"recipe_node_ids": ["r1"], "relationship_count": 3},
+        metadata={"entity_ids": ["r1"], "relationship_count": 3},
     )
-    by_name = EvidenceDocument(content="third", metadata={"recipe_names": ["Other"]})
+    by_name = EvidenceDocument(content="third", metadata={"entity_names": ["Other"]})
 
     merged = _ranker().dedupe([first, duplicate, by_name])
 
@@ -85,15 +88,15 @@ def test_dedupe_keeps_identical_duplicate_content_once() -> None:
     assert "merged_graph_evidence" not in merged.metadata
 
 
-def test_dedupe_key_prefers_recipe_id_then_name_then_document_key() -> None:
+def test_dedupe_key_prefers_entity_id_then_name_then_document_key() -> None:
     ranker = _ranker()
 
     assert (
-        ranker._dedupe_key(EvidenceDocument(content="x", metadata={"recipe_node_ids": ["r1"]}))
-        == "recipe_id::r1"
+        ranker._dedupe_key(EvidenceDocument(content="x", metadata={"entity_ids": ["r1"]}))
+        == "entity_id::r1"
     )
     assert (
-        ranker._dedupe_key(EvidenceDocument(content="x", metadata={"recipe_names": ["Mapo tofu"]}))
-        == "recipe_name::Mapo tofu"
+        ranker._dedupe_key(EvidenceDocument(content="x", metadata={"entity_names": ["Mapo tofu"]}))
+        == "entity_name::Mapo tofu"
     )
     assert ranker._dedupe_key(EvidenceDocument(content="x", node_id="n1")) == "n1"

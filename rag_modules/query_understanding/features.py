@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-from .constraint_features import (
-    extract_difficulty,
-    extract_excluded_terms,
-    extract_minutes,
-    extract_style,
-    infer_query_constraints,
-)
+from .constraint_features import extract_excluded_terms, extract_minutes, infer_query_constraints
 from .entity_features import (
     extract_entity_candidates,
     fallback_entity_phrases,
@@ -32,12 +26,10 @@ from .lexical_features import (
 __all__ = [
     "apply_cleanup_patterns",
     "clean_entity_phrase",
-    "extract_difficulty",
     "extract_entity_candidates",
     "extract_excluded_terms",
     "extract_minutes",
     "extract_query_tokens",
-    "extract_style",
     "fallback_entity_phrases",
     "fallback_keywords",
     "has_filtering_intent",

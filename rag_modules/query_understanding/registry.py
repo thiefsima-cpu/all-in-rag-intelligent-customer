@@ -18,14 +18,7 @@ class QueryUnderstandingRegistry:
     graph_routing_strategies: Tuple[str, ...]
     graph_query_types: Tuple[str, ...]
     graph_relation_types: Tuple[str, ...]
-    flavor_terms: Tuple[str, ...]
-    texture_effect_terms: Tuple[str, ...]
-    technique_terms: Tuple[str, ...]
-    diet_terms: Tuple[str, ...]
-    health_terms: Tuple[str, ...]
-    cuisine_style_terms: Tuple[str, ...]
-    ingredient_category_terms: Tuple[str, ...]
-    difficulty_terms: Tuple[str, ...]
+    semantic_effect_terms: Tuple[str, ...]
     time_markers: Tuple[str, ...]
     path_markers: Tuple[str, ...]
     subgraph_markers: Tuple[str, ...]
@@ -53,30 +46,17 @@ class QueryUnderstandingRegistry:
 
     @classmethod
     def from_policy_bundle(cls, policy: QueryPolicyBundle) -> "QueryUnderstandingRegistry":
+        semantic_term_groups = policy.lexicon.term_group("semantic_entity_term_groups")
         semantic_node_terms = _flatten_policy_term_groups(
             policy,
-            "flavor_terms",
-            "texture_effect_terms",
-            "technique_terms",
-            "diet_terms",
-            "health_terms",
-            "cuisine_style_terms",
-            "ingredient_category_terms",
-            "difficulty_terms",
+            *semantic_term_groups,
         )
         return cls(
             policy=policy,
             graph_routing_strategies=policy.relations.graph_routing_strategies,
             graph_query_types=policy.relations.graph_query_types,
             graph_relation_types=policy.relations.graph_relation_types,
-            flavor_terms=policy.lexicon.term_group("flavor_terms"),
-            texture_effect_terms=policy.lexicon.term_group("texture_effect_terms"),
-            technique_terms=policy.lexicon.term_group("technique_terms"),
-            diet_terms=policy.lexicon.term_group("diet_terms"),
-            health_terms=policy.lexicon.term_group("health_terms"),
-            cuisine_style_terms=policy.lexicon.term_group("cuisine_style_terms"),
-            ingredient_category_terms=policy.lexicon.term_group("ingredient_category_terms"),
-            difficulty_terms=policy.lexicon.term_group("difficulty_terms"),
+            semantic_effect_terms=policy.lexicon.term_group("semantic_effect_terms"),
             time_markers=policy.lexicon.term_group("time_markers"),
             path_markers=policy.lexicon.term_group("path_markers"),
             subgraph_markers=policy.lexicon.term_group("subgraph_markers"),
@@ -306,14 +286,7 @@ _LEGACY_REGISTRY_ATTRIBUTES: Mapping[str, str] = {
     "GRAPH_ROUTING_STRATEGIES": "graph_routing_strategies",
     "GRAPH_QUERY_TYPES": "graph_query_types",
     "GRAPH_RELATION_TYPES": "graph_relation_types",
-    "FLAVOR_TERMS": "flavor_terms",
-    "TEXTURE_EFFECT_TERMS": "texture_effect_terms",
-    "TECHNIQUE_TERMS": "technique_terms",
-    "DIET_TERMS": "diet_terms",
-    "HEALTH_TERMS": "health_terms",
-    "CUISINE_STYLE_TERMS": "cuisine_style_terms",
-    "INGREDIENT_CATEGORY_TERMS": "ingredient_category_terms",
-    "DIFFICULTY_TERMS": "difficulty_terms",
+    "SEMANTIC_EFFECT_TERMS": "semantic_effect_terms",
     "TIME_MARKERS": "time_markers",
     "PATH_MARKERS": "path_markers",
     "SUBGRAPH_MARKERS": "subgraph_markers",
@@ -345,14 +318,7 @@ POLICY = _LazyPolicyBundle()
 GRAPH_ROUTING_STRATEGIES = _LazyRegistryTuple("graph_routing_strategies")
 GRAPH_QUERY_TYPES = _LazyRegistryTuple("graph_query_types")
 GRAPH_RELATION_TYPES = _LazyRegistryTuple("graph_relation_types")
-FLAVOR_TERMS = _LazyRegistryTuple("flavor_terms")
-TEXTURE_EFFECT_TERMS = _LazyRegistryTuple("texture_effect_terms")
-TECHNIQUE_TERMS = _LazyRegistryTuple("technique_terms")
-DIET_TERMS = _LazyRegistryTuple("diet_terms")
-HEALTH_TERMS = _LazyRegistryTuple("health_terms")
-CUISINE_STYLE_TERMS = _LazyRegistryTuple("cuisine_style_terms")
-INGREDIENT_CATEGORY_TERMS = _LazyRegistryTuple("ingredient_category_terms")
-DIFFICULTY_TERMS = _LazyRegistryTuple("difficulty_terms")
+SEMANTIC_EFFECT_TERMS = _LazyRegistryTuple("semantic_effect_terms")
 TIME_MARKERS = _LazyRegistryTuple("time_markers")
 PATH_MARKERS = _LazyRegistryTuple("path_markers")
 SUBGRAPH_MARKERS = _LazyRegistryTuple("subgraph_markers")
@@ -385,25 +351,19 @@ __all__ = [
     "AMBIGUOUS_RECOMMENDATION_MARKERS",
     "CLUSTERING_MARKERS",
     "CONSTRAINT_MARKERS",
-    "CUISINE_STYLE_TERMS",
     "DEFAULT_ENTITY_LINKER_PREFERRED_LABELS",
-    "DIET_TERMS",
-    "DIFFICULTY_TERMS",
     "ENTITY_HINTS",
     "ENTITY_PHRASE_MARKERS",
     "ENTITY_TARGET_MARKERS",
     "EXPLICIT_RECOMMENDATION_MARKERS",
     "FAST_RULE_MARKERS",
     "FILTERING_MARKERS",
-    "FLAVOR_TERMS",
     "GRAPH_GENERIC_TERMS",
     "GRAPH_QUERY_TYPES",
     "GRAPH_RELATION_TYPES",
     "GRAPH_ROUTING_STRATEGIES",
     "GRAPH_SOURCE_PREFIXES",
     "GRAPH_SOURCE_SUFFIXES",
-    "HEALTH_TERMS",
-    "INGREDIENT_CATEGORY_TERMS",
     "PATH_MARKERS",
     "POLICY",
     "QUERY_STOPWORDS",
@@ -413,11 +373,10 @@ __all__ = [
     "RELATION_MARKERS",
     "RELATION_QUERY_MARKERS",
     "SEMANTIC_NODE_TERMS",
+    "SEMANTIC_EFFECT_TERMS",
     "SEMANTIC_RELATION_HINTS",
     "STRUCTURAL_REASONING_MARKERS",
     "SUBGRAPH_MARKERS",
-    "TECHNIQUE_TERMS",
-    "TEXTURE_EFFECT_TERMS",
     "TIME_MARKERS",
     "contains_any",
     "dedupe_preserve_order",

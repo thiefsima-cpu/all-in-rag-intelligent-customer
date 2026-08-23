@@ -69,14 +69,10 @@ class GraphIndexingModule:
 
     def create_entity_key_values(
         self,
-        recipes: List[Any],
-        ingredients: List[Any],
-        cooking_steps: List[Any],
+        entities: List[Any],
     ) -> Dict[str, EntityKeyValue]:
         return self.entity_builder.build(
-            recipes=recipes,
-            ingredients=ingredients,
-            cooking_steps=cooking_steps,
+            entities=entities,
             store=self.store,
         )
 

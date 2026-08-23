@@ -24,6 +24,7 @@ class DocumentArtifactSignatureCollector:
             graph_signature=graph_signature,
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,
+            domain_version=str(getattr(data_module, "domain_version", "") or ""),
         )
         embedding_signature = compute_embedding_signature(
             model_name=self.settings.embedding_model,

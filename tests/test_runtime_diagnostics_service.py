@@ -48,13 +48,13 @@ class _FakeRuntimeStatsAccess:
 
 class RuntimeDiagnosticsServiceTests(unittest.TestCase):
     def test_data_stats_payload_preserves_unknown_keys_without_inventing_defaults(self) -> None:
-        stats = DataStatsDiagnostics.from_payload({"total_recipes": 1, "custom_metric": "x"})
+        stats = DataStatsDiagnostics.from_payload({"total_entities": 1, "custom_metric": "x"})
 
         payload = stats.to_dict()
 
-        self.assertEqual(payload["total_recipes"], 1)
+        self.assertEqual(payload["total_entities"], 1)
         self.assertEqual(payload["custom_metric"], "x")
-        self.assertNotIn("total_ingredients", payload)
+        self.assertNotIn("domain_metrics", payload)
         self.assertNotIn("categories", payload)
 
     def test_build_metadata_preserves_partial_config_profile_payload(self) -> None:
@@ -111,7 +111,13 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
                         "custom_trace_key": "kept",
                     }
                 ),
-                data_module=SimpleNamespace(stats={"total_recipes": 2, "total_chunks": 4}),
+                data_module=SimpleNamespace(
+                    stats={
+                        "domain_name": "customer_service",
+                        "total_entities": 2,
+                        "total_chunks": 4,
+                    }
+                ),
                 index_module=SimpleNamespace(
                     stats={
                         "collection_name": "recipes_alias",
@@ -158,7 +164,7 @@ class RuntimeDiagnosticsServiceTests(unittest.TestCase):
         self.assertEqual(stats.trace_stats.dropped_events, 2)
         self.assertEqual(stats.trace_stats.queued_events, 1)
         self.assertTrue(stats.trace_stats.async_enabled)
-        self.assertEqual(stats.data_stats.total_recipes, 2)
+        self.assertEqual(stats.data_stats.total_entities, 2)
         self.assertEqual(stats.index_stats.row_count, 4)
         self.assertEqual(stats.index_stats.collection_name, "recipes_alias")
         self.assertEqual(stats.index_stats.active_collection_name, "recipes_v2")

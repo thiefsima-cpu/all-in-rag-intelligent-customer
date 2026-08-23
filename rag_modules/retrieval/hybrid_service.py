@@ -10,12 +10,16 @@ from ..contracts.query_constraints import QueryConstraints
 from ..contracts.runtime import HybridRetrievalOutcome
 from ..kernel.documents import TextDocument
 from ..kernel.json_types import coerce_json_object
-from .evidence import RecipeConstraintMatcher
 from .hybrid_components import (
     DefaultHybridRetrievalComponentFactory,
     HybridRetrievalComponents,
 )
-from .ports import GraphDataModulePort, Neo4jManagerPort, VectorIndexModulePort
+from .ports import (
+    ConstraintMatcherPort,
+    GraphDataModulePort,
+    Neo4jManagerPort,
+    VectorIndexModulePort,
+)
 from .runtime_adapter_factory import HybridRuntimeAdapterFactory
 from .runtime_profile import RetrievalRuntimeProfile
 
@@ -78,8 +82,8 @@ class HybridRetrievalService:
         return self._components.runtime.graph_indexed
 
     @property
-    def recipe_matcher(self) -> Optional[RecipeConstraintMatcher]:
-        return self._components.runtime.recipe_matcher
+    def constraint_matcher(self) -> Optional[ConstraintMatcherPort]:
+        return self._components.runtime.constraint_matcher
 
     @property
     def vector_retriever(self) -> object | None:

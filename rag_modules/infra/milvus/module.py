@@ -23,10 +23,10 @@ class MilvusIndexConstructionModule(
         self,
         *,
         embedding_client: EmbeddingClientPort,
+        domain_name: str,
         host: str = "localhost",
         port: int = 19530,
-        collection_name: str = "cooking_knowledge",
-        domain_name: str = "recipe",
+        collection_name: str = "knowledge",
         dimension: int = 512,
         vector_search_ef: int = 128,
         vector_search_max_k: int = 50,
@@ -48,7 +48,9 @@ class MilvusIndexConstructionModule(
         self.base_collection_name = collection_name
         self.collection_name = collection_name
         self.collection_alias = f"{collection_name}{collection_alias_suffix}"
-        self.domain_name = str(domain_name or "recipe")
+        self.domain_name = str(domain_name or "").strip()
+        if not self.domain_name:
+            raise ValueError("Milvus domain_name must be provided by application composition.")
         self.blue_green_enabled = bool(blue_green_enabled)
         self.active_collection_name = ""
         self.active_collection_slot = ""

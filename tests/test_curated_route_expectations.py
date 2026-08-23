@@ -6,6 +6,7 @@ from rag_modules.contracts.query_settings import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
+from rag_modules.domains import get_domain_pack
 from rag_modules.query_understanding import QueryPlanner
 from scripts.eval_queries import load_eval_cases
 from tests.configuration_test_helpers import build_test_config
@@ -29,10 +30,12 @@ class _DummyLLM:
 class CuratedRouteExpectationTests(unittest.TestCase):
     def test_rule_based_planner_matches_curated_strategy_expectations(self) -> None:
         config = build_test_config()
+        domain_pack = get_domain_pack("recipe")
         planner = QueryPlanner(
             _DummyLLM(),
             settings=QueryPlannerRuntimeSettings.from_config(config),
             semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
+            constraint_schema=domain_pack.query_constraints,
         )
 
         for case in load_eval_cases():

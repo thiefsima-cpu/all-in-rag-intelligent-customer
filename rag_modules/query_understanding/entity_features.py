@@ -69,8 +69,7 @@ def fallback_entity_phrases(
         ):
             phrases.append(right_text)
 
-    phrases.extend(matched_terms(normalized, active_registry.texture_effect_terms))
-    phrases.extend(matched_terms(normalized, active_registry.flavor_terms))
+    phrases.extend(matched_terms(normalized, active_registry.semantic_node_terms))
     return dedupe_preserve_order(phrases)
 
 
@@ -85,8 +84,7 @@ def extract_entity_candidates(
         [
             *fallback_entity_phrases(normalized, registry=active_registry),
             *extract_query_tokens(normalized, registry=active_registry),
-            *matched_terms(normalized, active_registry.texture_effect_terms),
-            *matched_terms(normalized, active_registry.flavor_terms),
+            *matched_terms(normalized, active_registry.semantic_node_terms),
         ]
     )
     filtered: List[str] = []

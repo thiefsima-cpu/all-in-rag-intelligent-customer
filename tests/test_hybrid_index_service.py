@@ -37,7 +37,8 @@ class _Session:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         return None
 
-    def run(self, query: str) -> list[object]:
+    def run(self, query: str, parameters: object | None = None) -> list[object]:
+        del query, parameters
         if self.error:
             raise self.error
         return self.records
@@ -52,12 +53,12 @@ class _Driver:
 
 
 def _service(*, restore: bool = True) -> HybridIndexService:
-    config = build_test_config()
-    data_module = SimpleNamespace(documents=[], recipes=[], ingredients=[], cooking_steps=[])
+    config = build_test_config({"domain": {"name": "recipe"}})
+    data_module = SimpleNamespace(documents=[], entities=[])
     graph_indexing = SimpleNamespace(
         from_cache_dict=lambda payload: True,
         to_cache_dict=lambda: {"graph": True},
-        create_entity_key_values=lambda *args: None,
+        create_domain_entity_key_values=lambda entities: None,
         create_relation_key_values=lambda relationships: None,
         deduplicate_entities_and_relations=lambda: None,
         get_statistics=lambda: {},
@@ -201,18 +202,18 @@ def test_save_cache_and_build_artifacts_preserve_parent_documents() -> None:
     service.data_module.documents = [parent]
     built = service._build_artifacts()
     assert built.parent_doc_map["r1"].content == "parent"
-    assert built.recipe_matcher is not None
+    assert built.constraint_matcher is not None
 
 
 def test_build_graph_index_is_idempotent_and_degrades_failures() -> None:
     service = _service()
     service.graph_indexed = True
-    service.graph_indexing.create_entity_key_values = Mock()
+    service.graph_indexing.create_domain_entity_key_values = Mock()
     service._build_graph_index(None)
-    service.graph_indexing.create_entity_key_values.assert_not_called()
+    service.graph_indexing.create_domain_entity_key_values.assert_not_called()
 
     service.graph_indexed = False
-    service.graph_indexing.create_entity_key_values = Mock()
+    service.graph_indexing.create_domain_entity_key_values = Mock()
     service.graph_indexing.create_relation_key_values = Mock()
     service.graph_indexing.deduplicate_entities_and_relations = Mock()
     service._build_graph_index(None)
@@ -220,6 +221,8 @@ def test_build_graph_index_is_idempotent_and_degrades_failures() -> None:
     service.graph_indexing.create_relation_key_values.assert_called_once_with([])
 
     service = _service()
-    service.graph_indexing.create_entity_key_values = Mock(side_effect=RuntimeError("index down"))
+    service.graph_indexing.create_domain_entity_key_values = Mock(
+        side_effect=RuntimeError("index down")
+    )
     service._build_graph_index(None)
     assert service.graph_indexed is False

@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import cast
 
 from ...contracts import EvidenceDocument, RetrievalRequest
+from ...domains import DEFAULT_DOMAIN_NAME, get_domain_pack
 from ...kernel.json_types import coerce_json_object
 from ...safe_logging import log_failure
 from ..ports import Neo4jDriverPort, VectorIndexModulePort
@@ -43,7 +44,12 @@ class VectorRetriever:
         self.milvus_module = milvus_module
         self.driver = driver
         self.database = database
-        self.domain_name = str(getattr(milvus_module, "domain_name", "recipe") or "recipe")
+        self.domain_name = str(
+            getattr(milvus_module, "domain_name", DEFAULT_DOMAIN_NAME) or DEFAULT_DOMAIN_NAME
+        )
+        domain_pack = get_domain_pack(self.domain_name)
+        self.allowed_node_labels = domain_pack.ontology.node_labels
+        self.allow_domainless_graph_records = domain_pack.allow_domainless_graph_records
 
     def search(self, request: RetrievalRequest) -> list[EvidenceDocument]:
         control = request.control
@@ -82,13 +88,8 @@ class VectorRetriever:
             if neighbors:
                 content += f"\n鐩稿叧淇℃伅: {', '.join(neighbors[:3])}"
 
-            entity_name = str(
-                metadata.get("entity_name")
-                or metadata.get("recipe_name")
-                or metadata.get("name")
-                or ""
-            )
-            entity_id = str(metadata.get("entity_id") or metadata.get("recipe_id") or node_id)
+            entity_name = str(metadata.get("entity_name") or metadata.get("name") or "")
+            entity_id = str(metadata.get("entity_id") or node_id)
             entity_type = str(metadata.get("entity_type") or metadata.get("node_type") or "")
             vector_score = _coerce_float(result.get("score", 0.0))
             metadata.update(
@@ -138,11 +139,15 @@ class VectorRetriever:
                 query = """
                 UNWIND $node_ids AS nid
                 MATCH (n {nodeId: nid})
-                WHERE n.domain = $domain_name
-                   OR ($domain_name = 'recipe' AND n.domain IS NULL)
+                WHERE (n.domain = $domain_name
+                   OR ($allow_domainless_graph_records AND n.domain IS NULL))
+                  AND ($allowed_node_labels = []
+                   OR any(label IN labels(n) WHERE label IN $allowed_node_labels))
                 MATCH (n)-[r]-(neighbor)
-                WHERE neighbor.domain = $domain_name
-                   OR ($domain_name = 'recipe' AND neighbor.domain IS NULL)
+                WHERE (neighbor.domain = $domain_name
+                   OR ($allow_domainless_graph_records AND neighbor.domain IS NULL))
+                  AND ($allowed_node_labels = []
+                   OR any(label IN labels(neighbor) WHERE label IN $allowed_node_labels))
                 WITH nid, collect(DISTINCT neighbor.name)[0..$max_n] AS names
                 RETURN nid, names
                 """
@@ -152,6 +157,8 @@ class VectorRetriever:
                         "node_ids": list(set(node_ids)),
                         "max_n": max_neighbors,
                         "domain_name": self.domain_name,
+                        "allowed_node_labels": list(self.allowed_node_labels),
+                        "allow_domainless_graph_records": self.allow_domainless_graph_records,
                     },
                     timeout=control.remaining_seconds() if control is not None else None,
                 )

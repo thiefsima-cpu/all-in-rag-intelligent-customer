@@ -75,7 +75,7 @@ class SliceThreshold(StrictLiveQualityModel):
 class RequiredSliceCoverage(StrictLiveQualityModel):
     risk_tags: dict[str, PositiveInt] = Field(default_factory=dict)
     query_types: dict[str, PositiveInt] = Field(default_factory=dict)
-    cuisines: dict[str, PositiveInt] = Field(default_factory=dict)
+    domains: dict[str, PositiveInt] = Field(default_factory=dict)
     constraint_types: dict[str, PositiveInt] = Field(default_factory=dict)
     response_modes: dict[str, PositiveInt] = Field(default_factory=dict)
 
@@ -96,7 +96,7 @@ class RequiredSliceCoverage(StrictLiveQualityModel):
 class LiveQualitySliceThresholds(StrictLiveQualityModel):
     risk_tags: dict[str, SliceThreshold] = Field(default_factory=dict)
     query_types: dict[str, SliceThreshold] = Field(default_factory=dict)
-    cuisines: dict[str, SliceThreshold] = Field(default_factory=dict)
+    domains: dict[str, SliceThreshold] = Field(default_factory=dict)
     constraint_types: dict[str, SliceThreshold] = Field(default_factory=dict)
     response_modes: dict[str, SliceThreshold] = Field(default_factory=dict)
     strategies: dict[str, SliceThreshold] = Field(default_factory=dict)
@@ -146,14 +146,13 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
     case_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
     query_type: str = Field(min_length=1)
-    cuisine: str = Field(min_length=1)
+    domain: str = Field(min_length=1)
     constraint_types: list[str] = Field(default_factory=list)
     risk_tags: list[str] = Field(default_factory=list)
     expected_response_mode: LiveQualityResponseMode
     allowed_strategies: list[str] = Field(min_length=1)
     required_sources: list[str] = Field(default_factory=list)
     relevant_entities: dict[str, RelevanceGrade] = Field(default_factory=dict)
-    relevant_recipes: dict[str, RelevanceGrade] = Field(default_factory=dict)
     must_include_facts: list[str] = Field(default_factory=list)
     must_not_claim: list[str] = Field(default_factory=list)
     judge_rubric: dict[str, str] = Field(min_length=1)
@@ -181,7 +180,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
             return LiveQualityResponseMode(value)
         return value
 
-    @field_validator("case_id", "query_type", "cuisine")
+    @field_validator("case_id", "query_type", "domain")
     @classmethod
     def validate_identifier(cls, value: str) -> str:
         return _canonical_identifier(value, "case identifier")
@@ -213,7 +212,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
             seen.add(value)
         return values
 
-    @field_validator("relevant_entities", "relevant_recipes")
+    @field_validator("relevant_entities")
     @classmethod
     def reject_blank_mapping_entries(cls, value: dict[str, float]) -> dict[str, float]:
         for key in value:
@@ -230,11 +229,7 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
 
     @model_validator(mode="after")
     def validate_response_mode_relevance(self) -> Self:
-        if self.relevant_entities and self.relevant_recipes:
-            raise ValueError(
-                "cases must use relevant_entities or legacy relevant_recipes, not both"
-            )
-        has_positive_relevance = any(grade > 0 for grade in self.relevant_items.values())
+        has_positive_relevance = any(grade > 0 for grade in self.relevant_entities.values())
         if self.expected_response_mode is LiveQualityResponseMode.GROUNDED_ANSWER:
             if not has_positive_relevance:
                 raise ValueError("grounded_answer cases require positive relevance")
@@ -246,11 +241,12 @@ class LiveQualityCasePolicy(StrictLiveQualityModel):
 
     @property
     def relevant_items(self) -> dict[str, RelevanceGrade]:
-        return self.relevant_entities or self.relevant_recipes
+        return self.relevant_entities
 
 
 class LiveQualityGatePolicy(StrictLiveQualityModel):
     schema_version: Literal[2]
+    domain: str = Field(min_length=1)
     top_k: int = Field(ge=1)
     timeouts: LiveQualityTimeouts
     judge: LiveQualityJudgePolicy
@@ -270,6 +266,8 @@ class LiveQualityGatePolicy(StrictLiveQualityModel):
         if duplicates:
             joined = ", ".join(sorted(duplicates))
             raise ValueError(f"Duplicate live quality case IDs: {joined}")
+        if any(case.domain != self.domain for case in self.cases):
+            raise ValueError("Live quality cases must match the policy domain")
         return self
 
     @model_validator(mode="after")

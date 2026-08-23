@@ -64,12 +64,10 @@ def _hit() -> dict[str, object]:
         "distance": 0.8,
         "entity": {
             "text": "chunk",
-            "node_id": "r1",
-            "recipe_name": "Mapo tofu",
-            "node_type": "Recipe",
-            "category": "main",
-            "cuisine_type": "Sichuan",
-            "difficulty": 2,
+            "entity_id": "r1",
+            "entity_name": "Mapo tofu",
+            "entity_type": "MenuItem",
+            "attributes": {"category": "main", "style": "regional", "difficulty": 2},
             "doc_type": "chunk",
             "chunk_id": "c1",
             "parent_id": "r1",
@@ -95,7 +93,7 @@ def test_similarity_search_caps_k_filters_metadata_and_formats_hits() -> None:
     assert search.client.calls[0]["limit"] == 2
     assert search.client.calls[0]["search_params"]["params"]["ef"] == 2
     assert search.client.calls[0]["filter"] == (
-        'category == "main" and difficulty == 2 and domain == "recipe"'
+        'attributes["category"] == "main" and attributes["difficulty"] == 2 and domain == "recipe"'
     )
     assert search.client.calls[0]["timeout"] == 3.0
     assert control.checks == 3
@@ -123,7 +121,7 @@ def test_filter_helpers_handle_alias_lists_numbers_and_invalid_payloads() -> Non
     assert _metadata_filter({"filters": "invalid"}) == {}
     assert (
         _filter_expression({"category": ["main", "side"], "difficulty": [1, 2], "ignored": None})
-        == 'category in ["main", "side"] and difficulty in [1, 2]'
+        == 'attributes["category"] in ["main", "side"] and attributes["difficulty"] in [1, 2]'
     )
     assert _format_hits([]) == []
     assert _format_hits(None) == []

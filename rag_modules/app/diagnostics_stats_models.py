@@ -58,16 +58,15 @@ _ROUTE_STATS_KEYS = frozenset(
 )
 _DATA_STATS_KEYS = frozenset(
     {
-        "total_recipes",
-        "total_ingredients",
-        "total_cooking_steps",
+        "domain_name",
+        "total_entities",
         "total_documents",
         "total_chunks",
-        "categories",
-        "cuisines",
-        "difficulties",
+        "entity_types",
+        "document_types",
         "avg_content_length",
         "avg_chunk_size",
+        "domain_metrics",
     }
 )
 _RETRIEVAL_RUNTIME_PROFILE_KEYS = frozenset(
@@ -162,16 +161,15 @@ class TraceStatsDiagnostics:
 
 @dataclass(slots=True)
 class DataStatsDiagnostics:
-    total_recipes: int = 0
-    total_ingredients: int = 0
-    total_cooking_steps: int = 0
+    domain_name: str = ""
+    total_entities: int = 0
     total_documents: int = 0
     total_chunks: int = 0
-    categories: dict[str, int] = field(default_factory=dict)
-    cuisines: dict[str, int] = field(default_factory=dict)
-    difficulties: dict[str, int] = field(default_factory=dict)
+    entity_types: dict[str, int] = field(default_factory=dict)
+    document_types: dict[str, int] = field(default_factory=dict)
     avg_content_length: float = 0.0
     avg_chunk_size: float = 0.0
+    domain_metrics: JsonObject = field(default_factory=dict)
     extra: JsonObject = field(default_factory=dict)
     present_keys: frozenset[str] = field(default_factory=frozenset)
 
@@ -179,52 +177,46 @@ class DataStatsDiagnostics:
     def from_payload(cls, payload: object) -> "DataStatsDiagnostics":
         data = coerce_json_object(payload)
         return cls(
-            total_recipes=coerce_int(data.get("total_recipes"), 0),
-            total_ingredients=coerce_int(data.get("total_ingredients"), 0),
-            total_cooking_steps=coerce_int(data.get("total_cooking_steps"), 0),
+            domain_name=str(data.get("domain_name") or ""),
+            total_entities=coerce_int(data.get("total_entities"), 0),
             total_documents=coerce_int(data.get("total_documents"), 0),
             total_chunks=coerce_int(data.get("total_chunks"), 0),
-            categories=int_map(data.get("categories")),
-            cuisines=int_map(data.get("cuisines")),
-            difficulties=int_map(data.get("difficulties")),
+            entity_types=int_map(data.get("entity_types")),
+            document_types=int_map(data.get("document_types")),
             avg_content_length=coerce_float(data.get("avg_content_length"), 0.0),
             avg_chunk_size=coerce_float(data.get("avg_chunk_size"), 0.0),
+            domain_metrics=coerce_json_object(data.get("domain_metrics")),
             extra=extra_payload(data, _DATA_STATS_KEYS),
             present_keys=frozenset(data),
         )
 
     def to_dict(self) -> JsonObject:
         payload = dict(self.extra)
+        put_if_present_or_meaningful(payload, self.present_keys, "domain_name", self.domain_name)
         put_if_present_or_meaningful(
-            payload, self.present_keys, "total_recipes", self.total_recipes
-        )
-        put_if_present_or_meaningful(
-            payload, self.present_keys, "total_ingredients", self.total_ingredients
-        )
-        put_if_present_or_meaningful(
-            payload, self.present_keys, "total_cooking_steps", self.total_cooking_steps
+            payload, self.present_keys, "total_entities", self.total_entities
         )
         put_if_present_or_meaningful(
             payload, self.present_keys, "total_documents", self.total_documents
         )
         put_if_present_or_meaningful(payload, self.present_keys, "total_chunks", self.total_chunks)
         put_if_present_or_meaningful(
-            payload, self.present_keys, "categories", coerce_json_object(self.categories)
-        )
-        put_if_present_or_meaningful(
-            payload, self.present_keys, "cuisines", coerce_json_object(self.cuisines)
+            payload, self.present_keys, "entity_types", coerce_json_object(self.entity_types)
         )
         put_if_present_or_meaningful(
             payload,
             self.present_keys,
-            "difficulties",
-            coerce_json_object(self.difficulties),
+            "document_types",
+            coerce_json_object(self.document_types),
         )
         put_if_present_or_meaningful(
             payload, self.present_keys, "avg_content_length", self.avg_content_length
         )
         put_if_present_or_meaningful(
             payload, self.present_keys, "avg_chunk_size", self.avg_chunk_size
+        )
+        put_if_present_or_meaningful(
+            payload, self.present_keys, "domain_metrics", self.domain_metrics
         )
         return payload
 

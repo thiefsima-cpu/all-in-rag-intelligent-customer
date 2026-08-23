@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from rag_modules.domains import get_domain_pack
 from rag_modules.graph.evidence_builder import GraphEvidenceBuilder
 from rag_modules.graph.reasoning_strategy import GraphReasoningStrategy
 from rag_modules.graph.retrieval_postprocess import GraphRetrievalPostProcessor
@@ -59,7 +60,7 @@ class GraphReasoningStrategyTests(unittest.TestCase):
         self.assertIn("comparative", patterns)
 
     def test_reasoning_builds_causal_compositional_comparative_chains(self) -> None:
-        strategy = GraphReasoningStrategy()
+        strategy = GraphReasoningStrategy(vocabulary=get_domain_pack("recipe").reasoning_vocabulary)
         causal = next(iter(strategy.causal_relation_types))
         nodes = [
             GraphNodeSnapshot(node_id="r1", name="A", labels=("Recipe",)),

@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from rag_modules.configuration import load_config
+from rag_modules.domains import DEFAULT_DOMAIN_NAME, DomainPack, get_domain_pack
 from rag_modules.infra.neo4j import create_neo4j_driver
 
 
@@ -31,33 +32,34 @@ def split_cypher(script: str) -> list[str]:
 
 def _domain_name(config) -> str:
     domain = getattr(config, "domain", None)
-    return str(getattr(domain, "name", "recipe") or "recipe").strip().lower()
+    return str(getattr(domain, "name", DEFAULT_DOMAIN_NAME) or DEFAULT_DOMAIN_NAME).strip().lower()
 
 
-def _load_import_statements(domain_name: str = "recipe") -> list[str]:
-    script_name = (
-        "customer_service_seed.cypher"
-        if domain_name == "customer_service"
-        else "neo4j_import.cypher"
-    )
-    script_path = Path(__file__).resolve().parents[1] / "cypher" / script_name
+def _load_import_statements(domain_pack: DomainPack) -> list[str]:
+    if not domain_pack.graph_import_resource:
+        raise ValueError(f"Domain {domain_pack.name!r} does not define a graph import resource.")
+    script_path = Path(__file__).resolve().parents[1] / "cypher" / domain_pack.graph_import_resource
     script = script_path.read_text(encoding="utf-8")
-    if domain_name == "recipe":
-        script = script.replace("file:///nodes.csv", "file:///cypher/nodes.csv")
-        script = script.replace("file:///relationships.csv", "file:///cypher/relationships.csv")
+    for source, target in domain_pack.graph_import_replacements:
+        script = script.replace(source, target)
     return split_cypher(script)
 
 
-def _has_recipe_data(session) -> bool:
-    record = session.run("MATCH (recipe:Recipe) RETURN count(recipe) AS recipe_count").single()
-    return bool(record and int(record["recipe_count"] or 0) > 0)
-
-
-def _has_domain_data(session, domain_name: str) -> bool:
-    if domain_name != "customer_service":
-        return _has_recipe_data(session)
+def _has_domain_data(session, domain_pack: DomainPack) -> bool:
     record = session.run(
-        "MATCH (n {domain: 'customer_service'}) RETURN count(n) AS domain_entity_count"
+        """
+        MATCH (entity)
+        WHERE entity.domain = $domain_name
+           OR ($allow_domainless_graph_records
+               AND entity.domain IS NULL
+               AND any(label IN labels(entity) WHERE label IN $primary_labels))
+        RETURN count(entity) AS domain_entity_count
+        """,
+        {
+            "domain_name": domain_pack.name,
+            "primary_labels": list(domain_pack.ontology.primary_labels),
+            "allow_domainless_graph_records": domain_pack.allow_domainless_graph_records,
+        },
     ).single()
     return bool(record and int(record["domain_entity_count"] or 0) > 0)
 
@@ -77,11 +79,12 @@ def import_graph(
     try:
         with driver.session(database=storage.neo4j_database) as session:
             domain_name = _domain_name(config)
-            if only_if_empty and _has_domain_data(session, domain_name):
+            domain_pack = get_domain_pack(domain_name)
+            if only_if_empty and _has_domain_data(session, domain_pack):
                 print(f"Neo4j {domain_name} data already exists; skipping graph import.")
                 return False
 
-            statements = _load_import_statements(domain_name)
+            statements = _load_import_statements(domain_pack)
             for index, statement in enumerate(statements, start=1):
                 preview = statement.splitlines()[0][:80]
                 print(f"[{index}/{len(statements)}] {preview}")

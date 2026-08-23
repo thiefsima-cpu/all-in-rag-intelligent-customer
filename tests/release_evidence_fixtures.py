@@ -158,13 +158,13 @@ def _live_quality_report(policy_payload: dict[str, object]) -> dict[str, object]
         strategy="hybrid_traditional",
         evidence=(
             LiveQualityEvidence(
-                recipe_name="Mapo Tofu",
+                entity_name="Mapo Tofu",
                 source="vector",
                 content="Mapo tofu uses tofu and a spicy sauce.",
                 score=1.0,
             ),
         ),
-        ranked_recipe_names=("Mapo Tofu",),
+        ranked_entity_names=("Mapo Tofu",),
         sources=frozenset({"vector"}),
         fallback_used=False,
         retrieval_degraded=False,
@@ -260,6 +260,7 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
         eval_dir / "live_quality_gate.json",
         {
             "schema_version": 2,
+            "domain": "recipe",
             "top_k": 6,
             "timeouts": {"request_seconds": 90.0, "judge_seconds": 45.0},
             "judge": {
@@ -293,14 +294,14 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
             "required_slice_coverage": {
                 "risk_tags": {},
                 "query_types": {},
-                "cuisines": {},
+                "domains": {"recipe": 1},
                 "constraint_types": {},
                 "response_modes": {},
             },
             "slice_thresholds": {
                 "risk_tags": {},
                 "query_types": {},
-                "cuisines": {},
+                "domains": {},
                 "constraint_types": {},
                 "response_modes": {},
                 "strategies": {},
@@ -310,13 +311,13 @@ def make_release_evidence_fixture(tmp_path: Path) -> ReleaseEvidenceFixture:
                     "case_id": "grounded_mapo_tofu",
                     "query": "How do I make mapo tofu?",
                     "query_type": "single_recipe",
-                    "cuisine": "sichuan",
+                    "domain": "recipe",
                     "constraint_types": [],
                     "risk_tags": [],
                     "expected_response_mode": "grounded_answer",
                     "allowed_strategies": ["hybrid_traditional"],
                     "required_sources": ["vector"],
-                    "relevant_recipes": {"Mapo Tofu": 3.0},
+                    "relevant_entities": {"Mapo Tofu": 3.0},
                     "must_include_facts": ["tofu"],
                     "must_not_claim": ["palace secret recipe"],
                     "judge_rubric": {

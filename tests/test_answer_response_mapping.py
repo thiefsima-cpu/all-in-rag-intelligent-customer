@@ -99,17 +99,6 @@ def test_typed_mapper_matches_compatibility_payload() -> None:
             stage.setdefault("rerank_succeeded", False)
             stage.setdefault("rerank_latency_ms", None)
 
-    evidence_collections = (
-        expected["grounding"]["evidence_documents"],
-        expected["grounding"]["retrieval_outcome"]["evidence_documents"],
-        expected["grounding"]["answer_context"]["retrieval"]["evidence_documents"],
-        expected["grounding"]["route_resolution"]["retrieval"]["evidence_documents"],
-    )
-    for documents in evidence_collections:
-        for document in documents:
-            document["recipe_name"] = document["entity_name"]
-            document["recipe_id"] = document["entity_id"]
-
     assert AnswerPayloadModel.from_dto(response).model_dump() == expected
 
 
@@ -128,7 +117,6 @@ def test_public_answer_payload_maps_typed_response_without_traces() -> None:
             "content": "Mapo tofu balances tofu and chili bean paste.",
             "entity_id": "recipe-1",
             "entity_name": "mapo tofu",
-            "recipe_name": "mapo tofu",
             "entity_type": "recipe",
             "score": 0.95,
             "source": "graph",
@@ -230,9 +218,9 @@ def _complete_result() -> QuestionAnswerResult:
         bundle_name="c9-default-v1",
     )
     constraints = QueryConstraints(
-        include_terms=["tofu"],
-        ingredients=["tofu", "doubanjiang"],
-        max_cook_minutes=30,
+        entity_terms=["tofu"],
+        temporal_filters={"max_duration_minutes": 30},
+        extension={"ingredients": ["tofu", "doubanjiang"]},
     )
     score_breakdown = QuerySemanticScoreBreakdown(
         relation_hit_count=1,
@@ -252,7 +240,7 @@ def _complete_result() -> QuestionAnswerResult:
         complexity=0.71,
         relationship_intensity=0.73,
         reasoning_required=True,
-        needs_recipe_recommendation=True,
+        recommendation_required=True,
         recommendation_hits=["recommend"],
         relation_hits=["because"],
         constraint_hits=["under 30 minutes"],
@@ -277,7 +265,7 @@ def _complete_result() -> QuestionAnswerResult:
         relation_types=["CONTRIBUTES_TO"],
         max_depth=2,
         constraints=constraints,
-        needs_recipe_recommendation=True,
+        recommendation_required=True,
         answer_style="grounded",
         used_cache=True,
         planner_mode="fixture",
@@ -314,7 +302,7 @@ def _complete_result() -> QuestionAnswerResult:
         constraint_evidence={"cook_minutes": 20},
         evidence_units=[{"claim": "tofu carries the sauce"}],
         route_strategy="combined",
-        metadata={"rank": 1},
+        metadata={"domain": "recipe", "rank": 1},
     )
     route_trace = RouteSnapshot(
         query=question,
@@ -445,7 +433,7 @@ def _complete_result() -> QuestionAnswerResult:
         models=ModelSuiteSnapshot(llm="llm", embedding="embedding", rerank="rerank"),
         retrieval=RetrievalTraceSnapshot(
             doc_count=1,
-            evidence=[{"recipe_name": "mapo tofu", "score": 0.95}],
+            evidence=[{"entity_name": "mapo tofu", "score": 0.95}],
             route_trace=route_trace,
             graph_trace=graph_trace,
         ),

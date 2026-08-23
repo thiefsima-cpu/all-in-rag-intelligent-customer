@@ -108,11 +108,7 @@ def test_schema_contains_required_vector_and_metadata_fields() -> None:
         "domain",
         "attributes",
         "node_id",
-        "recipe_name",
         "node_type",
-        "category",
-        "cuisine_type",
-        "difficulty",
         "doc_type",
         "chunk_id",
         "parent_id",
@@ -196,7 +192,7 @@ def test_create_collection_forwards_constructed_schema_to_sdk_client() -> None:
     fields = {field.name: field for field in constructed_schema.fields}
     assert fields["id"].is_primary is True
     assert fields["vector"].params["dim"] == 512
-    assert fields["difficulty"].dtype.name == "INT64"
+    assert fields["attributes"].dtype.name == "JSON"
 
 
 def test_create_index_requires_collection_and_uses_hnsw() -> None:

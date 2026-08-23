@@ -39,7 +39,7 @@ def _answer_workflow_copy_payload() -> dict[str, str]:
             "Found {document_count} relevant documents: {document_summaries}"
         ),
         "document_summary_total_template": "\n    Total results: {document_count}",
-        "unknown_recipe_name": "unknown",
+        "unknown_entity_name": "unknown",
         "unknown_search_type": "unknown",
     }
 
@@ -136,7 +136,7 @@ def _minimal_policy_payload() -> dict:
                 "missing_relation_evidence": "Missing graph evidence.",
                 "sparse_evidence": "Sparse evidence.",
                 "missing_information_caution": "Missing information caution.",
-                "fallback_claim_template": "{recipe_name} evidence.",
+                "fallback_claim_template": "{entity_name} evidence.",
             },
             "decision": {
                 "default_answer_type": "direct_answer",
@@ -386,7 +386,7 @@ class QueryPolicyTests(unittest.TestCase):
         self.assertEqual(copy.query_routing_started, "Running query routing...")
         self.assertEqual(copy.answer_generation_started, "Generating answer...")
         self.assertEqual(copy.strategy_icon_graph_rag, "[GRAPH]")
-        self.assertEqual(copy.unknown_recipe_name, "unknown")
+        self.assertEqual(copy.unknown_entity_name, "unknown")
 
     def test_policy_uses_clean_utf8_terms(self) -> None:
         policy = get_query_policy().lexicon
@@ -547,7 +547,7 @@ def test_policy_loader_migrates_additive_v1_fields_for_custom_bundle(tmp_path: P
         "query_routing_started",
         "answer_generation_started",
         "streaming_interrupted_fallback",
-        "unknown_recipe_name",
+        "unknown_entity_name",
         "unknown_search_type",
     ):
         answer_workflow_copy.pop(field_name)
@@ -562,7 +562,7 @@ def test_policy_loader_migrates_additive_v1_fields_for_custom_bundle(tmp_path: P
     assert (
         bundle.generation.answer_workflow_copy.query_routing_started == "Running query routing..."
     )
-    assert bundle.generation.answer_workflow_copy.unknown_recipe_name == "unknown"
+    assert bundle.generation.answer_workflow_copy.unknown_entity_name == "unknown"
     assert bundle.generation.decision.reasons.simple == "simple"
     assert bundle.generation.fallback_answer["model_unavailable"] == "Model unavailable."
     assert bundle.graph.reasoning.comparison_markers == ()

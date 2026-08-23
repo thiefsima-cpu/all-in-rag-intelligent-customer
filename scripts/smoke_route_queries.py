@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from rag_modules.configuration.env import EnvConfigSource
 from rag_modules.configuration.loader import load_config
 from rag_modules.contracts import QueryPlannerRuntimeSettings, QuerySemanticRuntimeSettings
+from rag_modules.domains import get_domain_pack
 from rag_modules.query_understanding import QueryPlanner
 
 DEFAULT_CORPUS_PATH = (
@@ -47,7 +48,7 @@ class RouteSmokeCase:
     expected_graph_query_type: str = ""
     expected_intent: str = ""
     expected_reasoning_required: Optional[bool] = None
-    expected_needs_recipe_recommendation: Optional[bool] = None
+    expected_recommendation_required: Optional[bool] = None
     required_relation_types: List[str] = field(default_factory=list)
     expected_constraints: dict[str, Any] = field(default_factory=dict)
     min_complexity: float = 0.0
@@ -67,9 +68,9 @@ class RouteSmokeCase:
                 if "expected_reasoning_required" in payload
                 else None
             ),
-            expected_needs_recipe_recommendation=(
-                bool(payload.get("expected_needs_recipe_recommendation"))
-                if "expected_needs_recipe_recommendation" in payload
+            expected_recommendation_required=(
+                bool(payload.get("expected_recommendation_required"))
+                if "expected_recommendation_required" in payload
                 else None
             ),
             required_relation_types=[
@@ -83,21 +84,33 @@ class RouteSmokeCase:
         )
 
 
-def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RouteSmokeCase]:
+def load_corpus(
+    path: str | Path = DEFAULT_CORPUS_PATH,
+) -> tuple[str, List[RouteSmokeCase]]:
     corpus_path = Path(path).resolve()
     with corpus_path.open("r", encoding="utf-8") as file:
         payload = json.load(file)
-    if not isinstance(payload, list):
-        raise ValueError(f"Route smoke corpus at {corpus_path} must be a JSON list.")
-    return [RouteSmokeCase.from_dict(item) for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        raise ValueError(f"Route smoke corpus at {corpus_path} must be a JSON object.")
+    domain_name = str(payload.get("domain") or "").strip()
+    cases = payload.get("cases")
+    if not domain_name or not isinstance(cases, list):
+        raise ValueError(f"Route smoke corpus at {corpus_path} must define domain and cases.")
+    return domain_name, [RouteSmokeCase.from_dict(item) for item in cases if isinstance(item, dict)]
 
 
-def build_planner() -> QueryPlanner:
-    config = load_config(source=EnvConfigSource(environ={}))
+def load_cases(path: str | Path = DEFAULT_CORPUS_PATH) -> List[RouteSmokeCase]:
+    return load_corpus(path)[1]
+
+
+def build_planner(domain_name: str) -> QueryPlanner:
+    domain_pack = get_domain_pack(domain_name)
+    config = load_config(source=EnvConfigSource(environ={"GRAPH_RAG_DOMAIN": domain_name}))
     return QueryPlanner(
         _DummyLLM(),
         settings=QueryPlannerRuntimeSettings.from_config(config),
         semantic_settings=QuerySemanticRuntimeSettings.from_config(config),
+        constraint_schema=domain_pack.query_constraints,
     )
 
 
@@ -153,13 +166,13 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
             f"{case.expected_reasoning_required} actual_reasoning_required={plan.reasoning_required}"
         )
     if (
-        case.expected_needs_recipe_recommendation is not None
-        and plan.needs_recipe_recommendation != case.expected_needs_recipe_recommendation
+        case.expected_recommendation_required is not None
+        and plan.recommendation_required != case.expected_recommendation_required
     ):
         failures.append(
-            "expected_needs_recipe_recommendation="
-            f"{case.expected_needs_recipe_recommendation} "
-            f"actual_needs_recipe_recommendation={plan.needs_recipe_recommendation}"
+            "expected_recommendation_required="
+            f"{case.expected_recommendation_required} "
+            f"actual_recommendation_required={plan.recommendation_required}"
         )
     missing_relation_types = [
         relation_type
@@ -196,7 +209,7 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
         "graph_query_type": graph_query_type,
         "intent": plan.intent,
         "reasoning_required": plan.reasoning_required,
-        "needs_recipe_recommendation": plan.needs_recipe_recommendation,
+        "recommendation_required": plan.recommendation_required,
         "complexity": plan.complexity,
         "relationship_intensity": plan.relationship_intensity,
         "source_entities": list(plan.source_entities),
@@ -209,12 +222,14 @@ def evaluate_case(planner: QueryPlanner, case: RouteSmokeCase) -> dict:
 
 
 def run_smoke(corpus_path: str | Path = DEFAULT_CORPUS_PATH) -> dict:
-    planner = build_planner()
-    results = [evaluate_case(planner, case) for case in load_cases(corpus_path)]
+    domain_name, cases = load_corpus(corpus_path)
+    planner = build_planner(domain_name)
+    results = [evaluate_case(planner, case) for case in cases]
     failures = [item for item in results if not item["passed"]]
     category_counts = Counter(item["category"] for item in results)
     strategy_counts = Counter(item["strategy"] for item in results)
     return {
+        "domain": domain_name,
         "case_count": len(results),
         "passed_count": len(results) - len(failures),
         "pass_rate": ((len(results) - len(failures)) / len(results) if results else 0.0),

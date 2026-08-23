@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 import rag_modules.domains as domain_registry
+from rag_modules.build_pipeline.graph_preparation import create_domain_build_collaborators
 from rag_modules.build_pipeline.graph_preparation.domain_loader import (
     DOMAIN_ENTITIES_QUERY,
     DomainGraphDataLoader,
@@ -40,6 +42,21 @@ from rag_modules.query_understanding.planning.rule_based import RuleBasedPlanner
 from rag_modules.query_understanding.registry import QueryUnderstandingRegistry
 
 
+def test_build_collaborators_are_created_by_the_selected_domain_pack() -> None:
+    loader = object()
+    document_builder = object()
+    pack = SimpleNamespace(
+        build_adapter="domain_owned",
+        build_loader_factory=lambda: loader,
+        build_document_builder_factory=lambda: document_builder,
+    )
+
+    selected_loader, selected_builder, _ = create_domain_build_collaborators(pack)
+
+    assert selected_loader is loader
+    assert selected_builder is document_builder
+
+
 def test_customer_service_pack_owns_ontology_mapping_projection_and_evaluation() -> None:
     pack = get_domain_pack("customer_service")
 
@@ -62,7 +79,7 @@ def test_customer_service_pack_owns_ontology_mapping_projection_and_evaluation()
 
 def test_customer_service_build_stats_use_domain_neutral_names() -> None:
     state = GraphPreparationState(
-        recipes=[
+        primary_entities=[
             GraphNode(
                 node_id="CS-1001",
                 labels=["Order"],
@@ -77,15 +94,21 @@ def test_customer_service_build_stats_use_domain_neutral_names() -> None:
         ],
     )
 
-    stats = GraphPreparationStatisticsService(domain_name="customer_service").build(state).to_dict()
+    pack = get_domain_pack("customer_service")
+    stats = (
+        GraphPreparationStatisticsService(
+            domain_name=pack.name,
+            data_view=pack.build_data_view,
+        )
+        .build(state)
+        .to_dict()
+    )
 
     assert stats["domain_name"] == "customer_service"
     assert stats["total_entities"] == 1
     assert stats["entity_types"] == {"Order": 1}
     assert stats["document_types"] == {"order_status": 1}
-    assert "total_recipes" not in stats
-    assert "categories" not in stats
-    assert "cuisines" not in stats
+    assert stats["domain_metrics"] == {}
 
 
 def test_customer_service_policy_routes_live_gate_queries_and_extracts_identifiers() -> None:
@@ -177,6 +200,12 @@ def test_query_policy_selector_uses_domain_pack_contract(
     assert selector.bundle == "third_domain-policy"
 
 
+def test_query_policy_selector_defaults_to_the_production_domain_pack() -> None:
+    selector = resolve_query_policy_selector({}, {})
+
+    assert selector.bundle == "customer-service-v1"
+
+
 def test_domain_registry_accepts_a_pack_without_selector_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -243,8 +272,8 @@ def test_domain_graph_loader_resolves_identity_from_ontology_fields() -> None:
         domain_name=pack.name,
     ).load(Driver(), database="neo4j")
 
-    assert loaded.recipes[0].node_id == "POL-REFUND-2026-07"
-    assert loaded.recipes[0].name == "Refund policy 2026.07"
+    assert loaded.primary_entities[0].node_id == "POL-REFUND-2026-07"
+    assert loaded.primary_entities[0].name == "Refund policy 2026.07"
     assert "n.orderId" not in DOMAIN_ENTITIES_QUERY
     assert "n.policyId" not in DOMAIN_ENTITIES_QUERY
     assert "n.sku" not in DOMAIN_ENTITIES_QUERY
@@ -409,13 +438,11 @@ def test_public_citation_projection_is_domain_owned_and_keeps_recipe_compatibili
     assert customer.content == ""
     assert customer.entity_id == ""
     assert customer.entity_name == ""
-    assert customer.recipe_name == ""
     assert customer.matched_terms == []
     assert customer.attributes == {"document_type": "order", "status": "已发货"}
     assert recipe.content == "麻婆豆腐使用豆腐和豆瓣酱。"
     assert recipe.entity_id == "recipe-1"
     assert recipe.entity_name == "麻婆豆腐"
-    assert recipe.recipe_name == "麻婆豆腐"
     assert recipe.matched_terms == ["豆腐"]
 
 
@@ -434,14 +461,17 @@ def test_public_citation_projection_fails_closed_without_domain_or_recipe_marker
     assert public.content == ""
     assert public.entity_id == ""
     assert public.entity_name == ""
-    assert public.recipe_name == ""
     assert public.matched_terms == []
 
 
 def test_recipe_text_document_projects_through_canonical_evidence_type() -> None:
-    document = TextDocument(
-        content="Mapo tofu uses tofu and chili bean paste.",
-        metadata={"recipe_id": "recipe-1", "recipe_name": "Mapo tofu", "matched_terms": ["tofu"]},
+    document = get_domain_pack("recipe").document_mapper.map_document(
+        {
+            "content": "Mapo tofu uses tofu and chili bean paste.",
+            "recipe_id": "recipe-1",
+            "recipe_name": "Mapo tofu",
+            "matched_terms": ["tofu"],
+        }
     )
 
     public = PublicEvidenceDocumentResponseModel.from_dto(
@@ -451,7 +481,6 @@ def test_recipe_text_document_projects_through_canonical_evidence_type() -> None
     assert public.content == document.content
     assert public.entity_id == "recipe-1"
     assert public.entity_name == "Mapo tofu"
-    assert public.recipe_name == "Mapo tofu"
     assert public.matched_terms == ["tofu"]
 
 
@@ -539,3 +568,29 @@ def test_customer_service_subgraph_evidence_has_no_recipe_metadata() -> None:
     assert evidence.metadata["entity_ids"] == ["CS-1001", "POL-REFUND-2026-07"]
     assert evidence.metadata["entity_names"] == ["订单 CS-1001", "七天无理由退货政策"]
     assert not any(key.startswith("recipe") for key in evidence.metadata)
+
+
+def test_generic_runtime_and_scripts_do_not_embed_recipe_vocabulary() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    forbidden = re.compile(
+        r"\b(?:recipe|recipes|ingredient|ingredients|cuisine|cooking)\b",
+        re.IGNORECASE,
+    )
+    violations: list[str] = []
+
+    for source_root_name in ("rag_modules", "scripts"):
+        source_root = repository_root / source_root_name
+        for source_path in source_root.rglob("*.py"):
+            relative_path = source_path.relative_to(repository_root)
+            if relative_path.parts[:3] == ("rag_modules", "domains", "recipe"):
+                continue
+            if relative_path.as_posix() == "rag_modules/domains/__init__.py":
+                continue
+            for line_number, line in enumerate(
+                source_path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if forbidden.search(line):
+                    violations.append(f"{relative_path.as_posix()}:{line_number}: {line.strip()}")
+
+    assert violations == []

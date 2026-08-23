@@ -10,8 +10,7 @@ from rank_bm25 import BM25Okapi
 from ..kernel.documents import TextDocument
 from .adapters import VectorRetriever
 from .dual_level_retriever import DualLevelRetriever
-from .evidence import RecipeConstraintMatcher
-from .ports import Neo4jDriverPort
+from .ports import ConstraintMatcherPort, Neo4jDriverPort
 
 
 @dataclass
@@ -24,7 +23,7 @@ class HybridRetrievalState:
     bm25_corpus_docs: List[TextDocument] = field(default_factory=list)
     graph_indexed: bool = False
     parent_doc_map: Dict[str, TextDocument] = field(default_factory=dict)
-    recipe_matcher: Optional[RecipeConstraintMatcher] = None
+    constraint_matcher: Optional[ConstraintMatcherPort] = None
     vector_retriever: Optional[VectorRetriever] = None
     dual_level_service: Optional[DualLevelRetriever] = None
 

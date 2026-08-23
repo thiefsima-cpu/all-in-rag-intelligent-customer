@@ -34,7 +34,9 @@ def _align_domain_pack_storage(
     if isinstance(storage_layer, Mapping) and "milvus_collection_name" in storage_layer:
         return
     domain_section = domain_payload.get("domain")
-    domain_name = domain_section.get("name") if isinstance(domain_section, dict) else "recipe"
+    domain_name = (
+        domain_section.get("name") if isinstance(domain_section, dict) else "customer_service"
+    )
     if not isinstance(domain_name, str):
         return
     storage_section = domain_payload.get("storage")

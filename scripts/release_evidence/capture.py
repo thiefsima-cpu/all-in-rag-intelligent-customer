@@ -224,7 +224,7 @@ _INTEGRATION_AGGREGATE_CHECK_CODES = {
 }
 _LIVE_SLICE_FIELDS = {
     "by_query_type": ("query_type", False),
-    "by_cuisine": ("cuisine", False),
+    "by_domain": ("domain", False),
     "by_constraint_type": ("constraint_types", True),
     "by_risk_tag": ("risk_tags", True),
     "by_response_mode": ("response_mode", False),
@@ -314,7 +314,7 @@ _LIVE_CASE_KEYS = frozenset(
     {
         "case_id",
         "query_type",
-        "cuisine",
+        "domain",
         "constraint_types",
         "risk_tags",
         "response_mode",
@@ -368,14 +368,14 @@ _LIVE_TIMING_METRIC_NAMES = frozenset(
 )
 _LIVE_RECOMPUTED_SUMMARY_KEYS = _LIVE_SUMMARY_KEYS - {"estimated_cost_usd"}
 _LIVE_MANUAL_REVIEW_KEYS = frozenset({"owner", "sample"})
-_LIVE_EVIDENCE_KEYS = frozenset({"recipe_name", "source", "snippet"})
+_LIVE_EVIDENCE_KEYS = frozenset({"entity_name", "source", "snippet"})
 _LIVE_ARTIFACT_KEYS = frozenset({"report_json", "summary_md", "manual_review_sample_jsonl"})
 _MANUAL_REVIEW_SAMPLE_KEYS = frozenset(
     {
         "case_id",
         "owner",
         "query_type",
-        "cuisine",
+        "domain",
         "risk_tags",
         "constraint_types",
         "expected_response_mode",
@@ -784,7 +784,7 @@ def _validate_evidence_entries(
             raise ReleaseEvidenceCaptureError(f"{name} schema is invalid")
         _require_exact_keys(item, _LIVE_EVIDENCE_KEYS, name)
         if (
-            not isinstance(item["recipe_name"], str)
+            not isinstance(item["entity_name"], str)
             or not isinstance(item["source"], str)
             or not isinstance(item["snippet"], str)
             or len(item["snippet"]) > maximum_snippet_length
@@ -1091,7 +1091,7 @@ def _validate_manual_review_binding(
             row.get("case_id") != case_policy.case_id
             or row.get("owner") != case_policy.manual_review.owner
             or row.get("query_type") != case_policy.query_type
-            or row.get("cuisine") != case_policy.cuisine
+            or row.get("domain") != case_policy.domain
             or row.get("risk_tags") != case_policy.risk_tags
             or row.get("constraint_types") != case_policy.constraint_types
             or row.get("expected_response_mode") != case_policy.expected_response_mode.value
@@ -1132,7 +1132,7 @@ def _validate_manual_review_binding(
             raise ReleaseEvidenceCaptureError("manual review sample does not match report case")
         for case_item, sample_item in zip(case_evidence, evidence[:5], strict=True):
             if (
-                case_item.get("recipe_name") != sample_item["recipe_name"]
+                case_item.get("entity_name") != sample_item["entity_name"]
                 or case_item.get("source") != sample_item["source"]
                 or case_item.get("snippet") != sample_item["snippet"][:160]
             ):
@@ -1809,7 +1809,7 @@ def _validate_live_quality_details(
         failures = case.get("failures")
         case_metrics = case.get("metrics")
         query_type = case.get("query_type")
-        cuisine = case.get("cuisine")
+        domain = case.get("domain")
         constraint_types = case.get("constraint_types")
         risk_tags = case.get("risk_tags")
         response_mode = case.get("response_mode")
@@ -1828,7 +1828,7 @@ def _validate_live_quality_details(
             or (judge_passed is not None and not isinstance(judge_passed, bool))
             or (policy.judge.required and not isinstance(judge_passed, bool))
             or not isinstance(query_type, str)
-            or not isinstance(cuisine, str)
+            or not isinstance(domain, str)
             or not isinstance(constraint_types, list)
             or not all(isinstance(value, str) for value in constraint_types)
             or not isinstance(risk_tags, list)
@@ -1844,7 +1844,7 @@ def _validate_live_quality_details(
         case_policy = policies_by_id[case_id]
         if (
             query_type != case_policy.query_type
-            or cuisine != case_policy.cuisine
+            or domain != case_policy.domain
             or constraint_types != case_policy.constraint_types
             or risk_tags != case_policy.risk_tags
             or response_mode != case_policy.expected_response_mode.value
@@ -1924,7 +1924,7 @@ def _validate_live_quality_details(
             answer=case.get("answer_preview"),
             strategy=strategy,
             evidence=(),
-            ranked_recipe_names=(),
+            ranked_entity_names=(),
             sources=frozenset(),
             fallback_used="fallback_used" in failures,
             retrieval_degraded="retrieval_degraded" in failures,
@@ -2003,7 +2003,7 @@ def _validate_live_quality_details(
         normalized_cases.append(
             {
                 "query_type": query_type,
-                "cuisine": cuisine,
+                "domain": domain,
                 "constraint_types": constraint_types,
                 "risk_tags": risk_tags,
                 "response_mode": response_mode,
@@ -2015,7 +2015,7 @@ def _validate_live_quality_details(
             DeterministicCaseResult(
                 case_id=case_id,
                 query_type=query_type,
-                cuisine=cuisine,
+                domain=domain,
                 constraint_types=tuple(constraint_types),
                 risk_tags=tuple(risk_tags),
                 response_mode=response_mode,

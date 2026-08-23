@@ -168,7 +168,7 @@ _GRAPH_ENV_FIELD_SPECS = _specs(
     ),
     ("GRAPH_RANK_EVIDENCE_UNIT_WEIGHT", ("graph", "graph_rank_evidence_unit_weight"), "float"),
     ("GRAPH_RANK_RELATIONSHIP_WEIGHT", ("graph", "graph_rank_relationship_weight"), "float"),
-    ("GRAPH_RANK_RECIPE_PRESENCE_WEIGHT", ("graph", "graph_rank_recipe_presence_weight"), "float"),
+    ("GRAPH_RANK_ENTITY_PRESENCE_WEIGHT", ("graph", "graph_rank_entity_presence_weight"), "float"),
     ("GRAPH_RANK_QUERY_OVERLAP_WEIGHT", ("graph", "graph_rank_query_overlap_weight"), "float"),
     ("ENTITY_LINKER_LIMIT_PER_ENTITY", ("graph", "entity_linker_limit_per_entity"), "int"),
     ("ENTITY_LINKER_MIN_CONFIDENCE", ("graph", "entity_linker_min_confidence"), "float"),

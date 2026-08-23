@@ -91,8 +91,8 @@ def test_build_and_search_order_positive_scores_and_normalize_metadata(monkeypat
     retriever = BM25Retriever()
     chunks = [
         TextDocument(content="a", metadata={"name": "A", "node_id": "a"}),
-        TextDocument(content="b", metadata={"recipe_name": "B", "recipe_id": "b"}),
-        TextDocument(content="c", metadata={"recipe_name": "C", "parent_id": "c"}),
+        TextDocument(content="b", metadata={"entity_name": "B", "entity_id": "b"}),
+        TextDocument(content="c", metadata={"entity_name": "C", "parent_id": "c"}),
     ]
 
     assert retriever.search("tofu") == []
@@ -111,10 +111,9 @@ def test_build_and_search_order_positive_scores_and_normalize_metadata(monkeypat
     assert documents[0].retrieval_level == "chunk"
     assert documents[0].source == "bm25"
     assert documents[0].metadata == {
-        "recipe_name": "C",
+        "entity_name": "C",
         "parent_id": "c",
         "entity_id": "c",
-        "entity_name": "C",
         "search_method": "bm25",
         "search_type": "bm25",
         "bm25_score": 0.9,

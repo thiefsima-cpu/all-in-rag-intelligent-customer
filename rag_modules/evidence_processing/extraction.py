@@ -51,26 +51,9 @@ def _explicit_units(metadata: JsonObject, source: str, score: float) -> list[Evi
                 claim=claim,
                 source=str(item.get("source") or source),
                 score=coerce_float(item.get("score"), score),
-                entity_id=str(
-                    item.get("entity_id")
-                    or item.get("recipe_id")
-                    or metadata.get("entity_id")
-                    or metadata.get("recipe_id")
-                    or ""
-                ),
-                entity_name=str(
-                    item.get("entity_name")
-                    or item.get("recipe_name")
-                    or metadata.get("entity_name")
-                    or metadata.get("recipe_name")
-                    or ""
-                ),
-                domain=str(
-                    metadata.get("domain")
-                    or (
-                        "recipe" if metadata.get("recipe_id") or metadata.get("recipe_name") else ""
-                    )
-                ),
+                entity_id=str(item.get("entity_id") or metadata.get("entity_id") or ""),
+                entity_name=str(item.get("entity_name") or metadata.get("entity_name") or ""),
+                domain=str(metadata.get("domain") or ""),
                 relation_type=str(item.get("relation_type") or ""),
                 entities=_string_list(item.get("entities")),
                 is_graph_evidence=bool(item.get("is_graph_evidence")),
@@ -107,29 +90,19 @@ def _relationship_claim(
 
 
 def _graph_entity_values(metadata: JsonObject) -> tuple[str, str, list[str]]:
-    recipe_ids = _string_list(metadata.get("recipe_node_ids"))
-    recipe_names = _string_list(metadata.get("recipe_names"))
+    entity_ids = _string_list(metadata.get("entity_ids"))
+    entity_names = _string_list(metadata.get("entity_names"))
     entity_id = (
-        recipe_ids[0]
-        if recipe_ids
-        else str(
-            metadata.get("entity_id") or metadata.get("recipe_id") or metadata.get("node_id") or ""
-        )
+        entity_ids[0]
+        if entity_ids
+        else str(metadata.get("entity_id") or metadata.get("node_id") or "")
     )
-    entity_name = (
-        recipe_names[0]
-        if recipe_names
-        else str(metadata.get("entity_name") or metadata.get("recipe_name") or "")
-    )
-    entity_names = _string_list(metadata.get("entity_names")) or recipe_names
+    entity_name = entity_names[0] if entity_names else str(metadata.get("entity_name") or "")
     return entity_id, entity_name, entity_names
 
 
 def _evidence_domain(metadata: JsonObject) -> str:
-    return str(
-        metadata.get("domain")
-        or ("recipe" if metadata.get("recipe_id") or metadata.get("recipe_name") else "")
-    )
+    return str(metadata.get("domain") or "")
 
 
 def _graph_summary_unit(
@@ -239,16 +212,14 @@ def _fallback_unit(
     claim = content.strip()[:260]
     if not claim:
         return None
-    entity_name = str(metadata.get("entity_name") or metadata.get("recipe_name") or "")
+    entity_name = str(metadata.get("entity_name") or "")
     return EvidenceUnit(
         unit_id=f"unit::{stable_hash(claim)}",
         evidence_type=infer_evidence_type(metadata),
         claim=claim,
         source=source,
         score=score,
-        entity_id=str(
-            metadata.get("entity_id") or metadata.get("recipe_id") or metadata.get("node_id") or ""
-        ),
+        entity_id=str(metadata.get("entity_id") or metadata.get("node_id") or ""),
         entity_name=entity_name,
         domain=_evidence_domain(metadata),
         entities=[entity_name] if entity_name else [],

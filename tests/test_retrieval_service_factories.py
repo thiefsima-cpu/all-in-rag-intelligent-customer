@@ -27,7 +27,7 @@ class _FakeHybridRuntime:
         self.bm25_corpus_docs = []
         self.graph_indexed = True
         self.parent_doc_map = {"p": "doc"}
-        self.recipe_matcher = "matcher"
+        self.constraint_matcher = "matcher"
         self.vector_retriever = "vector"
         self.dual_level_service = "dual"
 

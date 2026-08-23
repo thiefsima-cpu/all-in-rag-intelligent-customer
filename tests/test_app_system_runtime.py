@@ -223,7 +223,7 @@ def _build_runtime() -> BuildRuntime:
     manifest = _ready_manifest()
     data_module = SimpleNamespace(
         chunks=[SimpleNamespace(content="c1"), SimpleNamespace(content="c2")],
-        get_statistics=lambda: {"total_recipes": 2, "total_chunks": 4},
+        get_statistics=lambda: {"total_entities": 2, "total_chunks": 4},
     )
     return BuildRuntime(
         config=SimpleNamespace(
@@ -254,7 +254,9 @@ def _serving_runtime(config) -> ServingRuntime:
     return ServingRuntime(
         config=config,
         neo4j_manager=SimpleNamespace(close=lambda: None),
-        data_module=SimpleNamespace(get_statistics=lambda: {"total_recipes": 2, "total_chunks": 4}),
+        data_module=SimpleNamespace(
+            get_statistics=lambda: {"total_entities": 2, "total_chunks": 4}
+        ),
         index_module=SimpleNamespace(get_collection_stats=lambda: {"row_count": 4}),
         query_tracer=query_tracer,
         generation_module=generation_module,

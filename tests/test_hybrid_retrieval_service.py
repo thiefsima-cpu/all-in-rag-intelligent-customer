@@ -23,7 +23,7 @@ class _FakeRuntime:
         self.bm25 = "bm25"
         self.bm25_corpus_docs = []
         self.graph_indexed = True
-        self.recipe_matcher = "matcher"
+        self.constraint_matcher = "matcher"
         self.vector_retriever = "vector"
         self.dual_level_service = "dual"
         self.calls = []
@@ -122,7 +122,7 @@ class HybridRetrievalServiceTests(unittest.TestCase):
         self.service.vector_search_enhanced("tofu", top_k=3)
         self.service.bm25_search("tofu", top_k=4)
         constraint_docs = self.service.constraint_search(
-            QueryConstraints(max_cook_minutes=30),
+            QueryConstraints(temporal_filters={"max_duration_minutes": 30}),
             top_k=5,
         )
 
@@ -158,7 +158,7 @@ class HybridRetrievalServiceTests(unittest.TestCase):
         self.assertEqual(self.service.bm25, "bm25")
         self.assertEqual(self.service.bm25_corpus_docs, [])
         self.assertTrue(self.service.graph_indexed)
-        self.assertEqual(self.service.recipe_matcher, "matcher")
+        self.assertEqual(self.service.constraint_matcher, "matcher")
         self.assertEqual(self.service.vector_retriever, "vector")
         self.assertEqual(self.service.dual_level_service, "dual")
         self.assertEqual(self.service.extract_query_keywords("tofu"), (["tofu"], ["topic::tofu"]))

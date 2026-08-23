@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from rag_modules.build_pipeline.graph_preparation.loader import (
+from rag_modules.domains.recipe.build.loader import (
     COOKING_STEPS_QUERY,
     INGREDIENTS_QUERY,
     RECIPES_QUERY,

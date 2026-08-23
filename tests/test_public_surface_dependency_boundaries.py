@@ -331,7 +331,7 @@ class PublicSurfaceDependencyBoundaryTests(PublicSurfaceBoundaryTestCase):
 
         self.assertFalse(
             violations,
-            "RecipeConstraintMatcher must be imported from rag_modules.retrieval.evidence:\n"
+            "RecipeConstraintMatcher must be imported from rag_modules.domains.recipe:\n"
             + "\n".join(violations),
         )
 

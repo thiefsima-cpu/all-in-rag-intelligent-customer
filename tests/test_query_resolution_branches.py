@@ -107,7 +107,10 @@ def test_adaptive_planning_selects_each_runtime_path(
 
 def test_sub_question_conditions_cover_all_guards_and_constraint_shapes() -> None:
     profile = QuerySemanticProfile(
-        constraints={"time": {"max": 20}, "diet": "vegan"},
+        constraints={
+            "temporal_filters": {"max_duration_minutes": 20},
+            "extension": {"preference_terms": ["vegan"]},
+        },
         relationship_intensity=0.8,
     )
     common = {
@@ -140,7 +143,7 @@ def test_sub_question_conditions_cover_all_guards_and_constraint_shapes() -> Non
         GraphSubQuestionCondition(
             entities_present=True,
             relation_types_any=("USES",),
-            constraints_present=("time",),
+            constraints_present=("temporal_filters.max_duration_minutes",),
             relationship_intensity_at_least=0.7,
             query_markers_any=("why",),
         ),
@@ -150,10 +153,11 @@ def test_sub_question_conditions_cover_all_guards_and_constraint_shapes() -> Non
         profile.constraints, GraphSubQuestionCondition(constraints_present_any=True)
     )
     assert not _constraints_present(
-        {"time": {"min": None}}, GraphSubQuestionCondition(constraints_present=("time",))
+        {"temporal_filters": {"min": None}},
+        GraphSubQuestionCondition(constraints_present=("temporal_filters.min",)),
     )
-    assert _any_constraint_present({"time": {"min": None}, "diet": "vegan"})
-    assert not _any_constraint_present({"time": {"min": None}, "diet": ""})
+    assert _any_constraint_present({"temporal_filters": {"min": None}, "diet": "vegan"})
+    assert not _any_constraint_present({"temporal_filters": {"min": None}, "diet": ""})
 
 
 def test_decomposition_uses_matching_rules_then_fallback_and_deduplicates() -> None:

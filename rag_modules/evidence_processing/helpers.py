@@ -48,10 +48,10 @@ def infer_evidence_type(metadata: JsonObject) -> str:
     if "subgraph" in search_type:
         return "subgraph"
     if "constraint" in search_type:
-        return "recipe"
+        return "constraint"
     if node_type:
         return node_type.lower()
-    return "recipe" if metadata.get("recipe_name") else "text"
+    return "text"
 
 
 __all__ = [

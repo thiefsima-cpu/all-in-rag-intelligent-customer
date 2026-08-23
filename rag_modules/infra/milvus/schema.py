@@ -31,13 +31,8 @@ class _MilvusSchemaOperations(MilvusOperationHost):
             FieldSchema(name="entity_type", dtype=DataType.VARCHAR, max_length=100),
             FieldSchema(name="domain", dtype=DataType.VARCHAR, max_length=100),
             FieldSchema(name="attributes", dtype=DataType.JSON),
-            # Compatibility columns used by the recipe domain's existing filters.
             FieldSchema(name="node_id", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="recipe_name", dtype=DataType.VARCHAR, max_length=300),
             FieldSchema(name="node_type", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="category", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="cuisine_type", dtype=DataType.VARCHAR, max_length=200),
-            FieldSchema(name="difficulty", dtype=DataType.INT64),
             FieldSchema(name="doc_type", dtype=DataType.VARCHAR, max_length=50),
             FieldSchema(name="chunk_id", dtype=DataType.VARCHAR, max_length=150),
             FieldSchema(name="parent_id", dtype=DataType.VARCHAR, max_length=100),

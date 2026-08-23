@@ -6,10 +6,9 @@ from importlib import import_module
 
 _EXPORTS = {
     "MilvusIndexConstructionModule": ".milvus",
-    "SemanticGraphSchemaWriter": ".semantic_graph_writer",
 }
 
-__all__ = ["MilvusIndexConstructionModule", "SemanticGraphSchemaWriter"]
+__all__ = ["MilvusIndexConstructionModule"]
 
 
 def __getattr__(name: str):

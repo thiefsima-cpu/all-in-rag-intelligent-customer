@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import DefaultDict, Dict, Iterable, List
 
 from ..query_understanding.registry import dedupe_preserve_order
@@ -123,6 +123,9 @@ class GraphIndexStore:
         self.rebuild_key_mappings()
 
     def get_statistics(self) -> Dict[str, object]:
+        entity_types = Counter(
+            entity.entity_type or "Entity" for entity in self.entity_kv_store.values()
+        )
         return {
             "total_entities": len(self.entity_kv_store),
             "total_relations": len(self.relation_kv_store),
@@ -130,15 +133,5 @@ class GraphIndexStore:
             "total_relation_keys": sum(
                 len(kv.index_keys) for kv in self.relation_kv_store.values()
             ),
-            "entity_types": {
-                "Recipe": len(
-                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "Recipe"]
-                ),
-                "Ingredient": len(
-                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "Ingredient"]
-                ),
-                "CookingStep": len(
-                    [kv for kv in self.entity_kv_store.values() if kv.entity_type == "CookingStep"]
-                ),
-            },
+            "entity_types": dict(sorted(entity_types.items())),
         }

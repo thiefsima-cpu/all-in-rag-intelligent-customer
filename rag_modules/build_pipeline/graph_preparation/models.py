@@ -21,29 +21,3 @@ class GraphRelation:
         self.end_node_id = str(self.end_node_id or "")
         self.relation_type = str(self.relation_type or "")
         self.properties = dict(self.properties or {})
-
-
-@dataclass(slots=True, frozen=True)
-class PreparedIngredientInput:
-    """Ingredient row prepared for recipe-document materialization."""
-
-    recipe_id: str
-    name: str = ""
-    category: str = ""
-    amount: str = ""
-    unit: str = ""
-    description: str = ""
-
-
-@dataclass(slots=True, frozen=True)
-class PreparedStepInput:
-    """Cooking-step row prepared for recipe-document materialization."""
-
-    recipe_id: str
-    name: str = ""
-    description: str = ""
-    step_number: int = 0
-    methods: str = ""
-    tools: str = ""
-    time_estimate: str = ""
-    step_order: int = 0

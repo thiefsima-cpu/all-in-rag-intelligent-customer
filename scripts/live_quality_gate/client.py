@@ -54,7 +54,7 @@ _REQUIRED_SUMMARY_FIELDS = frozenset(
     }
 )
 _REQUIRED_GROUNDING_FIELDS = frozenset({"evidence_documents"})
-_REQUIRED_EVIDENCE_DOCUMENT_FIELDS = frozenset({"recipe_name", "source", "content", "score"})
+_REQUIRED_EVIDENCE_DOCUMENT_FIELDS = frozenset({"entity_name", "source", "content", "score"})
 _REQUIRED_DIAGNOSTICS_FIELDS = frozenset({"diagnostics"})
 _REQUIRED_QUERY_DIAGNOSTIC_FIELDS = frozenset({"retrieval_degraded"})
 _REQUIRED_TRACE_FIELDS = frozenset({"route_trace", "generation_trace"})
@@ -125,14 +125,14 @@ def normalize_live_quality_observation(
 
     evidence = tuple(
         LiveQualityEvidence(
-            recipe_name=document.recipe_name,
+            entity_name=document.entity_name,
             source=document.source,
             content=document.content,
             score=document.score,
         )
         for document in answer.grounding.evidence_documents
     )
-    ranked_recipe_names = tuple(item.recipe_name for item in evidence if item.recipe_name)
+    ranked_entity_names = tuple(item.entity_name for item in evidence if item.entity_name)
 
     sources = {item.source for item in evidence if item.source}
     for stage in route_trace.stages.values():
@@ -156,7 +156,7 @@ def normalize_live_quality_observation(
         answer=summary.answer,
         strategy=summary.strategy or route_trace.strategy,
         evidence=evidence,
-        ranked_recipe_names=ranked_recipe_names,
+        ranked_entity_names=ranked_entity_names,
         sources=frozenset(sources),
         fallback_used=fallback_used,
         retrieval_degraded=retrieval_degraded,

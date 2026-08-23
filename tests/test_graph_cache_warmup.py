@@ -98,7 +98,12 @@ def test_warm_rebuilds_stale_cache_with_paged_entities_and_relations() -> None:
     store = _Store(stale, signature="new")
     driver = _Driver()
 
-    result = GraphCacheWarmupService(store).warm(driver, database_name="neo4j")
+    result = GraphCacheWarmupService(
+        store,
+        domain_name="recipe",
+        allowed_node_labels=("Recipe", "Ingredient", "CookingStep", "Category"),
+        allow_domainless_graph_records=True,
+    ).warm(driver, database_name="neo4j")
 
     assert result.stats.graph_signature == "new"
     assert [item.node_id for item in result.stats.entities] == ["r1", "i1"]

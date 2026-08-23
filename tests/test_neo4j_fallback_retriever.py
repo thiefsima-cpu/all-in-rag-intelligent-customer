@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from rag_modules.retrieval.adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 
 
@@ -19,10 +21,8 @@ class _Session:
     def run(self, query, parameters):
         if self.error:
             raise self.error
-        if "fulltext" in query:
-            return self.entity
-        if "matched_keyword" in query:
-            return self.topic
+        if "UNWIND $keywords" in query:
+            return self.entity or self.topic
         return self.neighbors
 
 
@@ -67,41 +67,37 @@ def test_entity_search_builds_partial_records_and_coerces_scores() -> None:
     assert second.metadata["labels"] == []
 
 
-def test_topic_search_includes_optional_fields_and_filters_ingredients() -> None:
+def test_topic_search_projects_generic_entity_record() -> None:
     record = {
         "node_id": "r1",
         "name": "Mapo tofu",
-        "category": "main",
-        "cuisine_type": "Sichuan",
-        "difficulty": 2,
-        "ingredients": ["tofu", "", "pepper", "oil"],
-        "matched_keyword": "Sichuan",
+        "description": "spicy tofu",
+        "labels": ["Recipe"],
+        "score": 0.75,
     }
     retriever = Neo4jFallbackRetriever(driver=_Driver(_Session(topic=[record])), database="neo4j")
 
     [document] = retriever.topic_search(["Sichuan"], 1)
 
-    assert document.score == 0.75
-    assert document.matched_terms == ["Sichuan"]
-    assert "tofu" in document.content
+    assert document.score == pytest.approx(0.525)
+    assert document.retrieval_level == "topic"
+    assert "spicy tofu" in document.content
 
 
-def test_topic_search_omits_empty_optional_fields_and_invalid_ingredients() -> None:
+def test_topic_search_handles_empty_generic_fields() -> None:
     record = {
         "node_id": "r1",
         "name": "Recipe",
-        "category": "",
-        "cuisine_type": "",
-        "difficulty": 0,
-        "ingredients": "invalid",
-        "matched_keyword": "",
+        "description": "",
+        "labels": "invalid",
+        "score": 0,
     }
     retriever = Neo4jFallbackRetriever(driver=_Driver(_Session(topic=[record])), database="neo4j")
 
     [document] = retriever.topic_search(["x"], 1)
 
     assert document.entity_name == "Recipe"
-    assert document.matched_terms == []
+    assert document.metadata["labels"] == []
 
 
 def test_guards_neighbors_and_failures_return_empty() -> None:

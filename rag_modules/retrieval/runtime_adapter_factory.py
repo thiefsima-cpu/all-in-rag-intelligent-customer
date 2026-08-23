@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ..domains import DEFAULT_DOMAIN_NAME, get_domain_pack
 from .adapters import GraphKVRetriever, VectorRetriever
 from .adapters.neo4j_fallback_retriever import Neo4jFallbackRetriever
 from .dual_level_evidence_service import DualLevelEvidenceService
@@ -61,7 +62,8 @@ class DefaultHybridRuntimeAdapterFactory:
     ) -> DualLevelRetriever:
         config = getattr(graph_indexing, "config", None)
         domain = getattr(config, "domain", None)
-        domain_name = str(getattr(domain, "name", "recipe") or "recipe")
+        domain_name = str(getattr(domain, "name", DEFAULT_DOMAIN_NAME) or DEFAULT_DOMAIN_NAME)
+        domain_pack = get_domain_pack(domain_name)
         return DualLevelRetriever(
             graph_indexing=graph_indexing,
             graph_kv_retriever=graph_kv_retriever,
@@ -73,6 +75,9 @@ class DefaultHybridRuntimeAdapterFactory:
                 driver=driver,
                 database=database,
                 domain_name=domain_name,
+                allowed_labels=domain_pack.ontology.node_labels,
+                lookup_fields=domain_pack.ontology.entity_lookup_fields,
+                allow_domainless_graph_records=domain_pack.allow_domainless_graph_records,
             ),
             driver=driver,
             database=database,

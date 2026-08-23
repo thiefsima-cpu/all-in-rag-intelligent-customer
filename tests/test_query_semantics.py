@@ -13,6 +13,7 @@ from rag_modules.contracts.query_settings import (
     QueryPlannerRuntimeSettings,
     QuerySemanticRuntimeSettings,
 )
+from rag_modules.domains import get_domain_pack
 from rag_modules.kernel.routing import SearchStrategy
 from rag_modules.query_understanding import (
     QueryPlanner,
@@ -45,11 +46,13 @@ class _FailingPlannerClient:
 class QuerySemanticsTests(unittest.TestCase):
     def setUp(self) -> None:
         config = build_test_config()
+        recipe_pack = get_domain_pack("recipe")
         self.semantic_settings = QuerySemanticRuntimeSettings.from_config(config)
         self.planner = QueryPlanner(
             _DummyLLM(),
             settings=QueryPlannerRuntimeSettings.from_config(config),
             semantic_settings=self.semantic_settings,
+            constraint_schema=recipe_pack.query_constraints,
         )
 
     def test_complex_relation_query_prefers_graph_rag(self) -> None:
@@ -97,7 +100,8 @@ class QuerySemanticsTests(unittest.TestCase):
             {
                 "strategy": "combined",
                 "planner_mode": "fast_rule",
-                "constraints": {"needs_recipe_recommendation": True},
+                "constraints": {"entity_terms": ["tofu"]},
+                "recommendation_required": True,
             },
             semantic_settings=self.semantic_settings,
         )
@@ -207,7 +211,8 @@ class QuerySemanticsTests(unittest.TestCase):
             {
                 "strategy": "typo",
                 "planner_mode": "llm",
-                "constraints": {"needs_recipe_recommendation": True},
+                "constraints": {"entity_terms": ["tofu"]},
+                "recommendation_required": True,
             },
             semantic_settings=self.semantic_settings,
         )
@@ -217,11 +222,13 @@ class QuerySemanticsTests(unittest.TestCase):
         self.assertEqual(plan.to_dict()["strategy"], "combined")
 
     def test_constraint_extraction_uses_policy_rules(self) -> None:
-        constraints = infer_query_constraints("20分钟内少油的鸡肉菜有哪些？")
+        constraints = infer_query_constraints(
+            "20分钟内少油的鸡肉菜有哪些？",
+            constraint_schema=get_domain_pack("recipe").query_constraints,
+        )
 
-        self.assertEqual(constraints["time"]["max_total_minutes"], 20)
-        self.assertIn("少油", constraints["health_terms"])
-        self.assertTrue(constraints["needs_recipe_recommendation"])
+        self.assertEqual(constraints["temporal_filters"]["max_duration_minutes"], 20)
+        self.assertIn("少油", constraints["extension"]["health_terms"])
 
 
 if __name__ == "__main__":

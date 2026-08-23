@@ -44,16 +44,16 @@ def _valid_strict_eval_payload() -> dict:
         "expectation": {
             "response_mode": "grounded_answer",
             "strategy": "hybrid_traditional",
-            "recipe_names": ["宫保鸡丁"],
+            "entity_names": ["宫保鸡丁"],
             "answer_terms": ["宫保鸡丁"],
-            "recipe_relevance": {"宫保鸡丁": 3.0},
+            "entity_relevance": {"宫保鸡丁": 3.0},
         },
         "offline_fixture": {
             "strategy": "hybrid_traditional",
             "answer": "依据菜谱证据 #1，宫保鸡丁需要鸡丁、花生和调味汁。",
             "evidence": [
                 {
-                    "recipe_name": "宫保鸡丁",
+                    "entity_name": "宫保鸡丁",
                     "content": "宫保鸡丁需要鸡丁、花生和调味汁。",
                     "score": 1.0,
                     "evidence_type": "text",
@@ -98,15 +98,15 @@ def _eval_case(
     category: str = "single_recipe",
     dimensions: tuple[str, ...] = ("single_recipe",),
     strategy: str | None = "hybrid_traditional",
-    recipe_names: tuple[str, ...] = ("gongbao chicken",),
+    entity_names: tuple[str, ...] = ("gongbao chicken",),
     answer_terms: tuple[str, ...] = ("gongbao chicken",),
-    recipe_relevance: dict[str, float] | None = None,
+    entity_relevance: dict[str, float] | None = None,
     fixture_answer: str = "According to recipe evidence #1, gongbao chicken uses peanuts.",
     fixture_evidence: tuple[OfflineEvidenceFixture, ...] | None = None,
 ) -> EvalCase:
-    if recipe_relevance is None:
-        recipe_relevance = (
-            {recipe_name: 3.0 for recipe_name in recipe_names}
+    if entity_relevance is None:
+        entity_relevance = (
+            {entity_name: 3.0 for entity_name in entity_names}
             if response_mode is EvalResponseMode.GROUNDED_ANSWER
             else {}
         )
@@ -114,7 +114,7 @@ def _eval_case(
         fixture_evidence = (
             (
                 OfflineEvidenceFixture(
-                    recipe_name=recipe_names[0] if recipe_names else "fixture-recipe",
+                    entity_name=entity_names[0] if entity_names else "fixture-recipe",
                     content="gongbao chicken uses peanuts.",
                     score=1.0,
                     evidence_type="text",
@@ -131,9 +131,9 @@ def _eval_case(
         expectation=EvalExpectation(
             response_mode=response_mode,
             strategy=strategy,
-            recipe_names=recipe_names,
+            entity_names=entity_names,
             answer_terms=answer_terms,
-            recipe_relevance=recipe_relevance,
+            entity_relevance=entity_relevance,
         ),
         offline_fixture=OfflineEvalFixture(
             strategy=strategy or "hybrid_traditional",
@@ -226,46 +226,46 @@ class StrictEvalCaseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"quality-eval\.json.*invalid JSON"):
             _load_temporary_eval_text("[")
 
-    def test_review_rejects_normalized_recipe_relevance_key_collisions(self) -> None:
+    def test_review_rejects_normalized_entity_relevance_key_collisions(self) -> None:
         payload = _valid_strict_eval_payload()
-        payload["expectation"]["recipe_names"] = ["recipe"]
-        payload["expectation"]["recipe_relevance"] = {"recipe": 3.0, " recipe ": 1.0}
-        payload["offline_fixture"]["evidence"][0]["recipe_name"] = "recipe"
+        payload["expectation"]["entity_names"] = ["recipe"]
+        payload["expectation"]["entity_relevance"] = {"recipe": 3.0, " recipe ": 1.0}
+        payload["offline_fixture"]["evidence"][0]["entity_name"] = "recipe"
 
         with self.assertRaisesRegex(
             ValueError,
-            r"quality-eval\.json.*case\[0\].*grounded-01.*recipe_relevance.*collision",
+            r"quality-eval\.json.*case\[0\].*grounded-01.*entity_relevance.*collision",
         ):
             _load_temporary_eval_payload([payload])
 
-    def test_review_rejects_all_zero_recipe_relevance(self) -> None:
+    def test_review_rejects_all_zero_entity_relevance(self) -> None:
         payload = _valid_strict_eval_payload()
-        payload["expectation"]["recipe_relevance"] = {"宫保鸡丁": 0.0}
+        payload["expectation"]["entity_relevance"] = {"宫保鸡丁": 0.0}
 
         with self.assertRaisesRegex(
             ValueError,
-            r"quality-eval\.json.*case\[0\].*grounded-01.*recipe_relevance.*positive",
+            r"quality-eval\.json.*case\[0\].*grounded-01.*entity_relevance.*positive",
         ):
             _load_temporary_eval_payload([payload])
 
     def test_review_allows_zero_grade_recipe_without_fixture_evidence(self) -> None:
         payload = _valid_strict_eval_payload()
-        payload["expectation"]["recipe_relevance"]["鱼香肉丝"] = 0.0
+        payload["expectation"]["entity_relevance"]["鱼香肉丝"] = 0.0
 
         case = _load_temporary_eval_payload([payload])[0]
 
-        self.assertEqual(case.expectation.recipe_relevance["鱼香肉丝"], 0.0)
+        self.assertEqual(case.expectation.entity_relevance["鱼香肉丝"], 0.0)
         self.assertEqual(len(case.offline_fixture.evidence), 1)
 
     def test_review_distinguishes_boolean_and_wrong_numeric_types(self) -> None:
         bool_score = _valid_strict_eval_payload()
         bool_score["offline_fixture"]["evidence"][0]["score"] = True
         string_relevance = _valid_strict_eval_payload()
-        string_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = "high"
+        string_relevance["expectation"]["entity_relevance"]["宫保鸡丁"] = "high"
 
         with self.assertRaisesRegex(ValueError, r"score.*number, not a boolean"):
             _load_temporary_eval_payload([bool_score])
-        with self.assertRaisesRegex(ValueError, r"recipe_relevance.*number.*got str"):
+        with self.assertRaisesRegex(ValueError, r"entity_relevance.*number.*got str"):
             _load_temporary_eval_payload([string_relevance])
 
     def test_strict_contract_parses_nested_case(self) -> None:
@@ -274,8 +274,8 @@ class StrictEvalCaseContractTests(unittest.TestCase):
         self.assertEqual(case.case_id, "grounded-01")
         self.assertEqual(case.dimensions, ("single_recipe",))
         self.assertIs(case.expectation.response_mode, EvalResponseMode.GROUNDED_ANSWER)
-        self.assertEqual(case.expectation.recipe_relevance, {"宫保鸡丁": 3.0})
-        self.assertEqual(case.offline_fixture.evidence[0].recipe_name, "宫保鸡丁")
+        self.assertEqual(case.expectation.entity_relevance, {"宫保鸡丁": 3.0})
+        self.assertEqual(case.offline_fixture.evidence[0].entity_name, "宫保鸡丁")
 
     def test_strict_contract_allows_unspecified_expected_strategy(self) -> None:
         payload = _valid_strict_eval_payload()
@@ -308,8 +308,8 @@ class StrictEvalCaseContractTests(unittest.TestCase):
     def test_strict_contract_rejects_abstention_evidence(self) -> None:
         payload = _valid_strict_eval_payload()
         payload["expectation"]["response_mode"] = "no_evidence"
-        payload["expectation"]["recipe_names"] = []
-        payload["expectation"]["recipe_relevance"] = {}
+        payload["expectation"]["entity_names"] = []
+        payload["expectation"]["entity_relevance"] = {}
 
         with self.assertRaisesRegex(
             ValueError,
@@ -383,14 +383,14 @@ class StrictEvalCaseContractTests(unittest.TestCase):
     def test_strict_contract_rejects_invalid_numeric_values(self) -> None:
         payloads: list[tuple[str, dict, str]] = []
         bool_relevance = _valid_strict_eval_payload()
-        bool_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = True
-        payloads.append(("bool relevance", bool_relevance, "recipe_relevance"))
+        bool_relevance["expectation"]["entity_relevance"]["宫保鸡丁"] = True
+        payloads.append(("bool relevance", bool_relevance, "entity_relevance"))
         negative_relevance = _valid_strict_eval_payload()
-        negative_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = -0.1
-        payloads.append(("negative relevance", negative_relevance, "recipe_relevance"))
+        negative_relevance["expectation"]["entity_relevance"]["宫保鸡丁"] = -0.1
+        payloads.append(("negative relevance", negative_relevance, "entity_relevance"))
         nonfinite_relevance = _valid_strict_eval_payload()
-        nonfinite_relevance["expectation"]["recipe_relevance"]["宫保鸡丁"] = math.inf
-        payloads.append(("nonfinite relevance", nonfinite_relevance, "recipe_relevance"))
+        nonfinite_relevance["expectation"]["entity_relevance"]["宫保鸡丁"] = math.inf
+        payloads.append(("nonfinite relevance", nonfinite_relevance, "entity_relevance"))
         bool_score = _valid_strict_eval_payload()
         bool_score["offline_fixture"]["evidence"][0]["score"] = False
         payloads.append(("bool score", bool_score, "score"))
@@ -422,19 +422,19 @@ class StrictEvalCaseContractTests(unittest.TestCase):
         grounded_without_evidence = _valid_strict_eval_payload()
         grounded_without_evidence["offline_fixture"]["evidence"] = []
         payloads.append(("grounded without evidence", grounded_without_evidence, "evidence"))
-        missing_expected_recipe = _valid_strict_eval_payload()
-        missing_expected_recipe["offline_fixture"]["evidence"][0]["recipe_name"] = "鱼香肉丝"
-        payloads.append(("missing expected recipe", missing_expected_recipe, "宫保鸡丁"))
-        abstention_recipe_names = _valid_strict_eval_payload()
-        abstention_recipe_names["expectation"]["response_mode"] = "clarification"
-        abstention_recipe_names["offline_fixture"]["evidence"] = []
-        abstention_recipe_names["expectation"]["recipe_relevance"] = {}
-        payloads.append(("abstention recipe names", abstention_recipe_names, "recipe_names"))
+        missing_expected_entity = _valid_strict_eval_payload()
+        missing_expected_entity["offline_fixture"]["evidence"][0]["entity_name"] = "鱼香肉丝"
+        payloads.append(("missing expected recipe", missing_expected_entity, "宫保鸡丁"))
+        abstention_entity_names = _valid_strict_eval_payload()
+        abstention_entity_names["expectation"]["response_mode"] = "clarification"
+        abstention_entity_names["offline_fixture"]["evidence"] = []
+        abstention_entity_names["expectation"]["entity_relevance"] = {}
+        payloads.append(("abstention recipe names", abstention_entity_names, "entity_names"))
         abstention_relevance = _valid_strict_eval_payload()
         abstention_relevance["expectation"]["response_mode"] = "constraint_conflict"
         abstention_relevance["offline_fixture"]["evidence"] = []
-        abstention_relevance["expectation"]["recipe_names"] = []
-        payloads.append(("abstention relevance", abstention_relevance, "recipe_relevance"))
+        abstention_relevance["expectation"]["entity_names"] = []
+        payloads.append(("abstention relevance", abstention_relevance, "entity_relevance"))
 
         for label, payload, detail in payloads:
             with (
@@ -463,7 +463,7 @@ class EvalObservationScoringTests(unittest.TestCase):
         self.assertEqual(result["dimensions"], ["single_recipe"])
         self.assertEqual(result["evaluation"]["expected_response_mode"], "grounded_answer")
         self.assertEqual(result["evaluation"]["actual_response_mode"], "grounded_answer")
-        self.assertEqual(result["retrieval"]["recipe_names"], ["gongbao chicken"])
+        self.assertEqual(result["retrieval"]["entity_names"], ["gongbao chicken"])
 
     def test_score_eval_observation_passes_abstention_modes(self) -> None:
         cases = [
@@ -489,9 +489,9 @@ class EvalObservationScoringTests(unittest.TestCase):
                 case = _eval_case(
                     response_mode,
                     dimensions=(response_mode.value,),
-                    recipe_names=(),
+                    entity_names=(),
                     answer_terms=answer_terms,
-                    recipe_relevance={},
+                    entity_relevance={},
                     fixture_answer=answer,
                     fixture_evidence=(),
                 )
@@ -515,9 +515,9 @@ class EvalObservationScoringTests(unittest.TestCase):
         case = _eval_case(
             EvalResponseMode.NO_EVIDENCE,
             dimensions=("no_evidence",),
-            recipe_names=(),
+            entity_names=(),
             answer_terms=("insufficient evidence",),
-            recipe_relevance={},
+            entity_relevance={},
             fixture_answer="Current evidence is insufficient.",
             fixture_evidence=(),
         )
@@ -540,9 +540,9 @@ class OfflineEvalObservationTests(unittest.TestCase):
         case = _eval_case(
             EvalResponseMode.NO_EVIDENCE,
             dimensions=("no_evidence",),
-            recipe_names=(),
+            entity_names=(),
             answer_terms=("insufficient evidence",),
-            recipe_relevance={},
+            entity_relevance={},
             fixture_answer="Current recipe has insufficient evidence.",
             fixture_evidence=(),
         )
@@ -551,7 +551,7 @@ class OfflineEvalObservationTests(unittest.TestCase):
 
         self.assertTrue(item["passed"])
         self.assertEqual(item["retrieval"]["doc_count"], 0)
-        self.assertEqual(item["retrieval"]["recipe_names"], [])
+        self.assertEqual(item["retrieval"]["entity_names"], [])
         self.assertEqual(item["evaluation"]["actual_response_mode"], "no_evidence")
         self.assertIsNone(item["grounding"]["faithfulness"])
 
@@ -572,9 +572,9 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 EvalResponseMode.NO_EVIDENCE,
                 case_id="no-evidence-pass",
                 dimensions=("no_evidence", "colloquial_zh"),
-                recipe_names=(),
+                entity_names=(),
                 answer_terms=("insufficient evidence",),
-                recipe_relevance={},
+                entity_relevance={},
                 fixture_answer="Current recipe has insufficient evidence.",
                 fixture_evidence=(),
             ),
@@ -590,9 +590,9 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 EvalResponseMode.CLARIFICATION,
                 case_id="clarification-pass",
                 dimensions=("ambiguity",),
-                recipe_names=(),
+                entity_names=(),
                 answer_terms=("Please clarify",),
-                recipe_relevance={},
+                entity_relevance={},
                 fixture_answer="Please clarify which dish you mean.",
                 fixture_evidence=(),
             ),
@@ -605,9 +605,9 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 EvalResponseMode.CONSTRAINT_CONFLICT,
                 case_id="conflict-pass",
                 dimensions=("constraint_conflict",),
-                recipe_names=(),
+                entity_names=(),
                 answer_terms=("conflict", "relax"),
-                recipe_relevance={},
+                entity_relevance={},
                 fixture_answer="These constraints conflict; please relax one condition.",
                 fixture_evidence=(),
             ),
@@ -623,9 +623,9 @@ class OfflineEvalObservationTests(unittest.TestCase):
                 EvalResponseMode.GROUNDED_ANSWER,
                 case_id="grounded-fail",
                 dimensions=("colloquial_zh",),
-                recipe_names=("mapo tofu",),
+                entity_names=("mapo tofu",),
                 answer_terms=("required term",),
-                recipe_relevance={"mapo tofu": 3.0},
+                entity_relevance={"mapo tofu": 3.0},
             ),
             _eval_observation(
                 answer="Unsupported answer.",
@@ -951,15 +951,15 @@ class EvalQueriesTests(unittest.TestCase):
             category="complex_relation",
             dimensions=("complex_relation",),
             strategy="graph_rag",
-            recipe_names=("水煮肉片",),
+            entity_names=("水煮肉片",),
             answer_terms=("依据",),
-            recipe_relevance={"水煮肉片": 3.0},
+            entity_relevance={"水煮肉片": 3.0},
         )
         evidence_documents = [
             {
-                "recipe_name": "水煮肉片",
+                "entity_name": "水煮肉片",
                 "doc_id": "doc-1",
-                "recipe_id": "recipe-1",
+                "entity_id": "recipe-1",
                 "score": 0.96,
                 "graph_evidence": {"relationships": [{"type": "CONTRIBUTES_TO"}]},
                 "evidence_units": [{"is_graph_evidence": True}],
@@ -991,7 +991,7 @@ class EvalQueriesTests(unittest.TestCase):
         self.assertTrue(item["passed"])
         self.assertEqual(item["evaluation"]["strategy"], "graph_rag")
         self.assertTrue(item["evaluation"]["answer_checked"])
-        self.assertEqual(item["retrieval"]["recipe_names"], ["水煮肉片"])
+        self.assertEqual(item["retrieval"]["entity_names"], ["水煮肉片"])
         self.assertEqual(item["runtime"]["plan_used_cache"], True)
         self.assertEqual(item["contracts"]["route_resolution"], {})
         self.assertEqual(
@@ -1005,15 +1005,15 @@ class EvalQueriesTests(unittest.TestCase):
             category="general",
             dimensions=("single_recipe",),
             strategy="hybrid_traditional",
-            recipe_names=("宫保鸡丁",),
+            entity_names=("宫保鸡丁",),
             answer_terms=(),
-            recipe_relevance={"宫保鸡丁": 3.0},
+            entity_relevance={"宫保鸡丁": 3.0},
         )
         evidence_documents = [
             {
-                "recipe_name": "宫保鸡丁",
+                "entity_name": "宫保鸡丁",
                 "doc_id": "doc-2",
-                "recipe_id": "recipe-2",
+                "entity_id": "recipe-2",
                 "score": 0.9,
                 "graph_evidence": {},
                 "evidence_units": [],
@@ -1047,15 +1047,15 @@ class EvalQueriesTests(unittest.TestCase):
             category="complex_relation",
             dimensions=("complex_relation",),
             strategy="graph_rag",
-            recipe_names=("水煮肉片",),
+            entity_names=("水煮肉片",),
             answer_terms=("依据",),
-            recipe_relevance={"水煮肉片": 3.0},
+            entity_relevance={"水煮肉片": 3.0},
         )
         evidence_documents = [
             {
-                "recipe_name": "水煮肉片",
+                "entity_name": "水煮肉片",
                 "doc_id": "doc-1",
-                "recipe_id": "recipe-1",
+                "entity_id": "recipe-1",
                 "score": 0.96,
                 "content": "水煮肉片使用花椒和豆瓣酱形成麻辣风味。",
                 "graph_evidence": {"relationships": [{"type": "CONTRIBUTES_TO"}]},
